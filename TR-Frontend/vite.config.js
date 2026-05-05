@@ -22,8 +22,8 @@ export default defineConfig({
         short_name: 'HockeyEco TR',
         description: 'Кабинет хоккейной команды для управления статистикой и составами',
         // Цвет для статус-бара Android и темы браузера
-        theme_color: '#28353c', 
-        background_color: '#28353c',
+        theme_color: '#1b2327', 
+        background_color: '#1b2327',
         // 'standalone' оставляет системные значки (время, батарея) на месте
         display: 'standalone',
         orientation: 'portrait',

@@ -11,7 +11,7 @@ html, body {
   overflow: hidden;
   overscroll-behavior-y: none;
   /* Убивает Pull-to-refresh в Android/Chrome */
-  background-color: #28353c;
+  background-color: #1b2327;
   
   /* НОВОЕ: Полностью отключаем выделение текста и лупу на iOS */
   -webkit-user-select: none;
