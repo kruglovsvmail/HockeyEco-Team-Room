@@ -1,20 +1,52 @@
 # Используем легковесный образ Node.js
-FROM node:20-alpine
+FROM node:20-slim
 
-# Устанавливаем рабочую директорию внутри контейнера
+# Переключаем зеркала Debian на Яндекс (чтобы избежать зависаний сети)
+RUN sed -i 's/deb.debian.org/mirror.yandex.ru/g' /etc/apt/sources.list.d/debian.sources || true
+
+# Обновляем пакеты и устанавливаем Chromium, а также Python и инструменты сборки (g++, make) для bcrypt
+RUN apt-get update -o Acquire::ForceIPv4=true && apt-get install -y \
+    chromium \
+    fonts-liberation \
+    libnss3 \
+    libatk-bridge2.0-0 \
+    libx11-xcb1 \
+    libxcb1 \
+    libxcomposite1 \
+    libxcursor1 \
+    libxdamage1 \
+    libxext6 \
+    libxfixes3 \
+    libxi6 \
+    libxrandr2 \
+    libxrender1 \
+    libxss1 \
+    libxtst6 \
+    libglib2.0-0 \
+    libgbm1 \
+    libasound2 \
+    python3 \
+    make \
+    g++ \
+    --no-install-recommends \
+    && rm -rf /var/lib/apt/lists/*
+
+# Заставляем Puppeteer использовать системный Chromium
+ENV PUPPETEER_SKIP_CHROMIUM_DOWNLOAD=true
+ENV PUPPETEER_EXECUTABLE_PATH=/usr/bin/chromium
+
+# Создаем рабочую папку
 WORKDIR /app
 
-# Копируем файлы зависимостей
+# Сначала копируем только файлы зависимостей
 COPY package*.json ./
+RUN npm install
 
-# Устанавливаем зависимости (только production, без devDependencies)
-RUN npm ci --omit=dev
-
-# Копируем весь исходный код бэкенда
+# Копируем весь остальной код бэкенда
 COPY . .
 
-# Открываем порт, на котором работает сервер
-EXPOSE 3002
+# Открываем порт 3001
+EXPOSE 3001
 
-# Команда для запуска сервера
+# Запускаем сервер
 CMD ["node", "server.js"]
