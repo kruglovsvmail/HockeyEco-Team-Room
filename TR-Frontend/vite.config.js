@@ -22,8 +22,8 @@ export default defineConfig({
         short_name: 'Team PWA',
         description: 'Кабинет хоккейной команды для управления статистикой и составами',
         // Цвет для статус-бара Android и темы браузера
-        theme_color: '#2a2a2a', 
-        background_color: '#0a0a0a',
+        theme_color: '#74a0b5ff', 
+        background_color: '#611657ff',
         // 'standalone' оставляет системные значки (время, батарея) на месте
         display: 'standalone',
         orientation: 'portrait',
