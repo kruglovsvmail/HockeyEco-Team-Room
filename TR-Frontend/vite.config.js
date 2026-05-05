@@ -26,10 +26,11 @@ export default defineConfig({
         name: 'HockeyEco Team PWA',
         short_name: 'Team PWA',
         description: 'Кабинет хоккейной команды для управления статистикой и составами',
-        // Цвет темы изменен на #0a0a0a для бесшовного слияния со статус-баром
-        theme_color: '#0a0a0a', 
+        // Цвет темы изменен на цвет верхней части градиента (#2a2a2a / surface-level2)
+        theme_color: '#2a2a2a', 
         background_color: '#0a0a0a',
-        display: 'fullscreen', // Режим полноэкранного отображения для скрытия системных панелей
+        // Возвращаем standalone, чтобы значки статус-бара оставались на месте
+        display: 'standalone', 
         orientation: 'portrait',
         scope: '/',
         start_url: '/',
@@ -49,7 +50,7 @@ export default defineConfig({
             sizes: '512x512',
             type: 'image/png',
             purpose: 'any maskable'
-          } 
+          }
         ]
       }
     })
@@ -57,5 +58,5 @@ export default defineConfig({
   server: {
     port: 5173,
     host: true // Позволяет открывать сайт по локальному IP с телефона для тестов
-  } 
+  }
 });
