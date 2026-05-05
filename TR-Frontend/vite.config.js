@@ -18,8 +18,8 @@ export default defineConfig({
         type: 'module',
       },
       manifest: {
-        name: 'HockeyEco Team PWA',
-        short_name: 'Team PWA',
+        name: 'HockeyEco Team Room',
+        short_name: 'HockeyEco TR',
         description: 'Кабинет хоккейной команды для управления статистикой и составами',
         // Цвет для статус-бара Android и темы браузера
         theme_color: '#28353c', 

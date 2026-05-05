@@ -12,7 +12,7 @@ export default function App() {
       {/* Декоративные свечения */}
       <div className="absolute top-[-10%] right-[-10%] w-80 h-80 bg-brand-glow blur-ambient rounded-full pointer-events-none z-0"></div>
       <div className="absolute bottom-[20%] left-[-10%] w-64 h-64 bg-brand-glow blur-ambient rounded-full pointer-events-none z-0"></div>
-      <div className="absolute bottom-0 inset-x-0 h-24 bg-gradient-to-t from-brand-glow to-transparent pointer-events-none z-0"></div>
+      <div className="absolute bottom-0 inset-x-0 h-24 bg-gradient-to-t from-brand-glow/10 to-transparent pointer-events-none z-0"></div>
 
       {/* НОВОЕ: Слой с шумом для маскировки "разводов" (banding). 
           Он перекрывает все фоны, сглаживая переходы. */}

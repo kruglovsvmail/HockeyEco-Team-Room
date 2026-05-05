@@ -7,11 +7,11 @@ html, body {
   position: fixed;
   /* Самый надежный способ убить скролл на iOS */
   width: 100%;
-  height: 100%;
+  height: 100vh;
   overflow: hidden;
   overscroll-behavior-y: none;
   /* Убивает Pull-to-refresh в Android/Chrome */
-  background-color: theme('colors.surface.base'); /* Стандартный фон из конфига */
+  background-color: #28353c;
   
   /* НОВОЕ: Полностью отключаем выделение текста и лупу на iOS */
   -webkit-user-select: none;
