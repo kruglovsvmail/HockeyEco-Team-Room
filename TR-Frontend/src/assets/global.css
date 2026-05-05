@@ -1,0 +1,41 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Жесткая блокировка скролла и эффекта "резинки" для всего PWA */
+html, body {
+  position: fixed;
+  /* Самый надежный способ убить скролл на iOS */
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  overscroll-behavior-y: none;
+  /* Убивает Pull-to-refresh в Android/Chrome */
+  background-color: theme('colors.surface.base'); /* Стандартный фон из конфига */
+  
+  /* НОВОЕ: Полностью отключаем выделение текста и лупу на iOS */
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-touch-callout: none;
+}
+
+#root {
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+}
+
+/* НОВОЕ: Возвращаем возможность выделять текст только внутри полей ввода */
+input, textarea, [contenteditable="true"] {
+  -webkit-user-select: auto;
+  user-select: auto;
+}
+
+/* Утилита для скрытия полосы прокрутки с сохранением функции скролла */
+.scrollbar-hide::-webkit-scrollbar {
+  display: none;
+}
+.scrollbar-hide {
+  -ms-overflow-style: none;  /* IE and Edge */
+  scrollbar-width: none;  /* Firefox */
+}
