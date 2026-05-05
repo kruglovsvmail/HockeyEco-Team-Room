@@ -1,5 +1,3 @@
-version: '3.8'
-
 services:
   backend:
     build: 
@@ -9,8 +7,6 @@ services:
     restart: unless-stopped
     ports:
       - "3002:3002"
-    env_file:
-      - ./TR-Backend/.env
     networks:
       - hockeyeco_network
 
