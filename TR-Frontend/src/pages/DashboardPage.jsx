@@ -1,91 +1,192 @@
-import React from 'react';
-import { useAccess } from '../hooks/useAccess';
-import { ROLES } from '../utils/permissions';
-import { removeToken } from '../utils/helpers';
-import { useNavigate } from 'react-router-dom';
+/********** ФАЙЛ: TR-Frontend\src\pages\DashboardPage.jsx **********/
 
-const ROLE_LABELS = {
-  [ROLES.GLOBAL_ADMIN]: 'Глобальный админ',
-  [ROLES.CLUB_TOP_MANAGER]: 'Руководитель клуба',
-  [ROLES.CLUB_ADMIN]: 'Админ клуба',
-  [ROLES.TEAM_MANAGER]: 'Менеджер команды',
-  [ROLES.TEAM_ADMIN]: 'Админ команды',
-  [ROLES.HEAD_COACH]: 'Главный тренер',
-  [ROLES.COACH]: 'Тренер',
-  [ROLES.PLAYER]: 'Игрок',
-};
+import React, { useState, useEffect, useCallback } from 'react';
+import { useNavigate } from 'react-router-dom';
+import { useAccess } from '../hooks/useAccess';
+import { removeToken, getAuthHeaders } from '../utils/helpers';
+import { CalendarX2, Loader2 } from 'lucide-react';
+
+import { WeeklyPicker } from '../components/Calendar/WeeklyPicker';
+import { FilterChips } from '../ui/FilterChips';
+import { TopSheet } from '../ui/TopSheet';
+import { CheckboxLP } from '../ui/Checkbox-LP';
+
+import { GameCard } from '../components/Calendar/GameCard';
+import { TrainingCard } from '../components/Calendar/TrainingCard';
+import { MeetingCard } from '../components/Calendar/MeetingCard';
 
 export function DashboardPage() {
   const { user } = useAccess();
   const navigate = useNavigate();
+  const teams = user?.teams || [];
 
-  const fullName = [user?.lastName, user?.firstName, user?.middleName]
-    .filter(Boolean)
-    .join(' ');
+  const [currentWeek, setCurrentWeek] = useState({ start: new Date(), end: new Date() });
+  const [isFilterSheetOpen, setIsFilterSheetOpen] = useState(false);
+  const [events, setEvents] = useState([]);
+  const [isLoading, setIsLoading] = useState(false);
+  
+  const [selectedFilters, setSelectedFilters] = useState(() => {
+    const saved = localStorage.getItem('teampwa_calendar_filters');
+    return saved ? JSON.parse(saved) : [];
+  });
 
-  const handleLogout = () => {
-    removeToken();
-    navigate('/login');
+  useEffect(() => {
+    localStorage.setItem('teampwa_calendar_filters', JSON.stringify(selectedFilters));
+  }, [selectedFilters]);
+
+  const fetchEvents = useCallback(async () => {
+    const targetTeamIds = selectedFilters.length > 0 ? selectedFilters : teams.map(t => t.id);
+    if (targetTeamIds.length === 0) {
+      setEvents([]);
+      return;
+    }
+
+    setIsLoading(true);
+    try {
+      const response = await fetch(`${import.meta.env.VITE_API_URL}/api/events/weekly`, {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json', ...getAuthHeaders()},
+        body: JSON.stringify({
+          teamIds: targetTeamIds,
+          startDate: currentWeek.start.toISOString(),
+          endDate: currentWeek.end.toISOString()
+        })
+      });
+      const data = await response.json();
+      if (data.success) {
+        setEvents(data.events);
+      }
+    } catch (err) {
+      console.error('Ошибка загрузки событий:', err);
+    } finally {
+      setIsLoading(false);
+    }
+  }, [currentWeek, selectedFilters, teams]);
+
+  useEffect(() => {
+    fetchEvents();
+  }, [fetchEvents]);
+
+  // --- ИСПРАВЛЕННАЯ ЛОГИКА ТУМБЛЕРА ---
+  const handleToggleAttendance = async (eventId, eventType, shouldAttend) => {
+    const oldEvents = [...events];
+    
+    // 1. Оптимистичное обновление
+    setEvents(prev => prev.map(evt => {
+        if (evt.id === eventId && evt.event_type === eventType) {
+            // ИСПРАВЛЕНИЕ: Правильно склеиваем имя пользователя из контекста
+            const currentUserName = [user?.lastName, user?.firstName].filter(Boolean).join(' ') || 'Без имени';
+            const currentUserAttendee = {id: user.id, name: currentUserName, avatar_url: user?.avatarUrl};
+            
+            const nextAttendees = shouldAttend 
+                ? [...(evt.attendees || []), currentUserAttendee] 
+                : (evt.attendees || []).filter(u => u.id !== user.id);
+
+            return {...evt, is_user_attending: shouldAttend, attendees: nextAttendees};
+        }
+        return evt;
+    }));
+
+    // 2. Запрос на бэкенд
+    try {
+      // ИСПРАВЛЕНИЕ: Теперь все роуты идут через /api/events/...
+      const baseRoute = eventType === 'game' ? 'games/attendance' : 'internal/attendance';
+      const url = `${import.meta.env.VITE_API_URL}/api/events/${baseRoute}`;
+      
+      const response = await fetch(url, {
+        method: shouldAttend ? 'POST' : 'DELETE', 
+        headers: {'Content-Type': 'application/json', ...getAuthHeaders()},
+        body: JSON.stringify({ targetId: eventId }) // Единый ключ targetId для удобства
+      });
+
+      const data = await response.json();
+      if (!data.success) {
+        setEvents(oldEvents);
+      }
+    } catch (err) {
+      setEvents(oldEvents);
+    }
   };
 
+  const handleToggleFilter = (teamId, isChecked) => {
+    setSelectedFilters(prev => {
+      if (prev.length === 0 && !isChecked) return teams.map(t => t.id).filter(id => id !== teamId);
+      if (isChecked) {
+        const next = [...prev, teamId];
+        if (next.length === teams.length) return [];
+        return next;
+      } else {
+        return prev.filter(id => id !== teamId);
+      }
+    });
+  };
+
+  const handleSelectAll = () => setSelectedFilters([]);
+  const handleLogout = () => {removeToken(); navigate('/login');};
+  const isTeamSelected = (teamId) => selectedFilters.length === 0 || selectedFilters.includes(teamId);
+
   return (
-    <div className="flex flex-col gap-6">
-      
-      {/* ФИО Пользователя */}
-      <div className="bg-surface-level1 border border-surface-border p-6 rounded-2xl">
-        <div className="text-content-muted text-xs uppercase tracking-widest mb-1 font-bold">
-          Пользователь
-        </div>
-        <div className="text-xl font-bold text-content-main">
-          {fullName || 'Имя не указано'}
-        </div>
+    <div className="flex flex-col h-full -mx-6 px-2">
+      <div className="shrink-0 pt-2 pb-1 relative z-20">
+        <WeeklyPicker onWeekChange={setCurrentWeek} />
       </div>
-
-      {/* Команды и роли (включает роли клуба, так как API отдает их вместе) */}
-      <div className="bg-surface-level1 border border-surface-border p-6 rounded-2xl">
-        <div className="text-content-muted text-xs uppercase tracking-widest mb-4 font-bold">
-          Команды и роли
+      {teams.length > 0 && (
+        <div className="shrink-0 relative z-10">
+          <FilterChips items={teams} selectedIds={selectedFilters} onOpenTopSheet={() => setIsFilterSheetOpen(true)} />
         </div>
-        
-        {user?.teams && user.teams.length > 0 ? (
-          <ul className="space-y-4">
-            {user.teams.map((team) => {
-              const roles = team.user_role 
-                ? team.user_role.split(',').map(r => r.trim()).filter(Boolean)
-                : [ROLES.PLAYER];
-
-              return (
-                <li key={team.id} className="pb-4 border-b border-surface-border/50 last:border-0 last:pb-0">
-                  <div className="text-lg font-bold text-content-main mb-2">
-                    {team.name} <span className="text-sm font-normal text-content-subtle">({team.short_name})</span>
-                  </div>
-                  <div className="flex flex-wrap gap-2">
-                    {roles.map(roleKey => (
-                      <span 
-                        key={roleKey} 
-                        className="px-2.5 py-1 bg-surface-level2 border border-surface-border rounded-lg text-xs text-brand font-medium"
-                      >
-                        {ROLE_LABELS[roleKey] || roleKey}
-                      </span>
-                    ))}
-                  </div>
-                </li>
-              );
+      )}
+      <div className="flex-1 overflow-y-auto scrollbar-hide py-4 flex flex-col relative z-0 px-1">
+        {isLoading ? (
+          <div className="flex-1 flex items-center justify-center">
+            <Loader2 className="w-8 h-8 text-brand animate-spin" />
+          </div>
+        ) : events.length > 0 ? (
+          <div className="pb-8">
+            {events.map(event => {
+              // ИСПРАВЛЕНИЕ: Вынесли 'key' наружу из props, чтобы избежать ошибки React
+              const props = { event: event, onToggleAttendance: handleToggleAttendance };
+              if (event.event_type === 'game') return <GameCard key={`game-${event.id}`} {...props} />;
+              if (event.event_type === 'training') return <TrainingCard key={`train-${event.id}`} {...props} />;
+              if (event.event_type === 'meeting') return <MeetingCard key={`meet-${event.id}`} {...props} />;
+              return null;
             })}
-          </ul>
+          </div>
         ) : (
-          <div className="text-content-subtle text-sm">Вы не состоите ни в одной команде или клубе.</div>
+          <div className="flex-1 flex flex-col items-center justify-center text-center px-4 opacity-60">
+            <div className="w-20 h-20 mb-6 rounded-full bg-surface-level2/40 backdrop-blur-md border border-surface-border/30 flex items-center justify-center text-content-muted shadow-sm">
+              <CalendarX2 size={32} strokeWidth={1.5} />
+            </div>
+            <h3 className="text-lg font-bold text-content-main mb-2 tracking-wide">Нет событий</h3>
+            <p className="text-sm text-content-subtle max-w-[240px] leading-relaxed">На этой неделе у выбранных команд не запланировано мероприятий.</p>
+          </div>
         )}
+        <button onClick={handleLogout} className="mt-auto pt-8 mb-safe pb-4 self-center text-[10px] font-bold uppercase tracking-widest text-danger/60 hover:text-danger transition-colors outline-none">
+          Выйти из аккаунта
+        </button>
       </div>
-
-      {/* Кнопка выхода для тестов */}
-      <button 
-        onClick={handleLogout}
-        className="mt-6 self-start text-xs font-bold uppercase tracking-widest text-danger hover:text-danger-muted transition-colors"
-      >
-        Выйти из аккаунта
-      </button>
-
+      <TopSheet isOpen={isFilterSheetOpen} onClose={() => setIsFilterSheetOpen(false)}>
+        {/* Содержимое TopSheet (Чекбоксы команд) ... (остается без изменений) ... */}
+        <div className="flex items-center justify-between mb-6">
+          <h2 className="text-xl font-bold text-content-main">Фильтр событий</h2>
+          {selectedFilters.length > 0 && (
+            <button onClick={handleSelectAll} className="text-xs font-bold uppercase tracking-widest text-brand outline-none active:opacity-70 transition-opacity">
+              Выбрать всё
+            </button>
+          )}
+        </div>
+        <div className="space-y-1 pb-4">
+          <div className="text-[10px] uppercase tracking-widest font-bold text-content-muted mb-4 pl-1">Мои команды и клубы</div>
+          {teams.length > 0 ? (
+            <div className="flex flex-col gap-4 bg-surface-level2/40 backdrop-blur-md p-4 rounded-2xl border border-surface-border/50">
+              {teams.map(team => (
+                <CheckboxLP key={team.id} checked={isTeamSelected(team.id)} onChange={(checked) => handleToggleFilter(team.id, checked)} label={`${team.name} ${team.short_name ? `(${team.short_name})` : ''}`} />
+              ))}
+            </div>
+          ) : (
+            <div className="text-sm text-content-subtle italic">Вы не состоите ни в одной команде</div>
+          )}
+        </div>
+      </TopSheet>
     </div>
   );
 }
