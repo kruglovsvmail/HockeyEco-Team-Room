@@ -12,11 +12,13 @@ import eventRoutes from './routes/eventRoutes.js';
 const app = express();
 const PORT = process.env.PORT || 3002;
 
+// --- Настройка CORS ---
 const allowedOrigins = [
+  process.env.FRONTEND_URL,
   'http://localhost:5173',
   'http://127.0.0.1:5173',
-  'http://192.168.1.5:5173'
-];
+  'http://192.168.1.5:5173',
+].filter(Boolean);
 
 app.use(morgan('dev'));
 app.use(cors({
