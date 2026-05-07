@@ -1,9 +1,9 @@
-/********** ФАЙЛ: TR-Frontend\src\ui\AttendanceToggle.jsx **********/
+/********** ФАЙЛ: TR-Frontend\src\ui\Toggle.jsx **********/
 
 import React from 'react';
 import clsx from 'clsx';
 
-export function AttendanceToggle({ checked, onChange, disabled }) {
+export function Toggle({ checked, onChange, disabled }) {
   return (
     <label className={clsx(
       "relative inline-flex items-center cursor-pointer touch-none select-none",
@@ -18,8 +18,8 @@ export function AttendanceToggle({ checked, onChange, disabled }) {
       />
       {/* Фон тумблера: peer-checked меняет серый фон на brand-градиент */}
       <div className={clsx(
-        "w-11 h-6 bg-surface-level3 border border-surface-border/50 rounded-full",
-        "peer-checked:bg-gradient-to-r peer-checked:from-warm-start peer-checked:to-brand peer-checked:border-brand/30",
+        "w-11 h-6 bg-surface-border border border-surface-border/50 rounded-full",
+        "peer-checked:bg-brand-dark peer-checked:from-warm-start peer-checked:to-brand peer-checked:border-brand/30",
         "transition-all duration-300 ease-in-out"
       )} />
       {/* Бегунок: peer-checked смещает его вправо */}

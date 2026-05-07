@@ -5,7 +5,7 @@ import clsx from 'clsx';
 import { format } from 'date-fns';
 import { ru } from 'date-fns/locale';
 import { Users, MapPin, Video, ChevronDown } from 'lucide-react';
-import { AttendanceToggle } from '../../ui/AttendanceToggle';
+import { Toggle } from '../../ui/Toggle';
 import { AttendanceList } from './AttendanceList';
 
 export function MeetingCard({ event, onToggleAttendance }) {
@@ -56,7 +56,7 @@ export function MeetingCard({ event, onToggleAttendance }) {
       {/* ЗОНА ОТМЕТКИ (Тумблер): Выделена фоном */}
       <div className="flex items-center justify-between gap-4 mt-5 p-4 rounded-2xl bg-surface-level1 border border-surface-border/50 relative z-10">
         <div className="text-sm font-medium text-content-muted">Буду присутствовать</div>
-        <AttendanceToggle 
+        <Toggle 
             checked={event.is_user_attending} 
             onChange={(checked) => onToggleAttendance(event.id, 'meeting', checked)} 
         />

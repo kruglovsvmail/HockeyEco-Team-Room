@@ -1,5 +1,3 @@
-/********** ФАЙЛ: TR-Frontend\src\pages\DashboardPage.jsx **********/
-
 import React, { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAccess } from '../hooks/useAccess';
@@ -7,10 +5,6 @@ import { removeToken, getAuthHeaders } from '../utils/helpers';
 import { CalendarX2, Loader2 } from 'lucide-react';
 
 import { WeeklyPicker } from '../components/Calendar/WeeklyPicker';
-import { FilterChips } from '../ui/FilterChips';
-import { TopSheet } from '../ui/TopSheet';
-import { CheckboxLP } from '../ui/Checkbox-LP';
-
 import { GameCard } from '../components/Calendar/GameCard';
 import { TrainingCard } from '../components/Calendar/TrainingCard';
 import { MeetingCard } from '../components/Calendar/MeetingCard';
@@ -21,22 +15,12 @@ export function DashboardPage() {
   const teams = user?.teams || [];
 
   const [currentWeek, setCurrentWeek] = useState({ start: new Date(), end: new Date() });
-  const [isFilterSheetOpen, setIsFilterSheetOpen] = useState(false);
   const [events, setEvents] = useState([]);
   const [isLoading, setIsLoading] = useState(false);
-  
-  const [selectedFilters, setSelectedFilters] = useState(() => {
-    const saved = localStorage.getItem('teampwa_calendar_filters');
-    return saved ? JSON.parse(saved) : [];
-  });
-
-  useEffect(() => {
-    localStorage.setItem('teampwa_calendar_filters', JSON.stringify(selectedFilters));
-  }, [selectedFilters]);
 
   const fetchEvents = useCallback(async () => {
-    const targetTeamIds = selectedFilters.length > 0 ? selectedFilters : teams.map(t => t.id);
-    if (targetTeamIds.length === 0) {
+    const allTeamIds = teams.map(t => t.id);
+    if (allTeamIds.length === 0) {
       setEvents([]);
       return;
     }
@@ -47,7 +31,7 @@ export function DashboardPage() {
         method: 'POST',
         headers: {'Content-Type': 'application/json', ...getAuthHeaders()},
         body: JSON.stringify({
-          teamIds: targetTeamIds,
+          teamIds: allTeamIds,
           startDate: currentWeek.start.toISOString(),
           endDate: currentWeek.end.toISOString()
         })
@@ -61,20 +45,17 @@ export function DashboardPage() {
     } finally {
       setIsLoading(false);
     }
-  }, [currentWeek, selectedFilters, teams]);
+  }, [currentWeek, teams]);
 
   useEffect(() => {
     fetchEvents();
   }, [fetchEvents]);
 
-  // --- ИСПРАВЛЕННАЯ ЛОГИКА ТУМБЛЕРА ---
   const handleToggleAttendance = async (eventId, eventType, shouldAttend) => {
     const oldEvents = [...events];
     
-    // 1. Оптимистичное обновление
     setEvents(prev => prev.map(evt => {
         if (evt.id === eventId && evt.event_type === eventType) {
-            // ИСПРАВЛЕНИЕ: Правильно склеиваем имя пользователя из контекста
             const currentUserName = [user?.lastName, user?.firstName].filter(Boolean).join(' ') || 'Без имени';
             const currentUserAttendee = {id: user.id, name: currentUserName, avatar_url: user?.avatarUrl};
             
@@ -87,63 +68,40 @@ export function DashboardPage() {
         return evt;
     }));
 
-    // 2. Запрос на бэкенд
     try {
-      // ИСПРАВЛЕНИЕ: Теперь все роуты идут через /api/events/...
       const baseRoute = eventType === 'game' ? 'games/attendance' : 'internal/attendance';
       const url = `${import.meta.env.VITE_API_URL}/api/events/${baseRoute}`;
       
       const response = await fetch(url, {
         method: shouldAttend ? 'POST' : 'DELETE', 
         headers: {'Content-Type': 'application/json', ...getAuthHeaders()},
-        body: JSON.stringify({ targetId: eventId }) // Единый ключ targetId для удобства
+        body: JSON.stringify({ targetId: eventId })
       });
-
       const data = await response.json();
-      if (!data.success) {
-        setEvents(oldEvents);
-      }
+      if (!data.success) setEvents(oldEvents);
     } catch (err) {
       setEvents(oldEvents);
     }
   };
 
-  const handleToggleFilter = (teamId, isChecked) => {
-    setSelectedFilters(prev => {
-      if (prev.length === 0 && !isChecked) return teams.map(t => t.id).filter(id => id !== teamId);
-      if (isChecked) {
-        const next = [...prev, teamId];
-        if (next.length === teams.length) return [];
-        return next;
-      } else {
-        return prev.filter(id => id !== teamId);
-      }
-    });
-  };
-
-  const handleSelectAll = () => setSelectedFilters([]);
-  const handleLogout = () => {removeToken(); navigate('/login');};
-  const isTeamSelected = (teamId) => selectedFilters.length === 0 || selectedFilters.includes(teamId);
+  const handleLogout = () => { removeToken(); navigate('/login'); };
 
   return (
-<div className="flex flex-col h-full">
+    <div className="flex flex-col h-full">
+      {/* Шапка с пикером */}
       <div className="shrink-0 pt-2 pb-1 relative z-20">
         <WeeklyPicker onWeekChange={setCurrentWeek} />
       </div>
-      {teams.length > 0 && (
-        <div className="shrink-0 relative z-10">
-          <FilterChips items={teams} selectedIds={selectedFilters} onOpenTopSheet={() => setIsFilterSheetOpen(true)} />
-        </div>
-      )}
+
+      {/* Лента событий */}
       <div className="flex-1 overflow-y-auto scrollbar-hide flex flex-col relative z-0">
         {isLoading ? (
           <div className="flex-1 flex items-center justify-center">
             <Loader2 className="w-8 h-8 text-brand animate-spin" />
           </div>
         ) : events.length > 0 ? (
-          <div className="pb-8">
+          <div className="pb-8 px-1">
             {events.map(event => {
-              // ИСПРАВЛЕНИЕ: Вынесли 'key' наружу из props, чтобы избежать ошибки React
               const props = { event: event, onToggleAttendance: handleToggleAttendance };
               if (event.event_type === 'game') return <GameCard key={`game-${event.id}`} {...props} />;
               if (event.event_type === 'training') return <TrainingCard key={`train-${event.id}`} {...props} />;
@@ -157,36 +115,14 @@ export function DashboardPage() {
               <CalendarX2 size={32} strokeWidth={1.5} />
             </div>
             <h3 className="text-lg font-bold text-content-main mb-2 tracking-wide">Нет событий</h3>
-            <p className="text-sm text-content-subtle max-w-[240px] leading-relaxed">На этой неделе у выбранных команд не запланировано мероприятий.</p>
+            <p className="text-sm text-content-subtle max-w-[240px] leading-relaxed">На этой неделе мероприятий не запланировано.</p>
           </div>
         )}
+        
         <button onClick={handleLogout} className="mt-auto pt-8 mb-safe pb-4 self-center text-[10px] font-bold uppercase tracking-widest text-danger/60 hover:text-danger transition-colors outline-none">
           Выйти из аккаунта
         </button>
       </div>
-      <TopSheet isOpen={isFilterSheetOpen} onClose={() => setIsFilterSheetOpen(false)}>
-        {/* Содержимое TopSheet (Чекбоксы команд) ... (остается без изменений) ... */}
-        <div className="flex items-center justify-between p-4 mb-6">
-          <h2 className="text-xl font-bold text-content-main">Фильтр событий</h2>
-          {selectedFilters.length > 0 && (
-            <button onClick={handleSelectAll} className="text-xs font-bold uppercase tracking-widest text-brand outline-none active:opacity-70 transition-opacity">
-              Выбрать всё
-            </button>
-          )}
-        </div>
-        <div className="space-y-1 pb-4">
-          <div className="text-[10px] uppercase tracking-widest font-bold text-content-muted mb-4 pl-1">Мои команды и клубы</div>
-          {teams.length > 0 ? (
-            <div className="flex flex-col gap-4 bg-surface-level2/40 backdrop-blur-md p-4 rounded-2xl border border-surface-border/50">
-              {teams.map(team => (
-                <CheckboxLP key={team.id} checked={isTeamSelected(team.id)} onChange={(checked) => handleToggleFilter(team.id, checked)} label={`${team.name} ${team.short_name ? `(${team.short_name})` : ''}`} />
-              ))}
-            </div>
-          ) : (
-            <div className="text-sm text-content-subtle italic">Вы не состоите ни в одной команде</div>
-          )}
-        </div>
-      </TopSheet>
     </div>
   );
 }

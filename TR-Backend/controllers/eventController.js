@@ -1,5 +1,3 @@
-/********** ФАЙЛ: TR-Backend\controllers\eventController.js **********/
-
 import pool from '../config/db.js';
 
 export const getWeeklyEvents = async (req, res) => {
@@ -15,7 +13,7 @@ export const getWeeklyEvents = async (req, res) => {
       return res.status(400).json({ success: false, error: 'Не указан диапазон дат' });
     }
 
-    // --- 1. ЗАПРОС РЕАЛЬНЫХ МАТЧЕЙ ---
+    // --- 1. ЗАПРОС МАТЧЕЙ С РАСШИРЕННЫМ КОНТЕКСТОМ ---
     const gamesQuery = `
       SELECT 
         g.id, 
@@ -27,6 +25,10 @@ export const getWeeklyEvents = async (req, res) => {
         g.game_type,
         g.stage_label,
         g.series_number,
+        g.home_jersey_type,
+        g.away_jersey_type,
+        g.home_player_fee,
+        g.away_player_fee,
         t_home.name as home_name, 
         t_home.short_name as home_short, 
         t_home.logo_url as home_logo,
@@ -38,7 +40,28 @@ export const getWeeklyEvents = async (req, res) => {
         d.short_name as division_short_name,
         s.name as season_name,
         l.short_name as league_short_name,
+        
+        -- Проверка: за какую сторону играет пользователь
+        CASE 
+          WHEN g.home_team_id IN (SELECT team_id FROM team_members WHERE user_id = $4 AND left_at IS NULL) THEN 'home'
+          WHEN g.away_team_id IN (SELECT team_id FROM team_members WHERE user_id = $4 AND left_at IS NULL) THEN 'away'
+          ELSE NULL 
+        END as user_side,
+
+        -- Проверка: допущен ли игрок лигой (approved в tournament_rosters)
+        EXISTS (
+          SELECT 1 
+          FROM tournament_teams tt
+          JOIN tournament_rosters tr ON tt.id = tr.tournament_team_id
+          WHERE tt.division_id = g.division_id 
+            AND tt.team_id IN (g.home_team_id, g.away_team_id)
+            AND tr.player_id = $4
+            AND tr.application_status = 'approved'
+            AND tr.period_end IS NULL
+        ) as is_approved_roster_player,
+
         EXISTS(SELECT 1 FROM game_attendance ga WHERE ga.game_id = g.id AND ga.user_id = $4) as is_user_attending,
+        
         COALESCE(
           (SELECT json_agg(json_build_object(
               'id', u.id, 
@@ -61,10 +84,10 @@ export const getWeeklyEvents = async (req, res) => {
         AND g.game_date >= $2::timestamp 
         AND g.game_date <= $3::timestamp
     `;
-    
+
     const gamesResult = await pool.query(gamesQuery, [teamIds, startDate, endDate, currentUserId]);
 
-    // --- 2. ЗАПРОС РЕАЛЬНЫХ ВНУТРЕННИХ СОБЫТИЙ (Тренировки/Собрания) ---
+    // --- 2. ВНУТРЕННИЕ СОБЫТИЯ ---
     const internalEventsQuery = `
       SELECT 
         te.id, 
@@ -73,6 +96,7 @@ export const getWeeklyEvents = async (req, res) => {
         'scheduled' as status,
         te.title,
         el.name as location_name,
+        true as is_approved_roster_player,
         EXISTS(SELECT 1 FROM event_attendance ea WHERE ea.event_id = te.id AND ea.user_id = $4) as is_user_attending,
         COALESCE(
           (SELECT json_agg(json_build_object(
@@ -97,7 +121,6 @@ export const getWeeklyEvents = async (req, res) => {
 
     const internalEventsResult = await pool.query(internalEventsQuery, [teamIds, startDate, endDate, currentUserId]);
 
-    // --- 3. ОБЪЕДИНЯЕМ И СОРТИРУЕМ ---
     const allEvents = [...gamesResult.rows, ...internalEventsResult.rows].sort(
       (a, b) => new Date(a.date) - new Date(b.date)
     );
