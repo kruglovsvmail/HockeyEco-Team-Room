@@ -57,7 +57,7 @@ export function TopSheet({ isOpen, onClose, children }) {
       {/* Затемнение фона: используем переменную 'overlay' и специфичный блюр 'overlay' */}
       <div 
         className={clsx(
-          "fixed inset-0 bg-overlay backdrop-blur-overlay z-[100] transition-opacity duration-300",
+          "fixed inset-0 bg-overlay backdrop-blur-overlay z-[100] transition-opacity duration-500",
           isOpen ? "opacity-100 pointer-events-auto" : "opacity-0 pointer-events-none"
         )}
         onClick={onClose}
@@ -69,7 +69,7 @@ export function TopSheet({ isOpen, onClose, children }) {
         className={clsx(
           "fixed inset-x-0 top-0 z-[110] bg-sheet-bg backdrop-blur-sheet rounded-b-3xl border-b border-sheet-border shadow-lg flex flex-col",
           "transition-transform duration-300 ease-[cubic-bezier(0.32,0.72,0,1)]",
-          isOpen ? "translate-y-0" : "-translate-y-full"
+          isOpen ? "translate-y-0" : "-translate-y-[calc(100%+50px)]"
         )}
         style={{ 
           // Применяем смещение только если тянем вверх (dragY < 0)
@@ -79,7 +79,7 @@ export function TopSheet({ isOpen, onClose, children }) {
       >
         {/* Обертка с плавной анимацией высоты */}
         <div 
-          className="overflow-hidden transition-all duration-500 ease-[cubic-bezier(0.32,0.72,0,1)] max-h-[85dvh]"
+          className="overflow-hidden transition-all duration-700 ease-[cubic-bezier(0.32,0.72,0,1)] max-h-[85dvh]"
           style={{ height: contentHeight === 'auto' ? 'auto' : `${contentHeight}px` }}
         >
           <div className="overflow-y-auto scrollbar-hide max-h-[85dvh]">

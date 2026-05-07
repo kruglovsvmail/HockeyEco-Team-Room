@@ -126,7 +126,7 @@ export function DashboardPage() {
   const isTeamSelected = (teamId) => selectedFilters.length === 0 || selectedFilters.includes(teamId);
 
   return (
-<div className="flex flex-col h-full -mx-6 px-2">
+<div className="flex flex-col h-full">
       <div className="shrink-0 pt-2 pb-1 relative z-20">
         <WeeklyPicker onWeekChange={setCurrentWeek} />
       </div>
@@ -135,7 +135,7 @@ export function DashboardPage() {
           <FilterChips items={teams} selectedIds={selectedFilters} onOpenTopSheet={() => setIsFilterSheetOpen(true)} />
         </div>
       )}
-      <div className="flex-1 overflow-y-auto scrollbar-hide py-4 flex flex-col relative z-0 px-1">
+      <div className="flex-1 overflow-y-auto scrollbar-hide flex flex-col relative z-0">
         {isLoading ? (
           <div className="flex-1 flex items-center justify-center">
             <Loader2 className="w-8 h-8 text-brand animate-spin" />
@@ -166,7 +166,7 @@ export function DashboardPage() {
       </div>
       <TopSheet isOpen={isFilterSheetOpen} onClose={() => setIsFilterSheetOpen(false)}>
         {/* Содержимое TopSheet (Чекбоксы команд) ... (остается без изменений) ... */}
-        <div className="flex items-center justify-between mb-6">
+        <div className="flex items-center justify-between p-4 mb-6">
           <h2 className="text-xl font-bold text-content-main">Фильтр событий</h2>
           {selectedFilters.length > 0 && (
             <button onClick={handleSelectAll} className="text-xs font-bold uppercase tracking-widest text-brand outline-none active:opacity-70 transition-opacity">

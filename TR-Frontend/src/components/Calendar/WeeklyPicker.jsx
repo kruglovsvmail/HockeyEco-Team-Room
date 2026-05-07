@@ -32,13 +32,13 @@ export function WeeklyPicker({ onWeekChange }) {
   const handleResetToToday = () => setCurrentDate(new Date());
 
   return (
-    <div className="w-full px-6 py-4 z-10 relative">
-      <div className="flex items-center justify-between bg-surface-level2/60 backdrop-blur-md border border-surface-border/50 rounded-2xl p-2 shadow-sm">
+    <div className="w-full z-10 relative">
+      <div className="flex items-center justify-between bg-white/10 border-[1px] border-surface-border/50 rounded-full p-1">
         
         {/* Кнопка "Назад" */}
         <button 
           onClick={handlePrevWeek}
-          className="h-10 w-10 flex items-center justify-center rounded-xl bg-surface-base/50 text-content-muted hover:text-content-main transition-colors outline-none active:scale-95 shrink-0"
+          className="h-10 w-10 flex items-center justify-center text-content-muted hover:text-content-main transition-colors outline-none active:scale-95 shrink-0"
         >
           <ChevronLeft size={20} strokeWidth={2.5} />
         </button>
@@ -54,22 +54,13 @@ export function WeeklyPicker({ onWeekChange }) {
               {formattedRange}
             </span>
           </div>
-          
-          {/* Маленькая подсказка, если мы не на текущей неделе */}
-          <div className="h-4 mt-0.5 overflow-hidden flex items-center justify-center">
-            <span className={clsx(
-              "text-[10px] font-medium uppercase tracking-widest text-brand transition-all duration-300",
-              !isCurrentWeek ? "opacity-100 translate-y-0" : "opacity-0 translate-y-4"
-            )}>
-              Вернуться к сегодня
-            </span>
-          </div>
+
         </div>
 
         {/* Кнопка "Вперед" */}
         <button 
           onClick={handleNextWeek}
-          className="h-10 w-10 flex items-center justify-center rounded-xl bg-surface-base/50 text-content-muted hover:text-content-main transition-colors outline-none active:scale-95 shrink-0"
+          className="h-10 w-10 flex items-center justify-center text-content-muted hover:text-content-main transition-colors outline-none active:scale-95 shrink-0"
         >
           <ChevronRight size={20} strokeWidth={2.5} />
         </button>

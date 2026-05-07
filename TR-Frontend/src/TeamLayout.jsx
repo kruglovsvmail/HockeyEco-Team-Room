@@ -59,7 +59,7 @@ export function TeamLayout() {
 
   return (
     // Пустой контейнер для внутреннего контента
-    <main className="flex-1 w-full max-w-3xl mx-auto p-6 flex flex-col">
+    <main className="flex-1 p-2 flex flex-col">
       <Outlet context={{ user, teams, selectedTeam }} />
     </main>
   );
