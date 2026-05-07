@@ -508,7 +508,7 @@ export default function LoginPage() {
               placeholder="Ваш Email"
             />
           </div>
-          <p className="text-content-muted/50 text-sm font-regular mb-0">Введите данные, чтобы получить пароль на почту</p>
+          <p className="text-content-muted/50 text-sm font-normal mb-0">Введите данные, чтобы получить пароль на почту</p>
 
           <div className="pt-8 relative">
             <div className={clsx(

@@ -126,7 +126,7 @@ export function DashboardPage() {
   const isTeamSelected = (teamId) => selectedFilters.length === 0 || selectedFilters.includes(teamId);
 
   return (
-    <div className="flex flex-col h-full -mx-6 px-2">
+<div className="flex flex-col h-full -mx-6 px-2">
       <div className="shrink-0 pt-2 pb-1 relative z-20">
         <WeeklyPicker onWeekChange={setCurrentWeek} />
       </div>

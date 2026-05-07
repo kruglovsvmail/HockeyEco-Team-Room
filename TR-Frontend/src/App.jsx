@@ -6,13 +6,26 @@ import { DashboardPage } from './pages/DashboardPage';
 
 export default function App() {
   return (
-    // Глобальный контейнер остается на весь экран (под статус-баром)
-    <div className="fixed inset-0 w-full h-[100dvh] flex flex-col bg-[radial-gradient(ellipse_at_top,_var(--tw-gradient-stops))] from-surface-level2 via-surface-level1 to-surface-base text-content font-sans overflow-hidden overscroll-none">
+    // Глобальный контейнер остается на весь экран. 
+    // Фон теперь простой однотонный (bg-surface-base), чтобы свечение выделялось чище.
+    <div className="fixed inset-0 w-full h-[100dvh] flex flex-col bg-surface-base text-content font-sans overflow-hidden overscroll-none">
       
-      {/* Декоративные свечения */}
-      <div className="absolute top-[-10%] right-[-10%] w-80 h-80 bg-brand-glow blur-ambient rounded-full pointer-events-none z-0"></div>
-      <div className="absolute bottom-[20%] left-[-10%] w-64 h-64 bg-brand-glow blur-ambient rounded-full pointer-events-none z-0"></div>
-      <div className="absolute bottom-0 inset-x-0 h-24 bg-gradient-to-t from-brand-glow/10 to-transparent pointer-events-none z-0"></div>
+      {/* 
+        Единственное радиальное свечение.
+        
+        КАК РЕГУЛИРОВАТЬ РАСПОЛОЖЕНИЕ:
+        Управляйте классами 'top', 'left', 'bottom', 'right' и сдвигом '-translate'.
+        
+        Примеры:
+        - Текущий (вверху по центру): top-1/4 left-1/2 -translate-x-1/2
+        - Строго по центру: top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2
+        - Левый верхний угол: top-[-10%] left-[-10%]
+        - Правый нижний угол: bottom-[-10%] right-[-10%]
+        
+        КАК РЕГУЛИРОВАТЬ РАЗМЕР:
+        Меняйте w-96 и h-96 на нужные значения (например, w-[500px] h-[500px]).
+      */}
+      <div className="absolute top-1/4 right-[-20%] w-80 h-80 bg-brand/50 saturate-[40%] blur-ambient rounded-full pointer-events-none z-0 opacity-100"></div>
 
       {/* НОВОЕ: Слой с шумом для маскировки "разводов" (banding). 
           Он перекрывает все фоны, сглаживая переходы. */}

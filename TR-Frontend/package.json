@@ -9,6 +9,7 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "@fontsource/inter": "^5.2.8",
     "clsx": "^2.1.0",
     "date-fns": "^4.1.0",
     "dayjs": "^1.11.10",

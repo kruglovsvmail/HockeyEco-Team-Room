@@ -24,10 +24,10 @@ export function ButtonLP({
     ),
     outline: clsx(
       "py-4 text-xs font-bold",
-      "bg-surface-level1 border-[1px] border-surface-border/50 text-content-muted",
+      "bg-surface-level1/40 border-[1px] border-surface-border/50 text-content-muted",
     ),
     text: clsx(
-      "py-2 text-[10px] font-regular",
+      "py-2 text-[10px] font-normal",
       "bg-transparent text-content-subtle hover:text-content-muted underline underline-offset-4 !active:scale-100" 
     )
   };
