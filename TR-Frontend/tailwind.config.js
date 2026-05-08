@@ -1,5 +1,3 @@
-/********** ФАЙЛ: TR-Frontend\tailwind.config.js **********/
-
 /** @type {import('tailwindcss').Config} */
 export default {
   content: [
@@ -14,98 +12,89 @@ export default {
       },
       colors: {
         // --- АКЦЕНТНЫЕ ЦВЕТА (БРЕНД) ---
-        // Отвечают за интерактив: кнопки, чекбоксы, активные состояния
         brand: { 
-          DEFAULT: '#4ab0c5ff', // Основной оранжевый
-          hover: '#58cde4ff',   // Цвет при наведении
-          dark: '#337582ff',    // Темный оттенок для создания градиентов
-          glow: '#239dda33'     // Полупрозрачный для мягких свечений (20% opacity)
+          DEFAULT: 'var(--color-brand)', 
+          hover: 'var(--color-brand-hover)',   
+          dark: 'var(--color-brand-dark)',    
+          glow: 'var(--color-brand-glow)'     
         },
         
         // --- СТАТИЧНЫЕ ПОВЕРХНОСТИ (ГЛОБАЛЬНЫЕ) ---
-        // Каркас приложения: фоны страниц, стандартные карточки
         surface: { 
-          base: '#282828',    // Глубокий задний фон (подложка под всем PWA)
-          level1: '#141414ff',  // Основной фон карточек и контейнеров
-          level2: '#2a2a2aff',  // Мелкие элементы (чекбоксы, бейджи, подложки иконок)
-          border: '#4f4f4f'     // Стандартные рамки и разделители
+          base: 'var(--color-surface-base)',    
+          level1: 'var(--color-surface-level1)',  
+          level2: 'var(--color-surface-level2)',  
+          border: 'var(--color-surface-border)'     
         },
 
         // --- ВСПЛЫВАЮЩИЕ ЭЛЕМЕНТЫ (ШТОРКИ, МОДАЛКИ) ---
-        // Вынесено отдельно! Теперь шторку можно красить, не ломая фон приложения
         sheet: {
-          bg: '#1c1c1ecc',      // Фон шторки (в HEX 'cc' уже заложена прозрачность 80%)
-          border: '#ffffff1a',  // Полупрозрачный белый для деликатной границы сверху
+          bg: 'var(--color-sheet-bg)',      
+          border: 'var(--color-sheet-border)',  
         },
 
         // --- ОВЕРЛЕИ (ЗАТЕМНЕНИЕ ФОНА) ---
         overlay: {
-          DEFAULT: '#00000030', // Темный слой позади модалок/шторок (60% opacity)
+          DEFAULT: 'var(--color-overlay)', 
         },
         
         // --- ТИПОГРАФИКА И КОНТЕНТ ---
-        // Иерархия текста по уровню важности
         content: { 
-          DEFAULT: '#ffffff',   // Чисто белый (использовать редко, только для максимума внимания)
-          main: '#f5f5f5',      // Основной текст (заголовки, введенные данные)
-          muted: '#a3a3a3',     // Второстепенный текст (подписи, лейблы, мелкий шрифт)
-          subtle: '#737373'     // Неактивный текст (плейсхолдеры, отключенные элементы)
+          DEFAULT: 'var(--color-content)',   
+          main: 'var(--color-content-main)',      
+          muted: 'var(--color-content-muted)',     
+          subtle: 'var(--color-content-subtle)',
+          dark: 'var(--color-content-dark)'     
         },
 
         // --- СИСТЕМНЫЕ СТАТУСЫ ---
         danger: { 
-          DEFAULT: '#c63b3bff', // Красный для текстов ошибок и границ
-          muted: '#e98888ff'    // Светло-красный для фоновых подложек ошибок
+          DEFAULT: 'var(--color-danger)', 
+          muted: 'var(--color-danger-muted)'    
         }
       },
 
       // --- РАЗМЫТИЕ И СТЕКЛОМОРФИЗМ (BLUR) ---
       blur: {
-        // Сильное размытие для декоративных пятен на заднем фоне (App.jsx)
-        'ambient': '100px',
+        'ambient': 'var(--blur-ambient)',
       },
       backdropBlur: {
-        // Семантические размытия контента позади элементов
-        'overlay': '8px',       // Легкое размытие всего приложения при открытой шторке
-        'sheet': '24px',        // Сильное матовое "стекло" для самой шторки
+        'overlay': 'var(--backdrop-blur-overlay)',       
+        'sheet': 'var(--backdrop-blur-sheet)',        
       },
 
       boxShadow: {
-        // Фирменные тени проекта
-        'brand-glow': '0 8px 30px rgba(245, 158, 11, 0.25)', // Оранжевое свечение кнопок
-        'sheet-top': '0 -8px 32px rgba(0, 0, 0, 0.4)',       // Тень для шторки, падающая вверх
+        'brand-glow': 'var(--shadow-brand-glow)', 
+        'sheet-top': 'var(--shadow-sheet-top)',       
         
-        // Переопределение стандартных теней под темную тему (сделаны чуть гуще)
-        'sm': '0 1px 2px 0 rgba(0, 0, 0, 0.15)',
-        'DEFAULT': '0 4px 6px -1px rgba(0, 0, 0, 0.2), 0 2px 4px -1px rgba(0, 0, 0, 0.1)',
-        'md': '0 4px 6px -1px rgba(0, 0, 0, 0.3), 0 2px 4px -1px rgba(0, 0, 0, 0.15)',
-        'lg': '0 10px 15px -3px rgba(0, 0, 0, 0.4), 0 4px 6px -2px rgba(0, 0, 0, 0.2)',
-        'xl': '0 20px 25px -5px rgba(0, 0, 0, 0.5), 0 10px 10px -5px rgba(0, 0, 0, 0.2)',
+        'sm': 'var(--shadow-sm)',
+        'DEFAULT': 'var(--shadow-default)',
+        'md': 'var(--shadow-md)',
+        'lg': 'var(--shadow-lg)',
+        'xl': 'var(--shadow-xl)',
       },
       
       borderRadius: {
-        // Систематизация скруглений углов
-        'none': '0px',
-        'sm': '0.125rem',  // 2px
-        'DEFAULT': '0.25rem', // 4px
-        'md': '0.375rem',  // 6px
-        'lg': '0.5rem',    // 8px
-        'xl': '0.75rem',   // 12px
-        '2xl': '1rem',     // 16px (Используется для карточек и кнопок)
-        '3xl': '1.5rem',   // 24px (Используется для верхних углов шторки)
-        'full': '9999px',
+        'none': 'var(--radius-none)',
+        'sm': 'var(--radius-sm)',  
+        'DEFAULT': 'var(--radius-default)', 
+        'md': 'var(--radius-md)',  
+        'lg': 'var(--radius-lg)',    
+        'xl': 'var(--radius-xl)',   
+        '2xl': 'var(--radius-2xl)',     
+        '3xl': 'var(--radius-3xl)',   
+        'full': 'var(--radius-full)',
       },
       
       fontSize: {
-        // Жесткая связка размера шрифта и высоты строки для пиксель-перфект верстки
-        'xs': ['0.75rem', { lineHeight: '1rem' }],       // 12px
-        'sm': ['0.875rem', { lineHeight: '1.25rem' }],   // 14px
-        'base': ['1rem', { lineHeight: '1.5rem' }],      // 16px
-        'lg': ['1.125rem', { lineHeight: '1.75rem' }],   // 18px
-        'xl': ['1.25rem', { lineHeight: '1.75rem' }],    // 20px
-        '2xl': ['1.5rem', { lineHeight: '2rem' }],       // 24px
-        '3xl': ['1.875rem', { lineHeight: '2.25rem' }],  // 30px
-        '4xl': ['2.25rem', { lineHeight: '2.5rem' }],    // 36px
+        'xs': ['var(--fs-xs)', { lineHeight: 'var(--lh-xs)' }],       
+        'sm': ['var(--fs-sm)', { lineHeight: 'var(--lh-sm)' }],   
+        'base': ['var(--fs-base)', { lineHeight: 'var(--lh-base)' }],      
+        'lg': ['var(--fs-lg)', { lineHeight: 'var(--lh-lg)' }],   
+        'xl': ['var(--fs-xl)', { lineHeight: 'var(--lh-xl)' }],    
+        '2xl': ['var(--fs-2xl)', { lineHeight: 'var(--lh-2xl)' }],       
+        '3xl': ['var(--fs-3xl)', { lineHeight: 'var(--lh-3xl)' }],  
+        '4xl': ['var(--fs-4xl)', { lineHeight: 'var(--lh-4xl)' }],    
       }
     },
   },

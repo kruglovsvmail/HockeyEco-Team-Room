@@ -1,9 +1,9 @@
 import React, { useState, useEffect } from 'react';
-import { Eye, EyeOff } from 'lucide-react';
+import { Icon } from './Icon';
 import { twMerge } from 'tailwind-merge';
 import { IMaskInput, IMask } from 'react-imask';
 
-const baseWrapperStyles = "border-b border-surface-border/60 focus-within:border-brand transition-colors duration-300 py-0 relative group";
+const baseWrapperStyles = "border-b border-surface-border focus-within:border-brand transition-colors duration-300 py-0 relative group";
 const baseLabelStyles = "text-[10px] text-content-muted uppercase tracking-widest font-bold block mb-1 group-focus-within:text-brand transition-colors";
 const baseInputStyles = "w-full py-2 bg-transparent outline-none text-content-main placeholder-content-subtle text-lg transition-all";
 
@@ -37,6 +37,7 @@ export function PhoneInputLP({ value, onChange, disabled, error, className, labe
           onChange={handlePhoneChange}
           disabled={disabled}
           placeholder={placeholder}
+          autoComplete="nope"
           className={baseInputStyles}
         />
       </div>
@@ -66,6 +67,7 @@ export function PasswordInputLP({ value, onChange, disabled, error, className, l
           onChange={(e) => onChange(e.target.value)}
           disabled={disabled}
           placeholder={placeholder}
+          autoComplete="new-password"
           className={twMerge(baseInputStyles, "pr-10")}
         />
         <button
@@ -74,7 +76,10 @@ export function PasswordInputLP({ value, onChange, disabled, error, className, l
           disabled={disabled}
           className="absolute right-0 top-1/2 -translate-y-1/2 text-content-subtle hover:text-brand transition-colors p-2 outline-none"
         >
-          {showPassword ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
+          <Icon 
+            name={showPassword ? "view_off" : "view"} 
+            className="w-5 h-5" 
+          />
         </button>
       </div>
       {typeof error === 'string' && error !== '' && (
@@ -101,6 +106,7 @@ export function EmailInputLP({ value, onChange, disabled, error, className, labe
           onChange={(e) => onChange(e.target.value)}
           disabled={disabled}
           placeholder={placeholder}
+          autoComplete="nope"
           className={baseInputStyles}
         />
       </div>
@@ -146,6 +152,7 @@ export function TextInputLP({ value, onChange, disabled, error, className, label
           onBlur={handleBlur}
           disabled={disabled}
           placeholder={placeholder}
+          autoComplete="nope"
           className={twMerge(
             baseInputStyles,
             type === 'date' && "h-11 py-0"
@@ -177,13 +184,14 @@ export function DateMaskInputLP({ value, onChange, disabled, error, className, l
             m: { mask: IMask.MaskedRange, from: 1, to: 12, maxLength: 2 },
             Y: { mask: IMask.MaskedRange, from: 1930, to: new Date().getFullYear() }
           }}
-          lazy={true} // Теперь маска скрыта, пока пользователь не начнет вводить цифры
+          lazy={true}
           value={value}
           unmask={false} 
           onAccept={(val) => onChange(val)}
           disabled={disabled}
           inputMode="numeric" 
-          placeholder={placeholder} // В пустом состоянии будет показан стандартный плейсхолдер
+          placeholder={placeholder}
+          autoComplete="nope"
           className={baseInputStyles}
         />
       </div>

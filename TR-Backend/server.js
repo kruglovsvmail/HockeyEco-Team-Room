@@ -1,13 +1,9 @@
-/********** ФАЙЛ: TR-Backend\server.js **********/
-
 import express from 'express';
 import cors from 'cors';
 import morgan from 'morgan';
 import 'dotenv/config';
-
 import pool from './config/db.js';
 import authRoutes from './routes/authRoutes.js';
-import eventRoutes from './routes/eventRoutes.js';
 
 const app = express();
 const PORT = process.env.PORT || 3002;
@@ -36,7 +32,6 @@ app.use(express.json());
 
 // Роуты
 app.use('/api/auth', authRoutes);
-app.use('/api/events', eventRoutes);
 
 const startServer = async () => {
   try {

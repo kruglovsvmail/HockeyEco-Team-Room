@@ -25,7 +25,7 @@ export default function App() {
         КАК РЕГУЛИРОВАТЬ РАЗМЕР:
         Меняйте w-96 и h-96 на нужные значения (например, w-[500px] h-[500px]).
       */}
-      <div className="absolute top-1/4 right-[-20%] w-80 h-80 bg-brand/50 saturate-[40%] blur-ambient rounded-full pointer-events-none z-0 opacity-100"></div>
+      <div className="absolute top-1/4 right-[-20%] w-80 h-80 bg-brand-glow saturate-[40%] blur-ambient rounded-full pointer-events-none z-0 opacity-100"></div>
 
       {/* НОВОЕ: Слой с шумом для маскировки "разводов" (banding). 
           Он перекрывает все фоны, сглаживая переходы. */}

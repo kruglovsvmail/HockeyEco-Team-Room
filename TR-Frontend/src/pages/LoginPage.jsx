@@ -380,9 +380,9 @@ export default function LoginPage() {
   
       <div className="relative mt-1 mb-16 shrink-0">
         <h1 className="text-4xl font-bold uppercase tracking-widest mb-1 text-content-main">
-          Hockey<span className="text-brand">Eco</span>
+          Hockey<span className="text-brand ">Eco</span>
         </h1>
-        <p className="text-content-muted text-xs tracking-[0.2em] uppercase font-semibold">
+        <p className="text-content-muted text-xs tracking-[0.2em] uppercase font-semibold mb-4">
           Кабинет команды
         </p>
 
@@ -508,7 +508,7 @@ export default function LoginPage() {
               placeholder="Ваш Email"
             />
           </div>
-          <p className="text-content-muted/50 text-sm font-normal mb-0">Введите данные, чтобы получить пароль на почту</p>
+          <p className="text-content-muted text-sm font-normal mb-0">Введите данные, чтобы получить пароль</p>
 
           <div className="pt-8 relative">
             <div className={clsx(
@@ -535,7 +535,8 @@ export default function LoginPage() {
           "col-start-1 row-start-1 flex flex-col gap-4 transition-all duration-500",
           isRecoveryMode ? "opacity-0 pointer-events-none translate-y-4" : "opacity-100 pointer-events-auto translate-y-0"
         )}>
-          <ButtonLP variant="outline" onClick={() => setActiveSheet('reg')}>
+          <ButtonLP variant="outline" onClick={() => setActiveSheet('reg')}
+            className="tracking-widest">
             Создать аккаунт
           </ButtonLP>
           <ButtonLP 
@@ -581,7 +582,7 @@ export default function LoginPage() {
                 <p className="text-sm text-content-muted">Добавьте на экран «Домой»</p>
               </div>
             </div>
-            <ul className="space-y-4 text-sm text-content-main bg-surface-level2/40 p-5 rounded-2xl border border-surface-border/50">
+            <ul className="space-y-4 text-sm text-content-main p-5 rounded-2xl border border-surface-level2">
               <li className="flex gap-4 items-center">
                 <div className="w-8 h-8 shrink-0 bg-surface-base rounded-full flex items-center justify-center font-bold text-brand shadow-sm">1</div>
                 <p>Нажмите <b>Поделиться</b> <Share size={16} className="inline text-brand mx-0.5 relative -top-[1px]" /> в меню браузера снизу.</p>
@@ -734,7 +735,7 @@ export default function LoginPage() {
         {/* Шаг 4: Успех */}
         {regStep === 4 && (
           <div className="text-center py-4">
-            <div className="mx-auto mb-6 flex h-16 w-16 items-center justify-center rounded-full bg-brand/10 text-brand shadow-sm">
+            <div className="mx-auto mb-6 flex h-16 w-16 items-center justify-center rounded-full bg-brand text-brand shadow-sm">
               <Check size={32} strokeWidth={3} />
             </div>
             <h2 className="text-2xl font-bold text-content-main mb-3">Отлично!</h2>
