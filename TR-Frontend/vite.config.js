@@ -22,8 +22,9 @@ export default defineConfig({
         short_name: 'HockeyEco TR',
         description: 'Кабинет хоккейной команды для управления статистикой и составами',
         // Цвет для статус-бара Android и темы браузера
-        theme_color: '#282828', 
-        background_color: '#282828',
+        theme_color: '#f3f4f6', 
+        // Этот цвет заливает фон стартового экрана при загрузке
+        background_color: '#f3f4f6',
         // 'standalone' оставляет системные значки (время, батарея) на месте
         display: 'standalone',
         orientation: 'portrait',
@@ -36,15 +37,18 @@ export default defineConfig({
             type: 'image/png'
           },
           {
-            src: 'pwa-512x512.png',
-            sizes: '512x512',
-            type: 'image/png'
-          },
-          {
-            src: 'pwa-512x512.png',
+            // Обычная иконка 512x512 (например, с прозрачным фоном)
+            src: 'regular-icon-512x512.png',
             sizes: '512x512',
             type: 'image/png',
-            purpose: 'any maskable'
+            purpose: 'any'
+          },
+          {
+            // Специальная версия для Android (сплошной фон, лого в "безопасной зоне")
+            src: 'maskable-icon-512x512.png',
+            sizes: '512x512',
+            type: 'image/png',
+            purpose: 'maskable'
           }
         ]
       }
