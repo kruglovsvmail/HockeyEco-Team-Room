@@ -16,7 +16,8 @@ export default {
           DEFAULT: 'var(--color-brand)', 
           hover: 'var(--color-brand-hover)',   
           dark: 'var(--color-brand-dark)',    
-          glow: 'var(--color-brand-glow)'     
+          glow: 'var(--color-brand-glow)',
+          opacity: 'var(--color-brand-opacity)',      
         },
         
         // --- СТАТИЧНЫЕ ПОВЕРХНОСТИ (ГЛОБАЛЬНЫЕ) ---
@@ -24,7 +25,7 @@ export default {
           base: 'var(--color-surface-base)',    
           level1: 'var(--color-surface-level1)',  
           level2: 'var(--color-surface-level2)',  
-          border: 'var(--color-surface-border)'     
+          border: 'var(--color-surface-border)'
         },
 
         // --- ВСПЛЫВАЮЩИЕ ЭЛЕМЕНТЫ (ШТОРКИ, МОДАЛКИ) ---
