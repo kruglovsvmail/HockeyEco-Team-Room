@@ -3,10 +3,11 @@ import clsx from 'clsx';
 import dayjs from 'dayjs';
 import { Icon } from '../../ui/Icon';
 
-const MONTH_BLOCK_WIDTH = 220; 
-const GAP_BETWEEN_MONTHS = 1;
+// Увеличиваем размеры для комфортного использования в шторке
+const MONTH_BLOCK_WIDTH = 320; 
+const GAP_BETWEEN_MONTHS = 16;
 const STRIDE = MONTH_BLOCK_WIDTH + GAP_BETWEEN_MONTHS; 
-const RENDER_BUFFER = 5;
+const RENDER_BUFFER = 1;
 
 const MonthView = React.memo(({ baseDate, selectedDate, onSelectDate }) => {
   const targetMonth = baseDate.month();
@@ -32,11 +33,11 @@ const MonthView = React.memo(({ baseDate, selectedDate, onSelectDate }) => {
   }, [baseDate]);
 
   return (
-    <div className="flex flex-col shrink-0 pb-2 h-full w-[220px] select-none">
-      <div className="text-center text-[10px] font-black text-content-main uppercase tracking-widest mb-2 capitalize">
+    <div className="flex flex-col shrink-0 pb-4 h-full w-[320px] select-none [contain:content]">
+      <div className="text-center text-sm font-black text-content-main uppercase tracking-widest mb-4 capitalize">
         {baseDate.format('MMMM YYYY')}
       </div>
-      <div className="flex flex-1 gap-0 justify-center">
+      <div className="flex flex-1 gap-1 justify-center">
         {weeks.map((week, weekIdx) => {
           const isSelectedWeek = week[0].isSame(selectedDate.startOf('isoWeek'), 'day');
           return (
@@ -44,23 +45,23 @@ const MonthView = React.memo(({ baseDate, selectedDate, onSelectDate }) => {
               key={weekIdx} 
               onClick={() => onSelectDate(week[0])}
               className={clsx(
-                "flex flex-col items-center w-9 rounded-lg pb-1 cursor-pointer transition-colors duration-200",
+                "flex flex-col items-center w-11 rounded-xl pb-2 pt-1 cursor-pointer transition-colors duration-200",
                 isSelectedWeek 
                   ? "bg-brand-opacity z-10" 
                   : "border-transparent hover:bg-surface-level2"
               )}
             >
               {week.map((day, dayIdx) => (
-                <div key={dayIdx} className="w-full flex items-center justify-center h-5">
+                <div key={dayIdx} className="w-full flex items-center justify-center h-8">
                   {day.month() === targetMonth ? (
                     <span className={clsx(
-                      "text-[10px] font-semibold transition-colors duration-200",
+                      "text-xs font-bold transition-colors duration-200",
                       isSelectedWeek ? "text-content-main" : "text-content-muted"
                     )}>
                       {day.format('D')}
                     </span>
                   ) : (
-                    <div className="w-1 h-1 bg-content-muted/10 rounded-full" />
+                    <div className="w-1.5 h-1.5 bg-content-muted/20 rounded-full" />
                   )}
                 </div>
               ))}
@@ -72,7 +73,7 @@ const MonthView = React.memo(({ baseDate, selectedDate, onSelectDate }) => {
   );
 });
 
-export const ExpandedGrid = React.memo(function ExpandedGrid({ date, onChangeDate, onToggleExpand, dragHandlers }) {
+export const ExpandedGrid = React.memo(function ExpandedGrid({ date, onChangeDate }) {
   const [viewDate, setViewDate] = useState(date);
   const isInternalChange = useRef(false);
   const touchStartX = useRef(null);
@@ -119,6 +120,7 @@ export const ExpandedGrid = React.memo(function ExpandedGrid({ date, onChangeDat
   const handleDateSelect = (selectedDate) => {
     isInternalChange.current = true;
     onChangeDate(selectedDate);
+    // Обрати внимание: мы больше не закрываем шторку здесь
   };
 
   return (
@@ -173,19 +175,6 @@ export const ExpandedGrid = React.memo(function ExpandedGrid({ date, onChangeDat
             );
           })}
         </div>
-      </div>
-
-      <div 
-        className="w-full flex justify-center mt-2 py-2 touch-none cursor-grab active:cursor-grabbing"
-        {...dragHandlers}
-      >
-        <button 
-          onClick={onToggleExpand}
-          className="flex flex-col items-center gap-1 text-content-muted hover:text-brand transition-colors group/chevron outline-none"
-        >
-          <div className="w-12 h-1.5 bg-surface-border rounded-full group-hover/chevron:bg-brand/30 transition-colors" />
-          <Icon name="expand_less" className="w-6 h-6 -mt-1" />
-        </button>
       </div>
     </div>
   );

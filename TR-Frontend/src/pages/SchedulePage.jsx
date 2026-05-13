@@ -17,19 +17,18 @@ export function SchedulePage() {
   const touchStartX = useRef(null);
 
   const handleTouchStart = (e) => {
-    if (isExpanded) return; 
+    if (isExpanded) return;
     touchStartX.current = e.touches[0].clientX;
   };
 
   const handleTouchEnd = (e) => {
     if (isExpanded || touchStartX.current === null) return;
-    
     const touchEndX = e.changedTouches[0].clientX;
     const diff = touchStartX.current - touchEndX;
-
+    
     if (Math.abs(diff) > 50) {
       if (diff > 0) setCurrentDate(currentDate.add(1, 'week')); 
-      else setCurrentDate(currentDate.subtract(1, 'week')); 
+      else setCurrentDate(currentDate.subtract(1, 'week'));
     }
     touchStartX.current = null;
   };
@@ -40,8 +39,7 @@ export function SchedulePage() {
       onTouchStart={handleTouchStart}
       onTouchEnd={handleTouchEnd}
     >
-      {/* 1. Календарь теперь от края до края (убран px-4) */}
-      <div className="shrink-0 z-10 w-full">
+      <div className="shrink-0 z-40 w-full sticky top-0">
         <EventCalendar 
           currentDate={currentDate} 
           setCurrentDate={setCurrentDate}
@@ -50,8 +48,7 @@ export function SchedulePage() {
         />
       </div>
 
-      {/* 2. Контент */}
-      <div className="flex-1 bg-surface-level1 p-6 text-center rounded-t-3xl mx-4">
+      <div className="flex-1 bg-surface-level1 p-6 text-center rounded-3xl mx-4 shadow-sm border border-surface-border/50">
         <p className="text-sm text-content-muted leading-relaxed">
           Матчей в расписании пока нет.
         </p>

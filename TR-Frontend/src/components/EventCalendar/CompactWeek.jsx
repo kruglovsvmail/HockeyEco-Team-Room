@@ -1,7 +1,7 @@
 import React from 'react';
 import { Icon } from '../../ui/Icon';
 
-export const CompactWeek = React.memo(function CompactWeek({ date, onChangeDate, isExpanded, onToggleExpand }) {
+export const CompactWeek = React.memo(function CompactWeek({ date, onChangeDate, onToggleExpand }) {
   const startOfWeek = date.startOf('isoWeek');
   const endOfWeek = date.endOf('isoWeek');
 
@@ -22,7 +22,7 @@ export const CompactWeek = React.memo(function CompactWeek({ date, onChangeDate,
 
   return (
     <div 
-      className="flex items-center justify-between px-4 py-2 cursor-pointer select-none active:bg-surface-level2/30 transition-colors"
+      className="flex items-center justify-between px-4 py-3 cursor-pointer select-none active:bg-surface-level2/30 transition-colors"
       onClick={onToggleExpand}
     >
       <button 
@@ -32,9 +32,12 @@ export const CompactWeek = React.memo(function CompactWeek({ date, onChangeDate,
         <Icon name="chevron_left" className="w-6 h-6" />
       </button>
 
-      <span className="text-sm font-bold text-content-main tracking-widest capitalize">
-        {title}
-      </span>
+      <div className="flex items-center gap-2">
+        <Icon name="calendar" className="w-4 h-4 text-brand" />
+        <span className="text-sm font-bold text-content-main tracking-widest capitalize">
+          {title}
+        </span>
+      </div>
 
       <button 
         onClick={handleNextWeek}
