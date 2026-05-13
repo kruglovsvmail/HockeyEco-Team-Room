@@ -1,7 +1,7 @@
 import React from 'react';
 import { Icon } from '../../ui/Icon';
 
-export function CompactWeek({ date, onChangeDate, isExpanded, onToggleExpand }) {
+export const CompactWeek = React.memo(function CompactWeek({ date, onChangeDate, isExpanded, onToggleExpand }) {
   const startOfWeek = date.startOf('isoWeek');
   const endOfWeek = date.endOf('isoWeek');
 
@@ -44,4 +44,4 @@ export function CompactWeek({ date, onChangeDate, isExpanded, onToggleExpand }) 
       </button>
     </div>
   );
-}
+});

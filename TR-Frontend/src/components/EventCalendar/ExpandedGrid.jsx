@@ -4,12 +4,12 @@ import dayjs from 'dayjs';
 import { Icon } from '../../ui/Icon';
 
 const MONTH_BLOCK_WIDTH = 220; 
-const GAP_BETWEEN_MONTHS = 1; 
+const GAP_BETWEEN_MONTHS = 1;
 const STRIDE = MONTH_BLOCK_WIDTH + GAP_BETWEEN_MONTHS; 
-const RENDER_BUFFER = 5; 
+const RENDER_BUFFER = 5;
 
-const MonthView = ({ baseDate, selectedDate, onSelectDate }) => {
-  const targetMonth = baseDate.month(); 
+const MonthView = React.memo(({ baseDate, selectedDate, onSelectDate }) => {
+  const targetMonth = baseDate.month();
 
   const weeks = useMemo(() => {
     const startOfMonth = baseDate.startOf('month');
@@ -44,7 +44,7 @@ const MonthView = ({ baseDate, selectedDate, onSelectDate }) => {
               key={weekIdx} 
               onClick={() => onSelectDate(week[0])}
               className={clsx(
-                "flex flex-col items-center w-9 rounded-lg pb-1 cursor-pointer transition-all",
+                "flex flex-col items-center w-9 rounded-lg pb-1 cursor-pointer transition-colors duration-200",
                 isSelectedWeek 
                   ? "bg-brand-opacity z-10" 
                   : "border-transparent hover:bg-surface-level2"
@@ -54,7 +54,7 @@ const MonthView = ({ baseDate, selectedDate, onSelectDate }) => {
                 <div key={dayIdx} className="w-full flex items-center justify-center h-5">
                   {day.month() === targetMonth ? (
                     <span className={clsx(
-                      "text-[10px] font-semibold transition-colors",
+                      "text-[10px] font-semibold transition-colors duration-200",
                       isSelectedWeek ? "text-content-main" : "text-content-muted"
                     )}>
                       {day.format('D')}
@@ -70,14 +70,14 @@ const MonthView = ({ baseDate, selectedDate, onSelectDate }) => {
       </div>
     </div>
   );
-};
+});
 
-export function ExpandedGrid({ date, onChangeDate, onToggleExpand, dragHandlers }) {
+export const ExpandedGrid = React.memo(function ExpandedGrid({ date, onChangeDate, onToggleExpand, dragHandlers }) {
   const [viewDate, setViewDate] = useState(date);
   const isInternalChange = useRef(false);
   const touchStartX = useRef(null);
   const [isAnimating, setIsAnimating] = useState(false);
-  const [offsetIndex, setOffsetIndex] = useState(0); 
+  const [offsetIndex, setOffsetIndex] = useState(0);
 
   useEffect(() => {
     if (isInternalChange.current) {
@@ -91,6 +91,7 @@ export function ExpandedGrid({ date, onChangeDate, onToggleExpand, dragHandlers 
     if (isAnimating) return;
     setIsAnimating(true);
     setOffsetIndex(direction === 'next' ? 1 : -1);
+
     setTimeout(() => {
       setIsAnimating(false);
       setViewDate(prev => direction === 'next' ? prev.add(1, 'month') : prev.subtract(1, 'month'));
@@ -107,8 +108,9 @@ export function ExpandedGrid({ date, onChangeDate, onToggleExpand, dragHandlers 
     if (touchStartX.current === null || isAnimating) return;
     const touchEndX = e.changedTouches[0].clientX;
     const diff = touchStartX.current - touchEndX;
+
     if (Math.abs(diff) > 40) {
-      if (diff > 0) slideTo('next'); 
+      if (diff > 0) slideTo('next');
       else slideTo('prev');          
     }
     touchStartX.current = null;
@@ -121,9 +123,6 @@ export function ExpandedGrid({ date, onChangeDate, onToggleExpand, dragHandlers 
 
   return (
     <div className="pt-2 touch-pan-y overflow-hidden w-full relative group">
-      {/* Добавляем стили маски прозрачности.
-        На десктопе (min-width: 768px) маска отключается.
-      */}
       <style>{`
         @media (max-width: 767px) {
           .mobile-fade-mask {
@@ -136,27 +135,26 @@ export function ExpandedGrid({ date, onChangeDate, onToggleExpand, dragHandlers 
       <div className="hidden md:block">
         <button 
           onClick={() => slideTo('prev')}
-          className="absolute left-4 top-[40%] -translate-y-1/2 z-30 p-2 bg-surface-level1 border border-surface-border rounded-full shadow-lg text-content-main hover:bg-brand hover:text-white transition-all opacity-0 group-hover:opacity-100"
+          className="absolute left-4 top-[40%] -translate-y-1/2 z-30 p-2 bg-surface-level1 border border-surface-border rounded-full shadow-lg text-content-main hover:bg-brand hover:text-white transition-all opacity-0 group-hover:opacity-100 outline-none"
         >
           <Icon name="chevron_left" className="w-6 h-6" />
         </button>
         <button 
           onClick={() => slideTo('next')}
-          className="absolute right-4 top-[40%] -translate-y-1/2 z-30 p-2 bg-surface-level1 border border-surface-border rounded-full shadow-lg text-content-main hover:bg-brand hover:text-white transition-all opacity-0 group-hover:opacity-100"
+          className="absolute right-4 top-[40%] -translate-y-1/2 z-30 p-2 bg-surface-level1 border border-surface-border rounded-full shadow-lg text-content-main hover:bg-brand hover:text-white transition-all opacity-0 group-hover:opacity-100 outline-none"
         >
           <Icon name="chevron_left" className="w-6 h-6 rotate-180" />
         </button>
       </div>
 
       <div 
-        // Применяем класс маски к контейнеру карусели
         className="flex justify-center w-full mobile-fade-mask"
         onTouchStart={handleTouchStart}
         onTouchEnd={handleTouchEnd}
         onTouchMove={(e) => e.stopPropagation()}
       >
         <div 
-          className="flex items-start"
+          className="flex items-start will-change-transform"
           style={{
             gap: `${GAP_BETWEEN_MONTHS}px`,
             transform: `translateX(${-offsetIndex * STRIDE}px)`,
@@ -183,7 +181,7 @@ export function ExpandedGrid({ date, onChangeDate, onToggleExpand, dragHandlers 
       >
         <button 
           onClick={onToggleExpand}
-          className="flex flex-col items-center gap-1 text-content-muted hover:text-brand transition-colors group/chevron"
+          className="flex flex-col items-center gap-1 text-content-muted hover:text-brand transition-colors group/chevron outline-none"
         >
           <div className="w-12 h-1.5 bg-surface-border rounded-full group-hover/chevron:bg-brand/30 transition-colors" />
           <Icon name="expand_less" className="w-6 h-6 -mt-1" />
@@ -191,4 +189,4 @@ export function ExpandedGrid({ date, onChangeDate, onToggleExpand, dragHandlers 
       </div>
     </div>
   );
-}
+});
