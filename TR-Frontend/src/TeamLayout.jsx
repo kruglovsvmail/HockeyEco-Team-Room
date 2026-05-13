@@ -68,13 +68,9 @@ export function TeamLayout() {
   return (
     <div className="flex w-full h-full overflow-hidden relative bg-surface-base">
       
-      {/* Сайдбар.
-        На мобилках: фиксированный слева, ширина 70%.
-        На десктопе: статичный элемент flex-контейнера, ширина 16% (мин 280px).
-      */}
       <aside className={clsx(
-        "fixed inset-y-0 left-0 z-40 h-full bg-surface-level1 border-r border-surface-border transition-transform duration-300 ease-[cubic-bezier(0.32,0.72,0,1)]",
-        "w-[64%] md:w-[20%] md:min-w-[280px] md:static md:translate-x-0 ",
+        "fixed inset-y-0 left-0 z-40 h-full bg-surface-level1 transition-transform duration-500 ease-[cubic-bezier(0.32,0.72,0,1)]",
+        "w-[80%] md:w-[20%] md:min-w-[280px] md:static md:translate-x-0 ",
         isSidebarOpen ? "translate-x-0" : "-translate-x-full"
       )}>
         <Sidebar 
@@ -86,12 +82,9 @@ export function TeamLayout() {
         />
       </aside>
 
-      {/* Основной контейнер приложения.
-        При открытии сайдбара на мобильных сдвигается вправо на 70%.
-      */}
       <div className={clsx(
-        "flex flex-col flex-1 w-full h-full min-w-0 transition-transform duration-300 ease-[cubic-bezier(0.32,0.72,0,1)] z-50 bg-surface-base",
-        isSidebarOpen ? "translate-x-[64%] md:translate-x-0" : "translate-x-0"
+        "flex flex-col flex-1 w-full h-full min-w-0 transition-transform duration-500 ease-[cubic-bezier(0.32,0.72,0,1)] z-50 bg-surface-base",
+        isSidebarOpen ? "translate-x-[80%] shadow-2xl md:translate-x-0 md:shadow-none" : "translate-x-0"
       )}>
         
         <Header 
@@ -99,7 +92,6 @@ export function TeamLayout() {
           onToggleSidebar={() => setIsSidebarOpen(!isSidebarOpen)} 
         />
 
-        {/* Невидимый оверлей на мобилках поверх контента, чтобы закрывать сайдбар по клику */}
         {isSidebarOpen && (
           <div 
             className="absolute inset-0 z-50 md:hidden bg-transparent" 
