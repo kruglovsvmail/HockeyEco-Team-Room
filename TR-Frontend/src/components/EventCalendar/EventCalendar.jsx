@@ -5,19 +5,20 @@ import { ExpandedGrid } from './ExpandedGrid';
 
 export function EventCalendar({ currentDate, setCurrentDate, isExpanded, setIsExpanded }) {
   const [contentHeight, setContentHeight] = useState(0);
+  
+  // Refs для прямого доступа к DOM-узлам без вызова ре-рендера React
+  const wrapperRef = useRef(null);
   const contentRef = useRef(null);
 
-  // --- Механика Pull-to-Close (Свайп шторки) ---
-  const [dragOffset, setDragOffset] = useState(0);
-  const [isDragging, setIsDragging] = useState(false);
+  // Refs для хранения данных о свайпе
   const touchStartY = useRef(null);
-  const rafRef = useRef(null); // Ссылка для requestAnimationFrame
+  const currentOffset = useRef(0);
 
+  // Измеряем реальную высоту контента при загрузке
   useEffect(() => {
     if (!contentRef.current) return;
     const resizeObserver = new ResizeObserver((entries) => {
       for (let entry of entries) {
-        // Округляем высоту, чтобы избежать дробных пикселей (частая причина микро-флагов на Android)
         setContentHeight(Math.ceil(entry.target.offsetHeight));
       }
     });
@@ -25,54 +26,78 @@ export function EventCalendar({ currentDate, setCurrentDate, isExpanded, setIsEx
     return () => resizeObserver.disconnect();
   }, [currentDate, isExpanded]);
 
-  // Кэшируем обработчики, чтобы дочерние компоненты не получали новые ссылки на каждом рендере
+  // Синхронизация стейта isExpanded с DOM (например, при клике на шеврон)
+  useEffect(() => {
+    if (!wrapperRef.current || !contentRef.current) return;
+    
+    // Включаем плавную CSS-анимацию
+    wrapperRef.current.style.transition = 'height 500ms cubic-bezier(0.32,0.72,0,1)';
+    contentRef.current.style.transition = 'transform 500ms cubic-bezier(0.32,0.72,0,1)';
+    
+    if (isExpanded) {
+      wrapperRef.current.style.height = `${contentHeight}px`;
+      contentRef.current.style.transform = `translateY(0px)`;
+    } else {
+      wrapperRef.current.style.height = `0px`;
+      contentRef.current.style.transform = `translateY(0px)`;
+    }
+  }, [isExpanded, contentHeight]);
+
   const handleDragStart = useCallback((e) => {
     touchStartY.current = e.touches[0].clientY;
-    setIsDragging(true);
+    currentOffset.current = 0;
+    
+    // Мгновенно отключаем CSS-доводчик, чтобы блок прилип к пальцу
+    if (wrapperRef.current) wrapperRef.current.style.transition = 'none';
+    if (contentRef.current) contentRef.current.style.transition = 'none';
   }, []);
 
   const handleDragMove = useCallback((e) => {
-    if (!isDragging || touchStartY.current === null) return;
-    const currentY = e.touches[0].clientY;
-    const diff = touchStartY.current - currentY;
-
-    // Ограничиваем частоту обновлений с помощью rAF для плавной работы 60fps
-    if (rafRef.current) cancelAnimationFrame(rafRef.current);
+    if (touchStartY.current === null) return;
     
-    rafRef.current = requestAnimationFrame(() => {
-      if (diff > 0) {
-        setDragOffset(Math.min(diff, contentHeight));
-      } else {
-        setDragOffset(0);
-      }
-    });
-  }, [isDragging, contentHeight]);
+    const diff = touchStartY.current - e.touches[0].clientY;
+
+    // Отрабатываем только жест смахивания вверх
+    if (diff > 0 && wrapperRef.current && contentRef.current) {
+      const newOffset = Math.min(diff, contentHeight);
+      currentOffset.current = newOffset;
+      
+      const newHeight = Math.max(0, contentHeight - newOffset);
+      
+      // 🔥 ПРЯМАЯ МУТАЦИЯ DOM: Меняем стили в обход React!
+      wrapperRef.current.style.height = `${newHeight}px`;
+      contentRef.current.style.transform = `translateY(-${newOffset}px)`;
+    }
+  }, [contentHeight]);
 
   const handleDragEnd = useCallback(() => {
-    if (!isDragging) return;
-    setIsDragging(false);
+    if (touchStartY.current === null) return;
+    
+    // Возвращаем CSS-анимацию (доводчик)
+    if (wrapperRef.current) wrapperRef.current.style.transition = 'height 500ms cubic-bezier(0.32,0.72,0,1)';
+    if (contentRef.current) contentRef.current.style.transition = 'transform 500ms cubic-bezier(0.32,0.72,0,1)';
 
-    if (rafRef.current) cancelAnimationFrame(rafRef.current);
-
-    if (dragOffset > 50) {
-      setIsExpanded(false);
+    if (currentOffset.current > 50) {
+      // Свайпнули достаточно далеко — закрываем (меняем стейт)
+      setIsExpanded(false); 
       if (window.navigator && window.navigator.vibrate) {
         window.navigator.vibrate(10);
       }
+    } else {
+      // Недотянули — отпружиниваем обратно (стейт не трогаем, просто возвращаем стили)
+      if (wrapperRef.current) wrapperRef.current.style.height = `${contentHeight}px`;
+      if (contentRef.current) contentRef.current.style.transform = `translateY(0px)`;
     }
     
-    setDragOffset(0);
     touchStartY.current = null;
-  }, [isDragging, dragOffset, setIsExpanded]);
+    currentOffset.current = 0;
+  }, [contentHeight, setIsExpanded]);
 
-  // Собираем хендлеры в один объект
   const dragHandlers = useMemo(() => ({
     onTouchStart: handleDragStart,
     onTouchMove: handleDragMove,
     onTouchEnd: handleDragEnd
   }), [handleDragStart, handleDragMove, handleDragEnd]);
-
-  const currentHeight = isExpanded ? Math.max(0, contentHeight - dragOffset) : 0;
 
   return (
     <div className="w-full bg-surface-level1 overflow-hidden shadow-[inset_0_8px_8px_-8px_rgba(0,0,0,0.2),inset_0_-8px_8px_-8px_rgba(0,0,0,0.2)]">
@@ -83,23 +108,15 @@ export function EventCalendar({ currentDate, setCurrentDate, isExpanded, setIsEx
         onToggleExpand={() => setIsExpanded(!isExpanded)}
       />
       
-      {/* Убрали transition-all, заменили на transition-[height].
-        Добавили will-change-[height] для переноса обработки на GPU.
-      */}
       <div 
-        className={clsx(
-          "overflow-hidden will-change-[height]",
-          isDragging ? "transition-none" : "transition-[height] duration-500 ease-[cubic-bezier(0.32,0.72,0,1)]"
-        )}
-        style={{ height: `${currentHeight}px` }}
+        ref={wrapperRef}
+        className="overflow-hidden will-change-[height]"
+        // Начальная инициализация стилей
+        style={{ height: isExpanded ? `${contentHeight}px` : '0px' }}
       >
         <div 
           ref={contentRef}
-          className={clsx(
-            "will-change-transform",
-            isDragging ? "transition-none" : "transition-transform duration-500 ease-[cubic-bezier(0.32,0.72,0,1)]"
-          )}
-          style={{ transform: `translateY(-${dragOffset}px)` }}
+          className="will-change-transform"
         >
           <ExpandedGrid 
             date={currentDate} 
