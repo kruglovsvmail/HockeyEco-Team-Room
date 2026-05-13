@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { useAccess } from '../hooks/useAccess';
 import dayjs from 'dayjs';
 import 'dayjs/locale/ru';
@@ -15,6 +15,12 @@ export function SchedulePage() {
   const [isExpanded, setIsExpanded] = useState(false);
   
   const touchStartX = useRef(null);
+
+  useEffect(() => {
+    const handleOpenCalendar = () => setIsExpanded(true);
+    window.addEventListener('open-calendar-sheet', handleOpenCalendar);
+    return () => window.removeEventListener('open-calendar-sheet', handleOpenCalendar);
+  }, []);
 
   const handleTouchStart = (e) => {
     if (isExpanded) return;
@@ -35,7 +41,7 @@ export function SchedulePage() {
 
   return (
     <div 
-      className="flex flex-col h-full gap-6 touch-pan-y"
+      className="flex flex-col h-full gap-4 px-4 touch-pan-y"
       onTouchStart={handleTouchStart}
       onTouchEnd={handleTouchEnd}
     >
@@ -48,7 +54,7 @@ export function SchedulePage() {
         />
       </div>
 
-      <div className="flex-1 bg-surface-level1 p-6 text-center rounded-3xl mx-4 shadow-sm border border-surface-border/50">
+      <div className="flex-1 bg-surface-level1 p-6 text-center rounded-3xl shadow-sm border border-surface-border">
         <p className="text-sm text-content-muted leading-relaxed">
           Матчей в расписании пока нет.
         </p>

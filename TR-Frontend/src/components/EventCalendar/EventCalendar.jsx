@@ -1,11 +1,11 @@
 import React from 'react';
 import { CompactWeek } from './CompactWeek';
 import { ExpandedGrid } from './ExpandedGrid';
-import { BottomSheet } from '../../ui/BottomSheet';
+import { TopSheet } from '../../ui/TopSheet';
 
 export function EventCalendar({ currentDate, setCurrentDate, isExpanded, setIsExpanded }) {
   return (
-    <div className="w-full bg-surface-level1 shadow-[inset_0_-8px_8px_-8px_rgba(0,0,0,0.1)]">
+    <div className="w-full bg-surface-level1 rounded-2xl shadow-md">
       {/* Статичная панель недели, которая всегда на экране */}
       <CompactWeek 
         date={currentDate} 
@@ -15,7 +15,7 @@ export function EventCalendar({ currentDate, setCurrentDate, isExpanded, setIsEx
       />
       
       {/* Выпадающая шторка с календарем */}
-      <BottomSheet isOpen={isExpanded} onClose={() => setIsExpanded(false)}>
+      <TopSheet isOpen={isExpanded} onClose={() => setIsExpanded(false)}>
         <div className="pb-2">
           <ExpandedGrid 
             date={currentDate} 
@@ -24,7 +24,7 @@ export function EventCalendar({ currentDate, setCurrentDate, isExpanded, setIsEx
             // чтобы шторка оставалась открытой при выборе даты
           />
         </div>
-      </BottomSheet>
+      </TopSheet>
     </div>
   );
 }

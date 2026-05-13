@@ -25,6 +25,7 @@ export default {
           base: 'var(--color-surface-base)',    
           level1: 'var(--color-surface-level1)',  
           level2: 'var(--color-surface-level2)',  
+          level3: 'var(--color-surface-level3)',  
           border: 'var(--color-surface-border)'
         },
 

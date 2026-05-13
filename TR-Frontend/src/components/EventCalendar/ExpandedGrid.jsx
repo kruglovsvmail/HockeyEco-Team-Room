@@ -3,13 +3,12 @@ import clsx from 'clsx';
 import dayjs from 'dayjs';
 import { Icon } from '../../ui/Icon';
 
-// Увеличиваем размеры для комфортного использования в шторке
-const MONTH_BLOCK_WIDTH = 320; 
+const MONTH_BLOCK_WIDTH = 340; 
 const GAP_BETWEEN_MONTHS = 16;
 const STRIDE = MONTH_BLOCK_WIDTH + GAP_BETWEEN_MONTHS; 
-const RENDER_BUFFER = 1;
+const RENDER_BUFFER = 3;
 
-const MonthView = React.memo(({ baseDate, selectedDate, onSelectDate }) => {
+const MonthView = React.memo(({ baseDate, selectedDate, onSelectDate, onPrev, onNext }) => {
   const targetMonth = baseDate.month();
 
   const weeks = useMemo(() => {
@@ -33,38 +32,83 @@ const MonthView = React.memo(({ baseDate, selectedDate, onSelectDate }) => {
   }, [baseDate]);
 
   return (
-    <div className="flex flex-col shrink-0 pb-4 h-full w-[320px] select-none [contain:content]">
-      <div className="text-center text-sm font-black text-content-main uppercase tracking-widest mb-4 capitalize">
-        {baseDate.format('MMMM YYYY')}
+    <div className="flex flex-col shrink-0 pb-4 h-full w-[340px] select-none [contain:content]">
+      
+      {/* Шапка месяца */}
+      <div className="flex items-center justify-center px-2 mb-4 relative h-10">
+        <button 
+          onClick={(e) => { e.stopPropagation(); onPrev(); }} 
+          className="md:hidden absolute left-0 p-2 text-content-muted hover:text-brand transition-colors outline-none"
+        >
+          <Icon name="chevron_left" className="w-4 h-4" />
+        </button>
+        
+        <div className="text-center text-sm font-black text-content-main uppercase tracking-widest capitalize">
+          {baseDate.format('MMMM YYYY')}
+        </div>
+
+        <button 
+          onClick={(e) => { e.stopPropagation(); onNext(); }} 
+          className="md:hidden absolute right-0 p-2 text-content-muted hover:text-brand transition-colors outline-none rotate-180"
+        >
+          <Icon name="chevron_left" className="w-4 h-4" />
+        </button>
       </div>
-      <div className="flex flex-1 gap-1 justify-center">
+
+      <div className="flex flex-1 gap-1 justify-center relative">
+        
+        {/* Колонка Дней Недели */}
+        <div className="flex flex-col w-7 pt-1 shrink-0 mr-1 border-r">
+          {['Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб', 'Вс'].map((dow, idx) => (
+            <div key={idx} className={clsx(
+              "w-full flex items-center justify-center h-8 text-[10px] font-bold relative border-b border-surface-level3",
+              (idx === 5 || idx === 6) ? "text-danger" : "text-content-subtle"
+            )}>
+              {dow}
+            </div>
+          ))}
+        </div>
+
+        {/* Сетка недель */}
         {weeks.map((week, weekIdx) => {
           const isSelectedWeek = week[0].isSame(selectedDate.startOf('isoWeek'), 'day');
+          
           return (
             <div 
               key={weekIdx} 
               onClick={() => onSelectDate(week[0])}
               className={clsx(
-                "flex flex-col items-center w-11 rounded-xl pb-2 pt-1 cursor-pointer transition-colors duration-200",
+                "flex flex-col items-center w-11 rounded-xl pb-2 pt-1 cursor-pointer transition-all duration-200",
                 isSelectedWeek 
-                  ? "bg-brand-opacity z-10" 
+                  ? "bg-brand-opacity z-10 shadow-sm" 
                   : "border-transparent hover:bg-surface-level2"
               )}
             >
-              {week.map((day, dayIdx) => (
-                <div key={dayIdx} className="w-full flex items-center justify-center h-8">
-                  {day.month() === targetMonth ? (
-                    <span className={clsx(
-                      "text-xs font-bold transition-colors duration-200",
-                      isSelectedWeek ? "text-content-main" : "text-content-muted"
-                    )}>
-                      {day.format('D')}
-                    </span>
-                  ) : (
-                    <div className="w-1.5 h-1.5 bg-content-muted/20 rounded-full" />
-                  )}
-                </div>
-              ))}
+              {week.map((day, dayIdx) => {
+                const isToday = day.isSame(dayjs(), 'day');
+                const isWeekend = dayIdx === 5 || dayIdx === 6;
+                const isTargetMonth = day.month() === targetMonth;
+
+                return (
+                  <div key={dayIdx} className="w-full flex items-center justify-center h-8 relative border-b border-surface-level3">
+                    {isToday && (
+                      <div className="absolute inset-[2px] border-[1px] border-brand rounded-lg pointer-events-none opacity-50 z-20" />
+                    )}
+
+                    {isTargetMonth ? (
+                      <span className={clsx(
+                        "text-xs transition-colors duration-200 relative z-10",
+                        isSelectedWeek ? "text-content-main font-medium" : (isWeekend ? "text-danger/90 font-medium" : "text-content-muted medium"),
+                        isToday && "!text-brand"
+                      )}>
+                        {day.format('D')}
+                      </span>
+                    ) : (
+                      <div className="w-1.5 h-1.5 bg-content-muted/20 rounded-full relative z-10" />
+                    )}
+                  </div>
+                );
+              })}
             </div>
           );
         })}
@@ -91,6 +135,7 @@ export const ExpandedGrid = React.memo(function ExpandedGrid({ date, onChangeDat
   const slideTo = (direction) => {
     if (isAnimating) return;
     setIsAnimating(true);
+    
     setOffsetIndex(direction === 'next' ? 1 : -1);
 
     setTimeout(() => {
@@ -109,10 +154,10 @@ export const ExpandedGrid = React.memo(function ExpandedGrid({ date, onChangeDat
     if (touchStartX.current === null || isAnimating) return;
     const touchEndX = e.changedTouches[0].clientX;
     const diff = touchStartX.current - touchEndX;
-
+    
     if (Math.abs(diff) > 40) {
       if (diff > 0) slideTo('next');
-      else slideTo('prev');          
+      else slideTo('prev');
     }
     touchStartX.current = null;
   };
@@ -120,37 +165,29 @@ export const ExpandedGrid = React.memo(function ExpandedGrid({ date, onChangeDat
   const handleDateSelect = (selectedDate) => {
     isInternalChange.current = true;
     onChangeDate(selectedDate);
-    // Обрати внимание: мы больше не закрываем шторку здесь
   };
 
   return (
     <div className="pt-2 touch-pan-y overflow-hidden w-full relative group">
-      <style>{`
-        @media (max-width: 767px) {
-          .mobile-fade-mask {
-            -webkit-mask-image: linear-gradient(to right, transparent 0px, rgba(0,0,0,0.24) 16px, rgba(0,0,0,1) 64px, rgba(0,0,0,1) calc(100% - 64px), rgba(0,0,0,0.24) calc(100% - 16px), transparent 100%);
-            mask-image: linear-gradient(to right, transparent 0px, rgba(0,0,0,0.24) 16px, rgba(0,0,0,1) 64px, rgba(0,0,0,1) calc(100% - 64px), rgba(0,0,0,0.24) calc(100% - 16px), transparent 100%);
-          }
-        }
-      `}</style>
-
+      
+      {/* Десктопные стрелки */}
       <div className="hidden md:block">
         <button 
           onClick={() => slideTo('prev')}
-          className="absolute left-4 top-[40%] -translate-y-1/2 z-30 p-2 bg-surface-level1 border border-surface-border rounded-full shadow-lg text-content-main hover:bg-brand hover:text-white transition-all opacity-0 group-hover:opacity-100 outline-none"
+          className="absolute left-4 top-[55%] -translate-y-1/2 z-30 p-2 bg-surface-level1 border border-surface-border rounded-full shadow-lg text-content-main hover:bg-brand hover:text-white transition-all opacity-0 group-hover:opacity-100 outline-none"
         >
           <Icon name="chevron_left" className="w-6 h-6" />
         </button>
         <button 
           onClick={() => slideTo('next')}
-          className="absolute right-4 top-[40%] -translate-y-1/2 z-30 p-2 bg-surface-level1 border border-surface-border rounded-full shadow-lg text-content-main hover:bg-brand hover:text-white transition-all opacity-0 group-hover:opacity-100 outline-none"
+          className="absolute right-4 top-[55%] -translate-y-1/2 z-30 p-2 bg-surface-level1 border border-surface-border rounded-full shadow-lg text-content-main hover:bg-brand hover:text-white transition-all opacity-0 group-hover:opacity-100 outline-none"
         >
           <Icon name="chevron_left" className="w-6 h-6 rotate-180" />
         </button>
       </div>
 
       <div 
-        className="flex justify-center w-full mobile-fade-mask"
+        className="flex justify-center w-full"
         onTouchStart={handleTouchStart}
         onTouchEnd={handleTouchEnd}
         onTouchMove={(e) => e.stopPropagation()}
@@ -170,7 +207,9 @@ export const ExpandedGrid = React.memo(function ExpandedGrid({ date, onChangeDat
                 key={currentMonthDate.format('YYYY-MM')} 
                 baseDate={currentMonthDate} 
                 selectedDate={date} 
-                onSelectDate={handleDateSelect} 
+                onSelectDate={handleDateSelect}
+                onPrev={() => slideTo('prev')}
+                onNext={() => slideTo('next')}
               />
             );
           })}

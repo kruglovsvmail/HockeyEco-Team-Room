@@ -5,10 +5,7 @@ export const CompactWeek = React.memo(function CompactWeek({ date, onChangeDate,
   const startOfWeek = date.startOf('isoWeek');
   const endOfWeek = date.endOf('isoWeek');
 
-  const isSameMonth = startOfWeek.month() === endOfWeek.month();
-  const title = isSameMonth
-    ? `${startOfWeek.format('D')} — ${endOfWeek.format('D MMM')}`
-    : `${startOfWeek.format('D MMM')} — ${endOfWeek.format('D MMM')}`;
+  const title = `${startOfWeek.format('D MMM')} — ${endOfWeek.format('D MMM')}`;
 
   const handlePrevWeek = (e) => {
     e.stopPropagation();
@@ -22,14 +19,14 @@ export const CompactWeek = React.memo(function CompactWeek({ date, onChangeDate,
 
   return (
     <div 
-      className="flex items-center justify-between px-4 py-3 cursor-pointer select-none active:bg-surface-level2/30 transition-colors"
+      className="flex items-center justify-between px-4 py-2.5 cursor-pointer select-none active:bg-surface-level2/30 transition-colors"
       onClick={onToggleExpand}
     >
       <button 
         onClick={handlePrevWeek}
         className="p-1 text-content-main hover:text-brand transition-colors outline-none"
       >
-        <Icon name="chevron_left" className="w-6 h-6" />
+        <Icon name="chevron_left" className="w-5 h-5" />
       </button>
 
       <div className="flex items-center gap-2">
@@ -43,7 +40,7 @@ export const CompactWeek = React.memo(function CompactWeek({ date, onChangeDate,
         onClick={handleNextWeek}
         className="p-1 text-content-main hover:text-brand transition-colors outline-none rotate-180"
       >
-        <Icon name="chevron_left" className="w-6 h-6" />
+        <Icon name="chevron_left" className="w-5 h-5" />
       </button>
     </div>
   );
