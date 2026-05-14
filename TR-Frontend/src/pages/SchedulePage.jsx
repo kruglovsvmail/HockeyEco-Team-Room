@@ -126,8 +126,8 @@ export function SchedulePage() {
       onTouchStart={handleTouchStart}
       onTouchEnd={handleTouchEnd}
     >
-      {/* ИСПРАВЛЕНИЕ: Понизили z-index до z-30, чтобы элемент уходил под шапку (у которой z-40) */}
-      <div className="shrink-0 z-30 w-full relative">
+      {/* Убрали sticky top-0, добавили relative для сохранения z-индекса */}
+      <div className="shrink-0 z-40 w-full relative">
         <EventCalendar 
           currentDate={currentDate} 
           setCurrentDate={setCurrentDate}
