@@ -4,7 +4,7 @@ import dayjs from 'dayjs';
 import 'dayjs/locale/ru';
 import isoWeek from 'dayjs/plugin/isoWeek';
 import utc from 'dayjs/plugin/utc';           
-import timezone from 'dayjs/plugin/timezone'; 
+import timezone from 'dayjs/plugin/timezone';
 import isSameOrAfter from 'dayjs/plugin/isSameOrAfter';
 import { EventCalendar } from '../components/EventCalendar/EventCalendar';
 import MatchCard from '../components/EventCalendar/MatchCard';
@@ -49,7 +49,6 @@ export function SchedulePage() {
     fetchMatches();
   }, []);
 
-  // ОБНОВЛЕНО: Принимаем teamId и передаем его на сервер
   const handleToggleAttendance = async (gameId, newValue, teamId) => {
     // Оптимистичное обновление UI: меняем тумблер только для конкретной команды
     setMatches(prev => prev.map(game => 
@@ -127,7 +126,8 @@ export function SchedulePage() {
       onTouchStart={handleTouchStart}
       onTouchEnd={handleTouchEnd}
     >
-      <div className="shrink-0 z-40 w-full sticky top-0">
+      {/* ИСПРАВЛЕНИЕ: Понизили z-index до z-30, чтобы элемент уходил под шапку (у которой z-40) */}
+      <div className="shrink-0 z-30 w-full relative">
         <EventCalendar 
           currentDate={currentDate} 
           setCurrentDate={setCurrentDate}

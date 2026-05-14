@@ -2,9 +2,14 @@ import React, { useState } from 'react';
 import { Menu, X } from 'lucide-react';
 import { Icon } from '../ui/Icon';
 import { TopSheet } from '../ui/TopSheet';
+import { useLocation } from 'react-router-dom';
 
 export function Header({ isSidebarOpen, onToggleSidebar }) {
   const [isFilterOpen, setIsFilterOpen] = useState(false);
+  const location = useLocation();
+  
+  // Проверяем, находимся ли мы на главной странице (Расписание)
+  const isSchedulePage = location.pathname === '/';
 
   const openCalendar = () => {
     window.dispatchEvent(new Event('open-calendar-sheet'));
@@ -12,7 +17,7 @@ export function Header({ isSidebarOpen, onToggleSidebar }) {
 
   return (
     <>
-      <header className="shrink-0 p-4 h-[60px] flex items-center justify-between sticky top-0 z-40 transition-colors">
+      <header className="absolute top-0 left-0 bg-white/20 right-0 p-4 h-[60px] border-b border-white/60 shadow-sm flex items-center justify-between z-40 transition-colors backdrop-blur-[10px]">
         
         <button 
           onClick={onToggleSidebar}
@@ -22,23 +27,25 @@ export function Header({ isSidebarOpen, onToggleSidebar }) {
           {isSidebarOpen ? <X size={28} /> : <Menu size={28} />}
         </button>
 
-        {/* Правая панель с кнопками */}
-        <div className="flex items-center gap-1 ml-auto">
-          <button 
-            onClick={openCalendar}
-            className="p-2 text-content-main hover:text-brand transition-colors outline-none"
-            aria-label="Календарь"
-          >
-            <Icon name="calendar" className="w-6 h-6" />
-          </button>
-          <button 
-            onClick={() => setIsFilterOpen(true)}
-            className="p-2 text-content-main hover:text-brand transition-colors outline-none"
-            aria-label="Фильтр"
-          >
-            <Icon name="filter" className="w-6 h-6" />
-          </button>
-        </div>
+        {/* Правая панель с кнопками - рендерится только на странице расписания */}
+        {isSchedulePage && (
+          <div className="flex items-center gap-1 ml-auto">
+            <button 
+              onClick={openCalendar}
+              className="p-2 text-content-main hover:text-brand transition-colors outline-none"
+              aria-label="Календарь"
+            >
+              <Icon name="calendar" className="w-6 h-6" />
+            </button>
+            <button 
+              onClick={() => setIsFilterOpen(true)}
+              className="p-2 text-content-main hover:text-brand transition-colors outline-none"
+              aria-label="Фильтр"
+            >
+              <Icon name="filter" className="w-6 h-6" />
+            </button>
+          </div>
+        )}
       </header>
 
       {/* Шторка Фильтра */}

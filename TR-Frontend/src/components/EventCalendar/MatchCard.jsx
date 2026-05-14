@@ -96,7 +96,7 @@ const MatchCard = ({ game, onToggleAttendance }) => {
   };
 
   return (
-    <div className={`bg-surface-level1 rounded-3xl shadow-lg border border-surface-border/50 p-5 mb-4 w-full select-none flex flex-col relative overflow-hidden ${isFinished ? 'pointer-events-none' : ''}`}>
+    <div className={`bg-surface-level1 h-[242px] rounded-3xl shadow-lg border border-surface-border/50 p-5 mb-4 w-full select-none flex flex-col relative overflow-hidden ${isFinished ? 'pointer-events-none' : ''}`}>
       
       {/* 1. ШАПКА: Дата и Локация */}
       <div className={`flex justify-between items-center mb-1 ${fadedClasses}`}>
@@ -155,7 +155,7 @@ const MatchCard = ({ game, onToggleAttendance }) => {
       </div>
 
       {/* 4. ПОДВАЛ: Стоимость и Отметка */}
-      <div className="pt-3 border-t border-surface-level3 flex justify-between items-center">
+      <div className="mt-auto pt-3 border-t border-surface-level3 flex justify-between items-center">
         <div className={`flex flex-col ${fadedClasses}`}>
           <span className="text-sm font-black text-brand">
             {myFee ? `${myFee} ₽` : 'Бесплатно'}

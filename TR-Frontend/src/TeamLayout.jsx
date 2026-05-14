@@ -83,7 +83,7 @@ export function TeamLayout() {
       </aside>
 
       <div className={clsx(
-        "flex flex-col flex-1 w-full h-full min-w-0 transition-transform duration-500 ease-[cubic-bezier(0.32,0.72,0,1)] z-50 bg-surface-base",
+        "flex flex-col flex-1 w-full h-full min-w-0 transition-transform duration-500 ease-[cubic-bezier(0.32,0.72,0,1)] z-50 bg-surface-base relative",
         isSidebarOpen ? "translate-x-[80%] shadow-2xl md:translate-x-0 md:shadow-none" : "translate-x-0"
       )}>
         
@@ -99,7 +99,8 @@ export function TeamLayout() {
           />
         )}
 
-        <main className="flex-1 overflow-y-auto overflow-x-hidden relative">
+        {/* Добавлен pt-[60px] для отступа под абсолютную шапку, чтобы контент не скрывался под ней */}
+        <main className="flex-1 overflow-y-auto overflow-x-hidden relative pt-[60px]">
           <Outlet context={{ user, teams, selectedTeam }} />
         </main>
       </div>

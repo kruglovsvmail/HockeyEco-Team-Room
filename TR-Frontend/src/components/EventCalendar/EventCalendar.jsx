@@ -6,7 +6,7 @@ import { TopSheet } from '../../ui/TopSheet';
 // Принимаем matchDatesSet
 export function EventCalendar({ currentDate, setCurrentDate, isExpanded, setIsExpanded, matchDatesSet }) {
   return (
-    <div className="w-full bg-surface-level1 rounded-2xl shadow-md">
+    <div className="w-full">
       <CompactWeek 
         date={currentDate} 
         onChangeDate={setCurrentDate} 
