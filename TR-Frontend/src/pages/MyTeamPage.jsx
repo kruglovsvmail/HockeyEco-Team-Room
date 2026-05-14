@@ -17,7 +17,7 @@ export function MyTeamPage() {
 
       <div className="flex-1">
         {/* Здесь будет контент страницы "Моя команда" (состав, статистика и т.д.) */}
-        <div className="bg-surface-level1 p-6 text-center rounded-2xl border border-surface-border/50">
+        <div className="text-center">
           <p className="text-sm text-content-muted leading-relaxed">
             Раздел «Моя команда» находится в разработке.
           </p>

@@ -52,7 +52,7 @@ const MatchCard = ({ game, onToggleAttendance }) => {
       const oppScore = isHome ? game.away_score : game.home_score;
       
       let statusText = 'НИЧЬЯ';
-      let statusColor = 'text-brand'; // Синий (Brand)
+      let statusColor = 'text-brand';
 
       // Логика определения результата (с учетом технических поражений/побед)
       if (game.is_technical) {
@@ -96,10 +96,10 @@ const MatchCard = ({ game, onToggleAttendance }) => {
   };
 
   return (
-    <div className={`bg-surface-level1 h-[242px] rounded-3xl shadow-lg border border-surface-border/50 p-5 mb-4 w-full select-none flex flex-col relative overflow-hidden ${isFinished ? 'pointer-events-none' : ''}`}>
+    <div className={`bg-surface-level1 h-[248px] md:h-full rounded-3xl shadow-lg p-5 mb-4 w-full select-none flex flex-col relative overflow-hidden ${isFinished ? 'pointer-events-none' : ''}`}>
       
       {/* 1. ШАПКА: Дата и Локация */}
-      <div className={`flex justify-between items-center mb-1 ${fadedClasses}`}>
+      <div className={`flex justify-between items-center mb-2 ${fadedClasses}`}>
         <span className="text-[11px] font-bold text-content-muted uppercase tracking-widest">
           {gameDate.format('D MMMM')} • {gameDate.format('dd')}
         </span>
@@ -110,10 +110,10 @@ const MatchCard = ({ game, onToggleAttendance }) => {
 
       {/* 2. ПОДШАПОК: МАТЧ и Время */}
       <div className={`flex justify-between items-end ${fadedClasses}`}>
-        <h2 className="text-[26px] font-black text-content-main tracking-tighter leading-none uppercase">
+        <h2 className="text-[24px] font-black text-content-main tracking-wide tracking-tighter leading-none uppercase">
           Матч
         </h2>
-        <div className="text-[26px] font-black text-brand-dark leading-none">
+        <div className="text-[24px] font-black tracking-wide text-brand-dark leading-none">
           {gameDate.format('HH:mm')}
         </div>
       </div>
@@ -122,16 +122,19 @@ const MatchCard = ({ game, onToggleAttendance }) => {
       <div className="flex items-center justify-between pt-5 pb-3">
         {/* Хозяева (Слева) */}
         <div className="flex flex-col items-center gap-3 w-[32%]">
-          <div className={`w-12 h-12 md:w-20 md:h-20 flex items-center justify-center p-1 rounded-xl bg-surface-base border transition-all ${isHome ? 'shadow-[0_0_10px_var(--color-brand)] border-brand/60' : ''}`}>
+          <div className={`shrink-0 w-12 h-12 md:w-20 md:h-20 flex items-center justify-center p-1 rounded-xl bg-surface-base border transition-all ${isHome ? 'shadow-[0_0_10px_var(--color-brand)] border-brand/60' : ''}`}>
             {homeLogo ? (
               <img src={homeLogo} alt={homeName} className="w-full h-full object-contain" />
             ) : (
               <span className="text-[10px] font-bold text-content-muted">ЛОГО</span>
             )}
           </div>
-          <span className="text-[11px] font-bold text-content-main uppercase text-center leading-tight line-clamp-2">
-            {homeName}
-          </span>
+          {/* Заменено items-start на items-center для выравнивания текста по середине */}
+          <div className="h-8 w-full flex items-center justify-center">
+            <span className="text-[11px] font-bold text-content-main uppercase text-center leading-tight line-clamp-2">
+              {homeName}
+            </span>
+          </div>
         </div>
 
         {/* Центр: Счет или Статус */}
@@ -141,16 +144,19 @@ const MatchCard = ({ game, onToggleAttendance }) => {
 
         {/* Гости (Справа) */}
         <div className="flex flex-col items-center gap-3 w-[32%]">
-          <div className={`w-12 h-12 md:w-20 md:h-20 flex items-center justify-center p-1 rounded-xl bg-surface-base border transition-all ${!isHome ? 'shadow-[0_0_10px_var(--color-brand)] border-brand/60' : ''}`}>
+          <div className={`shrink-0 w-12 h-12 md:w-20 md:h-20 flex items-center justify-center p-1 rounded-xl bg-surface-base border transition-all ${!isHome ? 'shadow-[0_0_10px_var(--color-brand)] border-brand/60' : ''}`}>
             {awayLogo ? (
               <img src={awayLogo} alt={awayName} className="w-full h-full object-contain" />
             ) : (
               <span className="text-[10px] font-bold text-content-muted">ЛОГО</span>
             )}
           </div>
-          <span className="text-[11px] font-bold text-content-main uppercase text-center leading-tight line-clamp-2">
-            {awayName}
-          </span>
+          {/* Заменено items-start на items-center для выравнивания текста по середине */}
+          <div className="h-8 w-full flex items-center justify-center">
+            <span className="text-[11px] font-bold text-content-main uppercase text-center leading-tight line-clamp-2">
+              {awayName}
+            </span>
+          </div>
         </div>
       </div>
 

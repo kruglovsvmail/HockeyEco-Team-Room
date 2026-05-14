@@ -1,4 +1,3 @@
-// TR-Frontend/src/components/EventCalendar/ExpandedGrid.jsx
 import React, { useMemo, useRef, useState, useEffect, useCallback } from 'react';
 import clsx from 'clsx';
 import dayjs from 'dayjs';
@@ -8,10 +7,8 @@ const MONTH_BLOCK_WIDTH = 340;
 const GAP_BETWEEN_MONTHS = 16;
 const STRIDE = MONTH_BLOCK_WIDTH + GAP_BETWEEN_MONTHS; 
 
-// ОПТИМИЗАЦИЯ 1: Уменьшили буфер с 3 до 1. Рендерим 3 месяца вместо 7. Заметно ускоряет DOM.
 const RENDER_BUFFER = 1;
 
-// ИСПРАВЛЕНИЕ: Принимаем matchDatesSet вместо массива matches
 const MonthView = React.memo(({ baseDate, selectedDate, onSelectDate, onPrev, onNext, matchDatesSet }) => {
   const targetMonth = baseDate.month();
 
@@ -41,8 +38,9 @@ const MonthView = React.memo(({ baseDate, selectedDate, onSelectDate, onPrev, on
       {/* Шапка месяца */}
       <div className="flex items-center justify-center px-2 mb-4 relative h-10">
         <button 
+          type="button"
           onClick={(e) => { e.stopPropagation(); onPrev(); }} 
-          className="md:hidden absolute left-0 p-2 text-content-muted hover:text-brand transition-colors outline-none"
+          className="md:hidden absolute left-0 p-2 text-content-muted outline-none border-none bg-transparent"
         >
           <Icon name="chevron_left" className="w-4 h-4" />
         </button>
@@ -52,8 +50,9 @@ const MonthView = React.memo(({ baseDate, selectedDate, onSelectDate, onPrev, on
         </div>
 
         <button 
+          type="button"
           onClick={(e) => { e.stopPropagation(); onNext(); }} 
-          className="md:hidden absolute right-0 p-2 text-content-muted hover:text-brand transition-colors outline-none rotate-180"
+          className="md:hidden absolute right-0 p-2 text-content-muted outline-none border-none bg-transparent rotate-180"
         >
           <Icon name="chevron_left" className="w-4 h-4" />
         </button>
@@ -62,13 +61,13 @@ const MonthView = React.memo(({ baseDate, selectedDate, onSelectDate, onPrev, on
       <div className="flex flex-1 gap-1 justify-center relative">
         
         {/* Колонка Дней Недели */}
-        <div className="flex flex-col w-7 pt-1 shrink-0 mr-1 border-r">
+        <div className="flex flex-col w-7 pt-1 shrink-0 mr-1">
           {['Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб', 'Вс'].map((dow, idx) => (
             <div key={idx} className={clsx(
               "w-full flex items-center justify-center h-8 text-[10px] font-bold relative border-b border-surface-level3",
               (idx === 5 || idx === 6) ? "text-danger" : "text-content-subtle"
             )}>
-               {dow}
+              {dow}
             </div>
           ))}
         </div>
@@ -76,15 +75,18 @@ const MonthView = React.memo(({ baseDate, selectedDate, onSelectDate, onPrev, on
         {/* Сетка недель */}
         {weeks.map((week, weekIdx) => {
           const isSelectedWeek = week[0].isSame(selectedDate.startOf('isoWeek'), 'day');
+          
           return (
-            <div 
+            <button 
+              type="button"
               key={weekIdx} 
               onClick={() => onSelectDate(week[0])}
+              // Вырезаны все мобильные hover и active эффекты. Для ПК оставлен md:hover
               className={clsx(
-                "flex flex-col items-center w-11 rounded-xl pb-2 pt-1 cursor-pointer transition-all duration-200",
+                "flex flex-col items-center w-11 rounded-xl pb-2 pt-1 cursor-pointer outline-none transition-colors",
                 isSelectedWeek 
                   ? "bg-brand-opacity z-10 shadow-sm" 
-                  : "border-transparent hover:bg-surface-level2"
+                  : "border-transparent bg-transparent md:hover:bg-surface-level2"
               )}
             >
               {week.map((day, dayIdx) => {
@@ -92,7 +94,6 @@ const MonthView = React.memo(({ baseDate, selectedDate, onSelectDate, onPrev, on
                 const isWeekend = dayIdx === 5 || dayIdx === 6;
                 const isTargetMonth = day.month() === targetMonth;
 
-                // ОПТИМИЗАЦИЯ 2: Мгновенная проверка (O(1)) по хэш-таблице (Set)
                 const dayStr = day.format('YYYY-MM-DD');
                 const hasMatch = matchDatesSet?.has(dayStr);
 
@@ -112,7 +113,6 @@ const MonthView = React.memo(({ baseDate, selectedDate, onSelectDate, onPrev, on
                           {day.format('D')}
                         </span>
                         
-                        {/* Выводим точку, если есть матч */}
                         {hasMatch && (
                           <div className="absolute bottom-1 w-1 h-1 rounded-full bg-brand shadow-sm z-10" />
                         )}
@@ -123,7 +123,7 @@ const MonthView = React.memo(({ baseDate, selectedDate, onSelectDate, onPrev, on
                   </div>
                 );
               })}
-            </div>
+            </button>
           );
         })}
       </div>
@@ -131,7 +131,6 @@ const MonthView = React.memo(({ baseDate, selectedDate, onSelectDate, onPrev, on
   );
 });
 
-// ИСПРАВЛЕНИЕ: Принимаем matchDatesSet вместо matches
 export const ExpandedGrid = React.memo(function ExpandedGrid({ date, onChangeDate, matchDatesSet }) {
   const [viewDate, setViewDate] = useState(date);
   const isInternalChange = useRef(false);
@@ -149,8 +148,8 @@ export const ExpandedGrid = React.memo(function ExpandedGrid({ date, onChangeDat
 
   const slideTo = useCallback((direction) => {
     if (isAnimating) return;
+  
     setIsAnimating(true);
-    
     setOffsetIndex(direction === 'next' ? 1 : -1);
 
     setTimeout(() => {
@@ -161,7 +160,7 @@ export const ExpandedGrid = React.memo(function ExpandedGrid({ date, onChangeDat
   }, [isAnimating]);
 
   const handleTouchStart = (e) => {
-    e.stopPropagation(); 
+    e.stopPropagation();
     touchStartX.current = e.touches[0].clientX;
   };
 
@@ -184,17 +183,17 @@ export const ExpandedGrid = React.memo(function ExpandedGrid({ date, onChangeDat
   return (
     <div className="pt-2 touch-pan-y overflow-hidden w-full relative group">
       
-      {/* Десктопные стрелки */}
+      {/* Десктопные стрелки перелистывания (оставляем эффекты только с префиксом md:) */}
       <div className="hidden md:block">
         <button 
           onClick={() => slideTo('prev')}
-          className="absolute left-4 top-[55%] -translate-y-1/2 z-30 p-2 bg-surface-level1 border border-surface-border rounded-full shadow-lg text-content-main hover:bg-brand hover:text-white transition-all opacity-0 group-hover:opacity-100 outline-none"
+          className="absolute left-4 top-[55%] -translate-y-1/2 z-30 p-2 bg-surface-level1 border border-surface-border rounded-full shadow-lg text-content-main outline-none md:hover:bg-brand md:hover:text-white transition-all opacity-0 md:group-hover:opacity-100"
         >
           <Icon name="chevron_left" className="w-6 h-6" />
         </button>
         <button 
           onClick={() => slideTo('next')}
-          className="absolute right-4 top-[55%] -translate-y-1/2 z-30 p-2 bg-surface-level1 border border-surface-border rounded-full shadow-lg text-content-main hover:bg-brand hover:text-white transition-all opacity-0 group-hover:opacity-100 outline-none"
+          className="absolute right-4 top-[55%] -translate-y-1/2 z-30 p-2 bg-surface-level1 border border-surface-border rounded-full shadow-lg text-content-main outline-none md:hover:bg-brand md:hover:text-white transition-all opacity-0 md:group-hover:opacity-100"
         >
           <Icon name="chevron_left" className="w-6 h-6 rotate-180" />
         </button>
@@ -207,7 +206,10 @@ export const ExpandedGrid = React.memo(function ExpandedGrid({ date, onChangeDat
         onTouchMove={(e) => e.stopPropagation()}
       >
         <div 
-          className="flex items-start will-change-transform"
+          className={clsx(
+            "flex items-start will-change-transform",
+            isAnimating && "pointer-events-none"
+          )}
           style={{
             gap: `${GAP_BETWEEN_MONTHS}px`,
             transform: `translateX(${-offsetIndex * STRIDE}px)`,
@@ -224,7 +226,7 @@ export const ExpandedGrid = React.memo(function ExpandedGrid({ date, onChangeDat
                 onSelectDate={handleDateSelect}
                 onPrev={() => slideTo('prev')}
                 onNext={() => slideTo('next')}
-                matchDatesSet={matchDatesSet} // Прокидываем Set вниз
+                matchDatesSet={matchDatesSet} 
               />
             );
           })}

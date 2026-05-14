@@ -17,28 +17,27 @@ export function TopSheet({ isOpen, onClose, children }) {
   const handleTouchMove = (e) => {
     currentY.current = e.touches[0].clientY;
     const delta = currentY.current - startY.current;
-    
-    // Позволяем тянуть шторку только ВВЕРХ (отрицательная дельта)
     if (delta < 0) {
       setDragY(delta);
     }
   };
 
   const handleTouchEnd = () => {
-    // Если потянули вверх больше чем на 80px — закрываем
     if (dragY < -80) {
       onClose();
     } else {
-      setDragY(0); // Иначе отпружиниваем обратно
+      setDragY(0); 
     }
   };
 
   return (
     <>
-      {/* Затемнение фона */}
-      <div 
+      {/* ОВЕРЛЕЙ: Заменен на <button>, чтобы гарантировать мгновенное срабатывание клика без багов Safari */}
+      <button 
+        type="button"
+        aria-label="Закрыть календарь"
         className={clsx(
-          "fixed inset-0 bg-overlay backdrop-blur-overlay z-[100] transition-opacity duration-500",
+          "fixed inset-0 w-full h-full bg-overlay backdrop-blur-overlay z-[100] transition-opacity duration-500 border-none outline-none p-0 m-0",
           isOpen ? "opacity-100 pointer-events-auto" : "opacity-0 pointer-events-none"
         )}
         onClick={onClose}
@@ -48,7 +47,7 @@ export function TopSheet({ isOpen, onClose, children }) {
       <div 
         className={clsx(
           "fixed inset-x-0 top-0 z-[110] bg-sheet-bg backdrop-blur-sheet rounded-b-3xl border-b border-sheet-border shadow-xl flex flex-col",
-          "transition-transform duration-400 ease-[cubic-bezier(0.32,0.72,0,1)] pt-[env(safe-area-inset-top)]",
+          "transition-transform duration-400 ease-[cubic-bezier(0.32,0.72,0,1)] pt-[env(safe-area-inset-top)] outline-none",
           isOpen ? "translate-y-0" : "-translate-y-[calc(100%+50px)]"
         )}
         style={{ 
@@ -61,7 +60,7 @@ export function TopSheet({ isOpen, onClose, children }) {
           {children}
         </div>
 
-        {/* Зона захвата (Drag Handle) в самом НИЗУ шторки */}
+        {/* Зона захвата (Drag Handle) */}
         <div 
           className="p-4 pt-2 flex justify-center shrink-0 cursor-grab active:cursor-grabbing touch-pan-y"
           onTouchStart={handleTouchStart}

@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect, useMemo } from 'react';
+import React, { useState, useRef, useEffect, useMemo, useCallback } from 'react';
 import { useAccess } from '../hooks/useAccess';
 import dayjs from 'dayjs';
 import 'dayjs/locale/ru';
@@ -6,7 +6,10 @@ import isoWeek from 'dayjs/plugin/isoWeek';
 import utc from 'dayjs/plugin/utc';           
 import timezone from 'dayjs/plugin/timezone';
 import isSameOrAfter from 'dayjs/plugin/isSameOrAfter';
-import { EventCalendar } from '../components/EventCalendar/EventCalendar';
+
+import { CompactWeek } from '../components/EventCalendar/CompactWeek';
+import { ExpandedGrid } from '../components/EventCalendar/ExpandedGrid';
+import { TopSheet } from '../ui/TopSheet';
 import MatchCard from '../components/EventCalendar/MatchCard';
 import { getAuthHeaders } from '../utils/helpers';
 import { Loader2 } from 'lucide-react';
@@ -24,6 +27,11 @@ export function SchedulePage() {
   const [isLoading, setIsLoading] = useState(true);
   
   const touchStartX = useRef(null);
+  const pageRef = useRef(null);
+
+  // --- СОСТОЯНИЯ ДЛЯ АНИМАЦИИ КАРУСЕЛИ ---
+  const [offsetIndex, setOffsetIndex] = useState(0);
+  const [isAnimating, setIsAnimating] = useState(false);
 
   useEffect(() => {
     const fetchMatches = async () => {
@@ -50,7 +58,6 @@ export function SchedulePage() {
   }, []);
 
   const handleToggleAttendance = async (gameId, newValue, teamId) => {
-    // Оптимистичное обновление UI: меняем тумблер только для конкретной команды
     setMatches(prev => prev.map(game => 
       (game.id === gameId && game.my_team_id === teamId) ? { ...game, is_attending: newValue } : game
     ));
@@ -71,7 +78,6 @@ export function SchedulePage() {
       }
     } catch (err) {
       console.error('Ошибка переключения тумблера:', err);
-      // Откат при ошибке (для конкретной команды)
       setMatches(prev => prev.map(game => 
         (game.id === gameId && game.my_team_id === teamId) ? { ...game, is_attending: !newValue } : game
       ));
@@ -89,13 +95,26 @@ export function SchedulePage() {
     return dates;
   }, [matches]);
 
-  const filteredMatches = useMemo(() => {
-    return matches.filter(game => {
-      if (!game.game_date) return false;
-      const gameDate = dayjs(game.game_date).tz(game.arena_timezone || 'UTC');
-      return gameDate.isSame(currentDate, 'isoWeek');
-    });
-  }, [matches, currentDate]);
+  // --- ЛОГИКА ПЕРЕКЛЮЧЕНИЯ СЛАЙДОВ ---
+  const slideTo = useCallback((direction) => {
+    if (isAnimating) return;
+    setIsAnimating(true);
+    setOffsetIndex(direction === 'next' ? 1 : -1);
+
+    setTimeout(() => {
+      setIsAnimating(false);
+      setCurrentDate(prev => direction === 'next' ? prev.add(1, 'week') : prev.subtract(1, 'week'));
+      setOffsetIndex(0);
+      
+      // Сброс скролла наверх сразу после окончания анимации
+      requestAnimationFrame(() => {
+        window.scrollTo(0, 0);
+        if (pageRef.current) {
+          pageRef.current.scrollTop = 0;
+        }
+      });
+    }, 300);
+  }, [isAnimating]);
 
   useEffect(() => {
     const handleOpenCalendar = () => setIsExpanded(true);
@@ -103,63 +122,105 @@ export function SchedulePage() {
     return () => window.removeEventListener('open-calendar-sheet', handleOpenCalendar);
   }, []);
 
+  // --- СВАЙПЫ ---
   const handleTouchStart = (e) => {
-    if (isExpanded) return;
+    if (isExpanded || isAnimating) return;
     touchStartX.current = e.touches[0].clientX;
   };
 
   const handleTouchEnd = (e) => {
-    if (isExpanded || touchStartX.current === null) return;
+    if (isExpanded || touchStartX.current === null || isAnimating) return;
     const touchEndX = e.changedTouches[0].clientX;
     const diff = touchStartX.current - touchEndX;
     
     if (Math.abs(diff) > 50) {
-      if (diff > 0) setCurrentDate(currentDate.add(1, 'week'));
-      else setCurrentDate(currentDate.subtract(1, 'week'));
+      if (diff > 0) slideTo('next');
+      else slideTo('prev');
     }
     touchStartX.current = null;
   };
 
   return (
     <div 
-      className="flex flex-col h-full gap-4 px-4 touch-pan-y"
+      ref={pageRef}
+      className="flex flex-col w-full h-full touch-pan-y overflow-x-hidden relative"
       onTouchStart={handleTouchStart}
       onTouchEnd={handleTouchEnd}
     >
-      {/* Убрали sticky top-0, добавили relative для сохранения z-индекса */}
-      <div className="shrink-0 z-40 w-full relative">
-        <EventCalendar 
-          currentDate={currentDate} 
-          setCurrentDate={setCurrentDate}
-          isExpanded={isExpanded}
-          setIsExpanded={setIsExpanded}
-          matchDatesSet={matchDatesSet} 
+      {/* СТАТИЧНАЯ ШАПКА КАЛЕНДАРЯ */}
+      <div className="shrink-0 z-30 relative w-full px-4">
+        <CompactWeek 
+          date={currentDate} 
+          onChangeDate={(newDate) => {
+            if (newDate.isBefore(currentDate)) slideTo('prev');
+            else if (newDate.isAfter(currentDate)) slideTo('next');
+            else setCurrentDate(newDate);
+          }}
+          onToggleExpand={() => setIsExpanded(true)} 
+          offsetIndex={offsetIndex}
+          isAnimating={isAnimating}
         />
       </div>
 
-      <div className="flex-1 pb-8">
-        {isLoading ? (
-          <div className="flex justify-center items-center h-32 text-brand">
-            <Loader2 className="w-8 h-8 animate-spin" />
-          </div>
-        ) : filteredMatches.length > 0 ? (
-          <div className="flex flex-col gap-0">
-            {filteredMatches.map(game => (
-              <MatchCard 
-                key={`${game.id}-${game.my_team_id}`} 
-                game={game} 
-                onToggleAttendance={handleToggleAttendance} 
-              />
-            ))}
-          </div>
-        ) : (
-          <div className="bg-surface-level1 p-6 text-center rounded-3xl shadow-sm border border-surface-border mt-4">
-            <p className="text-sm text-content-muted leading-relaxed">
-              На эту неделю событий не запланировано.
-            </p>
-          </div>
-        )}
+      {/* КАРУСЕЛЬ КАРТОЧЕК МАТЧЕЙ */}
+      <div 
+        className="w-[300%] flex items-start will-change-transform flex-1 pt-4"
+        style={{
+          transform: `translateX(calc(-33.33333% - ${offsetIndex * 33.33333}%))`,
+          transition: isAnimating ? 'transform 300ms cubic-bezier(0.32, 0.72, 0, 1)' : 'none',
+        }}
+      >
+        {[-1, 0, 1].map(offset => {
+          const slideDate = currentDate.add(offset, 'week');
+          const slideMatches = matches.filter(game => {
+            if (!game.game_date) return false;
+            const gameDate = dayjs(game.game_date).tz(game.arena_timezone || 'UTC');
+            return gameDate.isSame(slideDate, 'isoWeek');
+          });
+
+          return (
+            <div key={offset} className="w-1/3 shrink-0 flex flex-col gap-0 px-4 h-full">
+              <div className="flex-1 pb-8">
+                {isLoading && offset === 0 ? (
+                  <div className="flex justify-center items-center h-32 text-brand">
+                    <Loader2 className="w-8 h-8 animate-spin" />
+                  </div>
+                ) : slideMatches.length > 0 ? (
+                  <div className="flex flex-col gap-0">
+                    {slideMatches.map(game => (
+                      <MatchCard 
+                        key={`${game.id}-${game.my_team_id}`} 
+                        game={game} 
+                        onToggleAttendance={handleToggleAttendance} 
+                      />
+                    ))}
+                  </div>
+                ) : (
+                  <div className="text-center p-10">
+                    <p className="text-sm text-content-muted italic leading-relaxed">
+                      На эту неделю событий не запланировано.
+                    </p>
+                  </div>
+                )}
+              </div>
+            </div>
+          );
+        })}
       </div>
+
+      {/* Шторка календаря */}
+      <TopSheet isOpen={isExpanded} onClose={() => setIsExpanded(false)}>
+        <div className="pb-2">
+          <ExpandedGrid 
+            date={currentDate} 
+            onChangeDate={(newDate) => {
+              setCurrentDate(newDate);
+            }} 
+            matchDatesSet={matchDatesSet} 
+          />
+        </div>
+      </TopSheet>
+
     </div>
   );
 }
