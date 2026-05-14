@@ -25,7 +25,6 @@ export function SchedulePage() {
   
   const touchStartX = useRef(null);
 
-  // Загрузка глобального расписания (все команды пользователя)
   useEffect(() => {
     const fetchMatches = async () => {
       setIsLoading(true);
@@ -50,11 +49,11 @@ export function SchedulePage() {
     fetchMatches();
   }, []);
 
-  // Обработка переключения тумблера
-  const handleToggleAttendance = async (gameId, newValue) => {
-    // Оптимистичное обновление UI
+  // ОБНОВЛЕНО: Принимаем teamId и передаем его на сервер
+  const handleToggleAttendance = async (gameId, newValue, teamId) => {
+    // Оптимистичное обновление UI: меняем тумблер только для конкретной команды
     setMatches(prev => prev.map(game => 
-      game.id === gameId ? { ...game, is_attending: newValue } : game
+      (game.id === gameId && game.my_team_id === teamId) ? { ...game, is_attending: newValue } : game
     ));
 
     try {
@@ -64,7 +63,7 @@ export function SchedulePage() {
           'Content-Type': 'application/json',
           ...getAuthHeaders()
         },
-        body: JSON.stringify({ isAttending: newValue })
+        body: JSON.stringify({ isAttending: newValue, teamId })
       });
 
       const data = await response.json();
@@ -73,14 +72,13 @@ export function SchedulePage() {
       }
     } catch (err) {
       console.error('Ошибка переключения тумблера:', err);
-      // Откат при ошибке
+      // Откат при ошибке (для конкретной команды)
       setMatches(prev => prev.map(game => 
-        game.id === gameId ? { ...game, is_attending: !newValue } : game
+        (game.id === gameId && game.my_team_id === teamId) ? { ...game, is_attending: !newValue } : game
       ));
     }
   };
 
-  // ОПТИМИЗАЦИЯ: Создаем Set для мгновенного поиска дат матчей в календаре (О(1))
   const matchDatesSet = useMemo(() => {
     const dates = new Set();
     matches.forEach(game => {
@@ -92,7 +90,6 @@ export function SchedulePage() {
     return dates;
   }, [matches]);
 
-  // Фильтрация матчей для списка (строго по выбранной неделе)
   const filteredMatches = useMemo(() => {
     return matches.filter(game => {
       if (!game.game_date) return false;

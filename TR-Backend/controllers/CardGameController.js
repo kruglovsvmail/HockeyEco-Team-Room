@@ -59,8 +59,8 @@ export const getEventCards = async (req, res) => {
         my_team.jersey_dark_url,
         my_team.jersey_light_url,
         
-        -- Статус тумблера
-        EXISTS (SELECT 1 FROM team_game_attendance tga WHERE tga.game_id = g.id AND tga.user_id = $1) AS is_attending,
+        -- Статус тумблера (ТЕПЕРЬ СТРОГО С ПРИВЯЗКОЙ К КОМАНДЕ)
+        EXISTS (SELECT 1 FROM team_game_attendance tga WHERE tga.game_id = g.id AND tga.user_id = $1 AND tga.team_id = ut.team_id) AS is_attending,
         
         -- Права на тумблер (проверяем именно ту команду, за которую смотрим карточку)
         CASE 
@@ -116,17 +116,22 @@ export const toggleGameAttendance = async (req, res) => {
   try {
     const userId = req.user.id;
     const { gameId } = req.params;
-    const { isAttending } = req.body;
+    const { isAttending, teamId } = req.body;
+
+    if (!teamId) {
+      return res.status(400).json({ success: false, error: 'teamId обязателен' });
+    }
 
     if (isAttending) {
+      // ON CONFLICT используем имя нового ограничения уникальности
       await pool.query(
-        `INSERT INTO team_game_attendance (game_id, user_id) VALUES ($1, $2) ON CONFLICT DO NOTHING`,
-        [gameId, userId]
+        `INSERT INTO team_game_attendance (game_id, user_id, team_id) VALUES ($1, $2, $3) ON CONFLICT ON CONSTRAINT team_game_att_unique DO NOTHING`,
+        [gameId, userId, teamId]
       );
     } else {
       await pool.query(
-        `DELETE FROM team_game_attendance WHERE game_id = $1 AND user_id = $2`,
-        [gameId, userId]
+        `DELETE FROM team_game_attendance WHERE game_id = $1 AND user_id = $2 AND team_id = $3`,
+        [gameId, userId, teamId]
       );
     }
 

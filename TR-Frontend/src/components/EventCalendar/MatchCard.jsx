@@ -12,21 +12,19 @@ dayjs.extend(timezone);
 dayjs.locale('ru');
 
 const MatchCard = ({ game, onToggleAttendance }) => {
-  // Определяем время и статусы
   const gameDate = dayjs(game.game_date).tz(game.arena_timezone || 'UTC');
   const isStarted = dayjs().isAfter(gameDate);
   const isFriendly = game.stage_type === 'friendly';
   
-  // Визуальный эффект для завершенного матча
   const isFinished = game.status === 'finished';
-  const finishedClasses = isFinished ? 'opacity-50 grayscale pointer-events-none' : '';
+  
+  // Класс для обесцвечивания и прозрачности (применяется точечно)
+  const fadedClasses = isFinished ? 'opacity-40 grayscale' : '';
 
-  // Определение контекста команды (кто "мы")
   const isHome = game.my_team_id === game.home_team_id;
   const myTeamName = game.my_team_name || 'Команда';
   const myTeamLogo = game.my_team_logo_url ? getImageUrl(game.my_team_logo_url) : null;
 
-  // Логика выбора изображения формы (Jersey)
   const myJerseyCode = isHome ? game.home_jersey_type : game.away_jersey_type;
   let jerseyImageUrl = null;
   
@@ -38,15 +36,12 @@ const MatchCard = ({ game, onToggleAttendance }) => {
     jerseyImageUrl = getImageUrl(url);
   }
 
-  // Стоимость участия
   const myFee = isHome ? game.home_player_fee : game.away_player_fee;
 
-  // Рендер счета и текстового результата
   const renderScore = () => {
     let myScore = isHome ? game.home_score : game.away_score;
     let oppScore = isHome ? game.away_score : game.home_score;
     
-    // Обработка технического результата (+/-)
     if (game.is_technical) {
       if (game.home_score < 0 && game.away_score < 0) {
         myScore = '-';
@@ -57,27 +52,25 @@ const MatchCard = ({ game, onToggleAttendance }) => {
       }
     }
 
-    // Определение цвета счета на основе результата
-    let scoreColorClass = 'text-[var(--color-brand)]'; 
+    let scoreColorClass = 'text-[var(--color-brand)]';
     if (myScore === '+' || (!game.is_technical && myScore > oppScore)) {
-      scoreColorClass = 'text-[var(--color-success)]'; 
+      scoreColorClass = 'text-[var(--color-success)]';
     } else if (myScore === '-' || (!game.is_technical && myScore < oppScore)) {
-      scoreColorClass = 'text-[var(--color-danger)]'; 
+      scoreColorClass = 'text-[var(--color-danger)]';
     }
 
-    // Текстовые маркеры завершения под счетом
     let endMarker = null;
-    if (game.end_type === 'ot') endMarker = 'в овертайме';
-    if (game.end_type === 'so') endMarker = 'по буллитам';
+    if (game.end_type === 'ot') endMarker = 'овертайм';
+    if (game.end_type === 'so') endMarker = 'буллиты';
     if (game.end_type === 'tech') endMarker = 'Технарь';
 
     return (
-      <div className="flex flex-col items-end gap-1">
-        <div className={`text-3xl md:text-4xl font-black tracking-wide leading-none ${scoreColorClass}`}>
+      <div className="flex flex-col items-center gap-1">
+        <div className={`text-4xl font-black leading-none ${scoreColorClass}`}>
           {myScore} : {oppScore}
         </div>
         {endMarker && (
-          <span className="text-[9px] md:text-[10px] font-bold text-content-muted tracking-wider uppercase">
+          <span className="bg-surface-base px-8 text-[8px] rounded md:text-[10px] font-semibold text-content-muted uppercase">
             {endMarker}
           </span>
         )}
@@ -85,24 +78,23 @@ const MatchCard = ({ game, onToggleAttendance }) => {
     );
   };
 
-  // Правый интерактивный блок (LIVE / Счет / Тумблер)
   const renderInteractiveBlock = () => {
     if (game.status === 'live') {
       return (
-        <div className="flex flex-col items-end gap-3">
+        <div className="flex flex-col items-end gap-2">
           <div className="flex items-center gap-1.5">
             <span className="w-2.5 h-2.5 rounded-full bg-[var(--color-danger)] animate-pulse"></span>
             <span className="text-sm font-black text-[var(--color-danger)] tracking-widest uppercase">LIVE</span>
           </div>
           <div className="flex gap-2">
             {game.video_yt_url && (
-              <a href={game.video_yt_url} target="_blank" rel="noreferrer" className="p-1 text-content-muted hover:text-[var(--color-danger)]">
-                <Youtube className="w-6 h-6" />
+              <a href={game.video_yt_url} target="_blank" rel="noreferrer" className="p-1 text-content-muted hover:text-[var(--color-danger)] outline-none">
+                <Youtube className="w-5 h-5 md:w-6 md:h-6" />
               </a>
             )}
             {game.video_vk_url && (
-              <a href={game.video_vk_url} target="_blank" rel="noreferrer" className="p-1 text-content-muted hover:text-[var(--color-brand)]">
-                <Video className="w-6 h-6" />
+              <a href={game.video_vk_url} target="_blank" rel="noreferrer" className="p-1 text-content-muted hover:text-[var(--color-brand)] outline-none">
+                <Video className="w-5 h-5 md:w-6 md:h-6" />
               </a>
             )}
           </div>
@@ -120,11 +112,11 @@ const MatchCard = ({ game, onToggleAttendance }) => {
           {game.can_toggle ? (
             <Toggle 
               checked={game.is_attending} 
-              onChange={(val) => onToggleAttendance(game.id, val)} 
+              onChange={(val) => onToggleAttendance(game.id, val, game.my_team_id)} 
             />
           ) : (
-            <span className="text-[8px] text-content-muted text-center max-w-[78px] leading-tight font-normal bg-surface-level2 px-1 py-1 rounded-lg">
-              Вы не в заявлены на турнир
+            <span className="text-[10px] text-content-muted text-center max-w-[90px] leading-tight font-medium bg-surface-base px-2 py-1.5 rounded-lg">
+              Не заявлены на турнир
             </span>
           )}
         </div>
@@ -134,106 +126,94 @@ const MatchCard = ({ game, onToggleAttendance }) => {
     return null;
   };
 
+  // С главного контейнера убрали fadedClasses, оставили только pointer-events-none для блокировки кликов
   return (
-    <div className="bg-surface-level1 rounded-2xl shadow-md p-4 mb-4 transition-all w-full select-none">
+    <div className={`bg-surface-level1 rounded-2xl shadow-sm border p-4 mb-4 w-full select-none flex flex-col gap-3 transition-all ${isFinished ? 'pointer-events-none' : ''}`}>
       
-      {/* --- ВЕРХНЯЯ СТРОКА: Дата и Локация --- */}
-      <div className={`flex justify-between items-start mb-2 transition-all ${finishedClasses}`}>
-        <div className="text-sm font-bold uppercase text-content-muted">
-          {gameDate.format('D MMMM')}, <span className="uppercase">{gameDate.format('dd')}</span>
-        </div>
-        <div className="text-sm font-bold text-content-muted uppercase text-right max-w-[50%] truncate">
-          {game.arena_name || 'Локация не указана'}
-        </div>
-      </div>
-
-      {/* --- ЦЕНТРАЛЬНЫЙ БЛОК: Лого, МАТЧ и Время --- */}
-      <div className={`flex justify-between items-end mb-2 transition-all ${finishedClasses}`}>
+      {/* ВЕРХНИЙ БЛОК: Контекст, Команда и Время */}
+      <div className={`flex justify-between items-start gap-0 transition-all duration-300 ${fadedClasses}`}>
         
-        {/* Инфо текущей команды */}
-        <div className="flex items-end gap-3">
-          <div className="w-10 h-10 rounded-lg bg-surface-base p-0.5 flex shrink-0 items-center justify-center overflow-hidden">
-            {myTeamLogo ? (
-              <img src={myTeamLogo} alt={myTeamName} className="w-full h-full object-contain" />
-            ) : (
-              <span className="text-[10px] font-bold text-content-muted uppercase">ЛОГО</span>
-            )}
+        {/* Левая часть: Статус и Моя команда */}
+        <div className="flex flex-col gap-3">
+          <div className="bg-brand-opacity text-brand px-2.5 py-1 rounded-lg text-xl font-black uppercase tracking-widest w-fit shadow-sm">
+            Матч
           </div>
           
-          <div className="flex flex-col justify-end">
-            <span className="text-[10px] font-medium text-content-main leading-tight mb-0.5 truncate max-w-[200px]">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-lg bg-surface-base border p-1 flex shrink-0 items-center justify-center overflow-hidden">
+              {myTeamLogo ? (
+                <img src={myTeamLogo} alt={myTeamName} className="w-full h-full object-contain" />
+              ) : (
+                <span className="text-[10px] font-bold text-content-muted uppercase">ЛОГО</span>
+              )}
+            </div>
+            <span className="text-sm font-bold text-content-main leading-tight line-clamp-2 max-w-[130px]">
               {myTeamName}
             </span>
-            <span className="text-[22px] font-black uppercase tracking-wide text-brand-dark leading-none">
-              Матч
-            </span>
           </div>
         </div>
 
-        {/* Время начала (выровнено по базовой линии с МАТЧ) */}
-        <div className="text-[24px] font-black tracking-wider text-brand-dark shrink-0 leading-none">
-          {gameDate.format('HH:mm')}
+        {/* Правая часть: Время, Дата, Локация */}
+        <div className="flex flex-col items-end text-right shrink-0">
+          <div className="text-3xl md:text-4xl font-black tracking-wider text-brand-dark leading-none mb-5">
+            {gameDate.format('HH:mm')}
+          </div>
+          <div className="text-xs font-bold uppercase text-content-main tracking-wide">
+            {gameDate.format('D MMMM')}, <span className="text-content-muted">{gameDate.format('dd')}</span>
+          </div>
+          <div className="text-[11px] font-medium text-content-muted uppercase mt-1 max-w-[130px] truncate">
+            {game.arena_name || 'Локация не указана'}
+          </div>
         </div>
-
       </div>
 
-      {/* --- НИЖНИЙ БЛОК: Характеристики и Правая Колонка --- */}
-      <div className="flex justify-between items-end">
+      {/* РАЗДЕЛИТЕЛЬ */}
+      <div className={`h-[1px] w-full bg-surface-base rounded-full transition-all duration-300 ${fadedClasses}`} />
+
+      {/* НИЖНИЙ БЛОК: Детали и Интерактив */}
+      <div className="flex justify-between gap-2">
         
-        {/* Список деталей слева */}
-        <div className={`flex flex-col gap-1 text-[9px] md:text-xs text-content-muted font-semibold transition-all ${finishedClasses}`}>
-
-          <div className="flex gap-2">
-            <span className="text-content-subtle font-normal">Соперник:</span>
-            <span>{game.opponent_name || 'Неизвестен'}</span>
+        {/* Детали матча (Сетка) - скрываем/обесцвечиваем */}
+        <div className={`flex flex-col gap-1.5 text-[10px] md:text-xs text-content-main font-medium transition-all duration-300 ${fadedClasses}`}>
+          <div className="flex">
+            <span className="text-content-subtle w-16">Соперник:</span>
+            <span className="font-semibold">{game.opponent_name || 'Неизвестен'}</span>
           </div>
-
-          <div className="flex gap-2">
-            <span className="text-content-subtle font-normal">Турнир:</span>
-            <span>
+          <div className="flex">
+            <span className="text-content-subtle w-16">Турнир:</span>
+            <span className="truncate max-w-[140px] md:max-w-[200px]">
               {isFriendly 
                 ? 'Товарищеский' 
                 : `${game.league_short_name || 'Лига'} | ${game.division_short_name || 'Дивизион'}`}
             </span>
           </div>
-
           {!isFriendly && game.stage_label && (
-            <div className="flex gap-2">
-              <span className="text-content-subtle font-normal">Стадия:</span>
+            <div className="flex">
+              <span className="text-content-subtle w-16">Стадия:</span>
               <span>
                 {game.stage_label}
                 {game.series_number ? `, ${game.series_number}-й тур` : ''}
               </span>
             </div>
           )}
-
           <div className="flex gap-2 mt-4">
             <span className="text-brand font-bold">{myFee ? `${myFee} ₽` : 'Стоимость еще не указана'}</span>
           </div>
-
         </div>
 
-        {/* Правый нижний угол (Джерси + Тумблер/Счет/LIVE) */}
-        <div className="shrink-0 mb-1 pl-4 flex flex-col items-end gap-3">
-          
-          {/* Изображение игровой формы */}
+        {/* Правый нижний угол: Форма и Действия */}
+        <div className="shrink-0 flex flex-col items-end gap-3.5">
           {jerseyImageUrl && (
-            <div className={`w-9 h-9 rounded-lg bg-surface-base p-1 md:w-11 md:h-11 flex items-end justify-end transition-all ${finishedClasses}`}>
-              <img 
-                src={jerseyImageUrl} 
-                alt="Игровая форма" 
-                className="max-w-full max-h-full object-contain" 
-              />
+            <div className={`w-11 h-11 md:w-10 md:h-10 rounded-lg bg-surface-base border p-1 flex items-center justify-center transition-all duration-300 ${fadedClasses}`}>
+              <img src={jerseyImageUrl} alt="Игровая форма" className="max-w-full max-h-full object-contain drop-shadow-sm" />
             </div>
           )}
-
-          {/* Интерактивный блок (остается ярким при isFinished) */}
-          <div className="transition-all">
+          
+          {/* Интерактивный блок (тут счет) — БЕЗ fadedClasses, остается 100% видимым */}
+          <div className="min-h-[32px] flex items-end">
             {renderInteractiveBlock()}
           </div>
-          
         </div>
-
       </div>
 
     </div>
