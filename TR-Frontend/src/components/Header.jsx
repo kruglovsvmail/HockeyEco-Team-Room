@@ -12,7 +12,7 @@ export function Header({ isSidebarOpen, onToggleSidebar }) {
 
   return (
     <>
-      <header className="shrink-0 p-4 h-[60px] flex items-center justify-between sticky top-0 z-40 transition-colors bg-surface-base">
+      <header className="shrink-0 p-4 h-[60px] flex items-center justify-between sticky top-0 z-40 transition-colors">
         
         <button 
           onClick={onToggleSidebar}

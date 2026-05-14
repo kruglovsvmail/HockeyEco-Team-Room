@@ -62,27 +62,44 @@ export const getEventCards = async (req, res) => {
         -- Статус тумблера (ТЕПЕРЬ СТРОГО С ПРИВЯЗКОЙ К КОМАНДЕ)
         EXISTS (SELECT 1 FROM team_game_attendance tga WHERE tga.game_id = g.id AND tga.user_id = $1 AND tga.team_id = ut.team_id) AS is_attending,
         
-        -- Права на тумблер (проверяем именно ту команду, за которую смотрим карточку)
+        -- Права на тумблер (вычисляем текстовый статус)
         CASE 
           WHEN g.stage_type = 'friendly' THEN
-            EXISTS (
-              SELECT 1 FROM team_rosters tr 
-              JOIN team_members tm ON tr.member_id = tm.id
-              WHERE tm.user_id = $1 
-              AND tm.team_id = ut.team_id 
-              AND tr.left_at IS NULL
+            COALESCE(
+              (SELECT CASE 
+                        WHEN tr.left_at IS NOT NULL THEN 'unregistered' 
+                        ELSE 'allowed' 
+                      END
+               FROM team_rosters tr 
+               JOIN team_members tm ON tr.member_id = tm.id
+               WHERE tm.user_id = $1 AND tm.team_id = ut.team_id
+               ORDER BY tr.left_at NULLS FIRST LIMIT 1),
+               
+              (SELECT 'staff_hidden' FROM team_roles troles
+               JOIN team_members tm ON troles.member_id = tm.id
+               WHERE tm.user_id = $1 AND tm.team_id = ut.team_id AND troles.left_at IS NULL LIMIT 1),
+               
+              'not_in_team'
             )
           ELSE
-            EXISTS (
-              SELECT 1 FROM tournament_rosters tr
-              JOIN tournament_teams tt ON tr.tournament_team_id = tt.id
-              WHERE tt.division_id = g.division_id 
-              AND tt.team_id = ut.team_id
-              AND tr.player_id = $1 
-              AND tr.application_status = 'approved' 
-              AND tr.period_end IS NULL
+            COALESCE(
+              (SELECT CASE 
+                        WHEN tr.period_end IS NOT NULL THEN 'unregistered'
+                        WHEN tr.application_status != 'approved' THEN 'not_approved'
+                        ELSE 'allowed'
+                      END
+               FROM tournament_rosters tr
+               JOIN tournament_teams tt ON tr.tournament_team_id = tt.id
+               WHERE tt.division_id = g.division_id AND tt.team_id = ut.team_id AND tr.player_id = $1
+               ORDER BY tr.period_end NULLS FIRST LIMIT 1),
+               
+              (SELECT 'staff_hidden' FROM team_roles troles
+               JOIN team_members tm ON troles.member_id = tm.id
+               WHERE tm.user_id = $1 AND tm.team_id = ut.team_id AND troles.left_at IS NULL LIMIT 1),
+               
+              'not_in_tournament'
             )
-        END AS can_toggle
+        END AS toggle_status
 
       FROM user_teams ut
       -- Присоединяем игры, где участвует эта команда
