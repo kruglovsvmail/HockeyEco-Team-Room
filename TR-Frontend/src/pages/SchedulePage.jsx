@@ -1,11 +1,20 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useMemo } from 'react';
 import { useAccess } from '../hooks/useAccess';
 import dayjs from 'dayjs';
 import 'dayjs/locale/ru';
 import isoWeek from 'dayjs/plugin/isoWeek';
+import utc from 'dayjs/plugin/utc';           
+import timezone from 'dayjs/plugin/timezone'; 
+import isSameOrAfter from 'dayjs/plugin/isSameOrAfter';
 import { EventCalendar } from '../components/EventCalendar/EventCalendar';
+import MatchCard from '../components/EventCalendar/MatchCard';
+import { getAuthHeaders } from '../utils/helpers';
+import { Loader2 } from 'lucide-react';
 
 dayjs.extend(isoWeek);
+dayjs.extend(utc);       
+dayjs.extend(timezone);  
+dayjs.extend(isSameOrAfter);
 dayjs.locale('ru');
 
 export function SchedulePage() {
@@ -13,8 +22,70 @@ export function SchedulePage() {
   
   const [currentDate, setCurrentDate] = useState(dayjs());
   const [isExpanded, setIsExpanded] = useState(false);
+  const [matches, setMatches] = useState([]);
+  const [isLoading, setIsLoading] = useState(true);
   
   const touchStartX = useRef(null);
+
+  useEffect(() => {
+    const fetchMatches = async () => {
+      setIsLoading(true);
+      try {
+        const response = await fetch(`${import.meta.env.VITE_API_URL}/api/games`, {
+          headers: getAuthHeaders()
+        });
+        const data = await response.json();
+        
+        if (response.ok && data.success) {
+          setMatches(data.cards || []);
+        } else {
+          console.error('Ошибка загрузки матчей:', data.error);
+        }
+      } catch (err) {
+        console.error('Ошибка сети при загрузке матчей:', err);
+      } finally {
+        setIsLoading(false);
+      }
+    };
+
+    fetchMatches();
+  }, []);
+
+  const handleToggleAttendance = async (gameId, newValue) => {
+    setMatches(prev => prev.map(game => 
+      game.id === gameId ? { ...game, is_attending: newValue } : game
+    ));
+
+    try {
+      const response = await fetch(`${import.meta.env.VITE_API_URL}/api/games/${gameId}/attendance`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...getAuthHeaders()
+        },
+        body: JSON.stringify({ isAttending: newValue })
+      });
+
+      const data = await response.json();
+      if (!response.ok || !data.success) {
+        throw new Error(data.error || 'Ошибка сохранения');
+      }
+    } catch (err) {
+      console.error('Ошибка переключения тумблера:', err);
+      setMatches(prev => prev.map(game => 
+        game.id === gameId ? { ...game, is_attending: !newValue } : game
+      ));
+    }
+  };
+
+  const filteredMatches = useMemo(() => {
+    return matches.filter(game => {
+      if (!game.game_date) return false;
+      const gameDate = dayjs(game.game_date).tz(game.arena_timezone || 'UTC');
+      // Фильтруем матчи так, чтобы они попадали в ту же неделю (с ПН по ВС), что и выбранная дата
+      return gameDate.isSame(currentDate, 'isoWeek');
+    });
+  }, [matches, currentDate]);
 
   useEffect(() => {
     const handleOpenCalendar = () => setIsExpanded(true);
@@ -33,7 +104,7 @@ export function SchedulePage() {
     const diff = touchStartX.current - touchEndX;
     
     if (Math.abs(diff) > 50) {
-      if (diff > 0) setCurrentDate(currentDate.add(1, 'week')); 
+      if (diff > 0) setCurrentDate(currentDate.add(1, 'week'));
       else setCurrentDate(currentDate.subtract(1, 'week'));
     }
     touchStartX.current = null;
@@ -51,13 +122,33 @@ export function SchedulePage() {
           setCurrentDate={setCurrentDate}
           isExpanded={isExpanded}
           setIsExpanded={setIsExpanded}
+          matches={matches} 
         />
       </div>
 
-      <div className="flex-1 bg-surface-level1 p-6 text-center rounded-3xl shadow-sm border border-surface-border">
-        <p className="text-sm text-content-muted leading-relaxed">
-          Матчей в расписании пока нет.
-        </p>
+      <div className="flex-1 pb-8">
+        {isLoading ? (
+          <div className="flex justify-center items-center h-32 text-brand">
+            <Loader2 className="w-8 h-8 animate-spin" />
+          </div>
+        ) : filteredMatches.length > 0 ? (
+          <div className="flex flex-col gap-0">
+            {/* Опционально можно добавить заголовок недели, но пока просто выводим список */}
+            {filteredMatches.map(game => (
+              <MatchCard 
+                key={game.id} 
+                game={game} 
+                onToggleAttendance={handleToggleAttendance} 
+              />
+            ))}
+          </div>
+        ) : (
+          <div className="bg-surface-level1 p-6 text-center rounded-3xl shadow-sm border border-surface-border mt-4">
+            <p className="text-sm text-content-muted leading-relaxed">
+              На эту неделю событий не запланировано.
+            </p>
+          </div>
+        )}
       </div>
     </div>
   );

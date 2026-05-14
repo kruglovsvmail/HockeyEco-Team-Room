@@ -52,8 +52,15 @@ export default {
         // --- СИСТЕМНЫЕ СТАТУСЫ ---
         danger: { 
           DEFAULT: 'var(--color-danger)', 
-          muted: 'var(--color-danger-muted)'    
-        }
+          muted: 'var(--color-danger-muted)'         
+        },
+
+          // --- СИСТЕМНЫЕ СТАТУСЫ ---
+        success: { 
+          DEFAULT: 'var(--color-success)', 
+          muted: 'var(--color-success-muted)'         
+        },
+          
       },
 
       // --- РАЗМЫТИЕ И СТЕКЛОМОРФИЗМ (BLUR) ---

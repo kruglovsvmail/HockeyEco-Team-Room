@@ -1,3 +1,4 @@
+// TR-Frontend/src/components/EventCalendar/ExpandedGrid.jsx
 import React, { useMemo, useRef, useState, useEffect } from 'react';
 import clsx from 'clsx';
 import dayjs from 'dayjs';
@@ -8,7 +9,8 @@ const GAP_BETWEEN_MONTHS = 16;
 const STRIDE = MONTH_BLOCK_WIDTH + GAP_BETWEEN_MONTHS; 
 const RENDER_BUFFER = 3;
 
-const MonthView = React.memo(({ baseDate, selectedDate, onSelectDate, onPrev, onNext }) => {
+// ИСПРАВЛЕНИЕ: Добавили прием matches
+const MonthView = React.memo(({ baseDate, selectedDate, onSelectDate, onPrev, onNext, matches }) => {
   const targetMonth = baseDate.month();
 
   const weeks = useMemo(() => {
@@ -64,7 +66,7 @@ const MonthView = React.memo(({ baseDate, selectedDate, onSelectDate, onPrev, on
               "w-full flex items-center justify-center h-8 text-[10px] font-bold relative border-b border-surface-level3",
               (idx === 5 || idx === 6) ? "text-danger" : "text-content-subtle"
             )}>
-              {dow}
+               {dow}
             </div>
           ))}
         </div>
@@ -72,7 +74,6 @@ const MonthView = React.memo(({ baseDate, selectedDate, onSelectDate, onPrev, on
         {/* Сетка недель */}
         {weeks.map((week, weekIdx) => {
           const isSelectedWeek = week[0].isSame(selectedDate.startOf('isoWeek'), 'day');
-          
           return (
             <div 
               key={weekIdx} 
@@ -89,6 +90,13 @@ const MonthView = React.memo(({ baseDate, selectedDate, onSelectDate, onPrev, on
                 const isWeekend = dayIdx === 5 || dayIdx === 6;
                 const isTargetMonth = day.month() === targetMonth;
 
+                // ИСПРАВЛЕНИЕ: Проверяем, есть ли матч в этот день (строго по строке YYYY-MM-DD)
+                const hasMatch = matches?.some(game => {
+                  if (!game.game_date) return false;
+                  const gameDate = dayjs(game.game_date).tz(game.arena_timezone || 'UTC');
+                  return gameDate.format('YYYY-MM-DD') === day.format('YYYY-MM-DD');
+                });
+
                 return (
                   <div key={dayIdx} className="w-full flex items-center justify-center h-8 relative border-b border-surface-level3">
                     {isToday && (
@@ -96,13 +104,20 @@ const MonthView = React.memo(({ baseDate, selectedDate, onSelectDate, onPrev, on
                     )}
 
                     {isTargetMonth ? (
-                      <span className={clsx(
-                        "text-xs transition-colors duration-200 relative z-10",
-                        isSelectedWeek ? "text-content-main font-medium" : (isWeekend ? "text-danger/90 font-medium" : "text-content-muted medium"),
-                        isToday && "!text-brand"
-                      )}>
-                        {day.format('D')}
-                      </span>
+                      <div className="relative w-full h-full flex flex-col items-center justify-center">
+                        <span className={clsx(
+                          "text-xs transition-colors duration-200 relative z-10",
+                          isSelectedWeek ? "text-content-main font-medium" : (isWeekend ? "text-danger/90 font-medium" : "text-content-muted font-medium"),
+                          isToday && "!text-brand"
+                        )}>
+                          {day.format('D')}
+                        </span>
+                        
+                        {/* ИСПРАВЛЕНИЕ: Выводим точку, если есть матч */}
+                        {hasMatch && (
+                          <div className="absolute bottom-1 w-1 h-1 rounded-full bg-brand shadow-sm z-10" />
+                        )}
+                      </div>
                     ) : (
                       <div className="w-1.5 h-1.5 bg-content-muted/20 rounded-full relative z-10" />
                     )}
@@ -117,7 +132,8 @@ const MonthView = React.memo(({ baseDate, selectedDate, onSelectDate, onPrev, on
   );
 });
 
-export const ExpandedGrid = React.memo(function ExpandedGrid({ date, onChangeDate }) {
+// ИСПРАВЛЕНИЕ: Принимаем matches
+export const ExpandedGrid = React.memo(function ExpandedGrid({ date, onChangeDate, matches }) {
   const [viewDate, setViewDate] = useState(date);
   const isInternalChange = useRef(false);
   const touchStartX = useRef(null);
@@ -154,7 +170,6 @@ export const ExpandedGrid = React.memo(function ExpandedGrid({ date, onChangeDat
     if (touchStartX.current === null || isAnimating) return;
     const touchEndX = e.changedTouches[0].clientX;
     const diff = touchStartX.current - touchEndX;
-    
     if (Math.abs(diff) > 40) {
       if (diff > 0) slideTo('next');
       else slideTo('prev');
@@ -210,6 +225,7 @@ export const ExpandedGrid = React.memo(function ExpandedGrid({ date, onChangeDat
                 onSelectDate={handleDateSelect}
                 onPrev={() => slideTo('prev')}
                 onNext={() => slideTo('next')}
+                matches={matches} // Прокидываем матчи вниз
               />
             );
           })}

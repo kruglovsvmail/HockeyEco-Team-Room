@@ -4,6 +4,7 @@ import morgan from 'morgan';
 import 'dotenv/config';
 import pool from './config/db.js';
 import authRoutes from './routes/authRoutes.js';
+import CardGameRoutes from './routes/CardGameRoutes.js';
 
 const app = express();
 const PORT = process.env.PORT || 3002;
@@ -32,6 +33,7 @@ app.use(express.json());
 
 // Роуты
 app.use('/api/auth', authRoutes);
+app.use('/api/games', CardGameRoutes);
 
 const startServer = async () => {
   try {

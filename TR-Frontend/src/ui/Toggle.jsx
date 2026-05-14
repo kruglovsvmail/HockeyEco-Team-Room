@@ -1,33 +1,31 @@
-/********** ФАЙЛ: TR-Frontend\src\ui\Toggle.jsx **********/
-
+// TR-Frontend/src/ui/Toggle.jsx
 import React from 'react';
-import clsx from 'clsx';
 
-export function Toggle({ checked, onChange, disabled }) {
+const Toggle = ({ checked, onChange, disabled }) => {
   return (
-    <label className={clsx(
-      "relative inline-flex items-center cursor-pointer touch-none select-none",
-      disabled && "opacity-50 cursor-not-allowed"
-    )}>
-      <input 
-        type="checkbox" 
-        className="sr-only peer" 
-        checked={checked} 
-        onChange={(e) => !disabled && onChange(e.target.checked)}
-        disabled={disabled}
+    <button
+      type="button"
+      role="switch"
+      aria-checked={checked}
+      disabled={disabled}
+      onClick={() => onChange(!checked)}
+      className={`
+        relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent 
+        transition-colors duration-200 ease-in-out focus:outline-none
+        ${disabled ? 'opacity-50 cursor-not-allowed' : ''}
+        ${checked ? 'bg-blue-500' : 'bg-gray-200'}
+      `}
+    >
+      <span
+        aria-hidden="true"
+        className={`
+          pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 
+          transition duration-200 ease-in-out
+          ${checked ? 'translate-x-5' : 'translate-x-0'}
+        `}
       />
-      {/* Фон тумблера: peer-checked меняет серый фон на brand-градиент */}
-      <div className={clsx(
-        "w-11 h-6 bg-surface-border border border-surface-border/50 rounded-full",
-        "peer-checked:bg-brand-dark peer-checked:from-warm-start peer-checked:to-brand peer-checked:border-brand/30",
-        "transition-all duration-300 ease-in-out"
-      )} />
-      {/* Бегунок: peer-checked смещает его вправо */}
-      <div className={clsx(
-        "absolute left-0.5 top-0.5 w-5 h-5 bg-content-main rounded-full shadow-sm",
-        "peer-checked:translate-x-full peer-checked:bg-white",
-        "transition-transform duration-300 ease-in-out"
-      )} />
-    </label>
+    </button>
   );
-}
+};
+
+export default Toggle;
