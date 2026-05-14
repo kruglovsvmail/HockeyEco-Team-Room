@@ -18,8 +18,6 @@ dayjs.extend(isSameOrAfter);
 dayjs.locale('ru');
 
 export function SchedulePage() {
-  const { selectedTeam } = useAccess();
-  
   const [currentDate, setCurrentDate] = useState(dayjs());
   const [isExpanded, setIsExpanded] = useState(false);
   const [matches, setMatches] = useState([]);
@@ -27,6 +25,7 @@ export function SchedulePage() {
   
   const touchStartX = useRef(null);
 
+  // Загрузка глобального расписания (все команды пользователя)
   useEffect(() => {
     const fetchMatches = async () => {
       setIsLoading(true);
@@ -51,7 +50,9 @@ export function SchedulePage() {
     fetchMatches();
   }, []);
 
+  // Обработка переключения тумблера
   const handleToggleAttendance = async (gameId, newValue) => {
+    // Оптимистичное обновление UI
     setMatches(prev => prev.map(game => 
       game.id === gameId ? { ...game, is_attending: newValue } : game
     ));
@@ -72,17 +73,30 @@ export function SchedulePage() {
       }
     } catch (err) {
       console.error('Ошибка переключения тумблера:', err);
+      // Откат при ошибке
       setMatches(prev => prev.map(game => 
         game.id === gameId ? { ...game, is_attending: !newValue } : game
       ));
     }
   };
 
+  // ОПТИМИЗАЦИЯ: Создаем Set для мгновенного поиска дат матчей в календаре (О(1))
+  const matchDatesSet = useMemo(() => {
+    const dates = new Set();
+    matches.forEach(game => {
+      if (game.game_date) {
+        const gameDate = dayjs(game.game_date).tz(game.arena_timezone || 'UTC');
+        dates.add(gameDate.format('YYYY-MM-DD'));
+      }
+    });
+    return dates;
+  }, [matches]);
+
+  // Фильтрация матчей для списка (строго по выбранной неделе)
   const filteredMatches = useMemo(() => {
     return matches.filter(game => {
       if (!game.game_date) return false;
       const gameDate = dayjs(game.game_date).tz(game.arena_timezone || 'UTC');
-      // Фильтруем матчи так, чтобы они попадали в ту же неделю (с ПН по ВС), что и выбранная дата
       return gameDate.isSame(currentDate, 'isoWeek');
     });
   }, [matches, currentDate]);
@@ -122,7 +136,7 @@ export function SchedulePage() {
           setCurrentDate={setCurrentDate}
           isExpanded={isExpanded}
           setIsExpanded={setIsExpanded}
-          matches={matches} 
+          matchDatesSet={matchDatesSet} 
         />
       </div>
 
@@ -133,10 +147,9 @@ export function SchedulePage() {
           </div>
         ) : filteredMatches.length > 0 ? (
           <div className="flex flex-col gap-0">
-            {/* Опционально можно добавить заголовок недели, но пока просто выводим список */}
             {filteredMatches.map(game => (
               <MatchCard 
-                key={game.id} 
+                key={`${game.id}-${game.my_team_id}`} 
                 game={game} 
                 onToggleAttendance={handleToggleAttendance} 
               />
