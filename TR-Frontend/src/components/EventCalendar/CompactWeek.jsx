@@ -19,7 +19,7 @@ export const CompactWeek = React.memo(function CompactWeek({ date, onChangeDate,
 
   return (
     <div 
-      className="flex items-center justify-between bg-white  shadow-md px-4 py-2.5 cursor-pointer select-none active:bg-surface-level2/30 transition-colors mt-4"
+      className="flex items-center justify-between bg-white rounded-2xl shadow-md px-4 py-2.5 cursor-pointer select-none active:bg-surface-level2/30 transition-colors mt-4"
       onClick={onToggleExpand}
     >
       <button 
