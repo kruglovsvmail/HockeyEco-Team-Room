@@ -131,7 +131,7 @@ const MatchCard = ({ game, onToggleAttendance }) => {
           </div>
           {/* Заменено items-start на items-center для выравнивания текста по середине */}
           <div className="h-8 w-full flex items-center justify-center">
-            <span className="text-[11px] font-bold text-content-main uppercase text-center leading-tight line-clamp-2">
+            <span className="text-[12px] font-bold text-content-main uppercase text-center leading-tight line-clamp-2">
               {homeName}
             </span>
           </div>
@@ -153,7 +153,7 @@ const MatchCard = ({ game, onToggleAttendance }) => {
           </div>
           {/* Заменено items-start на items-center для выравнивания текста по середине */}
           <div className="h-8 w-full flex items-center justify-center">
-            <span className="text-[11px] font-bold text-content-main uppercase text-center leading-tight line-clamp-2">
+            <span className="text-[12px] font-bold text-content-main uppercase text-center leading-tight line-clamp-2">
               {awayName}
             </span>
           </div>

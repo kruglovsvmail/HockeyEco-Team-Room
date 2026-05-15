@@ -26,16 +26,16 @@ export function SchedulePage() {
   const [matches, setMatches] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
   
-  // --- НОВАЯ МЕХАНИКА: ФИЗИЧЕСКИЙ СВАЙП ---
-  const [dragOffset, setDragOffset] = useState(0); // Смещение в пикселях за пальцем
-  const [isDragging, setIsDragging] = useState(false); // Состояние активного перетаскивания
-  const [offsetIndex, setOffsetIndex] = useState(0); // Индекс для финального переключения слайда
-  const [isAnimating, setIsAnimating] = useState(false); // Состояние возврата/переключения
-
+  // Рефы для обработки жестов
   const touchStartX = useRef(null);
   const touchStartY = useRef(null);
   const isHorizontalSwipe = useRef(false);
-  const animationTimer = useRef(null); 
+  const isSwipeLocked = useRef(false);
+  
+  // --- СОСТОЯНИЯ ДЛЯ АНИМАЦИИ КАРУСЕЛИ ---
+  const [offsetIndex, setOffsetIndex] = useState(0);
+  const [isAnimating, setIsAnimating] = useState(false);
+  const animationTimer = useRef(null);
 
   useEffect(() => {
     const fetchMatches = async () => {
@@ -62,6 +62,7 @@ export function SchedulePage() {
   }, []);
 
   const handleToggleAttendance = async (gameId, newValue, teamId) => {
+    // Оптимистичное обновление
     setMatches(prev => prev.map(game => 
       (game.id === gameId && game.my_team_id === teamId) ? { ...game, is_attending: newValue } : game
     ));
@@ -82,6 +83,7 @@ export function SchedulePage() {
       }
     } catch (err) {
       console.error('Ошибка переключения тумблера:', err);
+      // Откат при ошибке
       setMatches(prev => prev.map(game => 
         (game.id === gameId && game.my_team_id === teamId) ? { ...game, is_attending: !newValue } : game
       ));
@@ -99,20 +101,21 @@ export function SchedulePage() {
     return dates;
   }, [matches]);
 
-  // Функция для анимации до нужного слайда
   const slideTo = useCallback((direction) => {
+    if (isAnimating) return;
+
     setIsAnimating(true);
-    setDragOffset(0); // Сбрасываем физическое смещение
     setOffsetIndex(direction === 'next' ? 1 : -1);
 
     if (animationTimer.current) clearTimeout(animationTimer.current);
 
+    // Уменьшили время до 240мс, чтобы быть чуть быстрее CSS (250мс)
     animationTimer.current = setTimeout(() => {
       setCurrentDate(prev => direction === 'next' ? prev.add(1, 'week') : prev.subtract(1, 'week'));
       setOffsetIndex(0);
       setIsAnimating(false);
-    }, 300); 
-  }, []);
+    }, 240); 
+  }, [isAnimating]);
 
   useEffect(() => {
     const handleOpenCalendar = () => setIsExpanded(true);
@@ -123,149 +126,137 @@ export function SchedulePage() {
     };
   }, []);
 
-  // --- ОБРАБОТЧИКИ ФИЗИЧЕСКОГО СВАЙПА ---
+  // --- ОБРАБОТКА СВАЙПОВ ---
   const handleTouchStart = (e) => {
     if (isExpanded || isAnimating) return;
     
-    const startX = e.touches[0].clientX;
-    
-    // Игнорируем края экрана (защита от жеста "Назад" в iOS)
-    if (startX < 30 || startX > window.innerWidth - 30) {
-      touchStartX.current = null;
-      return;
-    }
+    const x = e.touches[0].clientX;
+    // Блокируем Edge Swipe Safari (зоны по 40px по краям)
+    if (x < 40 || x > window.innerWidth - 40) return;
 
-    touchStartX.current = startX;
+    touchStartX.current = x;
     touchStartY.current = e.touches[0].clientY;
     isHorizontalSwipe.current = false;
-    setIsDragging(true);
-    setDragOffset(0);
+    isSwipeLocked.current = false;
   };
 
   const handleTouchMove = (e) => {
-    if (touchStartX.current === null || isExpanded || isAnimating) return;
+    if (isExpanded || touchStartX.current === null || isAnimating) return;
 
     const currentX = e.touches[0].clientX;
     const currentY = e.touches[0].clientY;
     
-    const diffX = currentX - touchStartX.current;
-    const diffY = currentY - touchStartY.current;
+    const diffX = touchStartX.current - currentX;
+    const diffY = touchStartY.current - currentY;
 
-    if (!isHorizontalSwipe.current) {
-      // Определяем направление движения (порог 5px)
-      if (Math.abs(diffX) > 5 || Math.abs(diffY) > 5) {
+    if (!isSwipeLocked.current) {
+      if (Math.abs(diffX) > 6 || Math.abs(diffY) > 6) {
+        isSwipeLocked.current = true;
         if (Math.abs(diffX) > Math.abs(diffY)) {
           isHorizontalSwipe.current = true;
         } else {
-          // Пошел вертикальный скролл - отменяем горизонтальный свайп
+          // Если пошел вертикальный скролл — отменяем отслеживание горизонтали
           touchStartX.current = null;
-          setIsDragging(false);
-          setDragOffset(0);
         }
       }
     }
 
-    // Если мы определили, что свайп горизонтальный - тянем за пальцем
-    if (isHorizontalSwipe.current) {
-      setDragOffset(diffX);
+    // Если мы определили горизонтальный свайп, блокируем нативный скролл
+    if (isHorizontalSwipe.current && e.cancelable) {
+      e.preventDefault();
     }
   };
 
-  const handleTouchEnd = () => {
-    if (touchStartX.current === null) {
-      setIsDragging(false);
+  const handleTouchEnd = (e) => {
+    if (isExpanded || touchStartX.current === null || isAnimating) {
+      touchStartX.current = null;
       return;
     }
     
-    setIsDragging(false);
+    const touchEndX = e.changedTouches[0].clientX;
+    const diffX = touchStartX.current - touchEndX;
 
-    if (isHorizontalSwipe.current) {
-      const swipeThreshold = 60; // Достаточно сдвинуть на 60 пикселей для перелистывания
-
-      if (dragOffset > swipeThreshold) {
-        // Свайпнули вправо -> предыдущая неделя
-        slideTo('prev');
-      } else if (dragOffset < -swipeThreshold) {
-        // Свайпнули влево -> следующая неделя
-        slideTo('next');
-      } else {
-        // Не дотянули -> возвращаем карточку на место с анимацией
-        setIsAnimating(true);
-        setDragOffset(0);
-        setTimeout(() => setIsAnimating(false), 300);
-      }
+    if (isHorizontalSwipe.current && Math.abs(diffX) > 40) {
+      if (diffX > 0) slideTo('next');
+      else slideTo('prev');
     }
 
     touchStartX.current = null;
+    touchStartY.current = null;
     isHorizontalSwipe.current = false;
   };
 
   return (
     <div 
-      className="flex flex-col w-full h-full touch-pan-y overflow-x-hidden relative"
-      onTouchStart={handleTouchStart}
-      onTouchMove={handleTouchMove}
-      onTouchEnd={handleTouchEnd}
+      className="flex flex-col w-full h-full overflow-hidden relative"
+      style={{ touchAction: 'pan-y' }} // Жесткое указание браузеру
     >
-      {/* СТАТИЧНАЯ ШАПКА КАЛЕНДАРЯ */}
+      {/* СТАТИЧНАЯ ШАПКА КАЛЕНДАРЯ (Всегда кликабельна) */}
       <div className="shrink-0 z-30 relative w-full px-4">
         <CompactWeek 
           date={currentDate} 
           onChangeDate={(newDate) => {
-            if (newDate.isBefore(currentDate)) slideTo('prev');
-            else if (newDate.isAfter(currentDate)) slideTo('next');
+            if (newDate.isBefore(currentDate, 'day')) slideTo('prev');
+            else if (newDate.isAfter(currentDate, 'day')) slideTo('next');
             else setCurrentDate(newDate);
           }}
           onToggleExpand={() => setIsExpanded(true)} 
         />
       </div>
 
-      {/* КАРУСЕЛЬ КАРТОЧЕК МАТЧЕЙ (С ФИЗИЧЕСКИМ СМЕЩЕНИЕМ) */}
+      {/* КАРУСЕЛЬ КАРТОЧЕК МАТЧЕЙ */}
       <div 
-        className="w-[300%] flex items-start flex-1 pt-4 touch-pan-y"
-        style={{
-          // Сдвигаем на 33.3% для центровки, применяем offsetIndex при переключении и добавляем dragOffset при перетаскивании
-          transform: `translateX(calc(-33.33333% - ${offsetIndex * 33.33333}% + ${dragOffset}px))`,
-          // Анимация включается только тогда, когда мы ОТПУСТИЛИ палец (isAnimating)
-          transition: isAnimating ? 'transform 300ms cubic-bezier(0.32, 0.72, 0, 1)' : 'none',
-        }}
+        className="flex-1 relative mt-4 overflow-hidden"
+        onTouchStart={handleTouchStart}
+        onTouchMove={handleTouchMove}
+        onTouchEnd={handleTouchEnd}
       >
-        {[-1, 0, 1].map(offset => {
-          const slideDate = currentDate.add(offset, 'week');
-          const slideMatches = matches.filter(game => {
-            if (!game.game_date) return false;
-            const gameDate = dayjs(game.game_date).tz(game.arena_timezone || 'UTC');
-            return gameDate.isSame(slideDate, 'isoWeek');
-          });
+        <div 
+          className="w-[300%] flex items-start h-full"
+          style={{
+            transform: `translateX(calc(-33.33333% - ${offsetIndex * 33.33333}%))`,
+            transition: isAnimating ? 'transform 250ms cubic-bezier(0.32, 0.72, 0, 1)' : 'none',
+            pointerEvents: isAnimating ? 'none' : 'auto', // Блокируем только саму карусель
+            willChange: 'transform'
+          }}
+        >
+          {[-1, 0, 1].map(offset => {
+            const slideDate = currentDate.add(offset, 'week');
+            const slideMatches = matches.filter(game => {
+              if (!game.game_date) return false;
+              const gameDate = dayjs(game.game_date).tz(game.arena_timezone || 'UTC');
+              return gameDate.isSame(slideDate, 'isoWeek');
+            });
 
-          return (
-            <div key={offset} className="w-1/3 shrink-0 flex flex-col gap-0 px-4 h-full">
-              <div className="flex-1 pb-8">
-                {isLoading && offset === 0 ? (
-                  <div className="flex justify-center items-center h-32 text-brand">
-                    <Loader2 className="w-8 h-8 animate-spin" />
-                  </div>
-                ) : slideMatches.length > 0 ? (
-                  <div className="flex flex-col gap-0">
-                    {slideMatches.map(game => (
-                      <MatchCard 
-                        key={`${game.id}-${game.my_team_id}`} 
-                        game={game} 
-                        onToggleAttendance={handleToggleAttendance} 
-                      />
-                    ))}
-                  </div>
-                ) : (
-                  <div className="text-center p-10">
-                    <p className="text-sm text-content-muted italic leading-relaxed">
-                      На эту неделю событий не запланировано.
-                    </p>
-                  </div>
-                )}
+            return (
+              <div key={offset} className="w-1/3 shrink-0 flex flex-col px-4 h-full overflow-y-auto scrollbar-hide">
+                <div className="pb-8">
+                  {isLoading && offset === 0 ? (
+                    <div className="flex justify-center items-center h-32 text-brand">
+                      <Loader2 className="w-8 h-8 animate-spin" />
+                    </div>
+                  ) : slideMatches.length > 0 ? (
+                    <div className="flex flex-col gap-0">
+                      {slideMatches.map(game => (
+                        <MatchCard 
+                          key={`${game.id}-${game.my_team_id}`} 
+                          game={game} 
+                          onToggleAttendance={handleToggleAttendance} 
+                        />
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="text-center p-10">
+                      <p className="text-sm text-content-muted italic leading-relaxed">
+                        На эту неделю событий не запланировано.
+                      </p>
+                    </div>
+                  )}
+                </div>
               </div>
-            </div>
-          );
-        })}
+            );
+          })}
+        </div>
       </div>
 
       {/* Шторка календаря */}
