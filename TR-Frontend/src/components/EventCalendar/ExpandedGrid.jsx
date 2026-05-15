@@ -59,7 +59,6 @@ const MonthView = React.memo(({ baseDate, selectedDate, onSelectDate, onPrev, on
       </div>
 
       <div className="flex flex-1 gap-1 justify-center relative">
-        
         {/* Колонка Дней Недели */}
         <div className="flex flex-col w-7 pt-1 shrink-0 mr-1">
           {['Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб', 'Вс'].map((dow, idx) => (
@@ -81,7 +80,6 @@ const MonthView = React.memo(({ baseDate, selectedDate, onSelectDate, onPrev, on
               type="button"
               key={weekIdx} 
               onClick={() => onSelectDate(week[0])}
-              // Вырезаны все мобильные hover и active эффекты. Для ПК оставлен md:hover
               className={clsx(
                 "flex flex-col items-center w-11 rounded-xl pb-2 pt-1 cursor-pointer outline-none transition-colors",
                 isSelectedWeek 
@@ -134,9 +132,17 @@ const MonthView = React.memo(({ baseDate, selectedDate, onSelectDate, onPrev, on
 export const ExpandedGrid = React.memo(function ExpandedGrid({ date, onChangeDate, matchDatesSet }) {
   const [viewDate, setViewDate] = useState(date);
   const isInternalChange = useRef(false);
+  
+  // Механика физического перетаскивания сетки месяцев
+  const [dragOffset, setDragOffset] = useState(0);
+  const [isDragging, setIsDragging] = useState(false);
   const touchStartX = useRef(null);
+  const touchStartY = useRef(null);
+  const isHorizontalSwipe = useRef(false);
+
   const [isAnimating, setIsAnimating] = useState(false);
   const [offsetIndex, setOffsetIndex] = useState(0);
+  const animationTimer = useRef(null);
 
   useEffect(() => {
     if (isInternalChange.current) {
@@ -146,44 +152,106 @@ export const ExpandedGrid = React.memo(function ExpandedGrid({ date, onChangeDat
     setViewDate(prev => date.isSame(prev, 'month') ? prev : date);
   }, [date]);
 
+  useEffect(() => {
+    return () => {
+      if (animationTimer.current) clearTimeout(animationTimer.current);
+    };
+  }, []);
+
   const slideTo = useCallback((direction) => {
     if (isAnimating) return;
   
     setIsAnimating(true);
+    setDragOffset(0);
     setOffsetIndex(direction === 'next' ? 1 : -1);
 
-    setTimeout(() => {
+    if (animationTimer.current) clearTimeout(animationTimer.current);
+
+    animationTimer.current = setTimeout(() => {
       setIsAnimating(false);
       setViewDate(prev => direction === 'next' ? prev.add(1, 'month') : prev.subtract(1, 'month'));
       setOffsetIndex(0); 
     }, 300);
   }, [isAnimating]);
 
-  const handleTouchStart = (e) => {
-    e.stopPropagation();
-    touchStartX.current = e.touches[0].clientX;
-  };
-
-  const handleTouchEnd = (e) => {
-    if (touchStartX.current === null || isAnimating) return;
-    const touchEndX = e.changedTouches[0].clientX;
-    const diff = touchStartX.current - touchEndX;
-    if (Math.abs(diff) > 40) {
-      if (diff > 0) slideTo('next');
-      else slideTo('prev');
-    }
-    touchStartX.current = null;
-  };
-
   const handleDateSelect = useCallback((selectedDate) => {
     isInternalChange.current = true;
     onChangeDate(selectedDate);
   }, [onChangeDate]);
 
+  const handleTouchStart = (e) => {
+    if (isAnimating) return;
+    const startX = e.touches[0].clientX;
+    
+    // Защита от Edge Swipe
+    if (startX < 30 || startX > window.innerWidth - 30) {
+      touchStartX.current = null;
+      return;
+    }
+
+    touchStartX.current = startX;
+    touchStartY.current = e.touches[0].clientY;
+    isHorizontalSwipe.current = false;
+    setIsDragging(true);
+    setDragOffset(0);
+  };
+
+  const handleTouchMove = (e) => {
+    if (touchStartX.current === null || isAnimating) return;
+
+    const currentX = e.touches[0].clientX;
+    const currentY = e.touches[0].clientY;
+    const diffX = currentX - touchStartX.current;
+    const diffY = currentY - touchStartY.current;
+
+    if (!isHorizontalSwipe.current) {
+      if (Math.abs(diffX) > 5 || Math.abs(diffY) > 5) {
+        if (Math.abs(diffX) > Math.abs(diffY)) {
+          isHorizontalSwipe.current = true;
+        } else {
+          // Отменяем, если пошел скролл вниз/вверх
+          touchStartX.current = null;
+          setIsDragging(false);
+          setDragOffset(0);
+        }
+      }
+    }
+
+    if (isHorizontalSwipe.current) {
+      setDragOffset(diffX);
+    }
+  };
+
+  const handleTouchEnd = () => {
+    if (touchStartX.current === null) {
+      setIsDragging(false);
+      return;
+    }
+    
+    setIsDragging(false);
+
+    if (isHorizontalSwipe.current) {
+      const swipeThreshold = 60;
+
+      if (dragOffset > swipeThreshold) {
+        slideTo('prev');
+      } else if (dragOffset < -swipeThreshold) {
+        slideTo('next');
+      } else {
+        // Возвращаем на место
+        setIsAnimating(true);
+        setDragOffset(0);
+        setTimeout(() => setIsAnimating(false), 300);
+      }
+    }
+
+    touchStartX.current = null;
+    isHorizontalSwipe.current = false;
+  };
+
   return (
     <div className="pt-2 touch-pan-y overflow-hidden w-full relative group">
       
-      {/* Десктопные стрелки перелистывания (оставляем эффекты только с префиксом md:) */}
       <div className="hidden md:block">
         <button 
           onClick={() => slideTo('prev')}
@@ -200,19 +268,17 @@ export const ExpandedGrid = React.memo(function ExpandedGrid({ date, onChangeDat
       </div>
 
       <div 
-        className="flex justify-center w-full"
+        className="flex justify-center w-full touch-pan-y"
         onTouchStart={handleTouchStart}
+        onTouchMove={handleTouchMove}
         onTouchEnd={handleTouchEnd}
-        onTouchMove={(e) => e.stopPropagation()}
       >
         <div 
-          className={clsx(
-            "flex items-start will-change-transform",
-            isAnimating && "pointer-events-none"
-          )}
+          className="flex items-start will-change-transform"
           style={{
             gap: `${GAP_BETWEEN_MONTHS}px`,
-            transform: `translateX(${-offsetIndex * STRIDE}px)`,
+            // Смещаем сетку в реальном времени
+            transform: `translateX(calc(${-offsetIndex * STRIDE}px + ${dragOffset}px))`,
             transition: isAnimating ? 'transform 300ms cubic-bezier(0.32, 0.72, 0, 1)' : 'none',
           }}
         >

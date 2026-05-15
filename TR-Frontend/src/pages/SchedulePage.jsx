@@ -3,7 +3,7 @@ import { useAccess } from '../hooks/useAccess';
 import dayjs from 'dayjs';
 import 'dayjs/locale/ru';
 import isoWeek from 'dayjs/plugin/isoWeek';
-import utc from 'dayjs/plugin/utc';           
+import utc from 'dayjs/plugin/utc';
 import timezone from 'dayjs/plugin/timezone';
 import isSameOrAfter from 'dayjs/plugin/isSameOrAfter';
 
@@ -26,12 +26,16 @@ export function SchedulePage() {
   const [matches, setMatches] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
   
-  const touchStartX = useRef(null);
-  const pageRef = useRef(null);
+  // --- НОВАЯ МЕХАНИКА: ФИЗИЧЕСКИЙ СВАЙП ---
+  const [dragOffset, setDragOffset] = useState(0); // Смещение в пикселях за пальцем
+  const [isDragging, setIsDragging] = useState(false); // Состояние активного перетаскивания
+  const [offsetIndex, setOffsetIndex] = useState(0); // Индекс для финального переключения слайда
+  const [isAnimating, setIsAnimating] = useState(false); // Состояние возврата/переключения
 
-  // --- СОСТОЯНИЯ ДЛЯ АНИМАЦИИ КАРУСЕЛИ ---
-  const [offsetIndex, setOffsetIndex] = useState(0);
-  const [isAnimating, setIsAnimating] = useState(false);
+  const touchStartX = useRef(null);
+  const touchStartY = useRef(null);
+  const isHorizontalSwipe = useRef(false);
+  const animationTimer = useRef(null); 
 
   useEffect(() => {
     const fetchMatches = async () => {
@@ -95,56 +99,112 @@ export function SchedulePage() {
     return dates;
   }, [matches]);
 
-  // --- ЛОГИКА ПЕРЕКЛЮЧЕНИЯ СЛАЙДОВ ---
+  // Функция для анимации до нужного слайда
   const slideTo = useCallback((direction) => {
-    if (isAnimating) return;
     setIsAnimating(true);
+    setDragOffset(0); // Сбрасываем физическое смещение
     setOffsetIndex(direction === 'next' ? 1 : -1);
 
-    setTimeout(() => {
-      setIsAnimating(false);
+    if (animationTimer.current) clearTimeout(animationTimer.current);
+
+    animationTimer.current = setTimeout(() => {
       setCurrentDate(prev => direction === 'next' ? prev.add(1, 'week') : prev.subtract(1, 'week'));
       setOffsetIndex(0);
-      
-      // Сброс скролла наверх сразу после окончания анимации
-      requestAnimationFrame(() => {
-        window.scrollTo(0, 0);
-        if (pageRef.current) {
-          pageRef.current.scrollTop = 0;
-        }
-      });
-    }, 300);
-  }, [isAnimating]);
+      setIsAnimating(false);
+    }, 300); 
+  }, []);
 
   useEffect(() => {
     const handleOpenCalendar = () => setIsExpanded(true);
     window.addEventListener('open-calendar-sheet', handleOpenCalendar);
-    return () => window.removeEventListener('open-calendar-sheet', handleOpenCalendar);
+    return () => {
+      window.removeEventListener('open-calendar-sheet', handleOpenCalendar);
+      if (animationTimer.current) clearTimeout(animationTimer.current);
+    };
   }, []);
 
-  // --- СВАЙПЫ ---
+  // --- ОБРАБОТЧИКИ ФИЗИЧЕСКОГО СВАЙПА ---
   const handleTouchStart = (e) => {
     if (isExpanded || isAnimating) return;
-    touchStartX.current = e.touches[0].clientX;
+    
+    const startX = e.touches[0].clientX;
+    
+    // Игнорируем края экрана (защита от жеста "Назад" в iOS)
+    if (startX < 30 || startX > window.innerWidth - 30) {
+      touchStartX.current = null;
+      return;
+    }
+
+    touchStartX.current = startX;
+    touchStartY.current = e.touches[0].clientY;
+    isHorizontalSwipe.current = false;
+    setIsDragging(true);
+    setDragOffset(0);
   };
 
-  const handleTouchEnd = (e) => {
-    if (isExpanded || touchStartX.current === null || isAnimating) return;
-    const touchEndX = e.changedTouches[0].clientX;
-    const diff = touchStartX.current - touchEndX;
+  const handleTouchMove = (e) => {
+    if (touchStartX.current === null || isExpanded || isAnimating) return;
+
+    const currentX = e.touches[0].clientX;
+    const currentY = e.touches[0].clientY;
     
-    if (Math.abs(diff) > 50) {
-      if (diff > 0) slideTo('next');
-      else slideTo('prev');
+    const diffX = currentX - touchStartX.current;
+    const diffY = currentY - touchStartY.current;
+
+    if (!isHorizontalSwipe.current) {
+      // Определяем направление движения (порог 5px)
+      if (Math.abs(diffX) > 5 || Math.abs(diffY) > 5) {
+        if (Math.abs(diffX) > Math.abs(diffY)) {
+          isHorizontalSwipe.current = true;
+        } else {
+          // Пошел вертикальный скролл - отменяем горизонтальный свайп
+          touchStartX.current = null;
+          setIsDragging(false);
+          setDragOffset(0);
+        }
+      }
     }
+
+    // Если мы определили, что свайп горизонтальный - тянем за пальцем
+    if (isHorizontalSwipe.current) {
+      setDragOffset(diffX);
+    }
+  };
+
+  const handleTouchEnd = () => {
+    if (touchStartX.current === null) {
+      setIsDragging(false);
+      return;
+    }
+    
+    setIsDragging(false);
+
+    if (isHorizontalSwipe.current) {
+      const swipeThreshold = 60; // Достаточно сдвинуть на 60 пикселей для перелистывания
+
+      if (dragOffset > swipeThreshold) {
+        // Свайпнули вправо -> предыдущая неделя
+        slideTo('prev');
+      } else if (dragOffset < -swipeThreshold) {
+        // Свайпнули влево -> следующая неделя
+        slideTo('next');
+      } else {
+        // Не дотянули -> возвращаем карточку на место с анимацией
+        setIsAnimating(true);
+        setDragOffset(0);
+        setTimeout(() => setIsAnimating(false), 300);
+      }
+    }
+
     touchStartX.current = null;
+    isHorizontalSwipe.current = false;
   };
 
   return (
     <div 
-      ref={pageRef}
       className="flex flex-col w-full h-full touch-pan-y overflow-x-hidden relative"
       onTouchStart={handleTouchStart}
+      onTouchMove={handleTouchMove}
       onTouchEnd={handleTouchEnd}
     >
       {/* СТАТИЧНАЯ ШАПКА КАЛЕНДАРЯ */}
@@ -157,16 +217,16 @@ export function SchedulePage() {
             else setCurrentDate(newDate);
           }}
           onToggleExpand={() => setIsExpanded(true)} 
-          offsetIndex={offsetIndex}
-          isAnimating={isAnimating}
         />
       </div>
 
-      {/* КАРУСЕЛЬ КАРТОЧЕК МАТЧЕЙ */}
+      {/* КАРУСЕЛЬ КАРТОЧЕК МАТЧЕЙ (С ФИЗИЧЕСКИМ СМЕЩЕНИЕМ) */}
       <div 
-        className="w-[300%] flex items-start will-change-transform flex-1 pt-4"
+        className="w-[300%] flex items-start flex-1 pt-4 touch-pan-y"
         style={{
-          transform: `translateX(calc(-33.33333% - ${offsetIndex * 33.33333}%))`,
+          // Сдвигаем на 33.3% для центровки, применяем offsetIndex при переключении и добавляем dragOffset при перетаскивании
+          transform: `translateX(calc(-33.33333% - ${offsetIndex * 33.33333}% + ${dragOffset}px))`,
+          // Анимация включается только тогда, когда мы ОТПУСТИЛИ палец (isAnimating)
           transition: isAnimating ? 'transform 300ms cubic-bezier(0.32, 0.72, 0, 1)' : 'none',
         }}
       >
