@@ -35,7 +35,7 @@ export function TopSheet({ isOpen, onClose, children }) {
       {/* ОВЕРЛЕЙ: Заменен на <button>, чтобы гарантировать мгновенное срабатывание клика без багов Safari */}
       <button 
         type="button"
-        aria-label="Закрыть календарь"
+        aria-label="Закрыть шторку"
         className={clsx(
           "fixed inset-0 w-full h-full bg-overlay backdrop-blur-overlay z-[100] transition-opacity duration-500 border-none outline-none p-0 m-0",
           isOpen ? "opacity-100 pointer-events-auto" : "opacity-0 pointer-events-none"
@@ -46,7 +46,7 @@ export function TopSheet({ isOpen, onClose, children }) {
       {/* Верхняя шторка */}
       <div 
         className={clsx(
-          "fixed inset-x-0 top-0 z-[110] bg-sheet-bg backdrop-blur-sheet rounded-b-3xl border-b border-sheet-border shadow-xl flex flex-col",
+          "fixed inset-x-0 top-0 z-[110] bg-sheet-bg backdrop-blur-sheet rounded-b-3xl border-b border-sheet-border shadow-xl flex flex-col touch-none", // <--- ДОБАВЛЕН touch-none: убивает bounce эффект
           "transition-transform duration-400 ease-[cubic-bezier(0.32,0.72,0,1)] pt-[env(safe-area-inset-top)] outline-none",
           isOpen ? "translate-y-0" : "-translate-y-[calc(100%+50px)]"
         )}
@@ -62,7 +62,7 @@ export function TopSheet({ isOpen, onClose, children }) {
 
         {/* Зона захвата (Drag Handle) */}
         <div 
-          className="p-4 pt-2 flex justify-center shrink-0 cursor-grab active:cursor-grabbing touch-pan-y"
+          className="p-4 pt-2 flex justify-center shrink-0 cursor-grab active:cursor-grabbing touch-none"
           onTouchStart={handleTouchStart}
           onTouchMove={handleTouchMove}
           onTouchEnd={handleTouchEnd}

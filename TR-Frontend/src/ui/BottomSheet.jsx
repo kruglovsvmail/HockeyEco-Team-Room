@@ -1,5 +1,3 @@
-/********** ФАЙЛ: TR-Frontend\src\ui\BottomSheet.jsx **********/
-
 import React, { useState, useRef, useEffect } from 'react';
 import clsx from 'clsx';
 
@@ -50,7 +48,6 @@ export function BottomSheet({ isOpen, onClose, children }) {
 
   return (
     <>
-      {/* Затемнение фона: используем переменную 'overlay' и специфичный блюр 'overlay' */}
       <div 
         className={clsx(
           "fixed inset-0 bg-overlay backdrop-blur-overlay z-[100] transition-opacity duration-500",
@@ -59,7 +56,6 @@ export function BottomSheet({ isOpen, onClose, children }) {
         onClick={onClose}
       />
 
-      {/* Сама шторка: используем независимые токены 'sheet-bg', 'sheet-border', 'backdrop-blur-sheet' и 'shadow-sheet-top' */}
       <div 
         className={clsx(
           "fixed inset-x-0 bottom-0 z-[110] bg-sheet-bg backdrop-blur-sheet rounded-t-3xl border-t border-sheet-border shadow-sheet-top flex flex-col",
@@ -71,23 +67,22 @@ export function BottomSheet({ isOpen, onClose, children }) {
           transition: dragY > 0 ? 'none' : ''
         }}
       >
-        {/* Зона захвата (Drag Handle) */}
+        {/* ИЗМЕНЕНО: touch-pan-y заменен на touch-none */}
         <div 
-          className="p-5 flex justify-center shrink-0 cursor-grab active:cursor-grabbing touch-pan-y"
+          className="p-5 flex justify-center shrink-0 cursor-grab active:cursor-grabbing touch-none"
           onTouchStart={handleTouchStart}
           onTouchMove={handleTouchMove}
           onTouchEnd={handleTouchEnd}
         >
-          {/* Полоска индикатора теперь окрашена в цвет границы шторки для консистентности */}
           <div className="w-14 h-1.5 bg-sheet-border rounded-full pointer-events-none" />
         </div>
 
-        {/* Обертка с плавной анимацией высоты */}
         <div 
           className="overflow-hidden transition-all duration-700 ease-[cubic-bezier(0.32,0.72,0,1)] max-h-[85dvh]"
           style={{ height: contentHeight === 'auto' ? 'auto' : `${contentHeight}px` }}
         >
-          <div className="overflow-y-auto scrollbar-hide max-h-[85dvh]">
+          {/* ИЗМЕНЕНО: Добавлен overscroll-none для защиты от отскока списка */}
+          <div className="overflow-y-auto scrollbar-hide max-h-[85dvh] overscroll-none">
             <div ref={contentRef} className="px-6 pb-8 pb-safe">
               {children}
             </div>

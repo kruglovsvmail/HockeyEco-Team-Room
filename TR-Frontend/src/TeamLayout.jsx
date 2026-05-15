@@ -99,8 +99,8 @@ export function TeamLayout() {
           />
         )}
 
-        {/* Добавлен pt-[60px] для отступа под абсолютную шапку, чтобы контент не скрывался под ней */}
-        <main className="flex-1 overflow-y-auto overflow-x-hidden relative pt-[60px]">
+        {/* ИЗМЕНЕНО: Добавлен overscroll-none для защиты от отскока контента на границах */}
+        <main className="flex-1 overflow-y-auto overflow-x-hidden relative pt-[60px] overscroll-none">
           <Outlet context={{ user, teams, selectedTeam }} />
         </main>
       </div>

@@ -109,7 +109,6 @@ export function SchedulePage() {
 
     if (animationTimer.current) clearTimeout(animationTimer.current);
 
-    // Уменьшили время до 240мс, чтобы быть чуть быстрее CSS (250мс)
     animationTimer.current = setTimeout(() => {
       setCurrentDate(prev => direction === 'next' ? prev.add(1, 'week') : prev.subtract(1, 'week'));
       setOffsetIndex(0);
@@ -161,10 +160,7 @@ export function SchedulePage() {
       }
     }
 
-    // Если мы определили горизонтальный свайп, блокируем нативный скролл
-    if (isHorizontalSwipe.current && e.cancelable) {
-      e.preventDefault();
-    }
+    // ИЗМЕНЕНО: Удален конфликтный e.preventDefault(), так как мы полагаемся на touchAction: 'pan-y'
   };
 
   const handleTouchEnd = (e) => {

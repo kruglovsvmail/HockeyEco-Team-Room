@@ -37,7 +37,6 @@ const MonthView = React.memo(({ baseDate, selectedDate, onSelectDate, onPrev, on
       
       {/* Шапка месяца */}
       <div className="flex items-center justify-center px-2 mb-4 relative h-10">
-        
         <button 
           type="button"
           onClick={(e) => { e.stopPropagation(); onPrev(); }} 
@@ -60,7 +59,6 @@ const MonthView = React.memo(({ baseDate, selectedDate, onSelectDate, onPrev, on
       </div>
 
       <div className="flex flex-1 gap-1 justify-center relative">
-        
         {/* Колонка Дней Недели */}
         <div className="flex flex-col w-7 pt-1 shrink-0 mr-1">
           {['Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб', 'Вс'].map((dow, idx) => (
@@ -134,10 +132,16 @@ const MonthView = React.memo(({ baseDate, selectedDate, onSelectDate, onPrev, on
 export const ExpandedGrid = React.memo(function ExpandedGrid({ date, onChangeDate, matchDatesSet }) {
   const [viewDate, setViewDate] = useState(date);
   const isInternalChange = useRef(false);
-  const gridRef = useRef(null);
   
+  // Рефы для идеального свайпа
+  const touchStartX = useRef(null);
+  const touchStartY = useRef(null);
+  const isHorizontalSwipe = useRef(false);
+  const isSwipeLocked = useRef(false);
+
   const [isAnimating, setIsAnimating] = useState(false);
   const [offsetIndex, setOffsetIndex] = useState(0);
+  const animationTimer = useRef(null);
 
   useEffect(() => {
     if (isInternalChange.current) {
@@ -147,17 +151,25 @@ export const ExpandedGrid = React.memo(function ExpandedGrid({ date, onChangeDat
     setViewDate(prev => date.isSame(prev, 'month') ? prev : date);
   }, [date]);
 
+  useEffect(() => {
+    return () => {
+      if (animationTimer.current) clearTimeout(animationTimer.current);
+    };
+  }, []);
+
   const slideTo = useCallback((direction) => {
     if (isAnimating) return;
   
     setIsAnimating(true);
     setOffsetIndex(direction === 'next' ? 1 : -1);
 
-    setTimeout(() => {
+    if (animationTimer.current) clearTimeout(animationTimer.current);
+
+    animationTimer.current = setTimeout(() => {
       setIsAnimating(false);
       setViewDate(prev => direction === 'next' ? prev.add(1, 'month') : prev.subtract(1, 'month'));
       setOffsetIndex(0); 
-    }, 300);
+    }, 290);
   }, [isAnimating]);
 
   const handleDateSelect = useCallback((selectedDate) => {
@@ -165,72 +177,69 @@ export const ExpandedGrid = React.memo(function ExpandedGrid({ date, onChangeDat
     onChangeDate(selectedDate);
   }, [onChangeDate]);
 
-  // --- ИНТЕГРАЦИЯ НАТИВНЫХ СОБЫТИЙ ДЛЯ КАЛЕНДАРЯ ---
-  useEffect(() => {
-    const el = gridRef.current;
-    if (!el) return;
+  // --- ОБРАБОТКА СВАЙПОВ ---
+  const handleTouchStart = (e) => {
+    if (isAnimating) return;
+    
+    const x = e.touches[0].clientX;
+    
+    // Блокировка системного Edge Swipe (Safari) - 40px мертвой зоны
+    if (x < 40 || x > window.innerWidth - 40) return;
 
-    let startX = null;
-    let startY = null;
-    let isSwipeLocked = false;
-    let isHorizontalSwipe = false;
+    touchStartX.current = x;
+    touchStartY.current = e.touches[0].clientY;
+    isHorizontalSwipe.current = false;
+    isSwipeLocked.current = false;
+  };
 
-    const handleTouchStart = (e) => {
-      startX = e.touches[0].clientX;
-      startY = e.touches[0].clientY;
-      isSwipeLocked = false;
-      isHorizontalSwipe = false;
-    };
+  const handleTouchMove = (e) => {
+    if (touchStartX.current === null || isAnimating) return;
 
-    const handleTouchMove = (e) => {
-      if (startX === null || isAnimating) return;
-      
-      const diffX = startX - e.touches[0].clientX;
-      const diffY = startY - e.touches[0].clientY;
+    const diffX = touchStartX.current - e.touches[0].clientX;
+    const diffY = touchStartY.current - e.touches[0].clientY;
 
-      if (!isSwipeLocked) {
-        if (Math.abs(diffX) > 5 || Math.abs(diffY) > 5) {
-          isSwipeLocked = true;
-          if (Math.abs(diffX) > Math.abs(diffY)) {
-            isHorizontalSwipe = true;
-          }
+    if (!isSwipeLocked.current) {
+      // Порог чувствительности (6px) для предотвращения фантомных жестов
+      if (Math.abs(diffX) > 6 || Math.abs(diffY) > 6) {
+        isSwipeLocked.current = true;
+        if (Math.abs(diffX) > Math.abs(diffY)) {
+          isHorizontalSwipe.current = true;
+        } else {
+          // Вертикальное движение отсекаем
+          touchStartX.current = null;
         }
       }
+    }
+    
+    // ИЗМЕНЕНО: Удален конфликтный вызов e.preventDefault(). 
+    // Благодаря touchAction: 'none' на контейнере, браузер сам блокирует скролл без ошибок React.
+  };
 
-      if (isHorizontalSwipe) {
-        if (e.cancelable) e.preventDefault(); // УБИВАЕМ ИНЕРЦИЮ
-        e.stopPropagation(); // Не пускаем событие выше
-      }
-    };
+  const handleTouchEnd = (e) => {
+    if (touchStartX.current === null || isAnimating) {
+      touchStartX.current = null;
+      return;
+    }
+    
+    const touchEndX = e.changedTouches[0].clientX;
+    const diffX = touchStartX.current - touchEndX;
 
-    const handleTouchEnd = (e) => {
-      if (startX === null || isAnimating) return;
-      const touchEndX = e.changedTouches[0].clientX;
-      const diffX = startX - touchEndX;
+    if (isHorizontalSwipe.current && Math.abs(diffX) > 40) {
+      if (diffX > 0) slideTo('next');
+      else slideTo('prev');
+    }
 
-      if (isHorizontalSwipe && Math.abs(diffX) > 40) {
-        if (diffX > 0) slideTo('next');
-        else slideTo('prev');
-      }
-
-      startX = null;
-      startY = null;
-    };
-
-    el.addEventListener('touchstart', handleTouchStart, { passive: true });
-    el.addEventListener('touchmove', handleTouchMove, { passive: false });
-    el.addEventListener('touchend', handleTouchEnd, { passive: true });
-
-    return () => {
-      el.removeEventListener('touchstart', handleTouchStart);
-      el.removeEventListener('touchmove', handleTouchMove);
-      el.removeEventListener('touchend', handleTouchEnd);
-    };
-  }, [isAnimating, slideTo]);
+    touchStartX.current = null;
+    touchStartY.current = null;
+    isHorizontalSwipe.current = false;
+  };
 
   return (
-    <div className="pt-2 touch-pan-y overflow-hidden w-full relative group">
-      
+    <div 
+      className="pt-2 overflow-hidden w-full relative group"
+      style={{ touchAction: 'none' }} // Отключает абсолютно все системные жесты внутри календаря на уровне CSS
+    >
+      {/* Кнопки переключения для десктопа/планшета */}
       <div className="hidden md:block">
         <button 
           onClick={() => slideTo('prev')}
@@ -246,19 +255,21 @@ export const ExpandedGrid = React.memo(function ExpandedGrid({ date, onChangeDat
         </button>
       </div>
 
+      {/* Зона перехвата жестов */}
       <div 
-        ref={gridRef}
         className="flex justify-center w-full"
+        onTouchStart={handleTouchStart}
+        onTouchMove={handleTouchMove}
+        onTouchEnd={handleTouchEnd}
       >
         <div 
-          className={clsx(
-            "flex items-start will-change-transform",
-            isAnimating && "pointer-events-none"
-          )}
+          className="flex items-start"
           style={{
             gap: `${GAP_BETWEEN_MONTHS}px`,
             transform: `translateX(${-offsetIndex * STRIDE}px)`,
             transition: isAnimating ? 'transform 300ms cubic-bezier(0.32, 0.72, 0, 1)' : 'none',
+            pointerEvents: isAnimating ? 'none' : 'auto', 
+            willChange: 'transform' 
           }}
         >
           {Array.from({ length: RENDER_BUFFER * 2 + 1 }, (_, i) => i - RENDER_BUFFER).map(offset => {

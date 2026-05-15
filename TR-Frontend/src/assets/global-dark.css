@@ -85,15 +85,13 @@
 /* --- ГЛОБАЛЬНЫЕ ПРАВИЛА ОТОБРАЖЕНИЯ --- */
 
 html, body {
-  /* Блокируем скролл и эффект "резинки" на iOS для ощущения нативного приложения */
   position: fixed;
   width: 100%;
   height: 100vh;
   overflow: hidden;
-  overscroll-behavior-y: none; /* Отключает Pull-to-refresh в Android/Chrome */
+  /* ИЗМЕНЕНО: Строгая блокировка инерции по всем осям для темной темы */
+  overscroll-behavior: none; 
   background-color: var(--color-surface-base);
-  
-  /* Полностью отключаем выделение текста и вызов системного меню/лупы на iOS */
   -webkit-user-select: none;
   user-select: none;
   -webkit-touch-callout: none;
