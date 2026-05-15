@@ -210,9 +210,7 @@ export const ExpandedGrid = React.memo(function ExpandedGrid({ date, onChangeDat
         }
       }
     }
-    
-    // ИЗМЕНЕНО: Удален конфликтный вызов e.preventDefault(). 
-    // Благодаря touchAction: 'none' на контейнере, браузер сам блокирует скролл без ошибок React.
+
   };
 
   const handleTouchEnd = (e) => {
@@ -237,7 +235,7 @@ export const ExpandedGrid = React.memo(function ExpandedGrid({ date, onChangeDat
   return (
     <div 
       className="pt-2 overflow-hidden w-full relative group"
-      style={{ touchAction: 'none' }} // Отключает абсолютно все системные жесты внутри календаря на уровне CSS
+      style={{ touchAction: 'none' }} // <--- ИЗМЕНЕНО: Отключает абсолютно все системные жесты внутри календаря
     >
       {/* Кнопки переключения для десктопа/планшета */}
       <div className="hidden md:block">
