@@ -10,7 +10,7 @@ import isSameOrAfter from 'dayjs/plugin/isSameOrAfter';
 import { CompactWeek } from '../components/EventCalendar/CompactWeek';
 import { ExpandedGrid } from '../components/EventCalendar/ExpandedGrid';
 import { TopSheet } from '../ui/TopSheet';
-import MatchCard from '../components/EventCalendar/MatchCard';
+import EventCard from '../components/EventCalendar/EventCard';
 import { getAuthHeaders } from '../utils/helpers';
 import { Loader2 } from 'lucide-react';
 
@@ -23,7 +23,7 @@ dayjs.locale('ru');
 export function SchedulePage() {
   const [currentDate, setCurrentDate] = useState(dayjs());
   const [isExpanded, setIsExpanded] = useState(false);
-  const [matches, setMatches] = useState([]);
+  const [events, setEvents] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
   
   // Рефы для обработки жестов
@@ -38,43 +38,48 @@ export function SchedulePage() {
   const animationTimer = useRef(null);
 
   useEffect(() => {
-    const fetchMatches = async () => {
+    const fetchEvents = async () => {
       setIsLoading(true);
       try {
-        const response = await fetch(`${import.meta.env.VITE_API_URL}/api/games`, {
+        // Чтобы не перегружать сеть, запрашиваем события за месяц до и месяц после текущей даты
+        const startDate = currentDate.subtract(1, 'month').startOf('month').format('YYYY-MM-DD');
+        const endDate = currentDate.add(1, 'month').endOf('month').format('YYYY-MM-DD');
+
+        const response = await fetch(`${import.meta.env.VITE_API_URL}/api/events?startDate=${startDate}&endDate=${endDate}`, {
           headers: getAuthHeaders()
         });
         const data = await response.json();
         
         if (response.ok && data.success) {
-          setMatches(data.cards || []);
+          setEvents(data.cards || []);
         } else {
-          console.error('Ошибка загрузки матчей:', data.error);
+          console.error('Ошибка загрузки событий:', data.error);
         }
       } catch (err) {
-        console.error('Ошибка сети при загрузке матчей:', err);
+        console.error('Ошибка сети при загрузке событий:', err);
       } finally {
         setIsLoading(false);
       }
     };
 
-    fetchMatches();
-  }, []);
+    fetchEvents();
+  // Перезапрашиваем данные при смене месяца в календаре
+  }, [currentDate.format('YYYY-MM')]);
 
-  const handleToggleAttendance = async (gameId, newValue, teamId) => {
+  const handleToggleAttendance = async (eventId, eventType, newValue, teamId) => {
     // Оптимистичное обновление
-    setMatches(prev => prev.map(game => 
-      (game.id === gameId && game.my_team_id === teamId) ? { ...game, is_attending: newValue } : game
+    setEvents(prev => prev.map(event => 
+      (event.event_id === eventId && event.event_type === eventType) ? { ...event, is_attending: newValue } : event
     ));
 
     try {
-      const response = await fetch(`${import.meta.env.VITE_API_URL}/api/games/${gameId}/attendance`, {
+      const response = await fetch(`${import.meta.env.VITE_API_URL}/api/events/${eventId}/attendance`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
           ...getAuthHeaders()
         },
-        body: JSON.stringify({ isAttending: newValue, teamId })
+        body: JSON.stringify({ isAttending: newValue, eventType, teamId })
       });
 
       const data = await response.json();
@@ -84,22 +89,22 @@ export function SchedulePage() {
     } catch (err) {
       console.error('Ошибка переключения тумблера:', err);
       // Откат при ошибке
-      setMatches(prev => prev.map(game => 
-        (game.id === gameId && game.my_team_id === teamId) ? { ...game, is_attending: !newValue } : game
+      setEvents(prev => prev.map(event => 
+        (event.event_id === eventId && event.event_type === eventType) ? { ...event, is_attending: !newValue } : event
       ));
     }
   };
 
-  const matchDatesSet = useMemo(() => {
+  const eventDatesSet = useMemo(() => {
     const dates = new Set();
-    matches.forEach(game => {
-      if (game.game_date) {
-        const gameDate = dayjs(game.game_date).tz(game.arena_timezone || 'UTC');
-        dates.add(gameDate.format('YYYY-MM-DD'));
+    events.forEach(event => {
+      if (event.event_date) {
+        const eventDate = dayjs(event.event_date).tz(event.arena_timezone || 'UTC');
+        dates.add(eventDate.format('YYYY-MM-DD'));
       }
     });
     return dates;
-  }, [matches]);
+  }, [events]);
 
   const slideTo = useCallback((direction) => {
     if (isAnimating) return;
@@ -159,8 +164,6 @@ export function SchedulePage() {
         }
       }
     }
-
-    // ИЗМЕНЕНО: Удален конфликтный e.preventDefault(), так как мы полагаемся на touchAction: 'pan-y'
   };
 
   const handleTouchEnd = (e) => {
@@ -184,7 +187,7 @@ export function SchedulePage() {
 
   return (
     <div 
-      className="flex flex-col w-full h-full overflow-hidden relative"
+      className="flex flex-col w-full h-full overflow-hidden relative bg-surface-border"
       style={{ touchAction: 'pan-y' }} // Жесткое указание браузеру
     >
       {/* СТАТИЧНАЯ ШАПКА КАЛЕНДАРЯ (Всегда кликабельна) */}
@@ -200,7 +203,7 @@ export function SchedulePage() {
         />
       </div>
 
-      {/* КАРУСЕЛЬ КАРТОЧЕК МАТЧЕЙ */}
+      {/* КАРУСЕЛЬ КАРТОЧЕК СОБЫТИЙ */}
       <div 
         className="flex-1 relative mt-4 overflow-hidden"
         onTouchStart={handleTouchStart}
@@ -218,10 +221,10 @@ export function SchedulePage() {
         >
           {[-1, 0, 1].map(offset => {
             const slideDate = currentDate.add(offset, 'week');
-            const slideMatches = matches.filter(game => {
-              if (!game.game_date) return false;
-              const gameDate = dayjs(game.game_date).tz(game.arena_timezone || 'UTC');
-              return gameDate.isSame(slideDate, 'isoWeek');
+            const slideEvents = events.filter(event => {
+              if (!event.event_date) return false;
+              const eventDate = dayjs(event.event_date).tz(event.arena_timezone || 'UTC');
+              return eventDate.isSame(slideDate, 'isoWeek');
             });
 
             return (
@@ -231,12 +234,12 @@ export function SchedulePage() {
                     <div className="flex justify-center items-center h-32 text-brand">
                       <Loader2 className="w-8 h-8 animate-spin" />
                     </div>
-                  ) : slideMatches.length > 0 ? (
+                  ) : slideEvents.length > 0 ? (
                     <div className="flex flex-col gap-0">
-                      {slideMatches.map(game => (
-                        <MatchCard 
-                          key={`${game.id}-${game.my_team_id}`} 
-                          game={game} 
+                      {slideEvents.map(event => (
+                        <EventCard 
+                          key={`${event.event_type}-${event.event_id}`} 
+                          event={event} 
                           onToggleAttendance={handleToggleAttendance} 
                         />
                       ))}
@@ -263,7 +266,7 @@ export function SchedulePage() {
             onChangeDate={(newDate) => {
               setCurrentDate(newDate);
             }} 
-            matchDatesSet={matchDatesSet} 
+            matchDatesSet={eventDatesSet} 
           />
         </div>
       </TopSheet>

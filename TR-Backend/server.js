@@ -2,9 +2,11 @@ import express from 'express';
 import cors from 'cors';
 import morgan from 'morgan';
 import 'dotenv/config';
+
 import pool from './config/db.js';
 import authRoutes from './routes/authRoutes.js';
-import CardGameRoutes from './routes/CardGameRoutes.js';
+// Подключаем наш новый роутер вместо CardGameRoutes
+import EventRoutes from './routes/EventRoutes.js'; 
 
 const app = express();
 const PORT = process.env.PORT || 3002;
@@ -33,7 +35,7 @@ app.use(express.json());
 
 // Роуты
 app.use('/api/auth', authRoutes);
-app.use('/api/games', CardGameRoutes);
+app.use('/api/events', EventRoutes); 
 
 const startServer = async () => {
   try {
