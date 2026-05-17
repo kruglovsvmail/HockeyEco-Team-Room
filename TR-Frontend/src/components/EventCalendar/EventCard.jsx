@@ -12,7 +12,7 @@ dayjs.extend(utc);
 dayjs.extend(timezone);
 dayjs.locale('ru');
 
-const EventCard = ({ event, onToggleAttendance }) => {
+const EventCard = ({ event, onToggleAttendance, onClick }) => {
   const eventDate = dayjs.utc(event.event_date).tz(event.arena_timezone || 'UTC');
   const isFinished = event.status === 'finished';
 
@@ -84,7 +84,10 @@ const EventCard = ({ event, onToggleAttendance }) => {
   const shouldRenderTeamsBlock = event.show_team_context || isMatch;
 
   return (
-    <div className={`bg-surface-level1 rounded-3xl shadow-sm mb-4 w-full select-none flex flex-col overflow-hidden ${cardOpacityClass}`}>
+    <div 
+      onClick={() => onClick && onClick(event)}
+      className={`bg-surface-level1 rounded-3xl shadow-sm mb-4 w-full select-none flex flex-col overflow-hidden cursor-pointer active:scale-[0.98] ${cardOpacityClass}`}
+    >
       
       {/* 1. ШАПКА: Локация и Челка Даты (Выровнены по высоте) */}
       <div className="flex justify-between items-stretch w-full h-[32px]">
@@ -227,7 +230,10 @@ const EventCard = ({ event, onToggleAttendance }) => {
             </div>
 
             {/* Тумблер или Подсказка */}
-            <div className="w-1/3 flex justify-end">
+            <div 
+              className="w-1/3 flex justify-end"
+              onClick={(e) => e.stopPropagation()} 
+            >
               {event.toggle_status === 'allowed' ? (
                 <Toggle 
                   checked={event.is_attending} 

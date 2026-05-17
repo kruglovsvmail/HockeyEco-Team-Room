@@ -47,6 +47,7 @@ export const getEvents = async (req, res) => {
           
           (CASE WHEN g.home_team_id = ut.team_id THEN g.away_team_id ELSE g.home_team_id END)::int AS opponent_team_id,
           COALESCE(opp_team.name, ext_opp.name)::varchar AS opponent_name,
+          COALESCE(opp_team.logo_url, ext_opp.logo_url)::varchar AS opponent_logo_url,
           
           (CASE WHEN g.home_team_id = ut.team_id THEN g.home_player_fee ELSE g.away_player_fee END)::numeric AS my_fee,
           g.home_score::int AS home_score,
@@ -60,6 +61,9 @@ export const getEvents = async (req, res) => {
 
           g.home_jersey_type::varchar AS home_jersey,
           g.away_jersey_type::varchar AS away_jersey,
+          
+          g.video_yt_url::varchar AS video_yt_url,
+          g.video_vk_url::varchar AS video_vk_url,
 
           (CASE 
             WHEN (SELECT active_clubs FROM user_context) = 0 AND (SELECT active_teams FROM user_context) = 1 THEN false 
@@ -128,6 +132,8 @@ export const getEvents = async (req, res) => {
           
           NULL::int AS opponent_team_id, 
           NULL::varchar AS opponent_name,
+          NULL::varchar AS opponent_logo_url,
+          
           tt.cost::numeric AS my_fee,
           NULL::int AS home_score, 
           NULL::int AS away_score, 
@@ -138,6 +144,9 @@ export const getEvents = async (req, res) => {
           
           NULL::varchar AS home_jersey,
           NULL::varchar AS away_jersey,
+          
+          NULL::varchar AS video_yt_url,
+          NULL::varchar AS video_vk_url,
           
           (CASE WHEN (SELECT active_clubs FROM user_context) = 0 AND (SELECT active_teams FROM user_context) = 1 THEN false ELSE true END)::boolean AS show_team_context,
           
@@ -176,6 +185,8 @@ export const getEvents = async (req, res) => {
           
           NULL::int AS opponent_team_id, 
           NULL::varchar AS opponent_name,
+          NULL::varchar AS opponent_logo_url,
+          
           tm.cost::numeric AS my_fee, 
           NULL::int AS home_score, 
           NULL::int AS away_score, 
@@ -186,6 +197,9 @@ export const getEvents = async (req, res) => {
           
           NULL::varchar AS home_jersey,
           NULL::varchar AS away_jersey,
+          
+          NULL::varchar AS video_yt_url,
+          NULL::varchar AS video_vk_url,
           
           (CASE WHEN (SELECT active_clubs FROM user_context) = 0 AND (SELECT active_teams FROM user_context) = 1 THEN false ELSE true END)::boolean AS show_team_context,
           (EXISTS (SELECT 1 FROM team_meeting_attendance tma WHERE tma.team_meeting_id = tm.id AND tma.user_id = $1))::boolean AS is_attending,
@@ -217,6 +231,8 @@ export const getEvents = async (req, res) => {
           
           NULL::int AS opponent_team_id, 
           NULL::varchar AS opponent_name,
+          NULL::varchar AS opponent_logo_url,
+          
           ct.cost::numeric AS my_fee, 
           NULL::int AS home_score, 
           NULL::int AS away_score, 
@@ -227,6 +243,9 @@ export const getEvents = async (req, res) => {
           
           NULL::varchar AS home_jersey,
           NULL::varchar AS away_jersey,
+          
+          NULL::varchar AS video_yt_url,
+          NULL::varchar AS video_vk_url,
           
           false::boolean AS show_team_context, 
           (EXISTS (SELECT 1 FROM club_training_attendance cta WHERE cta.club_training_id = ct.id AND cta.user_id = $1))::boolean AS is_attending,
@@ -258,6 +277,8 @@ export const getEvents = async (req, res) => {
           
           NULL::int AS opponent_team_id, 
           NULL::varchar AS opponent_name,
+          NULL::varchar AS opponent_logo_url,
+          
           cm.cost::numeric AS my_fee, 
           NULL::int AS home_score, 
           NULL::int AS away_score, 
@@ -268,6 +289,9 @@ export const getEvents = async (req, res) => {
           
           NULL::varchar AS home_jersey,
           NULL::varchar AS away_jersey,
+          
+          NULL::varchar AS video_yt_url,
+          NULL::varchar AS video_vk_url,
           
           false::boolean AS show_team_context,
           (EXISTS (SELECT 1 FROM club_meeting_attendance cma WHERE cma.club_meeting_id = cm.id AND cma.user_id = $1))::boolean AS is_attending,

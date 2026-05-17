@@ -1,5 +1,6 @@
 import React, { useState, useRef, useEffect, useMemo, useCallback } from 'react';
 import { useAccess } from '../hooks/useAccess';
+import { useOutletContext } from 'react-router-dom';
 import dayjs from 'dayjs';
 import 'dayjs/locale/ru';
 import isoWeek from 'dayjs/plugin/isoWeek';
@@ -21,18 +22,18 @@ dayjs.extend(isSameOrAfter);
 dayjs.locale('ru');
 
 export function SchedulePage() {
+  const { openRightPanel } = useOutletContext();
+
   const [currentDate, setCurrentDate] = useState(dayjs());
   const [isExpanded, setIsExpanded] = useState(false);
   const [events, setEvents] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
   
-  // Рефы для обработки жестов
   const touchStartX = useRef(null);
   const touchStartY = useRef(null);
   const isHorizontalSwipe = useRef(false);
   const isSwipeLocked = useRef(false);
   
-  // --- СОСТОЯНИЯ ДЛЯ АНИМАЦИИ КАРУСЕЛИ ---
   const [offsetIndex, setOffsetIndex] = useState(0);
   const [isAnimating, setIsAnimating] = useState(false);
   const animationTimer = useRef(null);
@@ -41,7 +42,6 @@ export function SchedulePage() {
     const fetchEvents = async () => {
       setIsLoading(true);
       try {
-        // Чтобы не перегружать сеть, запрашиваем события за месяц до и месяц после текущей даты
         const startDate = currentDate.subtract(1, 'month').startOf('month').format('YYYY-MM-DD');
         const endDate = currentDate.add(1, 'month').endOf('month').format('YYYY-MM-DD');
 
@@ -63,11 +63,9 @@ export function SchedulePage() {
     };
 
     fetchEvents();
-  // Перезапрашиваем данные при смене месяца в календаре
   }, [currentDate.format('YYYY-MM')]);
 
   const handleToggleAttendance = async (eventId, eventType, newValue, teamId) => {
-    // Оптимистичное обновление
     setEvents(prev => prev.map(event => 
       (event.event_id === eventId && event.event_type === eventType) ? { ...event, is_attending: newValue } : event
     ));
@@ -88,7 +86,6 @@ export function SchedulePage() {
       }
     } catch (err) {
       console.error('Ошибка переключения тумблера:', err);
-      // Откат при ошибке
       setEvents(prev => prev.map(event => 
         (event.event_id === eventId && event.event_type === eventType) ? { ...event, is_attending: !newValue } : event
       ));
@@ -130,12 +127,10 @@ export function SchedulePage() {
     };
   }, []);
 
-  // --- ОБРАБОТКА СВАЙПОВ ---
   const handleTouchStart = (e) => {
     if (isExpanded || isAnimating) return;
 
     const x = e.touches[0].clientX;
-    // Блокируем Edge Swipe Safari (зоны по 40px по краям)
     if (x < 40 || x > window.innerWidth - 40) return;
 
     touchStartX.current = x;
@@ -156,11 +151,9 @@ export function SchedulePage() {
     if (!isSwipeLocked.current) {
       if (Math.abs(diffX) > 6 || Math.abs(diffY) > 6) {
         isSwipeLocked.current = true;
-
         if (Math.abs(diffX) > Math.abs(diffY)) {
           isHorizontalSwipe.current = true;
         } else {
-          // Если пошел вертикальный скролл — отменяем отслеживание горизонтали
           touchStartX.current = null;
         }
       }
@@ -189,10 +182,9 @@ export function SchedulePage() {
   return (
     <div 
       className="flex flex-col w-full h-full overflow-hidden relative bg-surface-border"
-      style={{ touchAction: 'pan-y' }} // Жесткое указание браузеру
+      style={{ touchAction: 'pan-y' }}
     >
-      {/* СТАТИЧНАЯ ШАПКА КАЛЕНДАРЯ (Всегда кликабельна) */}
-      <div className="shrink-0 z-30 relative w-full px-4">
+      <div className="shrink-0 z-30 relative w-full px-4 pt-4">
         <CompactWeek 
           date={currentDate} 
           onChangeDate={(newDate) => {
@@ -204,7 +196,6 @@ export function SchedulePage() {
         />
       </div>
 
-      {/* КАРУСЕЛЬ КАРТОЧЕК СОБЫТИЙ */}
       <div 
         className="flex-1 relative mt-4 overflow-hidden"
         onTouchStart={handleTouchStart}
@@ -216,7 +207,7 @@ export function SchedulePage() {
           style={{
             transform: `translateX(calc(-33.33333% - ${offsetIndex * 33.33333}%))`,
             transition: isAnimating ? 'transform 250ms cubic-bezier(0.32, 0.72, 0, 1)' : 'none',
-            pointerEvents: isAnimating ? 'none' : 'auto', // Блокируем только саму карусель
+            pointerEvents: isAnimating ? 'none' : 'auto',
             willChange: 'transform'
           }}
         >
@@ -237,13 +228,28 @@ export function SchedulePage() {
                     </div>
                   ) : slideEvents.length > 0 ? (
                     <div className="flex flex-col gap-0">
-                      {slideEvents.map(event => (
-                        <EventCard 
-                          key={`${event.event_type}-${event.event_id}-${event.my_team_id || 'club'}`} 
-                          event={event} 
-                          onToggleAttendance={handleToggleAttendance} 
-                        />
-                      ))}
+                      {slideEvents.map(event => {
+                        // Определяем тип панели и заголовок на основе типа события
+                        let panelType = 'matchDetails';
+                        let panelTitle = 'Детали матча';
+
+                        if (event.event_type.includes('training')) {
+                          panelType = 'trainingDetails';
+                          panelTitle = 'Детали тренировки';
+                        } else if (event.event_type.includes('meeting')) {
+                          panelType = 'meetingDetails';
+                          panelTitle = 'Детали собрания';
+                        }
+
+                        return (
+                          <EventCard 
+                            key={`${event.event_type}-${event.event_id}-${event.my_team_id || 'club'}`} 
+                            event={event} 
+                            onToggleAttendance={handleToggleAttendance}
+                            onClick={() => openRightPanel(panelType, event, panelTitle)}
+                          />
+                        );
+                      })}
                     </div>
                   ) : (
                     <div className="text-center p-10">
@@ -259,7 +265,6 @@ export function SchedulePage() {
         </div>
       </div>
 
-      {/* Шторка календаря */}
       <TopSheet isOpen={isExpanded} onClose={() => setIsExpanded(false)}>
         <div className="pb-2">
           <ExpandedGrid 
