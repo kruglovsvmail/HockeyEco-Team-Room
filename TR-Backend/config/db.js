@@ -1,6 +1,9 @@
 import 'dotenv/config';
 import pg from 'pg';
 
+// Перехватчик: заставляем pg парсить даты как UTC
+pg.types.setTypeParser(1114, str => new Date(str + 'Z'));
+
 const pool = new pg.Pool({
   host: process.env.DB_HOST,
   port: process.env.DB_PORT,

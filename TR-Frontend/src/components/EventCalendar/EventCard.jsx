@@ -21,7 +21,7 @@ const EventCard = ({ event, onToggleAttendance }) => {
   const displayDateStr = fullDateStr.length > 12 ? eventDate.format('D MMM, dd') : fullDateStr;
   
   // Обесцвечиваем и "гасим" ВСЮ карточку для ЛЮБОГО завершенного события
-  const cardOpacityClass = isFinished ? 'opacity-50 grayscale transition-all duration-300' : 'transition-all duration-300';
+  const cardOpacityClass = isFinished ? 'opacity-60 grayscale transition-all duration-300' : 'transition-all duration-300';
 
   // --- ОПРЕДЕЛЕНИЕ ТИПА СОБЫТИЯ ---
   const isMatch = event.event_type === 'match';
