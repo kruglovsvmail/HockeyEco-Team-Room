@@ -34,7 +34,7 @@ export const getEvents = async (req, res) => {
         SELECT 
           g.id::int AS event_id,
           'match'::varchar AS event_type,
-          g.game_date::timestamp AS event_date,
+          g.game_date::timestamptz AS event_date,
           g.status::varchar AS status,
           a.name::varchar AS arena_name,
           a.timezone::varchar AS arena_timezone,
@@ -110,7 +110,7 @@ export const getEvents = async (req, res) => {
         SELECT 
           tt.id::int AS event_id,
           'team_training'::varchar AS event_type,
-          tt.training_date::timestamp AS event_date,
+          tt.training_date::timestamptz AS event_date,
           (CASE WHEN tt.training_date < NOW() THEN 'finished' ELSE 'scheduled' END)::varchar AS status,
           a.name::varchar AS arena_name,
           a.timezone::varchar AS arena_timezone,
@@ -153,7 +153,7 @@ export const getEvents = async (req, res) => {
         SELECT 
           tm.id::int AS event_id,
           'team_meeting'::varchar AS event_type,
-          tm.meeting_date::timestamp AS event_date,
+          tm.meeting_date::timestamptz AS event_date,
           (CASE WHEN tm.meeting_date < NOW() THEN 'finished' ELSE 'scheduled' END)::varchar AS status,
           a.name::varchar AS arena_name,
           a.timezone::varchar AS arena_timezone,
@@ -189,7 +189,7 @@ export const getEvents = async (req, res) => {
         SELECT 
           ct.id::int AS event_id,
           'club_training'::varchar AS event_type,
-          ct.training_date::timestamp AS event_date,
+          ct.training_date::timestamptz AS event_date,
           (CASE WHEN ct.training_date < NOW() THEN 'finished' ELSE 'scheduled' END)::varchar AS status,
           a.name::varchar AS arena_name,
           a.timezone::varchar AS arena_timezone,
@@ -225,7 +225,7 @@ export const getEvents = async (req, res) => {
         SELECT 
           cm.id::int AS event_id,
           'club_meeting'::varchar AS event_type,
-          cm.meeting_date::timestamp AS event_date,
+          cm.meeting_date::timestamptz AS event_date,
           (CASE WHEN cm.meeting_date < NOW() THEN 'finished' ELSE 'scheduled' END)::varchar AS status,
           a.name::varchar AS arena_name,
           a.timezone::varchar AS arena_timezone,

@@ -13,7 +13,7 @@ dayjs.extend(timezone);
 dayjs.locale('ru');
 
 const EventCard = ({ event, onToggleAttendance }) => {
-  const eventDate = dayjs(event.event_date).tz(event.arena_timezone || 'UTC');
+  const eventDate = dayjs.utc(event.event_date).tz(event.arena_timezone || 'UTC');
   const isFinished = event.status === 'finished';
 
   // Логика форматирования: если строка слишком длинная, используем сокращенный месяц
