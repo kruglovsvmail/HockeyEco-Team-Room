@@ -27,7 +27,7 @@ export const EventDetailsMatch = ({ event }) => {
     <div className="h-full w-full overflow-y-auto scrollbar-hide bg-surface-level1">
       
       {/* 1. БЛОК ПРОТИВОСТОЯНИЯ */}
-      <div className="flex items-start justify-between px-4 py-4">
+      <div className="flex items-start justify-between px-4 py-10">
         
         {/* Хозяева (Слева) */}
         <div className="flex flex-col items-center w-[30%]">

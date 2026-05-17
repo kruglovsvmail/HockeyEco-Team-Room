@@ -130,7 +130,7 @@ export function TeamLayout() {
         <div className="bg-surface-level1  absolute top-0 left-full w-[85%] h-full z-[60] shadow-[-10px_0_20px_rgba(0,0,0,0.15)] flex flex-col overflow-hidden">
           
           {/* ОБЩАЯ ШАПКА ДЛЯ ВСЕХ БУДУЩИХ ПАНЕЛЕЙ */}
-          <div className="flex items-center justify-between p-4 h-[60px] shrink-0 z-[90]">
+          <div className="flex items-center bg-surface-base justify-between shadow-md p-4 h-[60px] shrink-0 z-[90]">
             <button 
               onClick={closeRightPanel}
               className="p-2 -ml-2 text-content-muted hover:text-brand transition-colors outline-none cursor-pointer active:scale-95 flex items-center"
