@@ -6,8 +6,8 @@ import 'dotenv/config';
 
 import pool from './config/db.js';
 import authRoutes from './routes/authRoutes.js';
-// Подключаем наш новый роутер вместо CardGameRoutes
 import EventRoutes from './routes/EventRoutes.js'; 
+import teamRoutes from './routes/teamRoutes.js'; // НОВЫЙ ИМПОРТ
 
 const app = express();
 const PORT = process.env.PORT || 3002;
@@ -37,15 +37,18 @@ app.use(express.json());
 // Роуты
 app.use('/api/auth', authRoutes);
 app.use('/api/events', EventRoutes); 
+app.use('/api/teams', teamRoutes); // НОВЫЙ РОУТ
 
 const startServer = async () => {
   try {
-    await pool.query('SELECT NOW()');
+    const res = await pool.query('SELECT NOW()');
+    console.log('PostgreSQL connected:', res.rows[0].now);
+    
     app.listen(PORT, '0.0.0.0', () => {
-      console.log(`🚀 Сервер HockeyEco-PWA запущен на порту ${PORT}`);
+      console.log(`Server running on port ${PORT}`);
     });
-  } catch (error) {
-    console.error('❌ Ошибка запуска:', error.message);
+  } catch (err) {
+    console.error('Failed to start server:', err);
     process.exit(1);
   }
 };

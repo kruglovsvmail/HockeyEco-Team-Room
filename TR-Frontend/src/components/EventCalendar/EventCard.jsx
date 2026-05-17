@@ -42,17 +42,47 @@ const EventCard = ({ event, onToggleAttendance, onClick }) => {
     const myScore = isHome ? event.home_score : event.away_score;
     const oppScore = isHome ? event.away_score : event.home_score;
     
-    matchScoreText = `${myScore < 0 ? '-' : myScore} : ${oppScore < 0 ? '-' : oppScore}`;
+    // Бэкенд может присылать технарь либо в is_technical, либо в end_type
+    const isTech = event.is_technical || event.end_type === 'tech';
 
-    if (event.is_technical) {
-      if (myScore > 0) { matchStatusText = 'ПОБЕДА'; matchStatusColor = 'text-success'; }
-      else if (myScore < 0 && oppScore < 0) { matchStatusText = 'НИЧЬЯ'; matchStatusColor = 'text-brand'; }
-      else { matchStatusText = 'ПОРАЖЕНИЕ'; matchStatusColor = 'text-danger'; }
-      matchEndTypeText = 'ТЕХНИЧЕСКИЙ';
+    if (isTech) {
+      let homeDisplay = '-';
+      let awayDisplay = '-';
+
+      if (event.home_score > event.away_score) {
+        homeDisplay = '+';
+        awayDisplay = '-';
+      } else if (event.home_score < event.away_score) {
+        homeDisplay = '-';
+        awayDisplay = '+';
+      }
+
+      matchScoreText = `${homeDisplay} : ${awayDisplay}`;
+
+      const myDisplay = isHome ? homeDisplay : awayDisplay;
+      const oppDisplay = isHome ? awayDisplay : homeDisplay;
+
+      if (myDisplay === '+') {
+        matchStatusText = 'ПОБЕДА';
+        matchStatusColor = 'text-success';
+      } else {
+        matchStatusText = 'ПОРАЖЕНИЕ';
+        matchStatusColor = 'text-danger';
+      }
+      matchEndTypeText = 'ТЕХНАРЬ';
     } else {
-      if (myScore > oppScore) { matchStatusText = 'ПОБЕДА'; matchStatusColor = 'text-success'; }
-      else if (myScore < oppScore) { matchStatusText = 'ПОРАЖЕНИЕ'; matchStatusColor = 'text-danger'; }
-      else { matchStatusText = 'НИЧЬЯ'; matchStatusColor = 'text-brand'; }
+      matchScoreText = `${event.home_score} : ${event.away_score}`;
+
+      if (myScore > oppScore) { 
+        matchStatusText = 'ПОБЕДА'; 
+        matchStatusColor = 'text-success'; 
+      } else if (myScore < oppScore) { 
+        matchStatusText = 'ПОРАЖЕНИЕ'; 
+        matchStatusColor = 'text-danger'; 
+      } else { 
+        matchStatusText = 'НИЧЬЯ'; 
+        matchStatusColor = 'text-brand'; 
+      }
       
       if (event.end_type === 'ot') matchEndTypeText = 'В ОВЕРТАЙМЕ';
       else if (event.end_type === 'so') matchEndTypeText = 'ПО БУЛЛИТАМ';
@@ -80,7 +110,7 @@ const EventCard = ({ event, onToggleAttendance, onClick }) => {
     return null;
   };
 
-  // Флаг для отображения всего блока команд. Выводим либо если нужен контекст команды, либо если это матч (нужно показать соперника)
+  // Флаг для отображения всего блока команд
   const shouldRenderTeamsBlock = event.show_team_context || isMatch;
 
   return (
@@ -89,7 +119,7 @@ const EventCard = ({ event, onToggleAttendance, onClick }) => {
       className={`bg-surface-level1 rounded-3xl shadow-sm mb-4 w-full select-none flex flex-col overflow-hidden cursor-pointer active:scale-[0.98] ${cardOpacityClass}`}
     >
       
-      {/* 1. ШАПКА: Локация и Челка Даты (Выровнены по высоте) */}
+      {/* 1. ШАПКА: Локация и Челка Даты */}
       <div className="flex justify-between items-stretch w-full h-[32px]">
         
         {/* Локация */}
@@ -100,7 +130,7 @@ const EventCard = ({ event, onToggleAttendance, onClick }) => {
           </span>
         </div>
 
-        {/* Дата (Челка фиксированной ширины со скосом и сглаженным радиусом слева внизу) */}
+        {/* Дата */}
         <div className="relative w-[50%] shrink-0 flex items-center justify-center pl-3">
           {/* Векторный фон челки */}
           <svg 
@@ -131,7 +161,7 @@ const EventCard = ({ event, onToggleAttendance, onClick }) => {
         </div>
       </div>
 
-      {/* 3. КОМАНДЫ: Логотип и Соперник (Рендерится условно) */}
+      {/* 3. КОМАНДЫ: Логотип и Соперник */}
       {shouldRenderTeamsBlock && (
         <div className="flex w-full px-5 mb-4 min-h-[60px] items-end">
           
@@ -170,7 +200,7 @@ const EventCard = ({ event, onToggleAttendance, onClick }) => {
               </div>
             </>
           ) : (
-            /* УПРОЩЕННЫЙ ВАРИАНТ (Пользователь в одной команде, выводим только соперника слева) */
+            /* УПРОЩЕННЫЙ ВАРИАНТ (Пользователь в одной команде) */
             <div className="w-full flex items-center">
               {isMatch && event.opponent_name && (
                 <div className="flex flex-col items-start justify-center w-full">

@@ -15,7 +15,6 @@ export const EventDetailsMatch = ({ event }) => {
   const homeLogo = isHome ? event.my_team_logo_url : event.opponent_logo_url;
   const awayLogo = isHome ? event.opponent_logo_url : event.my_team_logo_url;
 
-  // Логика текста под счетом (Только для завершенных матчей)
   const isFinished = event.status === 'finished';
   let matchStatusText = '';
   let matchStatusColor = '';
@@ -26,21 +25,52 @@ export const EventDetailsMatch = ({ event }) => {
     const myScore = isHome ? event.home_score : event.away_score;
     const oppScore = isHome ? event.away_score : event.home_score;
     
-    // Форматирование счета (для корректного отображения технических +/-)
-    const homeScoreDisplay = event.home_score < 0 ? '-' : event.home_score;
-    const awayScoreDisplay = event.away_score < 0 ? '-' : event.away_score;
-    matchScoreText = `${homeScoreDisplay} : ${awayScoreDisplay}`;
+    // Бэкенд может присылать технарь либо в is_technical, либо в end_type
+    const isTech = event.is_technical || event.end_type === 'tech';
 
-    if (event.is_technical) {
-      if (myScore > 0) { matchStatusText = 'ПОБЕДА'; matchStatusColor = 'text-success'; }
-      else if (myScore < 0 && oppScore < 0) { matchStatusText = 'НИЧЬЯ'; matchStatusColor = 'text-brand'; }
-      else { matchStatusText = 'ПОРАЖЕНИЕ'; matchStatusColor = 'text-danger'; }
-      matchEndTypeText = 'ТЕХНИЧЕСКИЙ';
+    if (isTech) {
+      let homeDisplay = '-';
+      let awayDisplay = '-';
+
+      if (event.home_score > event.away_score) {
+        homeDisplay = '+';
+        awayDisplay = '-';
+      } else if (event.home_score < event.away_score) {
+        homeDisplay = '-';
+        awayDisplay = '+';
+      }
+
+      matchScoreText = `${homeDisplay} : ${awayDisplay}`;
+
+      const myDisplay = isHome ? homeDisplay : awayDisplay;
+      const oppDisplay = isHome ? awayDisplay : homeDisplay;
+
+      if (myDisplay === '+') {
+        matchStatusText = 'ПОБЕДА';
+        matchStatusColor = 'text-success';
+      } else if (myDisplay === '-' && oppDisplay === '-') {
+        matchStatusText = 'ПОРАЖЕНИЕ';
+        matchStatusColor = 'text-danger';
+      } else {
+        matchStatusText = 'ПОРАЖЕНИЕ';
+        matchStatusColor = 'text-danger';
+      }
+      matchEndTypeText = 'ТЕХНАРЬ';
+
     } else {
-      if (myScore > oppScore) { matchStatusText = 'ПОБЕДА'; matchStatusColor = 'text-success'; }
-      else if (myScore < oppScore) { matchStatusText = 'ПОРАЖЕНИЕ'; matchStatusColor = 'text-danger'; }
-      else { matchStatusText = 'НИЧЬЯ'; matchStatusColor = 'text-brand'; }
-      
+      matchScoreText = `${event.home_score} : ${event.away_score}`;
+
+      if (myScore > oppScore) { 
+        matchStatusText = 'ПОБЕДА'; 
+        matchStatusColor = 'text-success'; 
+      } else if (myScore < oppScore) { 
+        matchStatusText = 'ПОРАЖЕНИЕ'; 
+        matchStatusColor = 'text-danger'; 
+      } else { 
+        matchStatusText = 'НИЧЬЯ'; 
+        matchStatusColor = 'text-brand'; 
+      }
+
       if (event.end_type === 'ot') matchEndTypeText = 'В ОВЕРТАЙМЕ';
       else if (event.end_type === 'so') matchEndTypeText = 'ПО БУЛЛИТАМ';
     }

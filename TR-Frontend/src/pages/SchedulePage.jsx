@@ -22,7 +22,7 @@ dayjs.extend(isSameOrAfter);
 dayjs.locale('ru');
 
 export function SchedulePage() {
-  const { openRightPanel } = useOutletContext();
+  const { openRightPanel, openFullPage } = useOutletContext();
 
   const [currentDate, setCurrentDate] = useState(dayjs());
   const [isExpanded, setIsExpanded] = useState(false);
@@ -246,7 +246,7 @@ export function SchedulePage() {
                             key={`${event.event_type}-${event.event_id}-${event.my_team_id || 'club'}`} 
                             event={event} 
                             onToggleAttendance={handleToggleAttendance}
-                            onClick={() => openRightPanel(panelType, event, panelTitle)}
+                            onClick={() => openFullPage(panelType, event, panelTitle)}
                           />
                         );
                       })}
