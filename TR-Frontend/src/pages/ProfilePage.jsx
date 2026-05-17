@@ -11,7 +11,7 @@ export function ProfilePage() {
   };
 
   return (
-    <div className="flex flex-col h-full px-4 pt-6">
+    <div className="flex flex-col h-full px-4 pt-6 bg-surface-border">
       <div className="shrink-0 mb-6">
         <h1 className="text-2xl font-black uppercase tracking-widest text-content-main">
           Профиль игрока

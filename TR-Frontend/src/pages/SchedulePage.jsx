@@ -133,7 +133,7 @@ export function SchedulePage() {
   // --- ОБРАБОТКА СВАЙПОВ ---
   const handleTouchStart = (e) => {
     if (isExpanded || isAnimating) return;
-    
+
     const x = e.touches[0].clientX;
     // Блокируем Edge Swipe Safari (зоны по 40px по краям)
     if (x < 40 || x > window.innerWidth - 40) return;
@@ -156,6 +156,7 @@ export function SchedulePage() {
     if (!isSwipeLocked.current) {
       if (Math.abs(diffX) > 6 || Math.abs(diffY) > 6) {
         isSwipeLocked.current = true;
+
         if (Math.abs(diffX) > Math.abs(diffY)) {
           isHorizontalSwipe.current = true;
         } else {
@@ -238,7 +239,7 @@ export function SchedulePage() {
                     <div className="flex flex-col gap-0">
                       {slideEvents.map(event => (
                         <EventCard 
-                          key={`${event.event_type}-${event.event_id}`} 
+                          key={`${event.event_type}-${event.event_id}-${event.my_team_id || 'club'}`} 
                           event={event} 
                           onToggleAttendance={handleToggleAttendance} 
                         />

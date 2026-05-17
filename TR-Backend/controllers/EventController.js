@@ -40,6 +40,8 @@ export const getEvents = async (req, res) => {
           a.timezone::varchar AS arena_timezone,
           
           ut.team_id::int AS my_team_id,
+          g.home_team_id::int AS home_team_id,
+          
           my_team.name::varchar AS my_team_name,
           my_team.logo_url::varchar AS my_team_logo_url,
           
@@ -55,6 +57,9 @@ export const getEvents = async (req, res) => {
           
           d.logo_url::varchar AS division_logo_url,
           g.stage_type::varchar AS stage_type,
+
+          g.home_jersey_type::varchar AS home_jersey,
+          g.away_jersey_type::varchar AS away_jersey,
 
           (CASE 
             WHEN (SELECT active_clubs FROM user_context) = 0 AND (SELECT active_teams FROM user_context) = 1 THEN false 
@@ -116,6 +121,8 @@ export const getEvents = async (req, res) => {
           a.timezone::varchar AS arena_timezone,
           
           ut.team_id::int AS my_team_id,
+          NULL::int AS home_team_id,
+          
           my_team.name::varchar AS my_team_name,
           my_team.logo_url::varchar AS my_team_logo_url,
           
@@ -128,6 +135,9 @@ export const getEvents = async (req, res) => {
           NULL::varchar AS end_type,
           NULL::varchar AS division_logo_url, 
           NULL::varchar AS stage_type,
+          
+          NULL::varchar AS home_jersey,
+          NULL::varchar AS away_jersey,
           
           (CASE WHEN (SELECT active_clubs FROM user_context) = 0 AND (SELECT active_teams FROM user_context) = 1 THEN false ELSE true END)::boolean AS show_team_context,
           
@@ -159,6 +169,8 @@ export const getEvents = async (req, res) => {
           a.timezone::varchar AS arena_timezone,
           
           ut.team_id::int AS my_team_id,
+          NULL::int AS home_team_id,
+          
           my_team.name::varchar AS my_team_name,
           my_team.logo_url::varchar AS my_team_logo_url,
           
@@ -171,6 +183,9 @@ export const getEvents = async (req, res) => {
           NULL::varchar AS end_type,
           NULL::varchar AS division_logo_url, 
           NULL::varchar AS stage_type,
+          
+          NULL::varchar AS home_jersey,
+          NULL::varchar AS away_jersey,
           
           (CASE WHEN (SELECT active_clubs FROM user_context) = 0 AND (SELECT active_teams FROM user_context) = 1 THEN false ELSE true END)::boolean AS show_team_context,
           (EXISTS (SELECT 1 FROM team_meeting_attendance tma WHERE tma.team_meeting_id = tm.id AND tma.user_id = $1))::boolean AS is_attending,
@@ -195,6 +210,8 @@ export const getEvents = async (req, res) => {
           a.timezone::varchar AS arena_timezone,
           
           NULL::int AS my_team_id,
+          NULL::int AS home_team_id,
+          
           c.name::varchar AS my_team_name,
           c.logo_url::varchar AS my_team_logo_url,
           
@@ -207,6 +224,9 @@ export const getEvents = async (req, res) => {
           NULL::varchar AS end_type,
           NULL::varchar AS division_logo_url, 
           NULL::varchar AS stage_type,
+          
+          NULL::varchar AS home_jersey,
+          NULL::varchar AS away_jersey,
           
           false::boolean AS show_team_context, 
           (EXISTS (SELECT 1 FROM club_training_attendance cta WHERE cta.club_training_id = ct.id AND cta.user_id = $1))::boolean AS is_attending,
@@ -231,6 +251,8 @@ export const getEvents = async (req, res) => {
           a.timezone::varchar AS arena_timezone,
           
           NULL::int AS my_team_id,
+          NULL::int AS home_team_id,
+          
           c.name::varchar AS my_team_name,
           c.logo_url::varchar AS my_team_logo_url,
           
@@ -243,6 +265,9 @@ export const getEvents = async (req, res) => {
           NULL::varchar AS end_type,
           NULL::varchar AS division_logo_url, 
           NULL::varchar AS stage_type,
+          
+          NULL::varchar AS home_jersey,
+          NULL::varchar AS away_jersey,
           
           false::boolean AS show_team_context,
           (EXISTS (SELECT 1 FROM club_meeting_attendance cma WHERE cma.club_meeting_id = cm.id AND cma.user_id = $1))::boolean AS is_attending,
@@ -279,7 +304,6 @@ export const getEvents = async (req, res) => {
 
     const result = await pool.query(query, queryParams);
     res.json({ success: true, cards: result.rows });
-
   } catch (err) {
     console.error('Ошибка получения событий:', err);
     res.status(500).json({ success: false, error: 'Ошибка сервера' });
@@ -291,8 +315,7 @@ export const toggleEventAttendance = async (req, res) => {
     const userId = req.user.id;
     const { eventId } = req.params;
     
-    // ВЕРНУЛ teamId КОТОРЫЙ СЛУЧАЙНО СТЕР!
-    const { isAttending, eventType, teamId } = req.body; 
+    const { isAttending, eventType, teamId } = req.body;
 
     if (!eventType) {
       return res.status(400).json({ success: false, error: 'eventType обязателен' });
@@ -301,7 +324,6 @@ export const toggleEventAttendance = async (req, res) => {
     switch (eventType) {
       case 'match':
         if (!teamId) return res.status(400).json({ success: false, error: 'teamId обязателен для матча' });
-        
         if (isAttending) {
           await pool.query(`INSERT INTO team_game_attendance (game_id, user_id, team_id) VALUES ($1, $2, $3) ON CONFLICT ON CONSTRAINT team_game_att_unique DO NOTHING`, [eventId, userId, teamId]);
         } else {

@@ -19,12 +19,14 @@ const EventCard = ({ event, onToggleAttendance }) => {
   // Логика форматирования: если строка слишком длинная, используем сокращенный месяц
   const fullDateStr = eventDate.format('D MMMM, dd');
   const displayDateStr = fullDateStr.length > 12 ? eventDate.format('D MMM, dd') : fullDateStr;
-  
+
   // Обесцвечиваем и "гасим" ВСЮ карточку для ЛЮБОГО завершенного события
   const cardOpacityClass = isFinished ? 'opacity-60 grayscale transition-all duration-300' : 'transition-all duration-300';
 
-  // --- ОПРЕДЕЛЕНИЕ ТИПА СОБЫТИЯ ---
+  // --- ОПРЕДЕЛЕНИЕ ТИПА СОБЫТИЯ И СТОРОНЫ ---
   const isMatch = event.event_type === 'match';
+  const isHome = isMatch ? event.my_team_id === event.home_team_id : false;
+
   let eventTitle = '';
   if (isMatch) eventTitle = 'МАТЧ';
   else if (event.event_type.includes('training')) eventTitle = 'ТРЕНИРОВКА';
@@ -37,7 +39,6 @@ const EventCard = ({ event, onToggleAttendance }) => {
   let matchEndTypeText = '';
 
   if (isMatch && isFinished) {
-    const isHome = event.my_team_id === event.home_team_id;
     const myScore = isHome ? event.home_score : event.away_score;
     const oppScore = isHome ? event.away_score : event.home_score;
     
@@ -59,6 +60,14 @@ const EventCard = ({ event, onToggleAttendance }) => {
     }
   }
 
+  // --- ЛОГИКА ЦВЕТА ФОРМЫ ---
+  let jerseyText = 'Не определено';
+  if (isMatch) {
+    const jerseyType = isHome ? event.home_jersey : event.away_jersey;
+    if (jerseyType === 'light') jerseyText = 'Светлая';
+    else if (jerseyType === 'dark') jerseyText = 'Тёмная';
+  }
+
   // --- РЕНДЕР ИКОНКИ ДИВИЗИОНА / ТОВАРИЩЕСКОГО МАТЧА ---
   const renderMatchIcon = () => {
     if (!isMatch) return null;
@@ -71,6 +80,9 @@ const EventCard = ({ event, onToggleAttendance }) => {
     return null;
   };
 
+  // Флаг для отображения всего блока команд. Выводим либо если нужен контекст команды, либо если это матч (нужно показать соперника)
+  const shouldRenderTeamsBlock = event.show_team_context || isMatch;
+
   return (
     <div className={`bg-surface-level1 rounded-3xl shadow-sm mb-4 w-full select-none flex flex-col overflow-hidden ${cardOpacityClass}`}>
       
@@ -80,7 +92,7 @@ const EventCard = ({ event, onToggleAttendance }) => {
         {/* Локация */}
         <div className="flex items-center gap-1 pl-4 flex-1 overflow-hidden">
           <Icon name="location_pin" className="w-3 h-3 text-brand shrink-0" />
-          <span className="text-[11px] font-bold text-content-muted uppercase tracking-widest truncate]">
+          <span className="text-[11px] font-bold text-content-muted uppercase tracking-widest truncate">
             {event.arena_name || 'Арена не указана'}
           </span>
         </div>
@@ -94,7 +106,6 @@ const EventCard = ({ event, onToggleAttendance }) => {
             fill="currentColor"
             preserveAspectRatio="none"
           >
-            {/* M0 0 (верхний левый) -> H140 (верхний правый) -> V38 (нижний правый) -> H24 (идем влево до начала закругления) -> Q... (кривая Безье для радиуса угла) -> L0 0 (линия к началу по скосу) */}
             <path d="M0 0 H140 V38 H24 Q16 38 13.5 32 L0 0 Z" />
           </svg>
           {/* Текст поверх */}
@@ -117,43 +128,62 @@ const EventCard = ({ event, onToggleAttendance }) => {
         </div>
       </div>
 
-      {/* 3. КОМАНДЫ: Логотип и Соперник */}
-      <div className="flex w-full px-5 mb-4 min-h-[60px] items-end">
-        
-        {/* Моя команда (40% ширины) */}
-        <div className="w-[40%] flex items-center gap-2.5">
-          <div className="w-9 h-9 shrink-0 overflow-hidden flex items-center justify-center">
-            {event.my_team_logo_url ? (
-              <img src={getImageUrl(event.my_team_logo_url)} alt="Лого" className="w-full h-full object-cover" />
-            ) : (
-              <span className="text-[9px] font-bold text-content-muted">ЛОГО</span>
-            )}
-          </div>
-          {/* Убрали max-w и добавили line-clamp-2 для переноса в две строки */}
-          <span className="text-xs font-black text-content-muted uppercase leading-tight line-clamp-2 break-words">
-            {event.my_team_name}
-          </span>
-        </div>
+      {/* 3. КОМАНДЫ: Логотип и Соперник (Рендерится условно) */}
+      {shouldRenderTeamsBlock && (
+        <div className="flex w-full px-5 mb-4 min-h-[60px] items-end">
+          
+          {event.show_team_context ? (
+            /* СТАНДАРТНЫЙ ВАРИАНТ (У пользователя несколько команд) */
+            <>
+              {/* Моя команда (40% ширины) */}
+              <div className="w-[40%] flex items-center gap-2.5">
+                <div className="w-9 h-9 shrink-0 overflow-hidden flex items-center justify-center">
+                  {event.my_team_logo_url ? (
+                    <img src={getImageUrl(event.my_team_logo_url)} alt="Лого" className="w-full h-full object-cover" />
+                  ) : (
+                    <span className="text-[9px] font-bold text-content-muted">ЛОГО</span>
+                  )}
+                </div>
+                <span className="text-xs font-black text-content-muted uppercase leading-tight line-clamp-2 break-words">
+                  {event.my_team_name}
+                </span>
+              </div>
 
-        {/* Пустая зона по середине (20% ширины) */}
-        <div className="w-[20%] shrink-0"></div>
+              {/* Пустая зона по середине (20% ширины) */}
+              <div className="w-[20%] shrink-0"></div>
 
-        {/* Соперник (40% ширины) */}
-        <div className="w-[40%] flex justify-end">
-          {isMatch && event.opponent_name && (
-            <div className="flex flex-col items-end justify-center text-right w-full">
-              <span className="text-[11px] italic text-content-subtle leading-tight mb-[4px]">
-                соперник:
-              </span>
-              {/* Также убрали truncate и добавили line-clamp-2 */}
-              <span className="text-xs font-bold text-content-muted leading-tight line-clamp-2 break-words text-right mb-[2px]">
-                {event.opponent_name}
-              </span>
+              {/* Соперник (40% ширины) */}
+              <div className="w-[40%] flex justify-end">
+                {isMatch && event.opponent_name && (
+                  <div className="flex flex-col items-end justify-center text-right w-full">
+                    <span className="text-[11px] italic text-content-subtle leading-tight mb-[4px]">
+                      соперник:
+                    </span>
+                    <span className="text-xs font-bold text-content-muted leading-tight line-clamp-2 break-words text-right mb-[2px]">
+                      {event.opponent_name}
+                    </span>
+                  </div>
+                )}
+              </div>
+            </>
+          ) : (
+            /* УПРОЩЕННЫЙ ВАРИАНТ (Пользователь в одной команде, выводим только соперника слева) */
+            <div className="w-full flex items-center">
+              {isMatch && event.opponent_name && (
+                <div className="flex flex-col items-start justify-center w-full">
+                  <span className="text-[11px] italic text-content-subtle leading-tight mb-[4px]">
+                    соперник:
+                  </span>
+                  <span className="text-xs font-bold text-content-muted leading-tight line-clamp-2 break-words text-left">
+                    {event.opponent_name}
+                  </span>
+                </div>
+              )}
             </div>
           )}
-        </div>
 
-      </div>
+        </div>
+      )}
 
       {/* Разделительная линия */}
       <div className="h-[1px] w-[calc(100%-40px)] mx-auto bg-surface-level3" />
@@ -182,7 +212,7 @@ const EventCard = ({ event, onToggleAttendance }) => {
               {isMatch && (
                 <>
                   <Icon name="jersey" className="w-5 h-5 text-brand" />
-                  <span className="text-sm font-bold text-content-muted">Тёмная</span>
+                  <span className="text-sm font-bold text-content-muted">{jerseyText}</span>
                 </>
               )}
             </div>
