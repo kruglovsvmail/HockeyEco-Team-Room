@@ -7,7 +7,7 @@ export const EventDetailsMatch = ({ event }) => {
 
   // Вычисляем, играет ли наша команда дома
   const isHome = event.my_team_id === event.home_team_id;
-  
+
   // Распределяем названия и логотипы
   const homeName = isHome ? event.my_team_name : (event.opponent_name || 'Неизвестно');
   const awayName = isHome ? (event.opponent_name || 'Неизвестно') : event.my_team_name;
@@ -16,12 +16,35 @@ export const EventDetailsMatch = ({ event }) => {
   const awayLogo = isHome ? event.opponent_logo_url : event.my_team_logo_url;
 
   // Логика текста под счетом (Только для завершенных матчей)
-  const renderEndType = () => {
-    if (event.is_technical) return 'Технарь';
-    if (event.end_type === 'so') return 'По буллитам';
-    if (event.end_type === 'ot') return 'В овертайме';
-    return null; // В основное время ничего не пишем
-  };
+  const isFinished = event.status === 'finished';
+  let matchStatusText = '';
+  let matchStatusColor = '';
+  let matchScoreText = '-- : --';
+  let matchEndTypeText = '';
+
+  if (isFinished) {
+    const myScore = isHome ? event.home_score : event.away_score;
+    const oppScore = isHome ? event.away_score : event.home_score;
+    
+    // Форматирование счета (для корректного отображения технических +/-)
+    const homeScoreDisplay = event.home_score < 0 ? '-' : event.home_score;
+    const awayScoreDisplay = event.away_score < 0 ? '-' : event.away_score;
+    matchScoreText = `${homeScoreDisplay} : ${awayScoreDisplay}`;
+
+    if (event.is_technical) {
+      if (myScore > 0) { matchStatusText = 'ПОБЕДА'; matchStatusColor = 'text-success'; }
+      else if (myScore < 0 && oppScore < 0) { matchStatusText = 'НИЧЬЯ'; matchStatusColor = 'text-brand'; }
+      else { matchStatusText = 'ПОРАЖЕНИЕ'; matchStatusColor = 'text-danger'; }
+      matchEndTypeText = 'ТЕХНИЧЕСКИЙ';
+    } else {
+      if (myScore > oppScore) { matchStatusText = 'ПОБЕДА'; matchStatusColor = 'text-success'; }
+      else if (myScore < oppScore) { matchStatusText = 'ПОРАЖЕНИЕ'; matchStatusColor = 'text-danger'; }
+      else { matchStatusText = 'НИЧЬЯ'; matchStatusColor = 'text-brand'; }
+      
+      if (event.end_type === 'ot') matchEndTypeText = 'В ОВЕРТАЙМЕ';
+      else if (event.end_type === 'so') matchEndTypeText = 'ПО БУЛЛИТАМ';
+    }
+  }
 
   return (
     <div className="h-full w-full overflow-y-auto scrollbar-hide bg-surface-level1">
@@ -67,14 +90,19 @@ export const EventDetailsMatch = ({ event }) => {
               )}
             </div>
             
-          ) : event.status === 'finished' ? (
+          ) : isFinished ? (
             <div className="flex flex-col items-center">
-              <span className="text-3xl font-black text-content-main tracking-tight">
-                {event.home_score} : {event.away_score}
+              {matchStatusText && (
+                <span className={`text-[11px] font-black uppercase tracking-widest mb-1.5 ${matchStatusColor}`}>
+                  {matchStatusText}
+                </span>
+              )}
+              <span className="text-3xl font-black text-content-main tracking-tight leading-none">
+                {matchScoreText}
               </span>
-              {renderEndType() && (
+              {matchEndTypeText && (
                 <span className="text-[10px] font-bold uppercase tracking-widest text-content-muted mt-2 text-center">
-                  {renderEndType()}
+                  {matchEndTypeText}
                 </span>
               )}
             </div>
