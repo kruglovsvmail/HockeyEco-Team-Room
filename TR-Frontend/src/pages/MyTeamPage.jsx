@@ -1,10 +1,10 @@
 /********** ФАЙЛ: TR-Frontend\src\pages\MyTeamPage.jsx **********/
 
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { useNavigate, useOutletContext } from 'react-router-dom';
 import clsx from 'clsx';
 import { getAuthHeaders, getImageUrl } from '../utils/helpers';
-import { SegmentedControl } from '../ui/SegmentedControl';
+import { ChipTabs } from '../ui/ChipTabs';
 import { Icon } from '../ui/Icon';
 
 // --- ЕДИНЫЙ КОМПОНЕНТ КАРТОЧКИ УЧАСТНИКА ---
@@ -13,7 +13,7 @@ const PersonCard = ({ person, onClick, subText }) => (
     onClick={() => onClick(person)}
     className="relative group flex items-center gap-3 overflow-hidden transition-all duration-300 text-left outline-none w-full"
   >
-    <div className="w-12 h-12 md:w-20 md:h-20 rounded-xl border border-brand flex items-center justify-center overflow-hidden shrink-0 shadow-inner relative z-10 bg-surface-level1">
+    <div className="w-12 h-12 md:w-20 md:h-20 rounded-xl border border-brand/20 flex items-center justify-center overflow-hidden shrink-0 shadow-inner relative z-10 bg-surface-level1">
       {person.avatar_url ? (
         <img src={getImageUrl(person.avatar_url)} alt="Аватар" className="w-full h-full object-cover" />
       ) : (
@@ -40,19 +40,29 @@ const PersonCard = ({ person, onClick, subText }) => (
   </button>
 );
 
+const TEAM_TABS = [
+  { id: 'all', label: 'Все' },
+  { id: 'roster', label: 'Состав' },
+  { id: 'staff', label: 'Штаб' }
+];
+
 export const MyTeamPage = () => {
   const { openRightPanel } = useOutletContext();
   const [teams, setTeams] = useState([]);
-  
   const [activeIndex, setActiveIndex] = useState(0); 
   const [selectedTeamId, setSelectedTeamId] = useState(null);
   
   const [teamData, setTeamData] = useState({ roster: [], staff: [] });
-  const [activeTab, setActiveTab] = useState('roster');
+  const [activeTab, setActiveTab] = useState('all');
   const [isLoading, setIsLoading] = useState(true);
   
   const navigate = useNavigate();
   const touchStartX = useRef(null);
+  const carouselRef = useRef(null);
+  const stickyHeaderRef = useRef(null);
+  const rafRef = useRef(null);
+  const scrollTimeoutRef = useRef(null); // Ref для таймера "доводчика" скролла
+  const scrollContainerRef = useRef(null);
 
   useEffect(() => {
     const fetchTeams = async () => {
@@ -94,6 +104,27 @@ export const MyTeamPage = () => {
     fetchTeamData();
   }, [selectedTeamId]);
 
+  useEffect(() => {
+    return () => {
+      if (rafRef.current) cancelAnimationFrame(rafRef.current);
+      if (scrollTimeoutRef.current) clearTimeout(scrollTimeoutRef.current);
+    };
+  }, []);
+
+  // --- УМНЫЙ СБРОС СКРОЛЛА ПРИ ПЕРЕКЛЮЧЕНИИ ТАБОВ ---
+  useEffect(() => {
+    if (scrollContainerRef.current) {
+      const currentScroll = scrollContainerRef.current.scrollTop;
+      const CAROUSEL_TOTAL_HEIGHT = 168; // 160px высота + 8px margin
+      
+      if (currentScroll >= 120) {
+        scrollContainerRef.current.scrollTop = CAROUSEL_TOTAL_HEIGHT;
+      } else {
+        scrollContainerRef.current.scrollTop = 0;
+      }
+    }
+  }, [activeTab]);
+
   const getOffset = (index) => {
     let diff = index - activeIndex;
     const half = Math.floor(teams.length / 2);
@@ -113,7 +144,6 @@ export const MyTeamPage = () => {
   const handleTouchEnd = (e) => {
     if (!touchStartX.current) return;
     const diff = touchStartX.current - e.changedTouches[0].clientX;
-    
     if (Math.abs(diff) > 40) { 
       if (diff > 0) {
         setActiveIndex((prev) => (prev + 1) % teams.length);
@@ -124,19 +154,119 @@ export const MyTeamPage = () => {
     touchStartX.current = null;
   };
 
+  // --- ОБРАБОТЧИК СКРОЛЛА С JS-ДОВОДЧИКОМ ---
+  const handleScroll = (e) => {
+    const currentScroll = e.target.scrollTop;
+    
+    // 1. Быстрая анимация параллакса
+    if (rafRef.current) cancelAnimationFrame(rafRef.current);
+    rafRef.current = requestAnimationFrame(() => {
+      const isStuck = currentScroll > 120;
+      const isFullyCollapsed = currentScroll > 150; 
+
+      if (isFullyCollapsed) {
+        if (carouselRef.current && carouselRef.current.dataset.collapsed !== 'true') {
+          carouselRef.current.style.opacity = '0';
+          carouselRef.current.style.transform = 'translateY(60px) translateZ(0)';
+          carouselRef.current.dataset.collapsed = 'true';
+        }
+      } else {
+        if (carouselRef.current) {
+          carouselRef.current.dataset.collapsed = 'false';
+          carouselRef.current.style.opacity = Math.max(0, 1 - currentScroll / 120);
+          carouselRef.current.style.transform = `translateY(${currentScroll * 0.4}px) translateZ(0)`;
+        }
+      }
+
+      if (stickyHeaderRef.current) {
+        if (String(isStuck) !== stickyHeaderRef.current.dataset.stuck) {
+          stickyHeaderRef.current.dataset.stuck = isStuck;
+          
+          if (isStuck) {
+            stickyHeaderRef.current.classList.add('bg-surface-border/95', 'backdrop-blur-md', 'shadow-sm', 'border-surface-level2/50');
+            stickyHeaderRef.current.classList.remove('bg-surface-border', 'border-transparent');
+          } else {
+            stickyHeaderRef.current.classList.add('bg-surface-border', 'border-transparent');
+            stickyHeaderRef.current.classList.remove('bg-surface-border/95', 'backdrop-blur-md', 'shadow-sm', 'border-surface-level2/50');
+          }
+        }
+      }
+    });
+
+    // 2. Логика "JS-доводчика", заменяющая глючный CSS Snap
+    if (scrollTimeoutRef.current) clearTimeout(scrollTimeoutRef.current);
+    scrollTimeoutRef.current = setTimeout(() => {
+      if (!scrollContainerRef.current) return;
+      
+      const finalScroll = scrollContainerRef.current.scrollTop;
+      
+      // Если пользователь остановил прокрутку в "сумеречной зоне" (карусель наполовину прозрачна)
+      if (finalScroll > 0 && finalScroll < 150) {
+        // Если проскроллили меньше половины - возвращаем в топ
+        if (finalScroll < 75) {
+          scrollContainerRef.current.scrollTo({ top: 0, behavior: 'smooth' });
+        } else {
+          // Если больше половины - прокручиваем за пределы карусели, "приклеивая" чипсы
+          scrollContainerRef.current.scrollTo({ top: 168, behavior: 'smooth' });
+        }
+      }
+    }, 150); // Ждем 150мс после окончания скролла перед проверкой
+  };
+
   const handlePersonClick = (person) => openRightPanel('userDetails', person, 'Профиль');
+
   const getPlayersByRole = (match) => teamData.roster?.filter(p => p.position === match) || [];
 
+  const getRoleText = (m) => {
+    if (m.roles) return m.roles;
+    if (m.position === 'goalie') return 'Вратарь';
+    if (m.position === 'defense') return 'Защитник';
+    if (m.position === 'forward') return 'Нападающий';
+    return 'Участник';
+  };
+
+  const allMembers = useMemo(() => {
+    if (!teamData.roster?.length && !teamData.staff?.length) return [];
+    
+    const combined = [...(teamData.staff || []), ...(teamData.roster || [])];
+    const unique = [];
+    const map = new Map();
+    
+    for (const item of combined) {
+      if (!map.has(item.member_id)) {
+        map.set(item.member_id, true);
+        unique.push(item);
+      }
+    }
+    
+    return unique.sort((a, b) => (a.last_name || '').localeCompare(b.last_name || ''));
+  }, [teamData]);
+
+  const translateX = activeTab === 'all' 
+    ? '0%' 
+    : activeTab === 'roster' 
+      ? '-33.333333%' 
+      : '-66.666667%';
+
   return (
-    <div className="h-full overflow-y-auto scrollbar-hide bg-surface-border animate-fade-in relative z-10">
+    <div 
+      ref={scrollContainerRef}
+      /* УБРАНО: snap-y snap-mandatory */
+      className="h-full overflow-y-auto scrollbar-hide bg-surface-border animate-fade-in relative z-10"
+      onScroll={handleScroll}
+    >
       
       {/* 1. БЛОК COVER FLOW КАРУСЕЛИ */}
       <div 
-        className="relative bg-surface-base w-full h-[130px] flex items-center justify-center overflow-hidden shrink-0 touch-pan-y shadow-md pb-6 mb-3"
+        ref={carouselRef}
+        data-collapsed="false"
+        /* УБРАНО: snap-start */
+        className="relative bg-surface-base w-full h-[160px] flex items-center justify-center overflow-hidden shrink-0 touch-pan-y shadow-md pb-8 mb-2 will-change-transform"
         onTouchStart={handleTouchStart}
         onTouchEnd={handleTouchEnd}
       >
         {teams.map((team, index) => {
+          
           const offset = getOffset(index);
           
           let x = 0; 
@@ -147,13 +277,13 @@ export const MyTeamPage = () => {
           if (offset === 0) {
             x = 0; scale = 1; opacity = 1; zIndex = 30;
           } else if (offset === 1) {
-            x = 90; scale = 0.75; opacity = 0.6; zIndex = 20;
+            x = 80; scale = 0.75; opacity = 0.5; zIndex = 20;
           } else if (offset === -1) {
-            x = -90; scale = 0.75; opacity = 0.6; zIndex = 20;
+            x = -80; scale = 0.75; opacity = 0.5; zIndex = 20;
           } else if (offset === 2) {
-            x = 135; scale = 0.5; opacity = 0.2; zIndex = 10;
+            x = 145; scale = 0.75; opacity = 0.5; zIndex = 10;
           } else if (offset === -2) {
-            x = -135; scale = 0.5; opacity = 0.2; zIndex = 10;
+            x = -145; scale = 0.75; opacity = 0.5; zIndex = 10;
           } else {
             x = offset > 0 ? 180 : -180; scale = 0.3; opacity = 0; zIndex = 0;
           }
@@ -172,13 +302,13 @@ export const MyTeamPage = () => {
             >
               <div className={clsx(
                 "w-20 h-20 rounded-2xl flex items-center justify-center overflow-hidden transition-all duration-500",
-                offset === 0 ? "border-[0px] " : "border-"
+                offset === 0 ? "drop-shadow-lg" : "drop-shadow-lg"
               )}>
                 <img src={getImageUrl(team.logo_url)} alt={team.name} className="w-full h-full object-contain p-2" />
               </div>
               
               <div className={clsx(
-                "absolute top-full mt-1 w-[320px] text-center transition-all duration-500",
+                "absolute top-full mt-2 w-[320px] text-center transition-all duration-500",
                 offset === 0 ? "opacity-100 translate-y-0" : "opacity-0 -translate-y-2 pointer-events-none"
               )}>
                 <h2 className="text-[11px] font-black uppercase tracking-widest text-content-main leading-tight line-clamp-2">
@@ -190,49 +320,47 @@ export const MyTeamPage = () => {
         })}
       </div>
 
-      {/* 2. ПЕРЕКЛЮЧАТЕЛЬ СОСТАВ / ШТАБ */}
-      <div className="px-5 pb-4 pt-2 shrink-0 relative z-20">
-        <SegmentedControl 
-          options={[{ label: 'Состав', value: 'roster' }, { label: 'Штаб', value: 'staff' }]}
-          value={activeTab}
+      {/* 2. ПЕРЕКЛЮЧАТЕЛЬ ЧИПСОВ */}
+      <div 
+        ref={stickyHeaderRef}
+        data-stuck="false"
+        /* УБРАНО: snap-start */
+        className="sticky top-0 z-40 px-5 pt-3 pb-4 shrink-0 transition-colors duration-300 ease-in-out bg-surface-border border-b border-transparent"
+      >
+        <ChipTabs 
+          tabs={TEAM_TABS}
+          activeTab={activeTab}
           onChange={setActiveTab}
+          className="!px-0"
         />
       </div>
 
-      {/* 3. КОНТЕНТ (СЛАЙДЕР СПИСКОВ В ОДНУ СТОРОНУ С БЕГУНКОМ) */}
-      <div className="w-full overflow-hidden pt-2">
+      {/* 3. КОНТЕНТ */}
+      <div className="w-full overflow-hidden pt-2 min-h-screen pb-[30vh]">
         {isLoading ? (
           <div className="flex justify-center items-center h-32 text-brand font-black animate-pulse uppercase tracking-widest text-sm">Загрузка...</div>
         ) : (
-          /* Длинный контейнер (200% ширины). 
-             Мы поменяли блоки местами в DOM: теперь Штаб стоит слева, а Состав справа.
-             По умолчанию (когда активен Состав) сдвигаем контейнер на -50%.
-             Когда кликаем на Штаб, бегунок едет ВПРАВО, и контейнер едет ВПРАВО (от -50% к 0). 
-             Синхронность достигнута! 
-          */
           <div 
-            className={clsx(
-              "flex w-[200%] transition-transform duration-500 ease-[cubic-bezier(0.32,0.72,0,1)] items-start",
-              activeTab === 'roster' ? "-translate-x-1/2" : "translate-x-0"
-            )}
+            className="flex w-[300%] transition-transform duration-500 ease-[cubic-bezier(0.32,0.72,0,1)] items-start"
+            style={{ transform: `translateX(${translateX})` }}
           >
             
-            {/* ПАНЕЛЬ 2: ШТАБ (Теперь стоит первой в DOM-дереве) */}
-            <div className="w-1/2 shrink-0 px-5 transition-opacity duration-500" style={{ opacity: activeTab === 'staff' ? 1 : 0.3 }}>
+            {/* ПАНЕЛЬ 1: ВСЕ */}
+            <div className="w-1/3 shrink-0 px-5 transition-opacity duration-500" style={{ opacity: activeTab === 'all' ? 1 : 0.3 }}>
               <div className="grid grid-cols-[repeat(auto-fill,minmax(280px,1fr))] gap-3">
-                {teamData.staff?.map(s => (
+                {allMembers.map(m => (
                   <PersonCard 
-                    key={s.member_id} 
-                    person={s} 
+                    key={m.member_id} 
+                    person={m} 
                     onClick={handlePersonClick} 
-                    subText={s.roles} 
+                    subText={getRoleText(m)} 
                   />
                 ))}
               </div>
             </div>
 
-            {/* ПАНЕЛЬ 1: СОСТАВ (Теперь стоит второй в DOM-дереве) */}
-            <div className="w-1/2 shrink-0 px-5 transition-opacity duration-500" style={{ opacity: activeTab === 'roster' ? 1 : 0.3 }}>
+            {/* ПАНЕЛЬ 2: СОСТАВ */}
+            <div className="w-1/3 shrink-0 px-5 transition-opacity duration-500" style={{ opacity: activeTab === 'roster' ? 1 : 0.3 }}>
               <div className="flex flex-col gap-10">
                 {[
                   { m: 'goalie', t: 'Вратари' },
@@ -257,6 +385,20 @@ export const MyTeamPage = () => {
                     </div>
                   );
                 })}
+              </div>
+            </div>
+
+            {/* ПАНЕЛЬ 3: ШТАБ */}
+            <div className="w-1/3 shrink-0 px-5 transition-opacity duration-500" style={{ opacity: activeTab === 'staff' ? 1 : 0.3 }}>
+              <div className="grid grid-cols-[repeat(auto-fill,minmax(280px,1fr))] gap-3">
+                {teamData.staff?.map(s => (
+                  <PersonCard 
+                    key={s.member_id} 
+                    person={s} 
+                    onClick={handlePersonClick} 
+                    subText={s.roles} 
+                  />
+                ))}
               </div>
             </div>
 

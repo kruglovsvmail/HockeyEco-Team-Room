@@ -1,5 +1,6 @@
 import express from 'express';
-import { getEvents, toggleEventAttendance } from '../controllers/EventController.js';
+import { getEvents } from '../controllers/EventInfoController.js';
+import { toggleEventAttendance } from '../controllers/EventAttendanceController.js';
 import { verifyToken } from '../middleware/auth.js';
 
 const router = express.Router();

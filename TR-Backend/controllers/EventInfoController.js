@@ -65,6 +65,12 @@ export const getEvents = async (req, res) => {
           g.video_yt_url::varchar AS video_yt_url,
           g.video_vk_url::varchar AS video_vk_url,
 
+          -- Поля ссылок на джерси (с проверкой на NULL и дефолтными заглушками)
+          COALESCE(tt_my.custom_jersey_dark_url, my_team.jersey_dark_url, '/default/jersey_dark.webp')::varchar AS my_team_jersey_dark_url,
+          COALESCE(tt_my.custom_jersey_light_url, my_team.jersey_light_url, '/default/jersey_light.webp')::varchar AS my_team_jersey_light_url,
+          COALESCE(tt_opp.custom_jersey_dark_url, opp_team.jersey_dark_url, '/default/jersey_dark.webp')::varchar AS opponent_jersey_dark_url,
+          COALESCE(tt_opp.custom_jersey_light_url, opp_team.jersey_light_url, '/default/jersey_light.webp')::varchar AS opponent_jersey_light_url,
+
           (CASE 
             WHEN (SELECT active_clubs FROM user_context) = 0 AND (SELECT active_teams FROM user_context) = 1 THEN false 
             ELSE true 
@@ -110,6 +116,8 @@ export const getEvents = async (req, res) => {
         LEFT JOIN teams my_team ON my_team.id = ut.team_id
         LEFT JOIN teams opp_team ON opp_team.id = CASE WHEN g.home_team_id = ut.team_id THEN g.away_team_id ELSE g.home_team_id END
         LEFT JOIN external_opponents ext_opp ON g.away_external_id = ext_opp.id
+        LEFT JOIN tournament_teams tt_my ON tt_my.division_id = g.division_id AND tt_my.team_id = ut.team_id
+        LEFT JOIN tournament_teams tt_opp ON tt_opp.division_id = g.division_id AND tt_opp.team_id = CASE WHEN g.home_team_id = ut.team_id THEN g.away_team_id ELSE g.home_team_id END
       ),
 
       -- ==========================================
@@ -148,6 +156,12 @@ export const getEvents = async (req, res) => {
           NULL::varchar AS video_yt_url,
           NULL::varchar AS video_vk_url,
           
+          -- Для тренировок берем базовые джерси команды или заглушки (соперника нет)
+          COALESCE(my_team.jersey_dark_url, '/default/jersey_dark.webp')::varchar AS my_team_jersey_dark_url,
+          COALESCE(my_team.jersey_light_url, '/default/jersey_light.webp')::varchar AS my_team_jersey_light_url,
+          '/default/jersey_dark.webp'::varchar AS opponent_jersey_dark_url,
+          '/default/jersey_light.webp'::varchar AS opponent_jersey_light_url,
+
           (CASE WHEN (SELECT active_clubs FROM user_context) = 0 AND (SELECT active_teams FROM user_context) = 1 THEN false ELSE true END)::boolean AS show_team_context,
           
           (EXISTS (SELECT 1 FROM team_training_attendance tta WHERE tta.team_training_id = tt.id AND tta.user_id = $1))::boolean AS is_attending,
@@ -201,6 +215,12 @@ export const getEvents = async (req, res) => {
           NULL::varchar AS video_yt_url,
           NULL::varchar AS video_vk_url,
           
+          -- Для собраний аналогично тренировкам
+          COALESCE(my_team.jersey_dark_url, '/default/jersey_dark.webp')::varchar AS my_team_jersey_dark_url,
+          COALESCE(my_team.jersey_light_url, '/default/jersey_light.webp')::varchar AS my_team_jersey_light_url,
+          '/default/jersey_dark.webp'::varchar AS opponent_jersey_dark_url,
+          '/default/jersey_light.webp'::varchar AS opponent_jersey_light_url,
+
           (CASE WHEN (SELECT active_clubs FROM user_context) = 0 AND (SELECT active_teams FROM user_context) = 1 THEN false ELSE true END)::boolean AS show_team_context,
           (EXISTS (SELECT 1 FROM team_meeting_attendance tma WHERE tma.team_meeting_id = tm.id AND tma.user_id = $1))::boolean AS is_attending,
           'allowed'::varchar AS toggle_status 
@@ -247,6 +267,12 @@ export const getEvents = async (req, res) => {
           NULL::varchar AS video_yt_url,
           NULL::varchar AS video_vk_url,
           
+          -- Для общеклубных мероприятий жестко привязываем заглушки
+          '/default/jersey_dark.webp'::varchar AS my_team_jersey_dark_url,
+          '/default/jersey_light.webp'::varchar AS my_team_jersey_light_url,
+          '/default/jersey_dark.webp'::varchar AS opponent_jersey_dark_url,
+          '/default/jersey_light.webp'::varchar AS opponent_jersey_light_url,
+
           false::boolean AS show_team_context, 
           (EXISTS (SELECT 1 FROM club_training_attendance cta WHERE cta.club_training_id = ct.id AND cta.user_id = $1))::boolean AS is_attending,
           'allowed'::varchar AS toggle_status
@@ -293,6 +319,12 @@ export const getEvents = async (req, res) => {
           NULL::varchar AS video_yt_url,
           NULL::varchar AS video_vk_url,
           
+          -- Для общеклубных мероприятий жестко привязываем заглушки
+          '/default/jersey_dark.webp'::varchar AS my_team_jersey_dark_url,
+          '/default/jersey_light.webp'::varchar AS my_team_jersey_light_url,
+          '/default/jersey_dark.webp'::varchar AS opponent_jersey_dark_url,
+          '/default/jersey_light.webp'::varchar AS opponent_jersey_light_url,
+
           false::boolean AS show_team_context,
           (EXISTS (SELECT 1 FROM club_meeting_attendance cma WHERE cma.club_meeting_id = cm.id AND cma.user_id = $1))::boolean AS is_attending,
           'allowed'::varchar AS toggle_status
@@ -330,70 +362,6 @@ export const getEvents = async (req, res) => {
     res.json({ success: true, cards: result.rows });
   } catch (err) {
     console.error('Ошибка получения событий:', err);
-    res.status(500).json({ success: false, error: 'Ошибка сервера' });
-  }
-};
-
-export const toggleEventAttendance = async (req, res) => {
-  try {
-    const userId = req.user.id;
-    const { eventId } = req.params;
-    
-    const { isAttending, eventType, teamId } = req.body;
-
-    if (!eventType) {
-      return res.status(400).json({ success: false, error: 'eventType обязателен' });
-    }
-
-    switch (eventType) {
-      case 'match':
-        if (!teamId) return res.status(400).json({ success: false, error: 'teamId обязателен для матча' });
-        if (isAttending) {
-          await pool.query(`INSERT INTO team_game_attendance (game_id, user_id, team_id) VALUES ($1, $2, $3) ON CONFLICT ON CONSTRAINT team_game_att_unique DO NOTHING`, [eventId, userId, teamId]);
-        } else {
-          await pool.query(`DELETE FROM team_game_attendance WHERE game_id = $1 AND user_id = $2 AND team_id = $3`, [eventId, userId, teamId]);
-        }
-        break;
-
-      case 'team_training':
-        if (isAttending) {
-          await pool.query(`INSERT INTO team_training_attendance (team_training_id, user_id) VALUES ($1, $2) ON CONFLICT ON CONSTRAINT team_train_att_unique DO NOTHING`, [eventId, userId]);
-        } else {
-          await pool.query(`DELETE FROM team_training_attendance WHERE team_training_id = $1 AND user_id = $2`, [eventId, userId]);
-        }
-        break;
-
-      case 'team_meeting':
-        if (isAttending) {
-          await pool.query(`INSERT INTO team_meeting_attendance (team_meeting_id, user_id) VALUES ($1, $2) ON CONFLICT ON CONSTRAINT team_meet_att_unique DO NOTHING`, [eventId, userId]);
-        } else {
-          await pool.query(`DELETE FROM team_meeting_attendance WHERE team_meeting_id = $1 AND user_id = $2`, [eventId, userId]);
-        }
-        break;
-
-      case 'club_training':
-        if (isAttending) {
-          await pool.query(`INSERT INTO club_training_attendance (club_training_id, user_id) VALUES ($1, $2) ON CONFLICT ON CONSTRAINT club_train_att_unique DO NOTHING`, [eventId, userId]);
-        } else {
-          await pool.query(`DELETE FROM club_training_attendance WHERE club_training_id = $1 AND user_id = $2`, [eventId, userId]);
-        }
-        break;
-
-      case 'club_meeting':
-        if (isAttending) {
-          await pool.query(`INSERT INTO club_meeting_attendance (club_meeting_id, user_id) VALUES ($1, $2) ON CONFLICT ON CONSTRAINT club_meet_att_unique DO NOTHING`, [eventId, userId]);
-        } else {
-          await pool.query(`DELETE FROM club_meeting_attendance WHERE club_meeting_id = $1 AND user_id = $2`, [eventId, userId]);
-        }
-        break;
-
-      default:
-        return res.status(400).json({ success: false, error: 'Неизвестный тип события' });
-    }
-
-    res.json({ success: true });
-  } catch (err) {
-    console.error('Ошибка переключения тумблера:', err);
     res.status(500).json({ success: false, error: 'Ошибка сервера' });
   }
 };

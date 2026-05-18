@@ -38,7 +38,7 @@ export const EventDashboard = ({ isOpen, onClose, data, type, title }) => {
       )}
     >
       {/* ШАПКА ПАНЕЛИ СОБЫТИЯ */}
-      <div className="flex items-center justify-between shadow-md p-4 h-[60px] shrink-0 bg-surface-base z-[110]">
+      <div className="flex items-center justify-between p-4 h-[60px] shrink-0 bg-surface-base z-[110]">
         <button 
           onClick={onClose}
           className="p-2 -ml-2 text-content-muted hover:text-brand transition-colors outline-none cursor-pointer active:scale-95 flex items-center"
