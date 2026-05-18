@@ -128,11 +128,11 @@ export const MyTeamPage = () => {
   const getPlayersByRole = (match) => teamData.roster?.filter(p => p.position === match) || [];
 
   return (
-    <div className="h-full overflow-y-auto scrollbar-hide bg-surface-border animate-fade-in relative z-10 pb-2 ">
+    <div className="h-full overflow-y-auto scrollbar-hide bg-surface-border animate-fade-in relative z-10">
       
       {/* 1. БЛОК COVER FLOW КАРУСЕЛИ */}
       <div 
-        className="relative w-full h-[160px] flex items-center justify-center overflow-hidden shrink-0 mb-1 touch-pan-y"
+        className="relative bg-surface-base w-full h-[130px] flex items-center justify-center overflow-hidden shrink-0 touch-pan-y shadow-md pb-6 mb-3"
         onTouchStart={handleTouchStart}
         onTouchEnd={handleTouchEnd}
       >
@@ -147,13 +147,13 @@ export const MyTeamPage = () => {
           if (offset === 0) {
             x = 0; scale = 1; opacity = 1; zIndex = 30;
           } else if (offset === 1) {
-            x = 80; scale = 0.75; opacity = 0.6; zIndex = 20;
+            x = 90; scale = 0.75; opacity = 0.6; zIndex = 20;
           } else if (offset === -1) {
-            x = -80; scale = 0.75; opacity = 0.6; zIndex = 20;
+            x = -90; scale = 0.75; opacity = 0.6; zIndex = 20;
           } else if (offset === 2) {
-            x = 115; scale = 0.5; opacity = 0.2; zIndex = 10;
+            x = 135; scale = 0.5; opacity = 0.2; zIndex = 10;
           } else if (offset === -2) {
-            x = -115; scale = 0.5; opacity = 0.2; zIndex = 10;
+            x = -135; scale = 0.5; opacity = 0.2; zIndex = 10;
           } else {
             x = offset > 0 ? 180 : -180; scale = 0.3; opacity = 0; zIndex = 0;
           }
@@ -171,17 +171,17 @@ export const MyTeamPage = () => {
               }}
             >
               <div className={clsx(
-                "w-36 h-24 rounded-3xl bg-white/10 backdrop-blur-[4px] flex items-center justify-center overflow-hidden transition-all duration-500",
-                offset === 0 ? "border-[1px] border-white/20 shadow-brand-glow" : "border border-surface-border"
+                "w-20 h-20 rounded-2xl flex items-center justify-center overflow-hidden transition-all duration-500",
+                offset === 0 ? "border-[0px] " : "border-"
               )}>
                 <img src={getImageUrl(team.logo_url)} alt={team.name} className="w-full h-full object-contain p-2" />
               </div>
               
               <div className={clsx(
-                "absolute top-full mt-3 w-[340px] text-center transition-all duration-500",
+                "absolute top-full mt-1 w-[320px] text-center transition-all duration-500",
                 offset === 0 ? "opacity-100 translate-y-0" : "opacity-0 -translate-y-2 pointer-events-none"
               )}>
-                <h2 className="text-[12px] font-black uppercase tracking-widest text-content-main leading-tight line-clamp-2 drop-shadow-sm px-2">
+                <h2 className="text-[11px] font-black uppercase tracking-widest text-content-main leading-tight line-clamp-2">
                   {team.name}
                 </h2>
               </div>
