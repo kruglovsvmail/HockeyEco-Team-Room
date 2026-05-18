@@ -1,5 +1,3 @@
-/********** ФАЙЛ: TR-Frontend\src\pages\MyTeamPage.jsx **********/
-
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { useNavigate, useOutletContext } from 'react-router-dom';
 import clsx from 'clsx';
@@ -61,7 +59,7 @@ export const MyTeamPage = () => {
   const carouselRef = useRef(null);
   const stickyHeaderRef = useRef(null);
   const rafRef = useRef(null);
-  const scrollTimeoutRef = useRef(null); // Ref для таймера "доводчика" скролла
+  const scrollTimeoutRef = useRef(null);
   const scrollContainerRef = useRef(null);
 
   useEffect(() => {
@@ -111,11 +109,10 @@ export const MyTeamPage = () => {
     };
   }, []);
 
-  // --- УМНЫЙ СБРОС СКРОЛЛА ПРИ ПЕРЕКЛЮЧЕНИИ ТАБОВ ---
   useEffect(() => {
     if (scrollContainerRef.current) {
       const currentScroll = scrollContainerRef.current.scrollTop;
-      const CAROUSEL_TOTAL_HEIGHT = 168; // 160px высота + 8px margin
+      const CAROUSEL_TOTAL_HEIGHT = 168;
       
       if (currentScroll >= 120) {
         scrollContainerRef.current.scrollTop = CAROUSEL_TOTAL_HEIGHT;
@@ -125,40 +122,35 @@ export const MyTeamPage = () => {
     }
   }, [activeTab]);
 
+  // --- ЛИНЕЙНАЯ ЛОГИКА СМЕЩЕНИЯ КАРУСЕЛИ ---
   const getOffset = (index) => {
-    let diff = index - activeIndex;
-    const half = Math.floor(teams.length / 2);
-    
-    if (diff > half) {
-      diff -= teams.length;
-    } else if (diff < -half) {
-      diff += teams.length;
-    }
-    return diff;
+    return index - activeIndex; // Простая разница индексов, без кругового переброса
   };
 
   const handleTouchStart = (e) => {
     touchStartX.current = e.touches[0].clientX;
   };
 
+  // --- ЛИНЕЙНАЯ ЛОГИКА СВАЙПОВ ---
   const handleTouchEnd = (e) => {
-    if (!touchStartX.current) return;
+    if (!touchStartX.current || teams.length === 0) return;
     const diff = touchStartX.current - e.changedTouches[0].clientX;
+    
     if (Math.abs(diff) > 40) { 
       if (diff > 0) {
-        setActiveIndex((prev) => (prev + 1) % teams.length);
+        // Свайп влево (вперед) - ограничиваем последним элементом
+        setActiveIndex((prev) => Math.min(prev + 1, teams.length - 1));
       } else {
-        setActiveIndex((prev) => (prev - 1 + teams.length) % teams.length);
+        // Свайп вправо (назад) - ограничиваем первым элементом
+        setActiveIndex((prev) => Math.max(prev - 1, 0));
       }
     }
     touchStartX.current = null;
   };
 
-  // --- ОБРАБОТЧИК СКРОЛЛА С JS-ДОВОДЧИКОМ ---
   const handleScroll = (e) => {
     const currentScroll = e.target.scrollTop;
     
-    // 1. Быстрая анимация параллакса
     if (rafRef.current) cancelAnimationFrame(rafRef.current);
     rafRef.current = requestAnimationFrame(() => {
       const isStuck = currentScroll > 120;
@@ -181,36 +173,29 @@ export const MyTeamPage = () => {
       if (stickyHeaderRef.current) {
         if (String(isStuck) !== stickyHeaderRef.current.dataset.stuck) {
           stickyHeaderRef.current.dataset.stuck = isStuck;
-          
           if (isStuck) {
-            stickyHeaderRef.current.classList.add('bg-surface-border', 'backdrop-blur-md', 'shadow-sm', 'border-surface-level2');
-            stickyHeaderRef.current.classList.remove('bg-surface-border', 'border-transparent');
+            stickyHeaderRef.current.classList.add('backdrop-blur-md', 'shadow-sm');
           } else {
-            stickyHeaderRef.current.classList.add('bg-surface-border', 'border-transparent');
-            stickyHeaderRef.current.classList.remove('bg-surface-border', 'backdrop-blur-md', 'shadow-sm', 'border-surface-level2');
+            stickyHeaderRef.current.classList.remove('backdrop-blur-md', 'shadow-sm');
           }
         }
       }
     });
 
-    // 2. Логика "JS-доводчика", заменяющая глючный CSS Snap
     if (scrollTimeoutRef.current) clearTimeout(scrollTimeoutRef.current);
     scrollTimeoutRef.current = setTimeout(() => {
       if (!scrollContainerRef.current) return;
       
       const finalScroll = scrollContainerRef.current.scrollTop;
       
-      // Если пользователь остановил прокрутку в "сумеречной зоне" (карусель наполовину прозрачна)
       if (finalScroll > 0 && finalScroll < 150) {
-        // Если проскроллили меньше половины - возвращаем в топ
         if (finalScroll < 75) {
           scrollContainerRef.current.scrollTo({ top: 0, behavior: 'smooth' });
         } else {
-          // Если больше половины - прокручиваем за пределы карусели, "приклеивая" чипсы
           scrollContainerRef.current.scrollTo({ top: 168, behavior: 'smooth' });
         }
       }
-    }, 150); // Ждем 150мс после окончания скролла перед проверкой
+    }, 150);
   };
 
   const handlePersonClick = (person) => openRightPanel('userDetails', person, 'Профиль');
@@ -251,7 +236,6 @@ export const MyTeamPage = () => {
   return (
     <div 
       ref={scrollContainerRef}
-      /* УБРАНО: snap-y snap-mandatory */
       className="h-full overflow-y-auto scrollbar-hide bg-surface-border animate-fade-in relative z-10"
       onScroll={handleScroll}
     >
@@ -260,8 +244,7 @@ export const MyTeamPage = () => {
       <div 
         ref={carouselRef}
         data-collapsed="false"
-        /* УБРАНО: snap-start */
-        className="relative bg-surface-base w-full h-[160px] flex items-center justify-center overflow-hidden shrink-0 touch-pan-y shadow-md pb-8 mb-2 will-change-transform"
+        className="relative bg-surface-base w-full h-[122px] mb-2 flex items-start justify-center overflow-hidden shrink-0 touch-pan-y shadow-md will-change-transform"
         onTouchStart={handleTouchStart}
         onTouchEnd={handleTouchEnd}
       >
@@ -324,8 +307,7 @@ export const MyTeamPage = () => {
       <div 
         ref={stickyHeaderRef}
         data-stuck="false"
-        /* УБРАНО: snap-start */
-        className="sticky top-0 z-40 px-5 pt-3 pb-4 shrink-0 transition-colors duration-300 ease-in-out bg-surface-border border-b border-transparent"
+        className="sticky top-0 z-40 px-5 pt-3 pb-4 shrink-0 transition-all duration-300 ease-in-out border-b border-surface-level3"
       >
         <ChipTabs 
           tabs={TEAM_TABS}

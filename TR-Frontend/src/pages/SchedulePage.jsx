@@ -34,7 +34,6 @@ export function SchedulePage() {
   const isHorizontalSwipe = useRef(false);
   const isSwipeLocked = useRef(false);
   
-  // Рефы для контроля скролла в 3-х колонках (индексы 0, 1, 2)
   const scrollRefs = useRef([]);
   
   const [offsetIndex, setOffsetIndex] = useState(0);
@@ -68,9 +67,6 @@ export function SchedulePage() {
     fetchEvents();
   }, [currentDate.format('YYYY-MM')]);
 
-  // ИСПОЛЬЗУЕМ useLayoutEffect вместо useEffect!
-  // Он срабатывает ДО того, как браузер нарисует кадр, 
-  // что полностью убирает визуальный скачок при переиспользовании узла.
   useLayoutEffect(() => {
     if (scrollRefs.current[1]) {
       scrollRefs.current[1].scrollTop = 0;
@@ -118,7 +114,6 @@ export function SchedulePage() {
   const slideTo = useCallback((direction) => {
     if (isAnimating) return;
 
-    // Возвращаем скролл в начало у того слайда, к которому мы свайпаем, ДО начала анимации
     const targetIndex = direction === 'next' ? 2 : 0;
     if (scrollRefs.current[targetIndex]) {
       scrollRefs.current[targetIndex].scrollTop = 0;
@@ -133,7 +128,7 @@ export function SchedulePage() {
       setCurrentDate(prev => direction === 'next' ? prev.add(1, 'week') : prev.subtract(1, 'week'));
       setOffsetIndex(0);
       setIsAnimating(false);
-    }, 490); 
+    }, 200); 
   }, [isAnimating]);
 
   useEffect(() => {
@@ -202,7 +197,8 @@ export function SchedulePage() {
       className="flex flex-col w-full h-full overflow-hidden relative bg-surface-border"
       style={{ touchAction: 'pan-y' }}
     >
-      <div className="shrink-0 z-30 relative w-full p-4">
+      {/* ПЛАВАЮЩАЯ ШАПКА С ЭФФЕКТОМ РАЗМЫТИЯ */}
+      <div className="absolute top-0 left-0 right-0 z-40 px-4 pt-4 pb-3 backdrop-blur-md border-b border-surface-level3 shadow-sm">
         <CompactWeek 
           date={currentDate} 
           offsetIndex={offsetIndex}
@@ -216,8 +212,9 @@ export function SchedulePage() {
         />
       </div>
 
+      {/* Контейнер карточек теперь занимает 100% высоты, уходя под шапку */}
       <div 
-        className="flex-1 relative overflow-hidden"
+        className="w-full h-full relative overflow-hidden"
         onTouchStart={handleTouchStart}
         onTouchMove={handleTouchMove}
         onTouchEnd={handleTouchEnd}
@@ -226,7 +223,7 @@ export function SchedulePage() {
           className="w-[300%] flex items-start h-full"
           style={{
             transform: `translateX(calc(-33.33333% - ${offsetIndex * 33.33333}%))`,
-            transition: isAnimating ? 'transform 500ms cubic-bezier(0.32, 0.72, 0, 1)' : 'none',
+            transition: isAnimating ? 'transform 400ms cubic-bezier(0.32, 0.72, 0, 1)' : 'none',
             pointerEvents: isAnimating ? 'none' : 'auto',
             willChange: 'transform'
           }}
@@ -242,11 +239,11 @@ export function SchedulePage() {
             return (
               <div 
                 key={offset} 
-                // Сохраняем ref контейнера. offset -1 -> индекс 0, offset 0 -> индекс 1, offset 1 -> индекс 2
                 ref={el => scrollRefs.current[offset + 1] = el}
-                className="w-1/3 shrink-0 flex flex-col px-4 h-full overflow-y-auto scrollbar-hide"
+                // pt-[88px] делает так, чтобы первая карточка начиналась точно под шапкой
+                className="w-1/3 shrink-0 flex flex-col px-4 h-full overflow-y-auto scrollbar-hide pt-[88px] pb-8"
               >
-                <div className="pb-8">
+                <div>
                   {isLoading && offset === 0 ? (
                     <div className="flex justify-center items-center h-32 text-brand">
                       <Loader2 className="w-8 h-8 animate-spin" />
