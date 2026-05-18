@@ -1,30 +1,13 @@
 import React, { useState } from 'react';
-import { getImageUrl } from '../../utils/helpers';
-import { Icon } from '../../ui/Icon';
-import { ChipTabs } from '../../ui/ChipTabs';
+import { getImageUrl } from '../../../utils/helpers';
+import { Icon } from '../../../ui/Icon';
+import { ChipTabs } from '../../../ui/ChipTabs';
 
-// Вспомогательный компонент воздушной карточки для характеристик
-const DetailCard = ({ icon, label, value, subValue, className = '' }) => (
-  <div className={`flex flex-col p-3.5 bg-surface-level1 rounded-2xl border border-surface-level2 shadow-md relative overflow-hidden ${className}`}>
-    {icon && (
-      <Icon 
-        name={icon} 
-        className="absolute -bottom-2 -right-2 w-14 h-14 text-brand opacity-[0.06] rotate-[-10deg] pointer-events-none" 
-      />
-    )}
-    <span className="text-[10px] font-black text-content-muted uppercase tracking-widest mb-1.5 relative z-10">
-      {label}
-    </span>
-    <span className="text-sm font-bold text-content-main leading-tight relative z-10">
-      {value || '—'}
-    </span>
-    {subValue && (
-      <span className="text-[11px] font-semibold text-content-subtle mt-0.5 leading-tight relative z-10">
-        {subValue}
-      </span>
-    )}
-  </div>
-);
+import { MatchInfo } from './MatchInfo';
+import { MatchAttendance } from './MatchAttendance';
+import { MatchLines } from './MatchLines';
+import { MatchProtocol } from './MatchProtocol';
+import { MatchStats } from './MatchStats';
 
 // Конфигурация табов
 const MATCH_TABS = [
@@ -49,6 +32,7 @@ export const EventDetailsMatch = ({ event }) => {
   const awayLogo = isHome ? event.opponent_logo_url : event.my_team_logo_url;
 
   const isFinished = event.status === 'finished';
+
   let matchStatusText = '';
   let matchStatusColor = '';
   let matchScoreText = '-- : --';
@@ -108,15 +92,6 @@ export const EventDetailsMatch = ({ event }) => {
     }
   }
 
-  // --- ВЫЧИСЛЕНИЯ ДЛЯ ДЕТАЛЕЙ МАТЧА ---
-  // Безопасные фолбэки для турнирной информации
-  const isFriendly = event.stage_type === 'friendly';
-  const tournamentText = event.league_name || (isFriendly ? 'Товарищеский' : 'Официальный турнир');
-  const divisionText = event.division_name || (isFriendly ? 'Матч' : '');
-  
-  const stageText = event.stage_name || (event.stage_type === 'playoff' ? 'Плей-офф' : isFriendly ? 'Тренировочный' : 'Регулярный чемпионат');
-  const tourText = event.tour_number ? `${event.tour_number} тур` : (event.match_number ? `Матч ${event.match_number}` : '');
-
   // Вычисляем индекс для сдвига слайдера (0 до 4)
   const tabIndex = MATCH_TABS.findIndex(t => t.id === activeTab);
   const translateX = `-${tabIndex * 20}%`; // Каждый таб занимает 20% от ширины контейнера 500%
@@ -129,6 +104,7 @@ export const EventDetailsMatch = ({ event }) => {
         
         {/* Противостояние */}
         <div className="flex items-start justify-between px-4 pb-5">
+        
           {/* Хозяева (Слева) */}
           <div className="flex flex-col items-center w-[30%] relative z-10">
             <div className="w-12 h-12 shrink-0 mb-2 flex items-center justify-center overflow-hidden drop-shadow-md">
@@ -180,7 +156,7 @@ export const EventDetailsMatch = ({ event }) => {
                 )}
               </div>
             ) : (
-              <div className="flex flex-col items-center">
+               <div className="flex flex-col items-center">
                 <span className="text-2xl font-black text-content-muted tracking-widest">
                   -- : --
                 </span>
@@ -221,30 +197,7 @@ export const EventDetailsMatch = ({ event }) => {
             className="w-1/5 h-full overflow-y-auto scrollbar-hide px-4 pb-10 transition-opacity duration-500"
             style={{ opacity: activeTab === 'info' ? 1 : 0.3 }}
           >
-            <div className="flex flex-col gap-3">
-              {/* Широкий блок Арены */}
-              <DetailCard 
-                icon="arena" 
-                label="Место проведения" 
-                value={event.arena_name || 'Локация не назначена'} 
-              />
-
-              {/* Блок Турнира и Этапа */}
-              <div className="grid grid-cols-2 gap-3">
-                <DetailCard 
-                  icon="trophy" 
-                  label="Турнир" 
-                  value={tournamentText} 
-                  subValue={divisionText}
-                />
-                <DetailCard 
-                  icon="standings" 
-                  label="Стадия" 
-                  value={stageText} 
-                  subValue={tourText}
-                />
-              </div>
-            </div>
+            <MatchInfo event={event} />
           </div>
 
           {/* ВКЛАДКА 2: ОТМЕТКИ */}
@@ -252,9 +205,7 @@ export const EventDetailsMatch = ({ event }) => {
             className="w-1/5 h-full overflow-y-auto scrollbar-hide px-4 pb-10 transition-opacity duration-500"
             style={{ opacity: activeTab === 'attendance' ? 1 : 0.3 }}
           >
-            <div className="flex justify-center items-center h-32 text-[11px] font-black text-content-muted uppercase tracking-widest bg-surface-level2/30 rounded-2xl border border-surface-border/50 border-dashed">
-              Явка состава
-            </div>
+            <MatchAttendance event={event} />
           </div>
 
           {/* ВКЛАДКА 3: ПЯТЕРКИ */}
@@ -262,9 +213,7 @@ export const EventDetailsMatch = ({ event }) => {
             className="w-1/5 h-full overflow-y-auto scrollbar-hide px-4 pb-10 transition-opacity duration-500"
             style={{ opacity: activeTab === 'lines' ? 1 : 0.3 }}
           >
-            <div className="flex justify-center items-center h-32 text-[11px] font-black text-content-muted uppercase tracking-widest bg-surface-level2/30 rounded-2xl border border-surface-border/50 border-dashed">
-              Звенья и сочетания
-            </div>
+            <MatchLines event={event} />
           </div>
 
           {/* ВКЛАДКА 4: ХОД МАТЧА */}
@@ -272,9 +221,7 @@ export const EventDetailsMatch = ({ event }) => {
             className="w-1/5 h-full overflow-y-auto scrollbar-hide px-4 pb-10 transition-opacity duration-500"
             style={{ opacity: activeTab === 'events' ? 1 : 0.3 }}
           >
-            <div className="flex justify-center items-center h-32 text-[11px] font-black text-content-muted uppercase tracking-widest bg-surface-level2/30 rounded-2xl border border-surface-border/50 border-dashed">
-              Протокол матча
-            </div>
+            <MatchProtocol event={event} />
           </div>
 
           {/* ВКЛАДКА 5: СТАТИСТИКА */}
@@ -282,9 +229,7 @@ export const EventDetailsMatch = ({ event }) => {
             className="w-1/5 h-full overflow-y-auto scrollbar-hide px-4 pb-10 transition-opacity duration-500"
             style={{ opacity: activeTab === 'stats' ? 1 : 0.3 }}
           >
-            <div className="flex justify-center items-center h-32 text-[11px] font-black text-content-muted uppercase tracking-widest bg-surface-level2/30 rounded-2xl border border-surface-border/50 border-dashed">
-              Статистика матча
-            </div>
+            <MatchStats event={event} />
           </div>
 
         </div>

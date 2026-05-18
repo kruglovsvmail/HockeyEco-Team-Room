@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect, useMemo, useCallback } from 'react';
+import React, { useState, useRef, useEffect, useLayoutEffect, useMemo, useCallback } from 'react';
 import { useAccess } from '../hooks/useAccess';
 import { useOutletContext } from 'react-router-dom';
 import dayjs from 'dayjs';
@@ -34,6 +34,9 @@ export function SchedulePage() {
   const isHorizontalSwipe = useRef(false);
   const isSwipeLocked = useRef(false);
   
+  // Рефы для контроля скролла в 3-х колонках (индексы 0, 1, 2)
+  const scrollRefs = useRef([]);
+  
   const [offsetIndex, setOffsetIndex] = useState(0);
   const [isAnimating, setIsAnimating] = useState(false);
   const animationTimer = useRef(null);
@@ -64,6 +67,15 @@ export function SchedulePage() {
 
     fetchEvents();
   }, [currentDate.format('YYYY-MM')]);
+
+  // ИСПОЛЬЗУЕМ useLayoutEffect вместо useEffect!
+  // Он срабатывает ДО того, как браузер нарисует кадр, 
+  // что полностью убирает визуальный скачок при переиспользовании узла.
+  useLayoutEffect(() => {
+    if (scrollRefs.current[1]) {
+      scrollRefs.current[1].scrollTop = 0;
+    }
+  }, [currentDate]);
 
   const handleToggleAttendance = async (eventId, eventType, newValue, teamId) => {
     setEvents(prev => prev.map(event => 
@@ -106,6 +118,12 @@ export function SchedulePage() {
   const slideTo = useCallback((direction) => {
     if (isAnimating) return;
 
+    // Возвращаем скролл в начало у того слайда, к которому мы свайпаем, ДО начала анимации
+    const targetIndex = direction === 'next' ? 2 : 0;
+    if (scrollRefs.current[targetIndex]) {
+      scrollRefs.current[targetIndex].scrollTop = 0;
+    }
+
     setIsAnimating(true);
     setOffsetIndex(direction === 'next' ? 1 : -1);
 
@@ -115,7 +133,7 @@ export function SchedulePage() {
       setCurrentDate(prev => direction === 'next' ? prev.add(1, 'week') : prev.subtract(1, 'week'));
       setOffsetIndex(0);
       setIsAnimating(false);
-    }, 240); 
+    }, 490); 
   }, [isAnimating]);
 
   useEffect(() => {
@@ -184,9 +202,11 @@ export function SchedulePage() {
       className="flex flex-col w-full h-full overflow-hidden relative bg-surface-border"
       style={{ touchAction: 'pan-y' }}
     >
-      <div className="shrink-0 z-30 relative w-full px-4 pt-4">
+      <div className="shrink-0 z-30 relative w-full p-4">
         <CompactWeek 
           date={currentDate} 
+          offsetIndex={offsetIndex}
+          isAnimating={isAnimating}
           onChangeDate={(newDate) => {
             if (newDate.isBefore(currentDate, 'day')) slideTo('prev');
             else if (newDate.isAfter(currentDate, 'day')) slideTo('next');
@@ -197,7 +217,7 @@ export function SchedulePage() {
       </div>
 
       <div 
-        className="flex-1 relative mt-4 overflow-hidden"
+        className="flex-1 relative overflow-hidden"
         onTouchStart={handleTouchStart}
         onTouchMove={handleTouchMove}
         onTouchEnd={handleTouchEnd}
@@ -206,7 +226,7 @@ export function SchedulePage() {
           className="w-[300%] flex items-start h-full"
           style={{
             transform: `translateX(calc(-33.33333% - ${offsetIndex * 33.33333}%))`,
-            transition: isAnimating ? 'transform 250ms cubic-bezier(0.32, 0.72, 0, 1)' : 'none',
+            transition: isAnimating ? 'transform 500ms cubic-bezier(0.32, 0.72, 0, 1)' : 'none',
             pointerEvents: isAnimating ? 'none' : 'auto',
             willChange: 'transform'
           }}
@@ -220,7 +240,12 @@ export function SchedulePage() {
             });
 
             return (
-              <div key={offset} className="w-1/3 shrink-0 flex flex-col px-4 h-full overflow-y-auto scrollbar-hide">
+              <div 
+                key={offset} 
+                // Сохраняем ref контейнера. offset -1 -> индекс 0, offset 0 -> индекс 1, offset 1 -> индекс 2
+                ref={el => scrollRefs.current[offset + 1] = el}
+                className="w-1/3 shrink-0 flex flex-col px-4 h-full overflow-y-auto scrollbar-hide"
+              >
                 <div className="pb-8">
                   {isLoading && offset === 0 ? (
                     <div className="flex justify-center items-center h-32 text-brand">
@@ -229,7 +254,6 @@ export function SchedulePage() {
                   ) : slideEvents.length > 0 ? (
                     <div className="flex flex-col gap-0">
                       {slideEvents.map(event => {
-                        // Определяем тип панели и заголовок на основе типа события
                         let panelType = 'matchDetails';
                         let panelTitle = 'Детали матча';
 

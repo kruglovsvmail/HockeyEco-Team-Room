@@ -183,11 +183,11 @@ export const MyTeamPage = () => {
           stickyHeaderRef.current.dataset.stuck = isStuck;
           
           if (isStuck) {
-            stickyHeaderRef.current.classList.add('bg-surface-border/95', 'backdrop-blur-md', 'shadow-sm', 'border-surface-level2/50');
+            stickyHeaderRef.current.classList.add('bg-surface-border', 'backdrop-blur-md', 'shadow-sm', 'border-surface-level2');
             stickyHeaderRef.current.classList.remove('bg-surface-border', 'border-transparent');
           } else {
             stickyHeaderRef.current.classList.add('bg-surface-border', 'border-transparent');
-            stickyHeaderRef.current.classList.remove('bg-surface-border/95', 'backdrop-blur-md', 'shadow-sm', 'border-surface-level2/50');
+            stickyHeaderRef.current.classList.remove('bg-surface-border', 'backdrop-blur-md', 'shadow-sm', 'border-surface-level2');
           }
         }
       }

@@ -6,7 +6,7 @@ import utc from 'dayjs/plugin/utc';
 import timezone from 'dayjs/plugin/timezone';
 import 'dayjs/locale/ru';
 
-import { EventDetailsMatch } from './EventDetailsMatch';
+import { EventDetailsMatch } from './Match/EventDetailsMatch';
 import { EventDetailsTraining } from './EventDetailsTraining';
 import { EventDetailsMeeting } from './EventDetailsMeeting';
 
@@ -18,7 +18,6 @@ dayjs.locale('ru');
 export const EventDashboard = ({ isOpen, onClose, data, type, title }) => {
   // Динамически подменяем заголовок на Дату и Время события
   let displayTitle = title;
-  
   if (data && data.event_date) {
     const eventDate = dayjs.utc(data.event_date).tz(data.arena_timezone || 'UTC');
     displayTitle = (
