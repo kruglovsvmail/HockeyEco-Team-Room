@@ -128,7 +128,7 @@ export function SchedulePage() {
       setCurrentDate(prev => direction === 'next' ? prev.add(1, 'week') : prev.subtract(1, 'week'));
       setOffsetIndex(0);
       setIsAnimating(false);
-    }, 200); 
+    }, 340); 
   }, [isAnimating]);
 
   useEffect(() => {
@@ -223,7 +223,7 @@ export function SchedulePage() {
           className="w-[300%] flex items-start h-full"
           style={{
             transform: `translateX(calc(-33.33333% - ${offsetIndex * 33.33333}%))`,
-            transition: isAnimating ? 'transform 400ms cubic-bezier(0.32, 0.72, 0, 1)' : 'none',
+            transition: isAnimating ? 'transform 350ms cubic-bezier(0.32, 0.72, 0, 1)' : 'none',
             pointerEvents: isAnimating ? 'none' : 'auto',
             willChange: 'transform'
           }}
