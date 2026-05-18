@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { getImageUrl } from '../../../utils/helpers';
 import { Icon } from '../../../ui/Icon';
 import { ChipTabs } from '../../../ui/ChipTabs';
@@ -21,9 +21,36 @@ const MATCH_TABS = [
 export const EventDetailsMatch = ({ event }) => {
   const [activeTab, setActiveTab] = useState('info');
 
+  const scrollContainerRef = useRef(null);
+  const matchupHeaderRef = useRef(null);
+  const stickyTabsRef = useRef(null);
+  const rafRef = useRef(null);
+  const scrollTimeoutRef = useRef(null);
+
+  useEffect(() => {
+    return () => {
+      if (rafRef.current) cancelAnimationFrame(rafRef.current);
+      if (scrollTimeoutRef.current) clearTimeout(scrollTimeoutRef.current);
+    };
+  }, []);
+
+  // Умный сброс скролла при переключении вкладок
+  useEffect(() => {
+    if (scrollContainerRef.current) {
+      const currentScroll = scrollContainerRef.current.scrollTop;
+      const HEADER_TOTAL_HEIGHT = 165; 
+      
+      if (currentScroll >= 120) {
+        scrollContainerRef.current.scrollTop = HEADER_TOTAL_HEIGHT;
+      } else {
+        scrollContainerRef.current.scrollTop = 0;
+      }
+    }
+  }, [activeTab]);
+
   if (!event) return null;
 
-  // --- ВЫЧИСЛЕНИЯ ДЛЯ ШАПКИ МАТЧА ---
+  // --- ВЫЧИСЛЕНИЯ ДЛЯ ШАПКИ МАТЧА (ОРИГИНАЛЬНАЯ ЛОГИКА) ---
   const isHome = event.my_team_id === event.home_team_id;
   const homeName = isHome ? event.my_team_name : (event.opponent_name || 'Неизвестно');
   const awayName = isHome ? (event.opponent_name || 'Неизвестно') : event.my_team_name;
@@ -71,7 +98,7 @@ export const EventDetailsMatch = ({ event }) => {
         matchStatusText = 'ПОРАЖЕНИЕ';
         matchStatusColor = 'text-danger';
       }
-      matchEndTypeText = 'ТЕХНАРЬ';
+      matchEndTypeText = 'ТЕХ';
 
     } else {
       matchScoreText = `${event.home_score} : ${event.away_score}`;
@@ -87,23 +114,82 @@ export const EventDetailsMatch = ({ event }) => {
         matchStatusColor = 'text-brand';
       }
 
-      if (event.end_type === 'ot') matchEndTypeText = 'В ОВЕРТАЙМЕ';
-      else if (event.end_type === 'so') matchEndTypeText = 'ПО БУЛЛИТАМ';
+      if (event.end_type === 'ot') matchEndTypeText = 'ОТ';
+      else if (event.end_type === 'so') matchEndTypeText = 'Б';
     }
   }
+
+  // --- ОБРАБОТЧИК СКРОЛЛА С ПАРАЛЛАКСОМ И ДОВОДЧИКОМ ---
+  const handleScroll = (e) => {
+    const currentScroll = e.target.scrollTop;
+    
+    if (rafRef.current) cancelAnimationFrame(rafRef.current);
+    rafRef.current = requestAnimationFrame(() => {
+      const isStuck = currentScroll > 130;
+      const isFullyCollapsed = currentScroll > 160; 
+
+      // Плавное скрытие оригинальной панели противостояния
+      if (isFullyCollapsed) {
+        if (matchupHeaderRef.current && matchupHeaderRef.current.dataset.collapsed !== 'true') {
+          matchupHeaderRef.current.style.opacity = '0';
+          matchupHeaderRef.current.style.transform = 'translateY(50px) translateZ(0)';
+          matchupHeaderRef.current.dataset.collapsed = 'true';
+        }
+      } else {
+        if (matchupHeaderRef.current) {
+          matchupHeaderRef.current.dataset.collapsed = 'false';
+          matchupHeaderRef.current.style.opacity = Math.max(0, 1 - currentScroll / 130);
+          matchupHeaderRef.current.style.transform = `translateY(${currentScroll * 0.4}px) translateZ(0)`;
+        }
+      }
+
+      // Эффект матового стекла на прилипшей плашке чипсов
+      if (stickyTabsRef.current) {
+        if (String(isStuck) !== stickyTabsRef.current.dataset.stuck) {
+          stickyTabsRef.current.dataset.stuck = isStuck;
+          if (isStuck) {
+            stickyTabsRef.current.classList.add('backdrop-blur-md', 'shadow-sm');
+          } else {
+            stickyTabsRef.current.classList.remove('backdrop-blur-md', 'shadow-sm');
+          }
+        }
+      }
+    });
+
+    // Авто-доводчик положения скролла
+    if (scrollTimeoutRef.current) clearTimeout(scrollTimeoutRef.current);
+    scrollTimeoutRef.current = setTimeout(() => {
+      if (!scrollContainerRef.current) return;
+      
+      const finalScroll = scrollContainerRef.current.scrollTop;
+      if (finalScroll > 0 && finalScroll < 160) {
+        if (finalScroll < 80) {
+          scrollContainerRef.current.scrollTo({ top: 0, behavior: 'smooth' });
+        } else {
+          scrollContainerRef.current.scrollTo({ top: 165, behavior: 'smooth' });
+        }
+      }
+    }, 150);
+  };
 
   // Вычисляем индекс для сдвига слайдера (0 до 4)
   const tabIndex = MATCH_TABS.findIndex(t => t.id === activeTab);
   const translateX = `-${tabIndex * 20}%`; // Каждый таб занимает 20% от ширины контейнера 500%
 
   return (
-    <div className="h-full w-full flex flex-col bg-surface-border overflow-hidden">
+    <div 
+      ref={scrollContainerRef}
+      onScroll={handleScroll}
+      className="h-full overflow-y-auto scrollbar-hide bg-surface-border relative z-10"
+    >
       
-      {/* 1. БЛОК ШАПКИ И МЕНЮ (Статичный верх) */}
-      <div className="bg-surface-base shadow-sm shrink-0 pt-6 pb-4 mb-4 relative z-20">
-        
-        {/* Противостояние */}
-        <div className="flex items-start justify-between px-4 pb-5">
+      {/* 1. БЛОК ШАПКИ (ОРИГИНАЛЬНОЕ ПРОТИВОСТОЯНИЕ С АНИМАЦИЕЙ) */}
+      <div 
+        ref={matchupHeaderRef}
+        data-collapsed="false"
+        className="bg-surface-base shadow-sm shrink-0 pt-4 pb-6 mb-2 will-change-transform z-20 relative"
+      >
+        <div className="flex items-start justify-between px-6">
         
           {/* Хозяева (Слева) */}
           <div className="flex flex-col items-center w-[30%] relative z-10">
@@ -120,7 +206,7 @@ export const EventDetailsMatch = ({ event }) => {
           </div>
 
           {/* Центр: Счет или Статус */}
-          <div className="flex flex-col items-center justify-center w-[40%] mt-1 px-2">
+          <div className="flex flex-col items-center justify-center w-[40%] px-2">
             {event.status === 'live' ? (
               <div className="flex flex-col items-center">
                 <span className="text-danger font-black text-2xl tracking-widest animate-pulse">LIVE</span>
@@ -142,7 +228,7 @@ export const EventDetailsMatch = ({ event }) => {
             ) : isFinished ? (
               <div className="flex flex-col items-center">
                 {matchStatusText && (
-                  <span className={`text-[9px] font-black uppercase tracking-widest mb-1.5 ${matchStatusColor}`}>
+                  <span className={`text-[12px] font-black uppercase tracking-widest mb-2 ${matchStatusColor}`}>
                     {matchStatusText}
                   </span>
                 )}
@@ -150,7 +236,7 @@ export const EventDetailsMatch = ({ event }) => {
                   {matchScoreText}
                 </span>
                 {matchEndTypeText && (
-                  <span className="text-[9px] font-bold uppercase tracking-widest text-content-muted mt-2 text-center">
+                  <span className="text-[12px] font-bold uppercase tracking-widest text-content-muted mt-2 text-center">
                     {matchEndTypeText}
                   </span>
                 )}
@@ -178,23 +264,32 @@ export const EventDetailsMatch = ({ event }) => {
             </span>
           </div>
         </div>
-
-        {/* Чипсы-меню */}
-        <div className="mt-1">
-          <ChipTabs tabs={MATCH_TABS} activeTab={activeTab} onChange={setActiveTab} />
-        </div>
       </div>
 
-      {/* 2. КОНТЕНТНАЯ ЧАСТЬ (Скроллируемый слайдер шириной 500%) */}
-      <div className="flex-1 overflow-hidden relative">
+      {/* 2. ЗАКРЕПЛЕННЫЕ ЧИПСЫ-МЕНЮ */}
+      <div 
+        ref={stickyTabsRef}
+        data-stuck="false"
+        className="sticky top-0 z-40 px-5 pt-3 pb-4 shrink-0 transition-all duration-300 ease-in-out bg-surface-border/90 border-b border-surface-level2"
+      >
+        <ChipTabs 
+          tabs={MATCH_TABS} 
+          activeTab={activeTab} 
+          onChange={setActiveTab} 
+          className="!px-0"
+        />
+      </div>
+
+      {/* 3. КОНТЕНТНАЯ ЧАСТЬ (Единый внешний скролл, внутренние отключены) */}
+      <div className="w-full overflow-hidden pt-2 min-h-screen pb-[30vh]">
         <div 
-          className="flex w-[500%] h-full transition-transform duration-500 ease-[cubic-bezier(0.32,0.72,0,1)] items-start"
+          className="flex w-[500%] transition-transform duration-500 ease-[cubic-bezier(0.32,0.72,0,1)] items-start"
           style={{ transform: `translateX(${translateX})` }}
         >
           
           {/* ВКЛАДКА 1: ИНФО */}
           <div 
-            className="w-1/5 h-full overflow-y-auto scrollbar-hide px-4 pb-10 transition-opacity duration-500"
+            className="w-1/5 shrink-0 px-4 transition-opacity duration-500"
             style={{ opacity: activeTab === 'info' ? 1 : 0.3 }}
           >
             <MatchInfo event={event} />
@@ -202,7 +297,7 @@ export const EventDetailsMatch = ({ event }) => {
 
           {/* ВКЛАДКА 2: ОТМЕТКИ */}
           <div 
-            className="w-1/5 h-full overflow-y-auto scrollbar-hide px-4 pb-10 transition-opacity duration-500"
+            className="w-1/5 shrink-0 px-4 transition-opacity duration-500"
             style={{ opacity: activeTab === 'attendance' ? 1 : 0.3 }}
           >
             <MatchAttendance event={event} />
@@ -210,7 +305,7 @@ export const EventDetailsMatch = ({ event }) => {
 
           {/* ВКЛАДКА 3: ПЯТЕРКИ */}
           <div 
-            className="w-1/5 h-full overflow-y-auto scrollbar-hide px-4 pb-10 transition-opacity duration-500"
+            className="w-1/5 shrink-0 px-4 transition-opacity duration-500"
             style={{ opacity: activeTab === 'lines' ? 1 : 0.3 }}
           >
             <MatchLines event={event} />
@@ -218,7 +313,7 @@ export const EventDetailsMatch = ({ event }) => {
 
           {/* ВКЛАДКА 4: ХОД МАТЧА */}
           <div 
-            className="w-1/5 h-full overflow-y-auto scrollbar-hide px-4 pb-10 transition-opacity duration-500"
+            className="w-1/5 shrink-0 px-4 transition-opacity duration-500"
             style={{ opacity: activeTab === 'events' ? 1 : 0.3 }}
           >
             <MatchProtocol event={event} />
@@ -226,7 +321,7 @@ export const EventDetailsMatch = ({ event }) => {
 
           {/* ВКЛАДКА 5: СТАТИСТИКА */}
           <div 
-            className="w-1/5 h-full overflow-y-auto scrollbar-hide px-4 pb-10 transition-opacity duration-500"
+            className="w-1/5 shrink-0 px-4 transition-opacity duration-500"
             style={{ opacity: activeTab === 'stats' ? 1 : 0.3 }}
           >
             <MatchStats event={event} />

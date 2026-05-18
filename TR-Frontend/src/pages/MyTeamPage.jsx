@@ -294,7 +294,7 @@ export const MyTeamPage = () => {
                 "absolute top-full mt-2 w-[320px] text-center transition-all duration-500",
                 offset === 0 ? "opacity-100 translate-y-0" : "opacity-0 -translate-y-2 pointer-events-none"
               )}>
-                <h2 className="text-[11px] font-black uppercase tracking-widest text-content-main leading-tight line-clamp-2">
+                <h2 className="text-[14px] font-black uppercase tracking-widest text-content-main leading-tight line-clamp-2">
                   {team.name}
                 </h2>
               </div>
