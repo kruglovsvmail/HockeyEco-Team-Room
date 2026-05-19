@@ -48,7 +48,7 @@ export const MatchInfo = ({ event }) => {
   let tournamentValue = 'Официальный турнир';
   let tournamentSubValue = event.division_name || '';
   let tournamentIcon = 'trophy';
-  let tournamentLogo = event.league_logo_url || event.division_logo_url; // Логотип лиги или дивизиона
+  let tournamentLogo = event.league_logo_url || event.division_logo_url;
 
   if (isFriendly) {
     tournamentValue = 'Товарищеский';
@@ -66,16 +66,11 @@ export const MatchInfo = ({ event }) => {
   if (isFriendly) {
     stageValue = 'Тренировочный';
     stageSubValue = '';
-  } else if (event.stage_type === 'regular') {
-    stageValue = event.stage_label || 'Регулярный чемпионат'; 
-    stageSubValue = event.tour_number ? `${event.tour_number}-й тур` : '';
-  } else if (event.stage_type === 'playoff') {
-    stageValue = event.stage_label || 'Плей-офф';
-    stageSubValue = event.match_number ? `Матч №${event.match_number}` : '';
   } else {
-    // Фолбэк на случай других стадий или их отсутствия
-    stageValue = event.stage_label || 'Не указана';
-    stageSubValue = event.tour_number ? `${event.tour_number}-й тур` : (event.match_number ? `Матч №${event.match_number}` : '');
+    stageValue = event.stage_label || 'Регулярный чемпионат';
+    stageSubValue = event.series_number 
+      ? (event.stage_type === 'playoff' ? `Матч №${event.series_number}` : `${event.series_number}-й тур`) 
+      : '';
   }
 
   // --- ЛОГИКА ИГРОВОЙ ФОРМЫ ---

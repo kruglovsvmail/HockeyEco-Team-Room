@@ -56,8 +56,14 @@ export const getEvents = async (req, res) => {
           (g.is_technical::text IN ('true', 't', '1', 'yes', 'y'))::boolean AS is_technical,
           g.end_type::varchar AS end_type,
           
+          -- Новые поля для вкладки Инфо
+          d.name::varchar AS division_name,
+          l.name::varchar AS league_name,
+          l.logo_url::varchar AS league_logo_url,
           d.logo_url::varchar AS division_logo_url,
           g.stage_type::varchar AS stage_type,
+          g.stage_label::varchar AS stage_label,
+          g.series_number::int AS series_number,
 
           g.home_jersey_type::varchar AS home_jersey,
           g.away_jersey_type::varchar AS away_jersey,
@@ -113,6 +119,8 @@ export const getEvents = async (req, res) => {
         JOIN games g ON (g.home_team_id = ut.team_id OR g.away_team_id = ut.team_id)
         LEFT JOIN arenas a ON g.arena_id = a.id
         LEFT JOIN divisions d ON g.division_id = d.id
+        LEFT JOIN seasons s ON d.season_id = s.id
+        LEFT JOIN leagues l ON s.league_id = l.id
         LEFT JOIN teams my_team ON my_team.id = ut.team_id
         LEFT JOIN teams opp_team ON opp_team.id = CASE WHEN g.home_team_id = ut.team_id THEN g.away_team_id ELSE g.home_team_id END
         LEFT JOIN external_opponents ext_opp ON g.away_external_id = ext_opp.id
@@ -147,8 +155,14 @@ export const getEvents = async (req, res) => {
           NULL::int AS away_score, 
           false::boolean AS is_technical, 
           NULL::varchar AS end_type,
+          
+          NULL::varchar AS division_name,
+          NULL::varchar AS league_name,
+          NULL::varchar AS league_logo_url,
           NULL::varchar AS division_logo_url, 
           NULL::varchar AS stage_type,
+          NULL::varchar AS stage_label,
+          NULL::int AS series_number,
           
           NULL::varchar AS home_jersey,
           NULL::varchar AS away_jersey,
@@ -206,8 +220,14 @@ export const getEvents = async (req, res) => {
           NULL::int AS away_score, 
           false::boolean AS is_technical, 
           NULL::varchar AS end_type,
+          
+          NULL::varchar AS division_name,
+          NULL::varchar AS league_name,
+          NULL::varchar AS league_logo_url,
           NULL::varchar AS division_logo_url, 
           NULL::varchar AS stage_type,
+          NULL::varchar AS stage_label,
+          NULL::int AS series_number,
           
           NULL::varchar AS home_jersey,
           NULL::varchar AS away_jersey,
@@ -258,8 +278,14 @@ export const getEvents = async (req, res) => {
           NULL::int AS away_score, 
           false::boolean AS is_technical, 
           NULL::varchar AS end_type,
+          
+          NULL::varchar AS division_name,
+          NULL::varchar AS league_name,
+          NULL::varchar AS league_logo_url,
           NULL::varchar AS division_logo_url, 
           NULL::varchar AS stage_type,
+          NULL::varchar AS stage_label,
+          NULL::int AS series_number,
           
           NULL::varchar AS home_jersey,
           NULL::varchar AS away_jersey,
@@ -310,8 +336,14 @@ export const getEvents = async (req, res) => {
           NULL::int AS away_score, 
           false::boolean AS is_technical, 
           NULL::varchar AS end_type,
+          
+          NULL::varchar AS division_name,
+          NULL::varchar AS league_name,
+          NULL::varchar AS league_logo_url,
           NULL::varchar AS division_logo_url, 
           NULL::varchar AS stage_type,
+          NULL::varchar AS stage_label,
+          NULL::int AS series_number,
           
           NULL::varchar AS home_jersey,
           NULL::varchar AS away_jersey,

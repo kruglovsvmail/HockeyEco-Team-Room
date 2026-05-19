@@ -63,3 +63,91 @@ export const toggleEventAttendance = async (req, res) => {
     res.status(500).json({ success: false, error: 'Ошибка сервера' });
   }
 };
+
+export const getEventAttendance = async (req, res) => {
+  try {
+    const { eventId } = req.params;
+    const { eventType, teamId } = req.query;
+
+    if (!eventType) {
+      return res.status(400).json({ success: false, error: 'eventType обязателен' });
+    }
+
+    let query = '';
+    let params = [];
+
+    switch (eventType) {
+      case 'match':
+        if (!teamId) return res.status(400).json({ success: false, error: 'teamId обязателен для матча' });
+        query = `
+          SELECT 
+            u.id, 
+            u.first_name, 
+            u.last_name, 
+            tm.photo_url AS team_photo, 
+            u.avatar_url
+          FROM team_game_attendance tga
+          JOIN users u ON tga.user_id = u.id
+          LEFT JOIN team_members tm ON tm.user_id = u.id AND tm.team_id = $2 AND tm.left_at IS NULL
+          WHERE tga.game_id = $1 AND tga.team_id = $2
+          ORDER BY u.last_name ASC, u.first_name ASC
+        `;
+        params = [eventId, teamId];
+        break;
+
+      case 'team_training':
+        query = `
+          SELECT u.id, u.first_name, u.last_name, u.avatar_url 
+          FROM team_training_attendance tta
+          JOIN users u ON tta.user_id = u.id
+          WHERE tta.team_training_id = $1
+          ORDER BY u.last_name ASC
+        `;
+        params = [eventId];
+        break;
+
+      case 'team_meeting':
+        query = `
+          SELECT u.id, u.first_name, u.last_name, u.avatar_url 
+          FROM team_meeting_attendance tma
+          JOIN users u ON tma.user_id = u.id
+          WHERE tma.team_meeting_id = $1
+          ORDER BY u.last_name ASC
+        `;
+        params = [eventId];
+        break;
+
+      case 'club_training':
+        query = `
+          SELECT u.id, u.first_name, u.last_name, u.avatar_url 
+          FROM club_training_attendance cta
+          JOIN users u ON cta.user_id = u.id
+          WHERE cta.club_training_id = $1
+          ORDER BY u.last_name ASC
+        `;
+        params = [eventId];
+        break;
+
+      case 'club_meeting':
+        query = `
+          SELECT u.id, u.first_name, u.last_name, u.avatar_url 
+          FROM club_meeting_attendance cma
+          JOIN users u ON cma.user_id = u.id
+          WHERE cma.club_meeting_id = $1
+          ORDER BY u.last_name ASC
+        `;
+        params = [eventId];
+        break;
+
+      default:
+        return res.status(400).json({ success: false, error: 'Неизвестный тип события' });
+    }
+
+    const result = await pool.query(query, params);
+    res.json({ success: true, attendees: result.rows });
+
+  } catch (err) {
+    console.error('Ошибка получения списка отметившихся:', err);
+    res.status(500).json({ success: false, error: 'Ошибка сервера' });
+  }
+};
