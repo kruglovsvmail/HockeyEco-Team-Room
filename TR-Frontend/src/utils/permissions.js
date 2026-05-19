@@ -31,6 +31,15 @@ export const PERMISSIONS = {
     ROLES.COACH
   ],
 
+  // Управление ручными отметками присутствия игроков
+  ATTENDANCE_MANAGE: [
+    ROLES.CLUB_TOP_MANAGER, 
+    ROLES.CLUB_ADMIN, 
+    ROLES.TEAM_MANAGER, 
+    ROLES.TEAM_ADMIN, 
+    ROLES.HEAD_COACH
+  ],
+
   // Просмотр внутренней информации (тактика, объявления, контакты)
   INTERNAL_VIEW: [
     ROLES.CLUB_TOP_MANAGER, 

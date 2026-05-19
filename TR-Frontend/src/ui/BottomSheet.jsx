@@ -1,4 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import clsx from 'clsx';
 
 export function BottomSheet({ isOpen, onClose, children }) {
@@ -46,8 +47,10 @@ export function BottomSheet({ isOpen, onClose, children }) {
     }
   };
 
-  return (
+  // Используем Портал, чтобы отрендерить шторку прямо в document.body
+  return createPortal(
     <>
+      {/* Задний полупрозрачный фон (Бэкдроп) */}
       <div 
         className={clsx(
           "fixed inset-0 bg-overlay backdrop-blur-overlay z-[100] transition-opacity duration-500",
@@ -56,18 +59,18 @@ export function BottomSheet({ isOpen, onClose, children }) {
         onClick={onClose}
       />
 
+      {/* Сама шторка */}
       <div 
         className={clsx(
           "fixed inset-x-0 bottom-0 z-[110] bg-sheet-bg backdrop-blur-sheet rounded-t-3xl border-t border-sheet-border shadow-sheet-top flex flex-col",
           "transition-transform duration-300 ease-[cubic-bezier(0.32,0.72,0,1)]",
-          isOpen ? "translate-y-0" : "translate-y-[calc(100%+50px)]"
+          isOpen ? "translate-y-0 pointer-events-auto" : "translate-y-[calc(100%+50px)] pointer-events-none"
         )}
         style={{ 
           transform: isOpen && dragY > 0 ? `translateY(${dragY}px)` : undefined,
           transition: dragY > 0 ? 'none' : ''
         }}
       >
-        {/* ИЗМЕНЕНО: touch-pan-y заменен на touch-none */}
         <div 
           className="p-5 flex justify-center shrink-0 cursor-grab active:cursor-grabbing touch-none"
           onTouchStart={handleTouchStart}
@@ -81,7 +84,6 @@ export function BottomSheet({ isOpen, onClose, children }) {
           className="overflow-hidden transition-all duration-700 ease-[cubic-bezier(0.32,0.72,0,1)] max-h-[85dvh]"
           style={{ height: contentHeight === 'auto' ? 'auto' : `${contentHeight}px` }}
         >
-          {/* ИЗМЕНЕНО: Добавлен overscroll-none для защиты от отскока списка */}
           <div className="overflow-y-auto scrollbar-hide max-h-[85dvh] overscroll-none">
             <div ref={contentRef} className="px-6 pb-8 pb-safe">
               {children}
@@ -89,6 +91,7 @@ export function BottomSheet({ isOpen, onClose, children }) {
           </div>
         </div>
       </div>
-    </>
+    </>,
+    document.body
   );
 }
