@@ -307,7 +307,7 @@ export const MyTeamPage = () => {
       <div 
         ref={stickyHeaderRef}
         data-stuck="false"
-        className="sticky top-0 z-40 px-5 pt-3 pb-4 shrink-0 transition-all duration-300 ease-in-out border-b border-surface-level3"
+        className="sticky top-0 z-40 px-5 shrink-0 transition-all duration-300 ease-in-out border-b border-surface-level2"
       >
         <ChipTabs 
           tabs={TEAM_TABS}

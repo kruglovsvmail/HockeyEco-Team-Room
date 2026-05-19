@@ -187,7 +187,7 @@ export const EventDetailsMatch = ({ event }) => {
       <div 
         ref={matchupHeaderRef}
         data-collapsed="false"
-        className="bg-surface-base shadow-sm shrink-0 pt-4 pb-6 mb-2 will-change-transform z-20 relative"
+        className="bg-surface-base shadow-sm shrink-0 pt-4 pb-6 will-change-transform z-20 relative"
       >
         <div className="flex items-start justify-between px-6">
         
@@ -270,7 +270,7 @@ export const EventDetailsMatch = ({ event }) => {
       <div 
         ref={stickyTabsRef}
         data-stuck="false"
-        className="sticky top-0 z-40 px-5 pt-3 pb-4 shrink-0 transition-all duration-300 ease-in-out bg-surface-border/90 border-b border-surface-level2"
+        className="sticky top-0 z-40 shrink-0 transition-all duration-300 ease-in-out border-b border-surface-level2"
       >
         <ChipTabs 
           tabs={MATCH_TABS} 
