@@ -169,7 +169,7 @@ const EventCard = ({ event, onToggleAttendance, onClick }) => {
             /* СТАНДАРТНЫЙ ВАРИАНТ (У пользователя несколько команд) */
             <>
               {/* Моя команда (40% ширины) */}
-              <div className="w-[40%] flex items-center gap-2.5">
+              <div className="w-[50%] flex items-center gap-2.5">
                 <div className="w-9 h-9 shrink-0 overflow-hidden flex items-center justify-center">
                   {event.my_team_logo_url ? (
                     <img src={getImageUrl(event.my_team_logo_url)} alt="Лого" className="w-full h-full object-cover" />
@@ -183,7 +183,7 @@ const EventCard = ({ event, onToggleAttendance, onClick }) => {
               </div>
 
               {/* Пустая зона по середине (20% ширины) */}
-              <div className="w-[20%] shrink-0"></div>
+              <div className="w-[10%] shrink-0"></div>
 
               {/* Соперник (40% ширины) */}
               <div className="w-[40%] flex justify-end">

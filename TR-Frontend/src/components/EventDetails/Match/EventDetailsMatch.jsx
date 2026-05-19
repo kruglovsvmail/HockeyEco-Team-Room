@@ -162,11 +162,11 @@ export const EventDetailsMatch = ({ event }) => {
       if (!scrollContainerRef.current) return;
       
       const finalScroll = scrollContainerRef.current.scrollTop;
-      if (finalScroll > 0 && finalScroll < 160) {
-        if (finalScroll < 80) {
+      if (finalScroll > 0 && finalScroll < 125) {
+        if (finalScroll < 100) {
           scrollContainerRef.current.scrollTo({ top: 0, behavior: 'smooth' });
         } else {
-          scrollContainerRef.current.scrollTo({ top: 165, behavior: 'smooth' });
+          scrollContainerRef.current.scrollTo({ top: 130, behavior: 'smooth' });
         }
       }
     }, 150);

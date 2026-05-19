@@ -249,7 +249,7 @@ export const MatchAttendance = ({ event }) => {
           /* ИЗМЕНЕНО: Возвращаем Grid, но делаем его адаптивным (auto-fill). 
              minmax(80px, 1fr) гарантирует, что колонка всегда будет минимум 80px (чтобы влезла фамилия), 
              но при этом растянется, чтобы занять всё свободное место равномерно. */
-          <div className="grid grid-cols-[repeat(auto-fill,minmax(90px,1fr))] gap-y-5 gap-x-2 justify-items-center">
+          <div className="grid grid-cols-[repeat(auto-fill,minmax(100px,1fr))] gap-y-5 gap-x-2 justify-items-center">
             {attendees.map((user, index) => {
               const photoUrl = user.team_photo || user.avatar_url;
               const canRemove = hasManageAccess || String(activeUserId) === String(user.id);

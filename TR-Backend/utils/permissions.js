@@ -49,5 +49,15 @@ export const PERMISSIONS = {
     ROLES.HEAD_COACH, 
     ROLES.COACH, 
     ROLES.PLAYER
-  ]
+  ],
+
+   // Управление составом на игру
+  LINES_MANAGE: [
+  ROLES.CLUB_TOP_MANAGER, 
+  ROLES.CLUB_ADMIN, 
+  ROLES.TEAM_MANAGER, 
+  ROLES.TEAM_ADMIN, 
+  ROLES.HEAD_COACH,
+  ROLES.COACH
+]
 };
