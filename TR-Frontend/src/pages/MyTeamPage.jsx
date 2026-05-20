@@ -3,43 +3,29 @@ import { useNavigate, useOutletContext } from 'react-router-dom';
 import clsx from 'clsx';
 import { getAuthHeaders, getImageUrl } from '../utils/helpers';
 import { ChipTabs } from '../ui/ChipTabs';
-
-// Утилита для получения инициалов
-const getInitials = (firstName, lastName) => {
-  const f = firstName ? firstName.charAt(0).toUpperCase() : '';
-  const l = lastName ? lastName.charAt(0).toUpperCase() : '';
-  return `${l}${f}` || '?';
-};
+import { Avatar } from '../ui/Avatar';
 
 // --- КОМПОНЕНТ КАРТОЧКИ-СЕТКИ ДЛЯ ВЗГЛЯДА "ВСЕ" И "СОСТАВ" ---
 const PersonGridCard = ({ person, onClick, showBadges = false }) => {
-  const photoUrl = person.photo_url || person.avatar_url;
-
   return (
     <div 
       onClick={() => onClick(person)}
       className="flex flex-col items-center gap-1.5 select-none w-full cursor-pointer active:scale-[0.98] transition-transform"
     >
-      {/* Обертка relative для позиционирования бейджей поверх фото */}
       <div className="relative">
-        <div className="w-16 h-16 shrink-0 rounded-2xl overflow-hidden bg-surface-level2 border border-surface-level2 shadow-sm origin-center">
-          {photoUrl ? (
-            <img src={getImageUrl(photoUrl)} alt="Аватар" className="w-full h-full object-cover pointer-events-none" />
-          ) : (
-            <div className="w-full h-full bg-brand/10 text-brand flex items-center justify-center text-sm font-bold pointer-events-none">
-              {getInitials(person.first_name, person.last_name)}
-            </div>
-          )}
-        </div>
+        <Avatar 
+          photoUrl={person.photo_url || person.avatar_url}
+          firstName={person.first_name}
+          lastName={person.last_name}
+          className="w-16 h-16 rounded-2xl bg-surface-level2 border border-surface-level2 shadow-sm origin-center"
+        />
 
-        {/* Бейдж: Ассистент / Капитан (сверху справа, фон brand, меньше размером) */}
         {showBadges && (person.is_captain || person.is_assistant) && (
           <div className="absolute -top-1.5 -right-1.5 w-[20px] h-[20px] rounded-full bg-brand shadow-sm flex items-center justify-center text-[9px] font-black text-content-dark z-20">
             {person.is_captain ? 'К' : 'А'}
           </div>
         )}
 
-        {/* Бейдж: Игровой номер (снизу справа, матовое стекло) */}
         {showBadges && person.jersey_number != null && (
           <div className="absolute -bottom-1 -right-3 w-[32px] h-[32px] bg-brand-glow rounded-full backdrop-blur-[4px] border border-white/50 shadow-sm flex items-center justify-center text-[13px] font-black text-content-dark z-10">
             {person.jersey_number}
@@ -61,8 +47,6 @@ const PersonGridCard = ({ person, onClick, showBadges = false }) => {
 
 // --- КОМПОНЕНТ КАРТОЧКИ-ТАБЛИЦЫ ДЛЯ ВЗГЛЯДА "ШТАБ" ---
 const StaffTableCard = ({ person, onClick }) => {
-  const photoUrl = person.photo_url || person.avatar_url;
-  
   const roleDict = {
     'team_manager': 'Руководитель',
     'team_admin': 'Администратор',
@@ -85,15 +69,12 @@ const StaffTableCard = ({ person, onClick }) => {
       onClick={() => onClick(person)}
       className="flex items-center gap-3 bg-surface-level1 border border-surface-level2 rounded-2xl p-3 shadow-sm h-full cursor-pointer active:scale-[0.98] transition-transform w-full"
     >
-      <div className="w-16 h-16 shrink-0 rounded-2xl overflow-hidden bg-surface-level2 border border-surface-level2 shadow-sm">
-        {photoUrl ? (
-          <img src={getImageUrl(photoUrl)} alt="Аватар" className="w-full h-full object-cover pointer-events-none" />
-        ) : (
-          <div className="w-full h-full bg-brand/10 text-brand flex items-center justify-center text-sm font-bold pointer-events-none">
-            {getInitials(person.first_name, person.last_name)}
-          </div>
-        )}
-      </div>
+      <Avatar 
+        photoUrl={person.photo_url || person.avatar_url}
+        firstName={person.first_name}
+        lastName={person.last_name}
+        className="w-16 h-16 rounded-2xl bg-surface-level2 border border-surface-level2 shadow-sm"
+      />
       <div className="flex flex-col flex-1 justify-center">
         <span className="text-[13px] font-bold text-content-main leading-tight">
           {person.last_name}
@@ -130,7 +111,6 @@ export const MyTeamPage = () => {
   const carouselRef = useRef(null);
   const stickyHeaderRef = useRef(null);
   const rafRef = useRef(null);
-  const scrollTimeoutRef = useRef(null);
   const scrollContainerRef = useRef(null);
 
   useEffect(() => {
@@ -176,19 +156,14 @@ export const MyTeamPage = () => {
   useEffect(() => {
     return () => {
       if (rafRef.current) cancelAnimationFrame(rafRef.current);
-      if (scrollTimeoutRef.current) clearTimeout(scrollTimeoutRef.current);
     };
   }, []);
 
   useEffect(() => {
     if (scrollContainerRef.current) {
       const currentScroll = scrollContainerRef.current.scrollTop;
-      const CAROUSEL_TOTAL_HEIGHT = 168;
-      
-      if (currentScroll >= 120) {
-        scrollContainerRef.current.scrollTop = CAROUSEL_TOTAL_HEIGHT;
-      } else {
-        scrollContainerRef.current.scrollTop = 0;
+      if (currentScroll > 100) {
+        scrollContainerRef.current.scrollTo({ top: 130, behavior: 'auto' });
       }
     }
   }, [activeTab]);
@@ -220,49 +195,28 @@ export const MyTeamPage = () => {
     
     if (rafRef.current) cancelAnimationFrame(rafRef.current);
     rafRef.current = requestAnimationFrame(() => {
-      const isStuck = currentScroll > 120;
-      const isFullyCollapsed = currentScroll > 150; 
+      const isStuck = currentScroll > 110;
 
-      if (isFullyCollapsed) {
-        if (carouselRef.current && carouselRef.current.dataset.collapsed !== 'true') {
-          carouselRef.current.style.opacity = '0';
-          carouselRef.current.style.transform = 'translateY(60px) translateZ(0)';
-          carouselRef.current.dataset.collapsed = 'true';
-        }
-      } else {
-        if (carouselRef.current) {
-          carouselRef.current.dataset.collapsed = 'false';
-          carouselRef.current.style.opacity = Math.max(0, 1 - currentScroll / 120);
-          carouselRef.current.style.transform = `translateY(${currentScroll * 0.4}px) translateZ(0)`;
-        }
+      if (carouselRef.current) {
+        const opacity = Math.max(0, 1 - currentScroll / 60);
+        const translateY = currentScroll * 0.1;
+        carouselRef.current.style.opacity = opacity;
+        carouselRef.current.style.transform = `translateY(${translateY}px) translateZ(0)`;
       }
 
       if (stickyHeaderRef.current) {
         if (String(isStuck) !== stickyHeaderRef.current.dataset.stuck) {
           stickyHeaderRef.current.dataset.stuck = isStuck;
           if (isStuck) {
-            stickyHeaderRef.current.classList.add('backdrop-blur-md', 'shadow-sm');
+            stickyHeaderRef.current.classList.add('backdrop-blur-md', 'shadow-sm', 'bg-blue-900/5');
+            stickyHeaderRef.current.classList.remove('bg-transparent');
           } else {
-            stickyHeaderRef.current.classList.remove('backdrop-blur-md', 'shadow-sm');
+            stickyHeaderRef.current.classList.remove('backdrop-blur-md', 'shadow-sm', 'bg-blue-900/5');
+            stickyHeaderRef.current.classList.add('bg-transparent');
           }
         }
       }
     });
-
-    if (scrollTimeoutRef.current) clearTimeout(scrollTimeoutRef.current);
-    scrollTimeoutRef.current = setTimeout(() => {
-      if (!scrollContainerRef.current) return;
-      
-      const finalScroll = scrollContainerRef.current.scrollTop;
-      
-      if (finalScroll > 0 && finalScroll < 150) {
-        if (finalScroll < 75) {
-          scrollContainerRef.current.scrollTo({ top: 0, behavior: 'smooth' });
-        } else {
-          scrollContainerRef.current.scrollTo({ top: 168, behavior: 'smooth' });
-        }
-      }
-    }, 150);
   };
 
   const handlePersonClick = (person) => openRightPanel('userDetails', person, 'Профиль');
@@ -295,40 +249,25 @@ export const MyTeamPage = () => {
   return (
     <div 
       ref={scrollContainerRef}
-      className="h-full overflow-y-auto scrollbar-hide bg-surface-border animate-fade-in relative z-10"
+      className="h-full overflow-y-auto scrollbar-hide bg-surface-border animate-fade-in relative z-10 snap-y snap-proximity"
       onScroll={handleScroll}
     >
-      
-      {/* 1. БЛОК COVER FLOW КАРУСЕЛИ */}
       <div 
         ref={carouselRef}
-        data-collapsed="false"
-        className="relative bg-surface-base w-full h-[122px] mb-2 flex items-start justify-center overflow-hidden shrink-0 touch-pan-y shadow-md will-change-transform"
+        className="snap-start relative bg-surface-base w-full h-[122px] mb-2 flex items-start justify-center overflow-hidden shrink-0 touch-pan-y shadow-md will-change-transform"
         onTouchStart={handleTouchStart}
         onTouchEnd={handleTouchEnd}
       >
         {teams.map((team, index) => {
-          
           const offset = getOffset(index);
+          let x = 0; let scale = 1; let opacity = 1; let zIndex = 30;
           
-          let x = 0; 
-          let scale = 1; 
-          let opacity = 1; 
-          let zIndex = 30;
-          
-          if (offset === 0) {
-            x = 0; scale = 1; opacity = 1; zIndex = 30;
-          } else if (offset === 1) {
-            x = 80; scale = 0.75; opacity = 0.5; zIndex = 20;
-          } else if (offset === -1) {
-            x = -80; scale = 0.75; opacity = 0.5; zIndex = 20;
-          } else if (offset === 2) {
-            x = 145; scale = 0.75; opacity = 0.5; zIndex = 10;
-          } else if (offset === -2) {
-            x = -145; scale = 0.75; opacity = 0.5; zIndex = 10;
-          } else {
-            x = offset > 0 ? 180 : -180; scale = 0.3; opacity = 0; zIndex = 0;
-          }
+          if (offset === 0) { x = 0; scale = 1; opacity = 1; zIndex = 30; }
+          else if (offset === 1) { x = 80; scale = 0.75; opacity = 0.5; zIndex = 20; }
+          else if (offset === -1) { x = -80; scale = 0.75; opacity = 0.5; zIndex = 20; }
+          else if (offset === 2) { x = 145; scale = 0.75; opacity = 0.5; zIndex = 10; }
+          else if (offset === -2) { x = -145; scale = 0.75; opacity = 0.5; zIndex = 10; }
+          else { x = offset > 0 ? 180 : -180; scale = 0.3; opacity = 0; zIndex = 0; }
 
           return (
             <div
@@ -362,11 +301,10 @@ export const MyTeamPage = () => {
         })}
       </div>
 
-      {/* 2. ПЕРЕКЛЮЧАТЕЛЬ ЧИПСОВ */}
       <div 
         ref={stickyHeaderRef}
         data-stuck="false"
-        className="sticky top-0 z-40 px-5 shrink-0 transition-all duration-300 ease-in-out border-b border-surface-level2"
+        className="snap-start sticky top-0 z-40 px-5 shrink-0 transition-all duration-300 ease-in-out border-b border-surface-level2 bg-transparent"
       >
         <ChipTabs 
           tabs={TEAM_TABS}
@@ -376,7 +314,6 @@ export const MyTeamPage = () => {
         />
       </div>
 
-      {/* 3. КОНТЕНТ */}
       <div className="w-full overflow-hidden pt-4 min-h-screen pb-[30vh]">
         {isLoading ? (
           <div className="flex justify-center items-center h-32 text-brand font-black animate-pulse uppercase tracking-widest text-sm">Загрузка...</div>
@@ -385,8 +322,6 @@ export const MyTeamPage = () => {
             className="flex w-[300%] transition-transform duration-500 ease-[cubic-bezier(0.32,0.72,0,1)] items-start"
             style={{ transform: `translateX(${translateX})` }}
           >
-            
-            {/* ПАНЕЛЬ 1: ВСЕ (БЕЗ БЕЙДЖЕЙ) */}
             <div className="w-1/3 shrink-0 px-5 transition-opacity duration-500" style={{ opacity: activeTab === 'all' ? 1 : 0.3 }}>
               <div className="grid grid-cols-[repeat(auto-fill,minmax(100px,1fr))] gap-y-5 gap-x-2 justify-items-center">
                 {allMembers.map(m => (
@@ -395,7 +330,6 @@ export const MyTeamPage = () => {
               </div>
             </div>
 
-            {/* ПАНЕЛЬ 2: СОСТАВ (С БЕЙДЖАМИ) */}
             <div className="w-1/3 shrink-0 px-1 transition-opacity duration-500" style={{ opacity: activeTab === 'roster' ? 1 : 0.3 }}>
               <div className="flex flex-col gap-10">
                 {[
@@ -419,7 +353,6 @@ export const MyTeamPage = () => {
               </div>
             </div>
 
-            {/* ПАНЕЛЬ 3: ШТАБ */}
             <div className="w-1/3 shrink-0 px-5 transition-opacity duration-500" style={{ opacity: activeTab === 'staff' ? 1 : 0.3 }}>
               <div className="grid grid-cols-1 auto-rows-fr gap-3 w-full">
                 {teamData.staff?.map(s => (
@@ -427,7 +360,6 @@ export const MyTeamPage = () => {
                 ))}
               </div>
             </div>
-
           </div>
         )}
       </div>

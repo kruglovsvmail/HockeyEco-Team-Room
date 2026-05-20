@@ -21,8 +21,8 @@ export const getAvailableRoster = async (req, res) => {
     const { stage_type, division_id } = gameCheck.rows[0];
     let rosterRows = [];
 
+    // ДОБАВЛЕНО: tr.is_captain и tr.is_assistant для обоих типов турниров
     if ((stage_type === 'regular' || stage_type === 'playoff') && division_id) {
-      // ИЗМЕНЕНО: Добавлен LEFT JOIN с team_members для получения фото в форме (team_photo)
       const officialQuery = `
         SELECT 
           u.id AS user_id,
@@ -32,6 +32,8 @@ export const getAvailableRoster = async (req, res) => {
           tm.photo_url AS team_photo,
           tr.position,
           tr.jersey_number,
+          tr.is_captain,
+          tr.is_assistant,
           EXISTS (
             SELECT 1 FROM disqualifications dq 
             WHERE dq.tournament_roster_id = tr.id AND dq.status = 'active'
@@ -49,7 +51,6 @@ export const getAvailableRoster = async (req, res) => {
       const result = await pool.query(officialQuery, [division_id, teamId]);
       rosterRows = result.rows;
     } else {
-      // ИЗМЕНЕНО: Добавлена выборка tm.photo_url
       const friendlyQuery = `
         SELECT 
           u.id AS user_id,
@@ -59,6 +60,8 @@ export const getAvailableRoster = async (req, res) => {
           tm.photo_url AS team_photo,
           tr.position,
           tr.jersey_number,
+          tr.is_captain,
+          tr.is_assistant,
           false AS is_disqualified
         FROM team_rosters tr
         JOIN team_members tm ON tr.member_id = tm.id

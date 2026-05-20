@@ -1,7 +1,7 @@
 import express from 'express';
 import { getEvents } from '../controllers/EventInfoController.js';
 import { toggleEventAttendance, getEventAttendance, getAvailableRoster } from '../controllers/EventAttendanceController.js';
-import { getMatchLines, saveMatchLines } from '../controllers/EventLinesController.js';
+import { getMatchLines, saveMatchLines, submitMatchRoster } from '../controllers/EventLinesController.js';
 import { verifyToken } from '../middleware/auth.js';
 
 const router = express.Router();
@@ -18,10 +18,13 @@ router.get('/:eventId/available-roster', verifyToken, getAvailableRoster);
 // Переключить статус присутствия на событии (тумблер)
 router.post('/:eventId/attendance', verifyToken, toggleEventAttendance);
 
-// Получить опубликованные пятерки на матч
+// Получить опубликованные пятерки на матч (черновик)
 router.get('/:eventId/lines', verifyToken, getMatchLines);
 
-// Сохранить (опубликовать) пятерки на матч
+// Сохранить черновик пятерок на матч
 router.post('/:eventId/lines', verifyToken, saveMatchLines);
+
+// Отправить официальную заявку в лигу
+router.post('/:eventId/submit-roster', verifyToken, submitMatchRoster);
 
 export default router;

@@ -1,7 +1,7 @@
 import React from 'react';
 import { NavLink } from 'react-router-dom';
 import { Icon } from '../ui/Icon';
-import { getImageUrl } from '../utils/helpers';
+import { Avatar } from '../ui/Avatar';
 
 // Конфигурация пунктов меню
 const MENU_ITEMS = [
@@ -52,20 +52,13 @@ export function Sidebar({ user, onLogout, onClose }) {
         onClick={onClose}
         className="shrink-0 p-4 border-t border-surface-border flex items-center gap-4 bg-surface-level1 hover:bg-surface-level2 transition-colors outline-none cursor-pointer"
       >
-        {/* Аватарка */}
-        <div className="w-10 h-10 shrink-0 rounded-xl bg-surface-base border border-surface-border flex items-center justify-center overflow-hidden shadow-inner">
-           {user?.avatarUrl ? (
-              <img 
-                src={getImageUrl(user.avatarUrl)} 
-                alt="Аватар" 
-                className="w-full h-full object-cover" 
-              />
-           ) : (
-              <span className="text-xl font-black text-brand uppercase">
-                {user?.lastName?.charAt(0)}{user?.firstName?.charAt(0)}
-              </span>
-           )}
-        </div>
+        <Avatar 
+          photoUrl={user?.avatarUrl}
+          firstName={user?.firstName}
+          lastName={user?.lastName}
+          className="w-10 h-10 rounded-xl bg-surface-base border border-surface-border shadow-inner"
+          fallbackClassName="text-xl text-brand uppercase"
+        />
         
         {/* Данные */}
         <div className="flex flex-col min-w-0">

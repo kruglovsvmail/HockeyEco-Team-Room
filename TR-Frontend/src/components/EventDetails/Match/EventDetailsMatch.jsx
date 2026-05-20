@@ -6,7 +6,6 @@ import { ChipTabs } from '../../../ui/ChipTabs';
 import { MatchInfo } from './MatchInfo';
 
 // Применяем ленивую загрузку с сохранением именованных экспортов.
-// Эти компоненты не попадут в основной бандл и загрузятся только при необходимости.
 const MatchAttendance = lazy(() => import('./MatchAttendance').then(module => ({ default: module.MatchAttendance })));
 const MatchLines = lazy(() => import('./MatchLines').then(module => ({ default: module.MatchLines })));
 const MatchProtocol = lazy(() => import('./MatchProtocol').then(module => ({ default: module.MatchProtocol })));
@@ -28,32 +27,27 @@ export const EventDetailsMatch = ({ event }) => {
   const matchupHeaderRef = useRef(null);
   const stickyTabsRef = useRef(null);
   const rafRef = useRef(null);
-  const scrollTimeoutRef = useRef(null);
 
   useEffect(() => {
     return () => {
       if (rafRef.current) cancelAnimationFrame(rafRef.current);
-      if (scrollTimeoutRef.current) clearTimeout(scrollTimeoutRef.current);
     };
   }, []);
 
-  // Умный сброс скролла при переключении вкладок
+  // Умный сброс скролла при переключении вкладок (исправлена диагональная анимация)
   useEffect(() => {
     if (scrollContainerRef.current) {
       const currentScroll = scrollContainerRef.current.scrollTop;
-      const HEADER_TOTAL_HEIGHT = 165; 
-      
-      if (currentScroll >= 120) {
-        scrollContainerRef.current.scrollTop = HEADER_TOTAL_HEIGHT;
-      } else {
-        scrollContainerRef.current.scrollTop = 0;
+      if (currentScroll > 110) {
+        // behavior: 'auto' убирает диагональный эффект, делая моментальный прыжок по Y
+        scrollContainerRef.current.scrollTo({ top: 140, behavior: 'auto' });
       }
     }
   }, [activeTab]);
 
   if (!event) return null;
 
-  // --- ВЫЧИСЛЕНИЯ ДЛЯ ШАПКИ МАТЧА (ОРИГИНАЛЬНАЯ ЛОГИКА) ---
+  // --- ВЫЧИСЛЕНИЯ ДЛЯ ШАПКИ МАТЧА ---
   const isHome = event.my_team_id === event.home_team_id;
   const homeName = isHome ? event.my_team_name : (event.opponent_name || 'Неизвестно');
   const awayName = isHome ? (event.opponent_name || 'Неизвестно') : event.my_team_name;
@@ -120,66 +114,43 @@ export const EventDetailsMatch = ({ event }) => {
     }
   }
 
-  // --- ОБРАБОТЧИК СКРОЛЛА С ПАРАЛЛАКСОМ И ДОВОДЧИКОМ ---
+  // --- ОБРАБОТЧИК СКРОЛЛА: Ускоренный визуальный эффект ---
   const handleScroll = (e) => {
     const currentScroll = e.target.scrollTop;
 
     if (rafRef.current) cancelAnimationFrame(rafRef.current);
     rafRef.current = requestAnimationFrame(() => {
-      const isStuck = currentScroll > 130;
-      const isFullyCollapsed = currentScroll > 160; 
+      const isStuck = currentScroll > 110;
 
-      // Плавное скрытие оригинальной панели противостояния
-      if (isFullyCollapsed) {
-        if (matchupHeaderRef.current && matchupHeaderRef.current.dataset.collapsed !== 'true') {
-          matchupHeaderRef.current.style.opacity = '0';
-          matchupHeaderRef.current.style.transform = 'translateY(50px) translateZ(0)';
-          matchupHeaderRef.current.dataset.collapsed = 'true';
-        }
-      } else {
-        if (matchupHeaderRef.current) {
-          matchupHeaderRef.current.dataset.collapsed = 'false';
-          matchupHeaderRef.current.style.opacity = Math.max(0, 1 - currentScroll / 130);
-          matchupHeaderRef.current.style.transform = `translateY(${currentScroll * 0.4}px) translateZ(0)`;
-        }
+      // Ускоряем скрытие: затухает к 60px и уезжает быстрее
+      if (matchupHeaderRef.current) {
+        const opacity = Math.max(0, 1 - currentScroll / 80);
+        const translateY = currentScroll * 0.1;
+        matchupHeaderRef.current.style.opacity = opacity;
+        matchupHeaderRef.current.style.transform = `translateY(${translateY}px) translateZ(0)`;
       }
 
       // Эффект матового стекла на прилипшей плашке чипсов
       if (stickyTabsRef.current) {
         if (String(isStuck) !== stickyTabsRef.current.dataset.stuck) {
           stickyTabsRef.current.dataset.stuck = isStuck;
-
           if (isStuck) {
-            stickyTabsRef.current.classList.add('backdrop-blur-md', 'shadow-sm');
-          } else {
-            stickyTabsRef.current.classList.remove('backdrop-blur-md', 'shadow-sm');
-          }
+  // Добавляем размытие, тень и 5% темного-синего цвета
+  stickyTabsRef.current.classList.add('backdrop-blur-md', 'shadow-sm', 'bg-brand-opacity/20'); 
+  stickyTabsRef.current.classList.remove('bg-transparent');
+} else {
+  // Убираем эффекты, возвращаем полную прозрачность
+  stickyTabsRef.current.classList.remove('backdrop-blur-md', 'shadow-sm', 'bg-brand-opacity/20');
+  stickyTabsRef.current.classList.add('bg-transparent');
+}
         }
       }
     });
-
-    // Авто-доводчик положения скролла
-    if (scrollTimeoutRef.current) clearTimeout(scrollTimeoutRef.current);
-
-    scrollTimeoutRef.current = setTimeout(() => {
-      if (!scrollContainerRef.current) return;
-      
-      const finalScroll = scrollContainerRef.current.scrollTop;
-      if (finalScroll > 0 && finalScroll < 125) {
-        if (finalScroll < 100) {
-          scrollContainerRef.current.scrollTo({ top: 0, behavior: 'smooth' });
-        } else {
-          scrollContainerRef.current.scrollTo({ top: 130, behavior: 'smooth' });
-        }
-      }
-    }, 150);
   };
 
-  // Вычисляем индекс для сдвига слайдера (0 до 4)
   const tabIndex = MATCH_TABS.findIndex(t => t.id === activeTab);
-  const translateX = `-${tabIndex * 20}%`; // Каждый таб занимает 20% от ширины контейнера 500%
+  const translateX = `-${tabIndex * 20}%`;
 
-  // Универсальный лоадер для ленивых компонентов
   const TabFallback = () => (
     <div className="flex justify-center items-center h-48">
       <span className="text-[11px] font-black text-content-muted uppercase tracking-widest animate-pulse">
@@ -192,14 +163,13 @@ export const EventDetailsMatch = ({ event }) => {
     <div 
       ref={scrollContainerRef}
       onScroll={handleScroll}
-      className="h-full overflow-y-auto scrollbar-hide bg-surface-border relative z-10"
+      className="h-full overflow-y-auto scrollbar-hide bg-surface-border relative z-10 snap-y snap-proximity"
     >
       
-      {/* 1. БЛОК ШАПКИ (ОРИГИНАЛЬНОЕ ПРОТИВОСТОЯНИЕ С АНИМАЦИЕЙ) */}
+      {/* 1. БЛОК ШАПКИ (Точка примагничивания 1) */}
       <div 
         ref={matchupHeaderRef}
-        data-collapsed="false"
-        className="bg-surface-base shadow-sm shrink-0 pt-4 pb-6 will-change-transform z-20 relative"
+        className="snap-start bg-surface-base shadow-sm shrink-0 pt-4 pb-6 will-change-transform z-20 relative"
       >
         <div className="flex items-start justify-between px-6">
         
@@ -278,11 +248,11 @@ export const EventDetailsMatch = ({ event }) => {
         </div>
       </div>
 
-      {/* 2. ЗАКРЕПЛЕННЫЕ ЧИПСЫ-МЕНЮ */}
+      {/* 2. ЗАКРЕПЛЕННЫЕ ЧИПСЫ-МЕНЮ (Точка примагничивания 2) */}
       <div 
         ref={stickyTabsRef}
         data-stuck="false"
-        className="sticky top-0 z-40 shrink-0 transition-all duration-300 ease-in-out border-b border-surface-level2"
+        className="snap-start sticky top-0 z-40 shrink-0 transition-all duration-300 ease-in-out border-b border-surface-level2"
       >
         <ChipTabs 
           tabs={MATCH_TABS} 
@@ -299,7 +269,6 @@ export const EventDetailsMatch = ({ event }) => {
           style={{ transform: `translateX(${translateX})` }}
         >
           
-          {/* ВКЛАДКА 1: ИНФО (Осталась статичной) */}
           <div 
             className="w-1/5 shrink-0 px-4 transition-opacity duration-500"
             style={{ opacity: activeTab === 'info' ? 1 : 0.3 }}
@@ -307,8 +276,6 @@ export const EventDetailsMatch = ({ event }) => {
             <MatchInfo event={event} />
           </div>
 
-          {/* ВКЛАДКА 2: ОТМЕТКИ (Ленивая) */}
-          {/* Если условие && не выполнено, компонент не рендерится и скрипт не скачивается */}
           <div 
             className="w-1/5 shrink-0 px-4 transition-opacity duration-500"
             style={{ opacity: activeTab === 'attendance' ? 1 : 0.3 }}
@@ -318,7 +285,6 @@ export const EventDetailsMatch = ({ event }) => {
             </Suspense>
           </div>
 
-          {/* ВКЛАДКА 3: ПЯТЕРКИ (Ленивая) */}
           <div 
             className="w-1/5 shrink-0 px-4 transition-opacity duration-500"
             style={{ opacity: activeTab === 'lines' ? 1 : 0.3 }}
@@ -328,7 +294,6 @@ export const EventDetailsMatch = ({ event }) => {
             </Suspense>
           </div>
 
-          {/* ВКЛАДКА 4: ХОД МАТЧА (Ленивая) */}
           <div 
             className="w-1/5 shrink-0 px-4 transition-opacity duration-500"
             style={{ opacity: activeTab === 'events' ? 1 : 0.3 }}
@@ -338,7 +303,6 @@ export const EventDetailsMatch = ({ event }) => {
             </Suspense>
           </div>
 
-          {/* ВКЛАДКА 5: СТАТИСТИКА (Ленивая) */}
           <div 
             className="w-1/5 shrink-0 px-4 transition-opacity duration-500"
             style={{ opacity: activeTab === 'stats' ? 1 : 0.3 }}

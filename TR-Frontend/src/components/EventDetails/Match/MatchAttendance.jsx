@@ -5,13 +5,8 @@ import { ButtonLP } from '../../../ui/Button-LP';
 import { SectionHeader } from '../../../ui/SectionHeader';
 import { useAccess } from '../../../hooks/useAccess';
 import { ROLES, PERMISSIONS } from '../../../utils/permissions';
+import { Avatar } from '../../../ui/Avatar';
 import clsx from 'clsx';
-
-const getInitials = (firstName, lastName) => {
-  const f = firstName ? firstName.charAt(0).toUpperCase() : '';
-  const l = lastName ? lastName.charAt(0).toUpperCase() : '';
-  return `${l}${f}` || '?';
-};
 
 const getSafeUserFromToken = () => {
   try {
@@ -41,7 +36,6 @@ export const MatchAttendance = ({ event }) => {
   const [isEditMode, setIsEditMode] = useState(false);
   const [userToRemove, setUserToRemove] = useState(null); 
   
-  // Состояния для Оптимистичного UI и анимаций
   const [animatingInId, setAnimatingInId] = useState(null);
   const [animatingOutId, setAnimatingOutId] = useState(null);
 
@@ -124,12 +118,9 @@ export const MatchAttendance = ({ event }) => {
     if (event?.my_team_id && event?.event_id) {
       fetchSmartRosterAndAccess();
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [event?.my_team_id, event?.event_id]);
 
-  // ОПТИМИСТИЧНОЕ ДОБАВЛЕНИЕ ИГРОКА
   const handleMarkUser = async (playerObj) => {
-    // 1. Формируем объект для мгновенной отрисовки
     const newAttendee = {
       id: playerObj.user_id,
       first_name: playerObj.first_name,
@@ -138,15 +129,12 @@ export const MatchAttendance = ({ event }) => {
       avatar_url: playerObj.avatar_url
     };
 
-    // 2. Сразу обновляем UI и закрываем шторку
     setAttendees(prev => [...prev, newAttendee]);
     setAnimatingInId(newAttendee.id);
     setIsSheetOpen(false);
 
-    // Снимаем класс анимации после ее завершения
     setTimeout(() => setAnimatingInId(null), 300);
 
-    // 3. Отправляем запрос в фоне
     try {
       const apiUrl = import.meta.env.VITE_API_URL || '';
       await fetch(`${apiUrl}/api/events/${event.event_id}/attendance`, {
@@ -159,35 +147,28 @@ export const MatchAttendance = ({ event }) => {
           targetUserId: playerObj.user_id
         })
       });
-
-      // Тихо обновляем данные для страховки
       fetchAttendance();
     } catch (err) {
       console.error('Ошибка при отметке игрока:', err);
-      fetchAttendance(); // Откатываем UI в случае реальной ошибки сети
+      fetchAttendance(); 
     }
   };
 
-  // ОПТИМИСТИЧНОЕ УДАЛЕНИЕ ИГРОКА
   const confirmRemoveUser = async () => {
     if (!userToRemove) return;
     const targetUserId = userToRemove.id;
     
-    // 1. Закрываем шторку и запускаем анимацию исчезновения
     setUserToRemove(null);
     setAnimatingOutId(targetUserId);
 
-    // 2. Ждем окончания анимации (200ms), затем удаляем из локального массива
     setTimeout(async () => {
       setAttendees(prev => {
         const newAttendees = prev.filter(u => u.id !== targetUserId);
-        // Если удалили последнего - выключаем режим редактирования
         if (newAttendees.length === 0) setIsEditMode(false);
         return newAttendees;
       });
       setAnimatingOutId(null);
 
-      // 3. Отправляем запрос в фоне
       try {
         const apiUrl = import.meta.env.VITE_API_URL || '';
         await fetch(`${apiUrl}/api/events/${event.event_id}/attendance`, {
@@ -200,12 +181,10 @@ export const MatchAttendance = ({ event }) => {
             targetUserId: targetUserId
           })
         });
-        
-        // Тихо обновляем данные для страховки
         fetchAttendance(); 
       } catch (err) {
         console.error('Ошибка при удалении игрока:', err);
-        fetchAttendance(); // Откатываем UI
+        fetchAttendance(); 
       }
     }, 200);
   };
@@ -255,7 +234,6 @@ export const MatchAttendance = ({ event }) => {
           .jiggle-delay-1 { animation-delay: 0.1s; }
           .jiggle-delay-2 { animation-delay: 0.2s; }
 
-          /* Оптимизированные анимации масштабирования с GPU-ускорением */
           @keyframes slotEnter {
             0% { transform: scale(0.2) translateZ(0); opacity: 0; }
             100% { transform: scale(1) translateZ(0); opacity: 1; }
@@ -296,7 +274,6 @@ export const MatchAttendance = ({ event }) => {
               const isRemoving = attendeeUser.id === animatingOutId;
               const isEntering = attendeeUser.id === animatingInId;
               
-              // Если элемент удаляется - не трясем его
               const jiggleClass = isEditMode && canRemove && !isRemoving ? `animate-jiggle jiggle-delay-${index % 3}` : '';
 
               return (
@@ -310,22 +287,17 @@ export const MatchAttendance = ({ event }) => {
                   className={`flex flex-col items-center gap-1.5 select-none w-full ${jiggleClass}`}
                 >
                   <div className="relative">
-                    {/* Применяем анимации к обертке аватара */}
-                    <div className={clsx(
-                      "w-16 h-16 shrink-0 rounded-2xl overflow-hidden bg-surface-level2 border border-surface-level2 shadow-sm origin-center",
-                      isRemoving && "animate-slot-exit",
-                      isEntering && "animate-slot-enter"
-                    )}>
-                      {photoUrl ? (
-                        <img src={getImageUrl(photoUrl)} alt="Аватар" className="w-full h-full object-cover pointer-events-none" />
-                      ) : (
-                        <div className="w-full h-full bg-brand/10 text-brand flex items-center justify-center text-sm font-bold pointer-events-none">
-                          {getInitials(attendeeUser.first_name, attendeeUser.last_name)}
-                        </div>
+                    <Avatar 
+                      photoUrl={photoUrl}
+                      firstName={attendeeUser.first_name}
+                      lastName={attendeeUser.last_name}
+                      className={clsx(
+                        "w-16 h-16 rounded-2xl bg-surface-level2 border border-surface-level2 shadow-sm origin-center",
+                        isRemoving && "animate-slot-exit",
+                        isEntering && "animate-slot-enter"
                       )}
-                    </div>
+                    />
                     
-                    {/* Прячем красный крестик сразу, как только нажали "Удалить" (isRemoving) */}
                     {isEditMode && canRemove && !isRemoving && (
                       <button 
                         onClick={(e) => {
@@ -341,7 +313,6 @@ export const MatchAttendance = ({ event }) => {
                     )}
                   </div>
 
-                  {/* Имя тоже плавно исчезает за счет родительского контейнера или остается на 200мс — выглядит органично */}
                   <div className="w-full text-center px-0.5">
                     <span className="text-[13px] font-bold text-content-main leading-tight break-words block pointer-events-none">
                       {attendeeUser.last_name}
@@ -376,15 +347,12 @@ export const MatchAttendance = ({ event }) => {
                 return (
                   <div key={player.user_id} className="flex items-center justify-between p-3 bg-surface-level2 rounded-xl">
                     <div className="flex items-center gap-3">
-                      <div className="w-10 h-10 shrink-0 rounded-xl overflow-hidden bg-surface-level1 border border-surface-border">
-                        {photoUrl ? (
-                          <img src={getImageUrl(photoUrl)} alt="Аватар" className="w-full h-full object-cover" />
-                        ) : (
-                          <div className="w-full h-full bg-brand/10 flex items-center justify-center text-xs font-bold text-brand">
-                            {getInitials(player.first_name, player.last_name)}
-                          </div>
-                        )}
-                      </div>
+                      <Avatar 
+                        photoUrl={photoUrl}
+                        firstName={player.first_name}
+                        lastName={player.last_name}
+                        className="w-10 h-10 rounded-xl bg-surface-level1 border border-surface-border"
+                      />
                       <div className="flex flex-col">
                         <span className="text-[12px] font-bold text-content-main">
                           {player.last_name} {player.first_name}
@@ -403,7 +371,7 @@ export const MatchAttendance = ({ event }) => {
                       </span>
                     ) : (
                       <ButtonLP
-                        onClick={() => handleMarkUser(player)} // Передаем полный объект игрока!
+                        onClick={() => handleMarkUser(player)}
                         variant="primary"
                         className="!w-auto !py-1.5 !px-3 !text-[10px] ml-2 shrink-0"
                       >

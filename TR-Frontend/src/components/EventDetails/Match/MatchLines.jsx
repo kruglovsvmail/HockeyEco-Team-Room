@@ -5,13 +5,8 @@ import { ButtonLP } from '../../../ui/Button-LP';
 import { SectionHeader } from '../../../ui/SectionHeader';
 import { useAccess } from '../../../hooks/useAccess';
 import { ROLES, PERMISSIONS } from '../../../utils/permissions';
+import { Avatar } from '../../../ui/Avatar';
 import clsx from 'clsx';
-
-const getInitials = (firstName, lastName) => {
-  const f = firstName ? firstName.charAt(0).toUpperCase() : '';
-  const l = lastName ? lastName.charAt(0).toUpperCase() : '';
-  return `${l}${f}` || '?';
-};
 
 const getSafeUserFromToken = () => {
   try {
@@ -29,7 +24,6 @@ const getSafeUserFromToken = () => {
   }
 };
 
-// Жесткая очистка кэша от любых вариантов русских букв с предохранителем
 const sanitizePosition = (pos) => {
   const upperPos = String(pos).toUpperCase();
   const map = {
@@ -42,7 +36,6 @@ const sanitizePosition = (pos) => {
   
   const sanitized = map[upperPos] || upperPos;
   
-  // Железный предохранитель для БД: если ключ всё равно кривой, ставим дефолт
   const validKeys = ['LW', 'C', 'RW', 'LD', 'RD', 'G'];
   return validKeys.includes(sanitized) ? sanitized : 'LW';
 };
@@ -132,7 +125,6 @@ export const MatchLines = ({ event }) => {
         if (access && cached) {
           try {
             const parsedCache = JSON.parse(cached);
-            // Очищаем кэш от битых позиций
             const sanitizedCache = parsedCache.map(l => ({
               ...l,
               position_in_line: sanitizePosition(l.position_in_line)
@@ -385,21 +377,16 @@ export const MatchLines = ({ event }) => {
         )}>
           {player ? (
             <>
-              <div 
-                key={player.player_id}
+              <Avatar 
+                photoUrl={playerImage}
+                firstName={player.first_name}
+                lastName={player.last_name}
                 className={clsx(
-                  "w-full h-full rounded-3xl overflow-hidden origin-center",
+                  "w-full h-full rounded-3xl origin-center",
                   isRemoving ? "animate-slot-exit" : (userInteracted ? "animate-slot-enter" : "")
                 )}
-              >
-                {playerImage ? (
-                   <img src={getImageUrl(playerImage)} alt="" className="w-full h-full object-cover pointer-events-none" />
-                ) : (
-                   <div className="w-full h-full bg-surface-level2 text-content-main flex items-center justify-center text-[12px] font-bold pointer-events-none">
-                     {getInitials(player.first_name, player.last_name)}
-                   </div>
-                )}
-              </div>
+                fallbackClassName="bg-surface-level2 text-content-main text-[12px]"
+              />
               
               {isDeleteMode && !isRemoving && (
                 <button 
@@ -609,7 +596,7 @@ export const MatchLines = ({ event }) => {
             </div>
           </div>
 
-          <div className="flex justify-center items-center gap-2">
+          <div className="flex justify-center items-center gap-2 mt-2">
             {[0, 1, 2, 3, 4].map((index) => (
               <button
                 key={`dot-${index}`}
@@ -621,7 +608,7 @@ export const MatchLines = ({ event }) => {
               >
                 <div
                   className={clsx(
-                    "h-2 rounded-full transition-all duration-300 ease-out opacity-80",
+                    "h-2 rounded-full transition-all duration-300 ease-out opacity-50",
                     currentSlide === index ? "w-10 bg-surface-level1" : "w-2 border border-surface-level1 bg-surface-border hover:bg-surface-border"
                   )}
                 />
