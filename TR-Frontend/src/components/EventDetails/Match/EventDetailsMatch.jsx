@@ -1,13 +1,16 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, Suspense, lazy } from 'react';
 import { getImageUrl } from '../../../utils/helpers';
 import { Icon } from '../../../ui/Icon';
 import { ChipTabs } from '../../../ui/ChipTabs';
 
 import { MatchInfo } from './MatchInfo';
-import { MatchAttendance } from './MatchAttendance';
-import { MatchLines } from './MatchLines';
-import { MatchProtocol } from './MatchProtocol';
-import { MatchStats } from './MatchStats';
+
+// Применяем ленивую загрузку с сохранением именованных экспортов.
+// Эти компоненты не попадут в основной бандл и загрузятся только при необходимости.
+const MatchAttendance = lazy(() => import('./MatchAttendance').then(module => ({ default: module.MatchAttendance })));
+const MatchLines = lazy(() => import('./MatchLines').then(module => ({ default: module.MatchLines })));
+const MatchProtocol = lazy(() => import('./MatchProtocol').then(module => ({ default: module.MatchProtocol })));
+const MatchStats = lazy(() => import('./MatchStats').then(module => ({ default: module.MatchStats })));
 
 // Конфигурация табов
 const MATCH_TABS = [
@@ -54,10 +57,8 @@ export const EventDetailsMatch = ({ event }) => {
   const isHome = event.my_team_id === event.home_team_id;
   const homeName = isHome ? event.my_team_name : (event.opponent_name || 'Неизвестно');
   const awayName = isHome ? (event.opponent_name || 'Неизвестно') : event.my_team_name;
-  
   const homeLogo = isHome ? event.my_team_logo_url : event.opponent_logo_url;
   const awayLogo = isHome ? event.opponent_logo_url : event.my_team_logo_url;
-
   const isFinished = event.status === 'finished';
 
   let matchStatusText = '';
@@ -122,7 +123,7 @@ export const EventDetailsMatch = ({ event }) => {
   // --- ОБРАБОТЧИК СКРОЛЛА С ПАРАЛЛАКСОМ И ДОВОДЧИКОМ ---
   const handleScroll = (e) => {
     const currentScroll = e.target.scrollTop;
-    
+
     if (rafRef.current) cancelAnimationFrame(rafRef.current);
     rafRef.current = requestAnimationFrame(() => {
       const isStuck = currentScroll > 130;
@@ -147,6 +148,7 @@ export const EventDetailsMatch = ({ event }) => {
       if (stickyTabsRef.current) {
         if (String(isStuck) !== stickyTabsRef.current.dataset.stuck) {
           stickyTabsRef.current.dataset.stuck = isStuck;
+
           if (isStuck) {
             stickyTabsRef.current.classList.add('backdrop-blur-md', 'shadow-sm');
           } else {
@@ -158,6 +160,7 @@ export const EventDetailsMatch = ({ event }) => {
 
     // Авто-доводчик положения скролла
     if (scrollTimeoutRef.current) clearTimeout(scrollTimeoutRef.current);
+
     scrollTimeoutRef.current = setTimeout(() => {
       if (!scrollContainerRef.current) return;
       
@@ -175,6 +178,15 @@ export const EventDetailsMatch = ({ event }) => {
   // Вычисляем индекс для сдвига слайдера (0 до 4)
   const tabIndex = MATCH_TABS.findIndex(t => t.id === activeTab);
   const translateX = `-${tabIndex * 20}%`; // Каждый таб занимает 20% от ширины контейнера 500%
+
+  // Универсальный лоадер для ленивых компонентов
+  const TabFallback = () => (
+    <div className="flex justify-center items-center h-48">
+      <span className="text-[11px] font-black text-content-muted uppercase tracking-widest animate-pulse">
+        Загрузка...
+      </span>
+    </div>
+  );
 
   return (
     <div 
@@ -242,7 +254,7 @@ export const EventDetailsMatch = ({ event }) => {
                 )}
               </div>
             ) : (
-               <div className="flex flex-col items-center">
+                <div className="flex flex-col items-center">
                 <span className="text-2xl font-black text-content-muted tracking-widest">
                   -- : --
                 </span>
@@ -280,14 +292,14 @@ export const EventDetailsMatch = ({ event }) => {
         />
       </div>
 
-      {/* 3. КОНТЕНТНАЯ ЧАСТЬ (Единый внешний скролл, внутренние отключены) */}
+      {/* 3. КОНТЕНТНАЯ ЧАСТЬ */}
       <div className="w-full overflow-hidden pt-2 min-h-screen pb-[30vh]">
         <div 
           className="flex w-[500%] transition-transform duration-500 ease-[cubic-bezier(0.32,0.72,0,1)] items-start"
           style={{ transform: `translateX(${translateX})` }}
         >
           
-          {/* ВКЛАДКА 1: ИНФО */}
+          {/* ВКЛАДКА 1: ИНФО (Осталась статичной) */}
           <div 
             className="w-1/5 shrink-0 px-4 transition-opacity duration-500"
             style={{ opacity: activeTab === 'info' ? 1 : 0.3 }}
@@ -295,36 +307,45 @@ export const EventDetailsMatch = ({ event }) => {
             <MatchInfo event={event} />
           </div>
 
-          {/* ВКЛАДКА 2: ОТМЕТКИ */}
+          {/* ВКЛАДКА 2: ОТМЕТКИ (Ленивая) */}
+          {/* Если условие && не выполнено, компонент не рендерится и скрипт не скачивается */}
           <div 
             className="w-1/5 shrink-0 px-4 transition-opacity duration-500"
             style={{ opacity: activeTab === 'attendance' ? 1 : 0.3 }}
           >
-            <MatchAttendance event={event} />
+            <Suspense fallback={<TabFallback />}>
+              {activeTab === 'attendance' && <MatchAttendance event={event} />}
+            </Suspense>
           </div>
 
-          {/* ВКЛАДКА 3: ПЯТЕРКИ */}
+          {/* ВКЛАДКА 3: ПЯТЕРКИ (Ленивая) */}
           <div 
             className="w-1/5 shrink-0 px-4 transition-opacity duration-500"
             style={{ opacity: activeTab === 'lines' ? 1 : 0.3 }}
           >
-            <MatchLines event={event} />
+            <Suspense fallback={<TabFallback />}>
+              {activeTab === 'lines' && <MatchLines event={event} />}
+            </Suspense>
           </div>
 
-          {/* ВКЛАДКА 4: ХОД МАТЧА */}
+          {/* ВКЛАДКА 4: ХОД МАТЧА (Ленивая) */}
           <div 
             className="w-1/5 shrink-0 px-4 transition-opacity duration-500"
             style={{ opacity: activeTab === 'events' ? 1 : 0.3 }}
           >
-            <MatchProtocol event={event} />
+            <Suspense fallback={<TabFallback />}>
+              {activeTab === 'events' && <MatchProtocol event={event} />}
+            </Suspense>
           </div>
 
-          {/* ВКЛАДКА 5: СТАТИСТИКА */}
+          {/* ВКЛАДКА 5: СТАТИСТИКА (Ленивая) */}
           <div 
             className="w-1/5 shrink-0 px-4 transition-opacity duration-500"
             style={{ opacity: activeTab === 'stats' ? 1 : 0.3 }}
           >
-            <MatchStats event={event} />
+            <Suspense fallback={<TabFallback />}>
+              {activeTab === 'stats' && <MatchStats event={event} />}
+            </Suspense>
           </div>
 
         </div>
