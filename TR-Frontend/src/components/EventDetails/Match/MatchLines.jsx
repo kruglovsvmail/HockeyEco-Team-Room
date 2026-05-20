@@ -33,17 +33,40 @@ export const MatchLines = ({ event }) => {
   const [draftLines, setDraftLines] = useState([]);
   const [isPublished, setIsPublished] = useState(false);
   const [isEditMode, setIsEditMode] = useState(false);
+  const [isDeleteMode, setIsDeleteMode] = useState(false); 
   const [loading, setLoading] = useState(true);
   const [isPublishing, setIsPublishing] = useState(false);
   const [hasManageAccess, setHasManageAccess] = useState(false);
 
   const [currentSlide, setCurrentSlide] = useState(0);
   const [activeSelection, setActiveSelection] = useState(null);
+  
+  // Состояния для анимаций
+  const [userInteracted, setUserInteracted] = useState(false);
+  const [removingSlot, setRemovingSlot] = useState(null);
 
   const { user, checkAccess, selectedTeam } = useAccess();
   const carouselRef = useRef(null);
+  const chipsScrollRef = useRef(null);
+  const pressTimer = useRef(null);
+  const longPressFired = useRef(false);
   
   const cacheKey = `draft_lines_${event?.event_id}_${event?.my_team_id}`;
+
+  useEffect(() => {
+    const el = chipsScrollRef.current;
+    if (!el) return;
+
+    const handleWheel = (e) => {
+      if (e.deltaY !== 0) {
+        e.preventDefault(); 
+        el.scrollLeft += e.deltaY;
+      }
+    };
+
+    el.addEventListener('wheel', handleWheel, { passive: false });
+    return () => el.removeEventListener('wheel', handleWheel);
+  }, [isEditMode]);
 
   const loadInitialData = useCallback(async () => {
     try {
@@ -87,7 +110,6 @@ export const MatchLines = ({ event }) => {
 
       if (linesData.success) {
         setIsPublished(linesData.isPublished);
-        
         const cached = localStorage.getItem(cacheKey);
         if (access && cached) {
           setDraftLines(JSON.parse(cached));
@@ -138,6 +160,7 @@ export const MatchLines = ({ event }) => {
 
   const handleSlotClick = (lineNum, pos) => {
     if (!isEditMode) return;
+    setUserInteracted(true); // Флаг для запуска анимаций
     
     const existingPlayerIndex = draftLines.findIndex(l => l.line_number === lineNum && l.position_in_line === pos);
     const existingPlayer = existingPlayerIndex !== -1 ? draftLines[existingPlayerIndex] : null;
@@ -153,9 +176,6 @@ export const MatchLines = ({ event }) => {
       } 
       else if (activeSelection.type === 'slot') {
         if (activeSelection.line === lineNum && activeSelection.pos === pos) {
-          if (existingPlayer) {
-             setDraftLines(prev => prev.filter(l => l.player_id !== existingPlayer.player_id));
-          }
           setActiveSelection(null);
         } else {
           const sourcePlayer = draftLines.find(l => l.line_number === activeSelection.line && l.position_in_line === activeSelection.pos);
@@ -179,6 +199,9 @@ export const MatchLines = ({ event }) => {
   };
 
   const handleChipClick = (playerId) => {
+    if (!isEditMode) return;
+    setUserInteracted(true);
+    
     if (activeSelection) {
       if (activeSelection.type === 'slot') {
         const newPlayer = attendees.find(a => a.id === playerId);
@@ -198,6 +221,37 @@ export const MatchLines = ({ event }) => {
     }
   };
 
+  const handleDeletePlayer = (lineNum, pos, e) => {
+    e.stopPropagation();
+    setUserInteracted(true);
+    setRemovingSlot({ line: lineNum, pos: pos });
+    setTimeout(() => {
+      setDraftLines(prev => {
+        const newLines = prev.filter(l => !(l.line_number === lineNum && l.position_in_line === pos));
+        if (newLines.length === 0) setIsDeleteMode(false);
+        return newLines;
+      });
+      setRemovingSlot(null);
+    }, 200); 
+  };
+
+  const handlePointerDown = () => {
+    if (!isEditMode || isDeleteMode) return;
+    longPressFired.current = false;
+    pressTimer.current = setTimeout(() => {
+      longPressFired.current = true;
+      setIsDeleteMode(true);
+      setActiveSelection(null);
+      if (window.navigator && window.navigator.vibrate) {
+        window.navigator.vibrate(50);
+      }
+    }, 500);
+  };
+
+  const cancelPress = () => {
+    if (pressTimer.current) clearTimeout(pressTimer.current);
+  };
+
   const handlePublish = async () => {
     setIsPublishing(true);
     try {
@@ -215,6 +269,7 @@ export const MatchLines = ({ event }) => {
       if (data.success) {
         setIsPublished(true);
         setIsEditMode(false);
+        setIsDeleteMode(false);
         setActiveSelection(null);
         localStorage.removeItem(cacheKey);
       }
@@ -254,26 +309,61 @@ export const MatchLines = ({ event }) => {
   const renderSlot = (lineNum, pos, labelText = null) => {
     const player = draftLines.find(l => l.line_number === lineNum && l.position_in_line === pos);
     const isSelected = activeSelection?.type === 'slot' && activeSelection?.line === lineNum && activeSelection?.pos === pos;
+    const isRemoving = removingSlot?.line === lineNum && removingSlot?.pos === pos;
+
+    const jiggleDelay = (lineNum + (pos === 'LW' ? 0 : pos === 'C' ? 1 : 2)) % 3;
+    const jiggleClass = isDeleteMode && player && !isRemoving ? `animate-jiggle jiggle-delay-${jiggleDelay}` : '';
 
     return (
       <div 
         key={`${lineNum}-${pos}`}
-        onClick={() => handleSlotClick(lineNum, pos)}
+        onPointerDown={handlePointerDown}
+        onPointerUp={cancelPress}
+        onPointerLeave={cancelPress}
+        onPointerCancel={cancelPress}
+        onClick={(e) => {
+          if (longPressFired.current) {
+            longPressFired.current = false;
+            e.stopPropagation();
+            return;
+          }
+
+          if (isDeleteMode) {
+            if (player) {
+              e.stopPropagation();
+            } else {
+              setIsDeleteMode(false);
+              e.stopPropagation();
+            }
+            return;
+          }
+          
+          handleSlotClick(lineNum, pos);
+        }}
         className={clsx(
           "flex flex-col items-center w-[100px] relative transition-opacity duration-200 shrink-0",
           isEditMode ? "cursor-pointer" : "pointer-events-none",
-          (isEditMode && !player && !isSelected) ? "opacity-70 hover:opacity-100" : "opacity-100"
+          (isEditMode && !player && !isSelected && !isDeleteMode) ? "opacity-70 hover:opacity-100" : "opacity-100",
+          jiggleClass
         )}
       >
         <div className={clsx(
-          "w-16 h-16 rounded-2xl bg-brand-glow flex items-center justify-center relative transition-all duration-200 shrink-0 box-border z-0",
+          "w-16 h-16 rounded-2xl bg-brand-glow flex items-center justify-center relative transition-all duration-200 shrink-0 box-border z-0 origin-center",
           isSelected ? "ring-2 ring-brand scale-110" : "",
           !player && "border-[1px]",
           player && "shadow-lg border border-surface-border bg-surface-level3"
         )}>
           {player ? (
             <>
-              <div className="w-full h-full rounded-3xl overflow-hidden">
+              {/* ХАК ДЛЯ САФАРИ: key={player.player_id} гарантирует создание нового DOM-узла при попадании игрока в слот,
+                  а класс анимации вешается моментально, без задержек. Это заставляет мобильный браузер проиграть анимацию от 0 до 100%. */}
+              <div 
+                key={player.player_id}
+                className={clsx(
+                  "w-full h-full rounded-3xl overflow-hidden origin-center",
+                  isRemoving ? "animate-slot-exit" : (userInteracted ? "animate-slot-enter" : "")
+                )}
+              >
                 {player.avatar_url ? (
                    <img src={getImageUrl(player.avatar_url)} alt="" className="w-full h-full object-cover pointer-events-none" />
                 ) : (
@@ -282,6 +372,18 @@ export const MatchLines = ({ event }) => {
                    </div>
                 )}
               </div>
+              
+              {isDeleteMode && !isRemoving && (
+                <button 
+                  onClick={(e) => handleDeletePlayer(lineNum, pos, e)}
+                  className="absolute -top-1.5 -right-1.5 w-[22px] h-[22px] bg-red-500 rounded-full flex items-center justify-center shadow-md z-20 hover:scale-110 active:scale-90 transition-transform"
+                >
+                  <svg className="w-3.5 h-3.5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3.5}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                </button>
+              )}
+
               <div className="absolute -bottom-2 bg-surface-level2 rounded-md px-1.5 py-0.5 border border-surface-border shadow-sm z-10">
                 <span className="text-[8px] font-black text-content-main uppercase tracking-widest leading-none block">
                   {labelText || pos}
@@ -338,7 +440,10 @@ export const MatchLines = ({ event }) => {
   );
 
   return (
-    <div className="flex flex-col gap-5 mt-4 ">
+    <div 
+      className="flex flex-col gap-5 mt-4" 
+      onClick={() => { if (isDeleteMode) setIsDeleteMode(false); }}
+    >
       
       <style>
         {`
@@ -346,7 +451,6 @@ export const MatchLines = ({ event }) => {
           .custom-scrollbar::-webkit-scrollbar-track { background: transparent; }
           .custom-scrollbar::-webkit-scrollbar-thumb { background: rgba(150, 150, 150, 0.2); border-radius: 10px; }
           
-          /* Магия схлапывания работает благодаря min-h-0 на вложенном блоке */
           .grid-expand-transition {
             display: grid;
             grid-template-rows: 0fr;
@@ -363,6 +467,34 @@ export const MatchLines = ({ event }) => {
             min-height: 0;
             overflow: hidden;
           }
+
+          /* ЖЕСТКОЕ ПРАВИЛО fill-mode: both, чтобы избежать морганий на iOS */
+          @keyframes slotEnter {
+            0% { transform: scale(0.2) translateZ(0); opacity: 0; }
+            100% { transform: scale(1) translateZ(0); opacity: 1; }
+          }
+          @keyframes slotExit {
+            0% { transform: scale(1) translateZ(0); opacity: 1; }
+            100% { transform: scale(0.2) translateZ(0); opacity: 0; }
+          }
+          .animate-slot-enter { 
+            animation: slotEnter 0.25s cubic-bezier(0.34, 1.56, 0.64, 1) both; 
+            will-change: transform, opacity;
+          }
+          .animate-slot-exit { 
+            animation: slotExit 0.2s cubic-bezier(0.6, -0.28, 0.735, 0.045) both; 
+            will-change: transform, opacity;
+          }
+
+          @keyframes jiggle {
+            0% { transform: rotate(-1.5deg); }
+            50% { transform: rotate(1.5deg); }
+            100% { transform: rotate(-1.5deg); }
+          }
+          .animate-jiggle { animation: jiggle 0.3s ease-in-out infinite; }
+          .jiggle-delay-0 { animation-delay: 0s; }
+          .jiggle-delay-1 { animation-delay: 0.1s; }
+          .jiggle-delay-2 { animation-delay: 0.2s; }
         `}
       </style>
       
@@ -372,9 +504,11 @@ export const MatchLines = ({ event }) => {
         </span>
         {hasManageAccess && (
           <button
-            onClick={() => {
+            onClick={(e) => {
+              e.stopPropagation();
               if (isEditMode) {
                 setIsEditMode(false);
+                setIsDeleteMode(false);
                 setActiveSelection(null);
                 loadInitialData(); 
               } else {
@@ -388,25 +522,33 @@ export const MatchLines = ({ event }) => {
         )}
       </div>
 
-      {/* ИЗМЕНЕНО: Сначала растягиваем на весь экран, затем применяем grid-схлапывание */}
-      <div className="w-screen relative left-[50%] right-[50%] -ml-[50vw] -mr-[50vw] mb-1">
+      <div className="-mx-4 mb-1">
         <div className={clsx("grid-expand-transition", isEditMode && "expanded")}>
-          {/* Слой с min-h-0 необходим для работы анимации grid-template-rows */}
           <div className="grid-expand-inner">
             <div className="bg-brand-glow border-y border-surface-border pt-4 h-[164px] flex flex-col w-full">
-              <div className="px-4 flex justify-between items-center mb-5 w-full max-w-7xl mx-auto">
+              <div className="px-4 flex justify-between items-center mb-5 w-full">
                 <span className="text-[9px] font-semibold text-content-muted uppercase tracking-widest">
                   Доступные игроки ({unassignedPlayers.length})
                 </span>
               </div>
               
-              <div className="flex flex-col flex-wrap content-start overflow-x-auto overflow-y-hidden custom-scrollbar snap-x snap-mandatory px-4 gap-1 h-[120px] w-full max-w-7xl mx-auto">
+              <div 
+                ref={chipsScrollRef}
+                className="flex flex-col flex-wrap content-start overflow-x-auto overflow-y-hidden custom-scrollbar snap-x snap-mandatory px-4 gap-1 h-[120px] w-full"
+              >
                 {unassignedPlayers.map((p) => {
                   const isSelected = activeSelection?.type === 'chip' && activeSelection?.id === p.id;
                   return (
                     <button
                       key={p.id}
-                      onClick={() => handleChipClick(p.id)}
+                      onClick={(e) => {
+                        if (isDeleteMode) {
+                          setIsDeleteMode(false);
+                          e.stopPropagation();
+                          return;
+                        }
+                        handleChipClick(p.id);
+                      }}
                       className={clsx(
                         "px-3 py-1 rounded-full text-[12px] font-semibold transition-colors duration-150 shrink-0 select-none outline-none w-max snap-start border border-solid",
                         isSelected 
@@ -437,11 +579,11 @@ export const MatchLines = ({ event }) => {
             className="flex overflow-x-auto flex-nowrap snap-x snap-mandatory scrollbar-hide px-1 pt-2"
           >
             {[1, 2, 3, 4].map(lineNum => (
-               <div key={`slide-${lineNum}`} className="min-w-full snap-center shrink-0">
+               <div key={`slide-${lineNum}`} className="min-w-full snap-center snap-always shrink-0">
                   {renderLineBlock(lineNum)}
                </div>
             ))}
-            <div className="min-w-full snap-center shrink-0">
+            <div className="min-w-full snap-center snap-always shrink-0">
                {renderGoaliesBlock()}
             </div>
           </div>
@@ -450,7 +592,10 @@ export const MatchLines = ({ event }) => {
             {[0, 1, 2, 3, 4].map((index) => (
               <button
                 key={`dot-${index}`}
-                onClick={() => scrollToSlide(index)}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  scrollToSlide(index);
+                }}
                 className="p-1.5 -m-1.5 focus:outline-none" 
               >
                 <div
@@ -464,15 +609,27 @@ export const MatchLines = ({ event }) => {
           </div>
         </div>
       ) : (
-        <div className="flex flex-col gap-6 w-full mt-2">
-          {[1, 2, 3, 4].map(lineNum => renderLineBlock(lineNum))}
-          {renderGoaliesBlock()}
+        <div className="flex flex-col gap-4 w-full mt-2">
+          {[1, 2, 3, 4].map(lineNum => (
+            <div 
+              key={`view-line-${lineNum}`} 
+              className="bg-surface-level1 border border-surface-level2 rounded-2xl p-4 shadow-sm"
+            >
+              {renderLineBlock(lineNum)}
+            </div>
+          ))}
+          <div className="bg-surface-level1 border border-surface-level2 rounded-2xl p-4 shadow-sm">
+            {renderGoaliesBlock()}
+          </div>
         </div>
       )}
 
       {isEditMode && hasManageAccess && (
-        <div className="pt-4">
-          <ButtonLP onClick={handlePublish} isLoading={isPublishing}>
+        <div className="pt-4 pb-[5vh]">
+          <ButtonLP onClick={(e) => {
+            e.stopPropagation();
+            handlePublish();
+          }} isLoading={isPublishing}>
             Опубликовать состав
           </ButtonLP>
         </div>

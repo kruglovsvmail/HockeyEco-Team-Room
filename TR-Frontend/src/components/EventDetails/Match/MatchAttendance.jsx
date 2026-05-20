@@ -37,6 +37,8 @@ export const MatchAttendance = ({ event }) => {
   const [hasManageAccess, setHasManageAccess] = useState(false);
   
   const [isEditMode, setIsEditMode] = useState(false);
+  // Состояние для хранения пользователя, которого хотим удалить (вызывает шторку)
+  const [userToRemove, setUserToRemove] = useState(null); 
   const pressTimer = useRef(null);
 
   const { user, checkAccess, selectedTeam } = useAccess();
@@ -144,14 +146,15 @@ export const MatchAttendance = ({ event }) => {
     }
   };
 
-  const handleRemoveUser = async (targetUserId, e) => {
-    e.stopPropagation();
+  // Функция подтверждения удаления после шторки
+  const confirmRemoveUser = async () => {
+    if (!userToRemove) return;
+    const targetUserId = userToRemove.id;
     
+    // Оптимистичное обновление UI
     setAttendees(prev => prev.filter(user => user.id !== targetUserId));
-    
-    if (attendees.length <= 1) {
-      setIsEditMode(false);
-    }
+    if (attendees.length <= 1) setIsEditMode(false);
+    setUserToRemove(null);
 
     try {
       const apiUrl = import.meta.env.VITE_API_URL || '';
@@ -168,7 +171,7 @@ export const MatchAttendance = ({ event }) => {
       fetchAttendance(); 
     } catch (err) {
       console.error('Ошибка при удалении игрока:', err);
-      fetchAttendance();
+      fetchAttendance(); // Откат при ошибке
     }
   };
 
@@ -183,15 +186,11 @@ export const MatchAttendance = ({ event }) => {
   };
 
   const cancelPress = () => {
-    if (pressTimer.current) {
-      clearTimeout(pressTimer.current);
-    }
+    if (pressTimer.current) clearTimeout(pressTimer.current);
   };
 
   const handleContainerClick = () => {
-    if (isEditMode) {
-      setIsEditMode(false);
-    }
+    if (isEditMode) setIsEditMode(false);
   };
 
   const availablePlayers = teamRoster.filter(
@@ -216,9 +215,7 @@ export const MatchAttendance = ({ event }) => {
             50% { transform: rotate(1.5deg); }
             100% { transform: rotate(-1.5deg); }
           }
-          .animate-jiggle {
-            animation: jiggle 0.3s ease-in-out infinite;
-          }
+          .animate-jiggle { animation: jiggle 0.3s ease-in-out infinite; }
           .jiggle-delay-0 { animation-delay: 0s; }
           .jiggle-delay-1 { animation-delay: 0.1s; }
           .jiggle-delay-2 { animation-delay: 0.2s; }
@@ -246,9 +243,6 @@ export const MatchAttendance = ({ event }) => {
 
       <div className="pt-4 px-1">
         {attendees.length > 0 ? (
-          /* ИЗМЕНЕНО: Возвращаем Grid, но делаем его адаптивным (auto-fill). 
-             minmax(80px, 1fr) гарантирует, что колонка всегда будет минимум 80px (чтобы влезла фамилия), 
-             но при этом растянется, чтобы занять всё свободное место равномерно. */
           <div className="grid grid-cols-[repeat(auto-fill,minmax(100px,1fr))] gap-y-5 gap-x-2 justify-items-center">
             {attendees.map((user, index) => {
               const photoUrl = user.team_photo || user.avatar_url;
@@ -261,7 +255,7 @@ export const MatchAttendance = ({ event }) => {
                   onPointerDown={handlePointerDown}
                   onPointerUp={cancelPress}
                   onPointerLeave={cancelPress}
-                  onPointerCancel={cancelPress}
+                  onPointerMove={cancelPress}
                   onClick={(e) => { if (isEditMode) e.stopPropagation(); }}
                   className={`flex flex-col items-center gap-1.5 select-none w-full ${jiggleClass}`}
                 >
@@ -278,7 +272,10 @@ export const MatchAttendance = ({ event }) => {
                     
                     {isEditMode && canRemove && (
                       <button 
-                        onClick={(e) => handleRemoveUser(user.id, e)}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setUserToRemove(user); // Открываем шторку подтверждения
+                        }}
                         className="absolute -top-1.5 -right-1.5 w-[22px] h-[22px] bg-red-500 rounded-full flex items-center justify-center shadow-md z-10 hover:scale-110 active:scale-90 transition-transform"
                       >
                         <svg className="w-3.5 h-3.5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3.5}>
@@ -289,7 +286,6 @@ export const MatchAttendance = ({ event }) => {
                   </div>
 
                   <div className="w-full text-center px-0.5">
-                    {/* ИЗМЕНЕНО: Класс break-words позволяет длинной фамилии мягко перенестись на вторую строчку, не ломая сетку */}
                     <span className="text-[13px] font-bold text-content-main leading-tight break-words block pointer-events-none">
                       {user.last_name}
                     </span>
@@ -308,6 +304,7 @@ export const MatchAttendance = ({ event }) => {
         )}
       </div>
 
+      {/* Шторка для добавления */}
       <BottomSheet isOpen={isSheetOpen} onClose={() => setIsSheetOpen(false)}>
         <div className="flex flex-col gap-4">
           <h3 className="text-lg font-black text-content-main mb-2">Отметить игрока</h3>
@@ -368,6 +365,32 @@ export const MatchAttendance = ({ event }) => {
           )}
         </div>
       </BottomSheet>
+
+      {/* Шторка для подтверждения удаления */}
+      <BottomSheet isOpen={!!userToRemove} onClose={() => setUserToRemove(null)}>
+        <div className="flex flex-col items-center text-center gap-4 py-2">
+          <div className="w-16 h-16 bg-red-500/10 text-red-500 rounded-full flex items-center justify-center mb-2">
+            <svg className="w-8 h-8" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+            </svg>
+          </div>
+          <h3 className="text-lg font-black text-content-main leading-tight">
+            Удалить отметку?
+          </h3>
+          <p className="text-[13px] text-content-muted max-w-[250px]">
+            Вы уверены, что хотите удалить игрока <span className="font-bold text-content-main">{userToRemove?.last_name}</span> из списка отметившихся?
+          </p>
+          <div className="flex gap-3 w-full mt-4">
+            <ButtonLP variant="outline" onClick={() => setUserToRemove(null)} className="flex-1">
+              Отмена
+            </ButtonLP>
+            <ButtonLP variant="primary" className="flex-1 !bg-red-500 hover:!bg-red-600 !border-red-500 !text-white" onClick={confirmRemoveUser}>
+              Да, удалить
+            </ButtonLP>
+          </div>
+        </div>
+      </BottomSheet>
+
     </div>
   );
 };
