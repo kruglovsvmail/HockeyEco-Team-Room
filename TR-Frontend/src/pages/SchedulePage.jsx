@@ -74,8 +74,11 @@ export function SchedulePage() {
   }, [currentDate]);
 
   const handleToggleAttendance = async (eventId, eventType, newValue, teamId) => {
+    // ИСПРАВЛЕНО: Добавлена проверка по event.my_team_id === teamId
     setEvents(prev => prev.map(event => 
-      (event.event_id === eventId && event.event_type === eventType) ? { ...event, is_attending: newValue } : event
+      (event.event_id === eventId && event.event_type === eventType && event.my_team_id === teamId) 
+        ? { ...event, is_attending: newValue } 
+        : event
     ));
 
     try {
@@ -94,8 +97,11 @@ export function SchedulePage() {
       }
     } catch (err) {
       console.error('Ошибка переключения тумблера:', err);
+      // ИСПРАВЛЕНО: Добавлена проверка по event.my_team_id === teamId при откате ошибки
       setEvents(prev => prev.map(event => 
-        (event.event_id === eventId && event.event_type === eventType) ? { ...event, is_attending: !newValue } : event
+        (event.event_id === eventId && event.event_type === eventType && event.my_team_id === teamId) 
+          ? { ...event, is_attending: !newValue } 
+          : event
       ));
     }
   };

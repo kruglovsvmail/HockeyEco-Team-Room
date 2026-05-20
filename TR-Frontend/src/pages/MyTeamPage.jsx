@@ -3,40 +3,111 @@ import { useNavigate, useOutletContext } from 'react-router-dom';
 import clsx from 'clsx';
 import { getAuthHeaders, getImageUrl } from '../utils/helpers';
 import { ChipTabs } from '../ui/ChipTabs';
-import { Icon } from '../ui/Icon';
 
-// --- ЕДИНЫЙ КОМПОНЕНТ КАРТОЧКИ УЧАСТНИКА ---
-const PersonCard = ({ person, onClick, subText }) => (
-  <button 
-    onClick={() => onClick(person)}
-    className="relative group flex items-center gap-3 overflow-hidden transition-all duration-300 text-left outline-none w-full"
-  >
-    <div className="w-12 h-12 md:w-20 md:h-20 rounded-xl border border-brand/20 flex items-center justify-center overflow-hidden shrink-0 shadow-inner relative z-10 bg-surface-level1">
-      {person.avatar_url ? (
-        <img src={getImageUrl(person.avatar_url)} alt="Аватар" className="w-full h-full object-cover" />
-      ) : (
-        <span className="text-xl font-black text-brand uppercase opacity-40">
-          {person.last_name?.charAt(0)}
-        </span>
-      )}
-    </div>
+// Утилита для получения инициалов
+const getInitials = (firstName, lastName) => {
+  const f = firstName ? firstName.charAt(0).toUpperCase() : '';
+  const l = lastName ? lastName.charAt(0).toUpperCase() : '';
+  return `${l}${f}` || '?';
+};
 
-    <div className="flex flex-col flex-1 justify-center min-w-0">
-      <span className="text-[12px] font-bold text-content-main truncate leading-tight tracking-wide ">
-        {person.last_name}
-      </span>
-      <span className="text-[10px] font-semibold text-content-muted truncate">
-        {person.first_name}
-      </span>
-      {subText && (
-        <span className="text-[7px] font-black text-brand uppercase tracking-widest mt-0.5">
-            {subText}
+// --- КОМПОНЕНТ КАРТОЧКИ-СЕТКИ ДЛЯ ВЗГЛЯДА "ВСЕ" И "СОСТАВ" ---
+const PersonGridCard = ({ person, onClick, showBadges = false }) => {
+  const photoUrl = person.photo_url || person.avatar_url;
+
+  return (
+    <div 
+      onClick={() => onClick(person)}
+      className="flex flex-col items-center gap-1.5 select-none w-full cursor-pointer active:scale-[0.98] transition-transform"
+    >
+      {/* Обертка relative для позиционирования бейджей поверх фото */}
+      <div className="relative">
+        <div className="w-16 h-16 shrink-0 rounded-2xl overflow-hidden bg-surface-level2 border border-surface-level2 shadow-sm origin-center">
+          {photoUrl ? (
+            <img src={getImageUrl(photoUrl)} alt="Аватар" className="w-full h-full object-cover pointer-events-none" />
+          ) : (
+            <div className="w-full h-full bg-brand/10 text-brand flex items-center justify-center text-sm font-bold pointer-events-none">
+              {getInitials(person.first_name, person.last_name)}
+            </div>
+          )}
+        </div>
+
+        {/* Бейдж: Ассистент / Капитан (сверху справа, фон brand, меньше размером) */}
+        {showBadges && (person.is_captain || person.is_assistant) && (
+          <div className="absolute -top-1.5 -right-1.5 w-[20px] h-[20px] rounded-full bg-brand shadow-sm flex items-center justify-center text-[9px] font-black text-content-dark z-20">
+            {person.is_captain ? 'К' : 'А'}
+          </div>
+        )}
+
+        {/* Бейдж: Игровой номер (снизу справа, матовое стекло) */}
+        {showBadges && person.jersey_number != null && (
+          <div className="absolute -bottom-1 -right-3 w-[32px] h-[32px] bg-brand-glow rounded-full backdrop-blur-[4px] border border-white/50 shadow-sm flex items-center justify-center text-[13px] font-black text-content-dark z-10">
+            {person.jersey_number}
+          </div>
+        )}
+      </div>
+
+      <div className="w-full text-center px-0.5">
+        <span className="text-[13px] font-bold text-content-main leading-tight break-words block pointer-events-none">
+          {person.last_name}
         </span>
-      )}
+        <span className="text-[11px] text-content-muted leading-tight break-words block pointer-events-none mt-0.5">
+          {person.first_name}
+        </span>
+      </div>
     </div>
-    <Icon name="chevron_left" className="w-4 h-4 text-content-subtle rotate-180 opacity-0 group-hover:opacity-100 transition-opacity shrink-0" />
-  </button>
-);
+  );
+};
+
+// --- КОМПОНЕНТ КАРТОЧКИ-ТАБЛИЦЫ ДЛЯ ВЗГЛЯДА "ШТАБ" ---
+const StaffTableCard = ({ person, onClick }) => {
+  const photoUrl = person.photo_url || person.avatar_url;
+  
+  const roleDict = {
+    'team_manager': 'Руководитель',
+    'team_admin': 'Администратор',
+    'coach': 'Тренер',
+    'head_coach': 'Главный тренер'
+  };
+
+  const renderRoles = (rolesString) => {
+    if (!rolesString) return null;
+    const rolesArray = rolesString.split(',').map(r => r.trim());
+    return rolesArray.map((r, i) => (
+      <span key={i} className="text-[10px] font-black text-brand uppercase tracking-widest rounded-md text-right w-fit">
+        {roleDict[r] || r}
+      </span>
+    ));
+  };
+
+  return (
+    <div 
+      onClick={() => onClick(person)}
+      className="flex items-center gap-3 bg-surface-level1 border border-surface-level2 rounded-2xl p-3 shadow-sm h-full cursor-pointer active:scale-[0.98] transition-transform w-full"
+    >
+      <div className="w-16 h-16 shrink-0 rounded-2xl overflow-hidden bg-surface-level2 border border-surface-level2 shadow-sm">
+        {photoUrl ? (
+          <img src={getImageUrl(photoUrl)} alt="Аватар" className="w-full h-full object-cover pointer-events-none" />
+        ) : (
+          <div className="w-full h-full bg-brand/10 text-brand flex items-center justify-center text-sm font-bold pointer-events-none">
+            {getInitials(person.first_name, person.last_name)}
+          </div>
+        )}
+      </div>
+      <div className="flex flex-col flex-1 justify-center">
+        <span className="text-[13px] font-bold text-content-main leading-tight">
+          {person.last_name}
+        </span>
+        <span className="text-[11px] text-content-muted leading-tight mt-0.5">
+          {person.first_name}
+        </span>
+      </div>
+      <div className="flex flex-col gap-1.5 items-end shrink-0 justify-center">
+        {renderRoles(person.roles)}
+      </div>
+    </div>
+  );
+};
 
 const TEAM_TABS = [
   { id: 'all', label: 'Все' },
@@ -122,26 +193,22 @@ export const MyTeamPage = () => {
     }
   }, [activeTab]);
 
-  // --- ЛИНЕЙНАЯ ЛОГИКА СМЕЩЕНИЯ КАРУСЕЛИ ---
   const getOffset = (index) => {
-    return index - activeIndex; // Простая разница индексов, без кругового переброса
+    return index - activeIndex; 
   };
 
   const handleTouchStart = (e) => {
     touchStartX.current = e.touches[0].clientX;
   };
 
-  // --- ЛИНЕЙНАЯ ЛОГИКА СВАЙПОВ ---
   const handleTouchEnd = (e) => {
     if (!touchStartX.current || teams.length === 0) return;
     const diff = touchStartX.current - e.changedTouches[0].clientX;
     
     if (Math.abs(diff) > 40) { 
       if (diff > 0) {
-        // Свайп влево (вперед) - ограничиваем последним элементом
         setActiveIndex((prev) => Math.min(prev + 1, teams.length - 1));
       } else {
-        // Свайп вправо (назад) - ограничиваем первым элементом
         setActiveIndex((prev) => Math.max(prev - 1, 0));
       }
     }
@@ -201,14 +268,6 @@ export const MyTeamPage = () => {
   const handlePersonClick = (person) => openRightPanel('userDetails', person, 'Профиль');
 
   const getPlayersByRole = (match) => teamData.roster?.filter(p => p.position === match) || [];
-
-  const getRoleText = (m) => {
-    if (m.roles) return m.roles;
-    if (m.position === 'goalie') return 'Вратарь';
-    if (m.position === 'defense') return 'Защитник';
-    if (m.position === 'forward') return 'Нападающий';
-    return 'Участник';
-  };
 
   const allMembers = useMemo(() => {
     if (!teamData.roster?.length && !teamData.staff?.length) return [];
@@ -318,7 +377,7 @@ export const MyTeamPage = () => {
       </div>
 
       {/* 3. КОНТЕНТ */}
-      <div className="w-full overflow-hidden pt-2 min-h-screen pb-[30vh]">
+      <div className="w-full overflow-hidden pt-4 min-h-screen pb-[30vh]">
         {isLoading ? (
           <div className="flex justify-center items-center h-32 text-brand font-black animate-pulse uppercase tracking-widest text-sm">Загрузка...</div>
         ) : (
@@ -327,22 +386,17 @@ export const MyTeamPage = () => {
             style={{ transform: `translateX(${translateX})` }}
           >
             
-            {/* ПАНЕЛЬ 1: ВСЕ */}
+            {/* ПАНЕЛЬ 1: ВСЕ (БЕЗ БЕЙДЖЕЙ) */}
             <div className="w-1/3 shrink-0 px-5 transition-opacity duration-500" style={{ opacity: activeTab === 'all' ? 1 : 0.3 }}>
-              <div className="grid grid-cols-[repeat(auto-fill,minmax(280px,1fr))] gap-3">
+              <div className="grid grid-cols-[repeat(auto-fill,minmax(100px,1fr))] gap-y-5 gap-x-2 justify-items-center">
                 {allMembers.map(m => (
-                  <PersonCard 
-                    key={m.member_id} 
-                    person={m} 
-                    onClick={handlePersonClick} 
-                    subText={getRoleText(m)} 
-                  />
+                  <PersonGridCard key={m.member_id} person={m} onClick={handlePersonClick} showBadges={false} />
                 ))}
               </div>
             </div>
 
-            {/* ПАНЕЛЬ 2: СОСТАВ */}
-            <div className="w-1/3 shrink-0 px-5 transition-opacity duration-500" style={{ opacity: activeTab === 'roster' ? 1 : 0.3 }}>
+            {/* ПАНЕЛЬ 2: СОСТАВ (С БЕЙДЖАМИ) */}
+            <div className="w-1/3 shrink-0 px-1 transition-opacity duration-500" style={{ opacity: activeTab === 'roster' ? 1 : 0.3 }}>
               <div className="flex flex-col gap-10">
                 {[
                   { m: 'goalie', t: 'Вратари' },
@@ -353,15 +407,10 @@ export const MyTeamPage = () => {
                   if (!players.length) return null;
                   return (
                     <div key={group.m} className="flex flex-col">
-                      <h3 className="text-[11px] font-black text-content-muted uppercase tracking-[0.2em] mb-3 pl-1">{group.t}</h3>
-                      <div className="grid grid-cols-[repeat(auto-fill,minmax(120px,1fr))] gap-4">
+                      <h3 className="text-[11px] font-black text-content-muted uppercase tracking-[0.2em] mb-4 pl-1">{group.t}</h3>
+                      <div className="grid grid-cols-[repeat(auto-fill,minmax(100px,1fr))] gap-y-5 gap-x-2 justify-items-center">
                         {players.map(p => (
-                          <PersonCard 
-                            key={p.member_id} 
-                            person={p} 
-                            onClick={handlePersonClick} 
-                            subText={p.is_captain ? 'Капитан' : p.is_assistant ? 'Ассистент' : null}
-                          />
+                          <PersonGridCard key={p.member_id} person={p} onClick={handlePersonClick} showBadges={true} />
                         ))}
                       </div>
                     </div>
@@ -372,14 +421,9 @@ export const MyTeamPage = () => {
 
             {/* ПАНЕЛЬ 3: ШТАБ */}
             <div className="w-1/3 shrink-0 px-5 transition-opacity duration-500" style={{ opacity: activeTab === 'staff' ? 1 : 0.3 }}>
-              <div className="grid grid-cols-[repeat(auto-fill,minmax(280px,1fr))] gap-3">
+              <div className="grid grid-cols-1 auto-rows-fr gap-3 w-full">
                 {teamData.staff?.map(s => (
-                  <PersonCard 
-                    key={s.member_id} 
-                    person={s} 
-                    onClick={handlePersonClick} 
-                    subText={s.roles} 
-                  />
+                  <StaffTableCard key={s.member_id} person={s} onClick={handlePersonClick} />
                 ))}
               </div>
             </div>

@@ -2,6 +2,7 @@ import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { getImageUrl, getAuthHeaders } from '../../../utils/helpers';
 import { BottomSheet } from '../../../ui/BottomSheet';
 import { ButtonLP } from '../../../ui/Button-LP';
+import { SectionHeader } from '../../../ui/SectionHeader';
 import { useAccess } from '../../../hooks/useAccess';
 import { ROLES, PERMISSIONS } from '../../../utils/permissions';
 import clsx from 'clsx';
@@ -28,6 +29,24 @@ const getSafeUserFromToken = () => {
   }
 };
 
+// Жесткая очистка кэша от любых вариантов русских букв с предохранителем
+const sanitizePosition = (pos) => {
+  const upperPos = String(pos).toUpperCase();
+  const map = {
+    'ЛН': 'LW', 'ЦН': 'C', 'ПН': 'RW',
+    'ЛЗ': 'LD', 'ПЗ': 'RD', 'ВР': 'G',
+    'НАП': 'LW', 'ЗАЩ': 'LD',
+    'Ц': 'C', 'Л': 'LW', 'П': 'RW', 'В': 'G',
+    'ОСН': 'G', 'ЗАП': 'G', 'РЕЗ': 'G'
+  };
+  
+  const sanitized = map[upperPos] || upperPos;
+  
+  // Железный предохранитель для БД: если ключ всё равно кривой, ставим дефолт
+  const validKeys = ['LW', 'C', 'RW', 'LD', 'RD', 'G'];
+  return validKeys.includes(sanitized) ? sanitized : 'LW';
+};
+
 export const MatchLines = ({ event }) => {
   const [attendees, setAttendees] = useState([]);
   const [draftLines, setDraftLines] = useState([]);
@@ -41,7 +60,6 @@ export const MatchLines = ({ event }) => {
   const [currentSlide, setCurrentSlide] = useState(0);
   const [activeSelection, setActiveSelection] = useState(null);
   
-  // Состояния для анимаций
   const [userInteracted, setUserInteracted] = useState(false);
   const [removingSlot, setRemovingSlot] = useState(null);
 
@@ -112,7 +130,17 @@ export const MatchLines = ({ event }) => {
         setIsPublished(linesData.isPublished);
         const cached = localStorage.getItem(cacheKey);
         if (access && cached) {
-          setDraftLines(JSON.parse(cached));
+          try {
+            const parsedCache = JSON.parse(cached);
+            // Очищаем кэш от битых позиций
+            const sanitizedCache = parsedCache.map(l => ({
+              ...l,
+              position_in_line: sanitizePosition(l.position_in_line)
+            }));
+            setDraftLines(sanitizedCache);
+          } catch (e) {
+            setDraftLines(linesData.lines || []);
+          }
         } else {
           setDraftLines(linesData.lines || []);
         }
@@ -160,7 +188,7 @@ export const MatchLines = ({ event }) => {
 
   const handleSlotClick = (lineNum, pos) => {
     if (!isEditMode) return;
-    setUserInteracted(true); // Флаг для запуска анимаций
+    setUserInteracted(true); 
     
     const existingPlayerIndex = draftLines.findIndex(l => l.line_number === lineNum && l.position_in_line === pos);
     const existingPlayer = existingPlayerIndex !== -1 ? draftLines[existingPlayerIndex] : null;
@@ -262,7 +290,11 @@ export const MatchLines = ({ event }) => {
         headers: { ...headers, 'Content-Type': 'application/json' },
         body: JSON.stringify({
           teamId: event.my_team_id,
-          lines: draftLines.map(l => ({ player_id: l.player_id, line_number: l.line_number, position_in_line: l.position_in_line }))
+          lines: draftLines.map(l => ({ 
+            player_id: l.player_id, 
+            line_number: l.line_number, 
+            position_in_line: sanitizePosition(l.position_in_line) 
+          }))
         })
       });
       const data = await res.json();
@@ -272,6 +304,8 @@ export const MatchLines = ({ event }) => {
         setIsDeleteMode(false);
         setActiveSelection(null);
         localStorage.removeItem(cacheKey);
+      } else {
+        console.error('Ошибка бэкенда:', data.error);
       }
     } catch (err) {
       console.error('Ошибка публикации:', err);
@@ -282,7 +316,7 @@ export const MatchLines = ({ event }) => {
 
   if (loading) {
     return (
-      <div className="flex justify-center items-center h-32 text-[11px] font-black text-content-muted uppercase tracking-widest bg-surface-level2/30 rounded-2xl border border-surface-border/50 border-dashed">
+      <div className="flex justify-center items-center h-32 text-[11px] font-black text-content-muted uppercase tracking-widest">
         Загрузка состава...
       </div>
     );
@@ -290,15 +324,9 @@ export const MatchLines = ({ event }) => {
 
   if (!isPublished && !hasManageAccess) {
     return (
-      <div className="flex flex-col justify-center items-center h-48 bg-surface-level1 rounded-[24px] border border-surface-border/30 shadow-sm p-6 text-center gap-3">
-        <div className="w-12 h-12 bg-surface-level2/50 rounded-full flex items-center justify-center">
-           <svg className="w-6 h-6 text-content-muted/70" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
-              <path strokeLinecap="round" strokeLinejoin="round" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
-           </svg>
-        </div>
+      <div className="flex flex-col justify-center items-center p-6 text-center gap-3">   
         <div>
-          <h3 className="text-sm font-black text-content-main uppercase tracking-wider mb-1">Состав скрыт</h3>
-          <p className="text-[11px] text-content-muted">Тренерский штаб формирует звенья на матч</p>
+          <h3 className="flex justify-center items-center h-24 text-[11px] font-black text-content-muted uppercase tracking-widest">Состав еще не сформирован</h3>
         </div>
       </div>
     );
@@ -310,6 +338,8 @@ export const MatchLines = ({ event }) => {
     const player = draftLines.find(l => l.line_number === lineNum && l.position_in_line === pos);
     const isSelected = activeSelection?.type === 'slot' && activeSelection?.line === lineNum && activeSelection?.pos === pos;
     const isRemoving = removingSlot?.line === lineNum && removingSlot?.pos === pos;
+
+    const playerImage = player?.team_photo || player?.avatar_url;
 
     const jiggleDelay = (lineNum + (pos === 'LW' ? 0 : pos === 'C' ? 1 : 2)) % 3;
     const jiggleClass = isDeleteMode && player && !isRemoving ? `animate-jiggle jiggle-delay-${jiggleDelay}` : '';
@@ -350,13 +380,11 @@ export const MatchLines = ({ event }) => {
         <div className={clsx(
           "w-16 h-16 rounded-2xl bg-brand-glow flex items-center justify-center relative transition-all duration-200 shrink-0 box-border z-0 origin-center",
           isSelected ? "ring-2 ring-brand scale-110" : "",
-          !player && "border-[1px]",
+          !player && "",
           player && "shadow-lg border border-surface-border bg-surface-level3"
         )}>
           {player ? (
             <>
-              {/* ХАК ДЛЯ САФАРИ: key={player.player_id} гарантирует создание нового DOM-узла при попадании игрока в слот,
-                  а класс анимации вешается моментально, без задержек. Это заставляет мобильный браузер проиграть анимацию от 0 до 100%. */}
               <div 
                 key={player.player_id}
                 className={clsx(
@@ -364,10 +392,10 @@ export const MatchLines = ({ event }) => {
                   isRemoving ? "animate-slot-exit" : (userInteracted ? "animate-slot-enter" : "")
                 )}
               >
-                {player.avatar_url ? (
-                   <img src={getImageUrl(player.avatar_url)} alt="" className="w-full h-full object-cover pointer-events-none" />
+                {playerImage ? (
+                   <img src={getImageUrl(playerImage)} alt="" className="w-full h-full object-cover pointer-events-none" />
                 ) : (
-                   <div className="w-full h-full bg-brand text-brand flex items-center justify-center text-[12px] font-bold pointer-events-none">
+                   <div className="w-full h-full bg-surface-level2 text-content-main flex items-center justify-center text-[12px] font-bold pointer-events-none">
                      {getInitials(player.first_name, player.last_name)}
                    </div>
                 )}
@@ -411,37 +439,37 @@ export const MatchLines = ({ event }) => {
 
   const renderLineBlock = (lineNum) => (
     <div key={`line-${lineNum}`} className="w-full flex flex-col items-center pb-2">
-      <h3 className="text-[13px] font-black text-content-muted uppercase tracking-widest mb-8">
-        Пятерка #{lineNum}
+      <h3 className="text-[20px] font-black text-content-muted uppercase tracking-widest mb-8">
+        #{lineNum}
       </h3>
       <div className="flex justify-center gap-3 w-full mb-3">
-        {renderSlot(lineNum, 'LW')}
-        {renderSlot(lineNum, 'C')}
-        {renderSlot(lineNum, 'RW')}
+        {renderSlot(lineNum, 'LW', 'ЛН')}
+        {renderSlot(lineNum, 'C', 'ЦН')}
+        {renderSlot(lineNum, 'RW', 'ПН')}
       </div>
       <div className="flex justify-center gap-8 w-full">
-        {renderSlot(lineNum, 'LD')}
-        {renderSlot(lineNum, 'RD')}
+        {renderSlot(lineNum, 'LD', 'ЛЗ')}
+        {renderSlot(lineNum, 'RD', 'ПЗ')}
       </div>
     </div>
   );
 
   const renderGoaliesBlock = () => (
     <div className="w-full flex flex-col items-center pb-6">
-       <h3 className="text-[13px] font-black text-content-muted uppercase tracking-widest mb-8">
+       <h3 className="text-[14px] font-black text-content-muted uppercase tracking-widest mb-8">
           Вратари
        </h3>
        <div className="flex justify-center gap-3 w-full">
-          {renderSlot(5, 'G', 'Осн.')}
-          {renderSlot(6, 'G', 'Зап.')}
-          {renderSlot(7, 'G', 'Рез.')}
+          {renderSlot(5, 'G', 'Осн')}
+          {renderSlot(6, 'G', 'Зап')}
+          {renderSlot(7, 'G', 'Рез')}
        </div>
     </div>
   );
 
   return (
     <div 
-      className="flex flex-col gap-5 mt-4" 
+      className="flex flex-col gap-4 mt-4" 
       onClick={() => { if (isDeleteMode) setIsDeleteMode(false); }}
     >
       
@@ -468,7 +496,6 @@ export const MatchLines = ({ event }) => {
             overflow: hidden;
           }
 
-          /* ЖЕСТКОЕ ПРАВИЛО fill-mode: both, чтобы избежать морганий на iOS */
           @keyframes slotEnter {
             0% { transform: scale(0.2) translateZ(0); opacity: 0; }
             100% { transform: scale(1) translateZ(0); opacity: 1; }
@@ -498,31 +525,25 @@ export const MatchLines = ({ event }) => {
         `}
       </style>
       
-      <div className="flex justify-between items-end ">
-        <span className="text-[10px] font-black text-content-muted uppercase tracking-widest">
-          {isEditMode ? 'Формирование' : 'Пятерки на матч'}
-        </span>
-        {hasManageAccess && (
-          <button
-            onClick={(e) => {
-              e.stopPropagation();
-              if (isEditMode) {
-                setIsEditMode(false);
-                setIsDeleteMode(false);
-                setActiveSelection(null);
-                loadInitialData(); 
-              } else {
-                setIsEditMode(true);
-              }
-            }}
-            className="text-[11px] font-bold text-brand uppercase tracking-wider active:opacity-70 transition-opacity"
-          >
-            {isEditMode ? 'Отмена' : 'Редактировать'}
-          </button>
-        )}
-      </div>
+      <SectionHeader 
+        title={isEditMode ? 'Формирование' : 'Пятерки на матч'}
+        showAction={hasManageAccess}
+        actionText={isEditMode ? 'Отмена' : 'Редактировать'}
+        onActionClick={(e) => {
+          e.stopPropagation();
+          if (isEditMode) {
+            setIsEditMode(false);
+            setIsDeleteMode(false);
+            setActiveSelection(null);
+            loadInitialData(); 
+          } else {
+            setIsEditMode(true);
+          }
+        }}
+        className="px-1"
+      />
 
-      <div className="-mx-4 mb-1">
+      <div className="-mx-4">
         <div className={clsx("grid-expand-transition", isEditMode && "expanded")}>
           <div className="grid-expand-inner">
             <div className="bg-brand-glow border-y border-surface-border pt-4 h-[164px] flex flex-col w-full">
@@ -601,7 +622,7 @@ export const MatchLines = ({ event }) => {
                 <div
                   className={clsx(
                     "h-2 rounded-full transition-all duration-300 ease-out opacity-80",
-                    currentSlide === index ? "w-10 bg-surface-level1" : "w-2 border border-surface-level1 bg-surface-border hover:bg-surface-border/80"
+                    currentSlide === index ? "w-10 bg-surface-level1" : "w-2 border border-surface-level1 bg-surface-border hover:bg-surface-border"
                   )}
                 />
               </button>
@@ -609,23 +630,23 @@ export const MatchLines = ({ event }) => {
           </div>
         </div>
       ) : (
-        <div className="flex flex-col gap-4 w-full mt-2">
+        <div className="flex flex-col gap-6 w-full">
           {[1, 2, 3, 4].map(lineNum => (
             <div 
               key={`view-line-${lineNum}`} 
-              className="bg-surface-level1 border border-surface-level2 rounded-2xl p-4 shadow-sm"
+              className="bg-brand-glow rounded-3xl pt-4 pb-1 shadow-sm"
             >
               {renderLineBlock(lineNum)}
             </div>
           ))}
-          <div className="bg-surface-level1 border border-surface-level2 rounded-2xl p-4 shadow-sm">
+          <div className="bg-brand-glow rounded-3xl pt-4 pb-1 shadow-sm">
             {renderGoaliesBlock()}
           </div>
         </div>
       )}
 
       {isEditMode && hasManageAccess && (
-        <div className="pt-4 pb-[5vh]">
+        <div className="pt-8 pb-[5vh]">
           <ButtonLP onClick={(e) => {
             e.stopPropagation();
             handlePublish();

@@ -2,8 +2,10 @@ import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { getImageUrl, getAuthHeaders } from '../../../utils/helpers';
 import { BottomSheet } from '../../../ui/BottomSheet';
 import { ButtonLP } from '../../../ui/Button-LP';
+import { SectionHeader } from '../../../ui/SectionHeader';
 import { useAccess } from '../../../hooks/useAccess';
 import { ROLES, PERMISSIONS } from '../../../utils/permissions';
+import clsx from 'clsx';
 
 const getInitials = (firstName, lastName) => {
   const f = firstName ? firstName.charAt(0).toUpperCase() : '';
@@ -37,8 +39,12 @@ export const MatchAttendance = ({ event }) => {
   const [hasManageAccess, setHasManageAccess] = useState(false);
   
   const [isEditMode, setIsEditMode] = useState(false);
-  // Состояние для хранения пользователя, которого хотим удалить (вызывает шторку)
   const [userToRemove, setUserToRemove] = useState(null); 
+  
+  // Состояния для Оптимистичного UI и анимаций
+  const [animatingInId, setAnimatingInId] = useState(null);
+  const [animatingOutId, setAnimatingOutId] = useState(null);
+
   const pressTimer = useRef(null);
 
   const { user, checkAccess, selectedTeam } = useAccess();
@@ -121,58 +127,87 @@ export const MatchAttendance = ({ event }) => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [event?.my_team_id, event?.event_id]);
 
-  const handleMarkUser = async (targetUserId) => {
-    try {
-      const apiUrl = import.meta.env.VITE_API_URL || '';
-      const res = await fetch(`${apiUrl}/api/events/${event.event_id}/attendance`, {
-        method: 'POST',
-        headers: { ...getAuthHeaders(), 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          isAttending: true,
-          eventType: event.event_type,
-          teamId: event.my_team_id,
-          targetUserId: targetUserId
-        })
-      });
+  // ОПТИМИСТИЧНОЕ ДОБАВЛЕНИЕ ИГРОКА
+  const handleMarkUser = async (playerObj) => {
+    // 1. Формируем объект для мгновенной отрисовки
+    const newAttendee = {
+      id: playerObj.user_id,
+      first_name: playerObj.first_name,
+      last_name: playerObj.last_name,
+      team_photo: playerObj.team_photo,
+      avatar_url: playerObj.avatar_url
+    };
 
-      const data = await res.json();
-      if (data.success) {
-        setIsSheetOpen(false);
-        setLoading(true);
-        fetchAttendance();
-      }
-    } catch (err) {
-      console.error('Ошибка при отметке игрока:', err);
-    }
-  };
+    // 2. Сразу обновляем UI и закрываем шторку
+    setAttendees(prev => [...prev, newAttendee]);
+    setAnimatingInId(newAttendee.id);
+    setIsSheetOpen(false);
 
-  // Функция подтверждения удаления после шторки
-  const confirmRemoveUser = async () => {
-    if (!userToRemove) return;
-    const targetUserId = userToRemove.id;
-    
-    // Оптимистичное обновление UI
-    setAttendees(prev => prev.filter(user => user.id !== targetUserId));
-    if (attendees.length <= 1) setIsEditMode(false);
-    setUserToRemove(null);
+    // Снимаем класс анимации после ее завершения
+    setTimeout(() => setAnimatingInId(null), 300);
 
+    // 3. Отправляем запрос в фоне
     try {
       const apiUrl = import.meta.env.VITE_API_URL || '';
       await fetch(`${apiUrl}/api/events/${event.event_id}/attendance`, {
         method: 'POST',
         headers: { ...getAuthHeaders(), 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          isAttending: false,
+          isAttending: true,
           eventType: event.event_type,
           teamId: event.my_team_id,
-          targetUserId: targetUserId
+          targetUserId: playerObj.user_id
         })
       });
-      fetchAttendance(); 
+
+      // Тихо обновляем данные для страховки
+      fetchAttendance();
     } catch (err) {
-      console.error('Ошибка при удалении игрока:', err);
-      fetchAttendance(); // Откат при ошибке
+      console.error('Ошибка при отметке игрока:', err);
+      fetchAttendance(); // Откатываем UI в случае реальной ошибки сети
     }
+  };
+
+  // ОПТИМИСТИЧНОЕ УДАЛЕНИЕ ИГРОКА
+  const confirmRemoveUser = async () => {
+    if (!userToRemove) return;
+    const targetUserId = userToRemove.id;
+    
+    // 1. Закрываем шторку и запускаем анимацию исчезновения
+    setUserToRemove(null);
+    setAnimatingOutId(targetUserId);
+
+    // 2. Ждем окончания анимации (200ms), затем удаляем из локального массива
+    setTimeout(async () => {
+      setAttendees(prev => {
+        const newAttendees = prev.filter(u => u.id !== targetUserId);
+        // Если удалили последнего - выключаем режим редактирования
+        if (newAttendees.length === 0) setIsEditMode(false);
+        return newAttendees;
+      });
+      setAnimatingOutId(null);
+
+      // 3. Отправляем запрос в фоне
+      try {
+        const apiUrl = import.meta.env.VITE_API_URL || '';
+        await fetch(`${apiUrl}/api/events/${event.event_id}/attendance`, {
+          method: 'POST',
+          headers: { ...getAuthHeaders(), 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            isAttending: false,
+            eventType: event.event_type,
+            teamId: event.my_team_id,
+            targetUserId: targetUserId
+          })
+        });
+        
+        // Тихо обновляем данные для страховки
+        fetchAttendance(); 
+      } catch (err) {
+        console.error('Ошибка при удалении игрока:', err);
+        fetchAttendance(); // Откатываем UI
+      }
+    }, 200);
   };
 
   const handlePointerDown = () => {
@@ -194,7 +229,7 @@ export const MatchAttendance = ({ event }) => {
   };
 
   const availablePlayers = teamRoster.filter(
-    player => !attendees.some(att => att.id === player.user_id)
+    player => !attendees.some(att => String(att.id) === String(player.user_id))
   );
 
   if (loading) {
@@ -206,7 +241,7 @@ export const MatchAttendance = ({ event }) => {
   }
 
   return (
-    <div className="flex flex-col gap-3 pb-[10vh] min-h-[30vh]" onClick={handleContainerClick}>
+    <div className="flex flex-col gap-4 mt-4 pb-[10vh] min-h-[30vh]" onClick={handleContainerClick}>
       
       <style>
         {`
@@ -219,39 +254,54 @@ export const MatchAttendance = ({ event }) => {
           .jiggle-delay-0 { animation-delay: 0s; }
           .jiggle-delay-1 { animation-delay: 0.1s; }
           .jiggle-delay-2 { animation-delay: 0.2s; }
+
+          /* Оптимизированные анимации масштабирования с GPU-ускорением */
+          @keyframes slotEnter {
+            0% { transform: scale(0.2) translateZ(0); opacity: 0; }
+            100% { transform: scale(1) translateZ(0); opacity: 1; }
+          }
+          @keyframes slotExit {
+            0% { transform: scale(1) translateZ(0); opacity: 1; }
+            100% { transform: scale(0.2) translateZ(0); opacity: 0; }
+          }
+          .animate-slot-enter { 
+            animation: slotEnter 0.25s cubic-bezier(0.34, 1.56, 0.64, 1) both; 
+            will-change: transform, opacity;
+          }
+          .animate-slot-exit { 
+            animation: slotExit 0.2s cubic-bezier(0.6, -0.28, 0.735, 0.045) both; 
+            will-change: transform, opacity;
+          }
         `}
       </style>
 
-      <div className="flex justify-between items-end px-1">
-        <span className="text-[10px] font-black text-content-muted uppercase tracking-widest">
-          Отметились ({attendees.length})
-        </span>
+      <SectionHeader 
+        title={`Отметились (${attendees.length})`}
+        showAction={hasManageAccess}
+        actionText={isEditMode ? 'Готово' : '+ Отметить'}
+        onActionClick={(e) => {
+          e.stopPropagation();
+          if (isEditMode) setIsEditMode(false);
+          else setIsSheetOpen(true);
+        }}
+        className="px-1"
+      />
 
-        {hasManageAccess && (
-          <button
-            onClick={(e) => {
-              e.stopPropagation();
-              if (isEditMode) setIsEditMode(false);
-              else setIsSheetOpen(true);
-            }}
-            className="text-[11px] font-bold text-brand uppercase tracking-wider active:opacity-70 transition-opacity"
-          >
-            {isEditMode ? 'Готово' : '+ Отметить'}
-          </button>
-        )}
-      </div>
-
-      <div className="pt-4 px-1">
+      <div className="px-1">
         {attendees.length > 0 ? (
           <div className="grid grid-cols-[repeat(auto-fill,minmax(100px,1fr))] gap-y-5 gap-x-2 justify-items-center">
-            {attendees.map((user, index) => {
-              const photoUrl = user.team_photo || user.avatar_url;
-              const canRemove = hasManageAccess || String(activeUserId) === String(user.id);
-              const jiggleClass = isEditMode && canRemove ? `animate-jiggle jiggle-delay-${index % 3}` : '';
+            {attendees.map((attendeeUser, index) => {
+              const photoUrl = attendeeUser.team_photo || attendeeUser.avatar_url;
+              const canRemove = hasManageAccess || String(activeUserId) === String(attendeeUser.id);
+              const isRemoving = attendeeUser.id === animatingOutId;
+              const isEntering = attendeeUser.id === animatingInId;
+              
+              // Если элемент удаляется - не трясем его
+              const jiggleClass = isEditMode && canRemove && !isRemoving ? `animate-jiggle jiggle-delay-${index % 3}` : '';
 
               return (
                 <div 
-                  key={user.id} 
+                  key={attendeeUser.id} 
                   onPointerDown={handlePointerDown}
                   onPointerUp={cancelPress}
                   onPointerLeave={cancelPress}
@@ -260,21 +310,27 @@ export const MatchAttendance = ({ event }) => {
                   className={`flex flex-col items-center gap-1.5 select-none w-full ${jiggleClass}`}
                 >
                   <div className="relative">
-                    <div className="w-16 h-16 shrink-0 rounded-2xl overflow-hidden bg-surface-level2 border border-surface-level2 shadow-sm">
+                    {/* Применяем анимации к обертке аватара */}
+                    <div className={clsx(
+                      "w-16 h-16 shrink-0 rounded-2xl overflow-hidden bg-surface-level2 border border-surface-level2 shadow-sm origin-center",
+                      isRemoving && "animate-slot-exit",
+                      isEntering && "animate-slot-enter"
+                    )}>
                       {photoUrl ? (
                         <img src={getImageUrl(photoUrl)} alt="Аватар" className="w-full h-full object-cover pointer-events-none" />
                       ) : (
                         <div className="w-full h-full bg-brand/10 text-brand flex items-center justify-center text-sm font-bold pointer-events-none">
-                          {getInitials(user.first_name, user.last_name)}
+                          {getInitials(attendeeUser.first_name, attendeeUser.last_name)}
                         </div>
                       )}
                     </div>
                     
-                    {isEditMode && canRemove && (
+                    {/* Прячем красный крестик сразу, как только нажали "Удалить" (isRemoving) */}
+                    {isEditMode && canRemove && !isRemoving && (
                       <button 
                         onClick={(e) => {
                           e.stopPropagation();
-                          setUserToRemove(user); // Открываем шторку подтверждения
+                          setUserToRemove(attendeeUser); 
                         }}
                         className="absolute -top-1.5 -right-1.5 w-[22px] h-[22px] bg-red-500 rounded-full flex items-center justify-center shadow-md z-10 hover:scale-110 active:scale-90 transition-transform"
                       >
@@ -285,12 +341,13 @@ export const MatchAttendance = ({ event }) => {
                     )}
                   </div>
 
+                  {/* Имя тоже плавно исчезает за счет родительского контейнера или остается на 200мс — выглядит органично */}
                   <div className="w-full text-center px-0.5">
                     <span className="text-[13px] font-bold text-content-main leading-tight break-words block pointer-events-none">
-                      {user.last_name}
+                      {attendeeUser.last_name}
                     </span>
                     <span className="text-[11px] text-content-muted leading-tight break-words block pointer-events-none mt-0.5">
-                      {user.first_name}
+                      {attendeeUser.first_name}
                     </span>
                   </div>
                 </div>
@@ -304,7 +361,6 @@ export const MatchAttendance = ({ event }) => {
         )}
       </div>
 
-      {/* Шторка для добавления */}
       <BottomSheet isOpen={isSheetOpen} onClose={() => setIsSheetOpen(false)}>
         <div className="flex flex-col gap-4">
           <h3 className="text-lg font-black text-content-main mb-2">Отметить игрока</h3>
@@ -347,7 +403,7 @@ export const MatchAttendance = ({ event }) => {
                       </span>
                     ) : (
                       <ButtonLP
-                        onClick={() => handleMarkUser(player.user_id)}
+                        onClick={() => handleMarkUser(player)} // Передаем полный объект игрока!
                         variant="primary"
                         className="!w-auto !py-1.5 !px-3 !text-[10px] ml-2 shrink-0"
                       >
@@ -366,7 +422,6 @@ export const MatchAttendance = ({ event }) => {
         </div>
       </BottomSheet>
 
-      {/* Шторка для подтверждения удаления */}
       <BottomSheet isOpen={!!userToRemove} onClose={() => setUserToRemove(null)}>
         <div className="flex flex-col items-center text-center gap-4 py-2">
           <div className="w-16 h-16 bg-red-500/10 text-red-500 rounded-full flex items-center justify-center mb-2">
