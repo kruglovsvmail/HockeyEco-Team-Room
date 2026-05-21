@@ -97,58 +97,33 @@ const TEAM_TABS = [
 ];
 
 export const MyTeamPage = () => {
-  const { openRightPanel } = useOutletContext();
-  const [teams, setTeams] = useState([]);
-  const [activeIndex, setActiveIndex] = useState(0); 
-  const [selectedTeamId, setSelectedTeamId] = useState(null);
+  // Читаем выбранную в сайдбаре команду реактивно из контекста верхнего уровня
+  const { openRightPanel, selectedTeam } = useOutletContext();
   
   const [teamData, setTeamData] = useState({ roster: [], staff: [] });
   const [activeTab, setActiveTab] = useState('all');
   const [isLoading, setIsLoading] = useState(true);
   
-  const navigate = useNavigate();
-  const touchStartX = useRef(null);
-  const carouselRef = useRef(null);
-  const stickyHeaderRef = useRef(null);
+  const selectedTeamId = selectedTeam?.id;
   const rafRef = useRef(null);
   const scrollContainerRef = useRef(null);
+  const stickyHeaderRef = useRef(null);
 
-  useEffect(() => {
-    const fetchTeams = async () => {
-      try {
-        const res = await fetch(`${import.meta.env.VITE_API_URL}/api/teams/my`, { headers: getAuthHeaders() });
-        if (res.status === 401) return navigate('/login');
-        const data = await res.json();
-        
-        const loadedTeams = data.teams || [];
-        setTeams(loadedTeams);
-        
-        if (loadedTeams.length > 0) {
-          const savedId = localStorage.getItem('teampwa_myteam_selected');
-          const foundIndex = loadedTeams.findIndex(t => t.id == savedId);
-          setActiveIndex(foundIndex !== -1 ? foundIndex : 0);
-        }
-      } catch (err) { console.error(err); }
-    };
-    fetchTeams();
-  }, [navigate]);
-
-  useEffect(() => {
-    if (teams.length > 0) {
-      const currentId = teams[activeIndex]?.id;
-      setSelectedTeamId(currentId);
-      localStorage.setItem('teampwa_myteam_selected', currentId);
-    }
-  }, [activeIndex, teams]);
-
+  // Загружаем ростер и штаб только при изменении id выбранной команды
   useEffect(() => {
     if (!selectedTeamId) return;
     const fetchTeamData = async () => {
       setIsLoading(true);
       try {
-        const res = await fetch(`${import.meta.env.VITE_API_URL}/api/teams/${selectedTeamId}/details`, { headers: getAuthHeaders() });
+        const res = await fetch(`${import.meta.env.VITE_API_URL}/api/teams/${selectedTeamId}/details`, { 
+          headers: getAuthHeaders() 
+        });
         if (res.ok) setTeamData(await res.json());
-      } catch (err) { console.error(err); } finally { setIsLoading(false); }
+      } catch (err) { 
+        console.error(err); 
+      } finally { 
+        setIsLoading(false); 
+      }
     };
     fetchTeamData();
   }, [selectedTeamId]);
@@ -162,47 +137,18 @@ export const MyTeamPage = () => {
   useEffect(() => {
     if (scrollContainerRef.current) {
       const currentScroll = scrollContainerRef.current.scrollTop;
-      if (currentScroll > 100) {
-        scrollContainerRef.current.scrollTo({ top: 130, behavior: 'auto' });
+      if (currentScroll > 80) {
+        scrollContainerRef.current.scrollTo({ top: 96, behavior: 'auto' });
       }
     }
   }, [activeTab]);
-
-  const getOffset = (index) => {
-    return index - activeIndex; 
-  };
-
-  const handleTouchStart = (e) => {
-    touchStartX.current = e.touches[0].clientX;
-  };
-
-  const handleTouchEnd = (e) => {
-    if (!touchStartX.current || teams.length === 0) return;
-    const diff = touchStartX.current - e.changedTouches[0].clientX;
-    
-    if (Math.abs(diff) > 40) { 
-      if (diff > 0) {
-        setActiveIndex((prev) => Math.min(prev + 1, teams.length - 1));
-      } else {
-        setActiveIndex((prev) => Math.max(prev - 1, 0));
-      }
-    }
-    touchStartX.current = null;
-  };
 
   const handleScroll = (e) => {
     const currentScroll = e.target.scrollTop;
     
     if (rafRef.current) cancelAnimationFrame(rafRef.current);
     rafRef.current = requestAnimationFrame(() => {
-      const isStuck = currentScroll > 110;
-
-      if (carouselRef.current) {
-        const opacity = Math.max(0, 1 - currentScroll / 60);
-        const translateY = currentScroll * 0.1;
-        carouselRef.current.style.opacity = opacity;
-        carouselRef.current.style.transform = `translateY(${translateY}px) translateZ(0)`;
-      }
+      const isStuck = currentScroll > 84;
 
       if (stickyHeaderRef.current) {
         if (String(isStuck) !== stickyHeaderRef.current.dataset.stuck) {
@@ -252,53 +198,23 @@ export const MyTeamPage = () => {
       className="h-full overflow-y-auto scrollbar-hide bg-surface-border animate-fade-in relative z-10 snap-y snap-proximity"
       onScroll={handleScroll}
     >
-      <div 
-        ref={carouselRef}
-        className="snap-start relative bg-surface-base w-full h-[122px] mb-2 flex items-start justify-center overflow-hidden shrink-0 touch-pan-y shadow-md will-change-transform"
-        onTouchStart={handleTouchStart}
-        onTouchEnd={handleTouchEnd}
-      >
-        {teams.map((team, index) => {
-          const offset = getOffset(index);
-          let x = 0; let scale = 1; let opacity = 1; let zIndex = 30;
-          
-          if (offset === 0) { x = 0; scale = 1; opacity = 1; zIndex = 30; }
-          else if (offset === 1) { x = 80; scale = 0.75; opacity = 0.5; zIndex = 20; }
-          else if (offset === -1) { x = -80; scale = 0.75; opacity = 0.5; zIndex = 20; }
-          else if (offset === 2) { x = 145; scale = 0.75; opacity = 0.5; zIndex = 10; }
-          else if (offset === -2) { x = -145; scale = 0.75; opacity = 0.5; zIndex = 10; }
-          else { x = offset > 0 ? 180 : -180; scale = 0.3; opacity = 0; zIndex = 0; }
-
-          return (
-            <div
-              key={team.id}
-              onClick={() => setActiveIndex(index)}
-              className="absolute flex flex-col items-center justify-start transition-all duration-500 ease-[cubic-bezier(0.32,0.72,0,1)] cursor-pointer"
-              style={{
-                transform: `translateX(${x}px) scale(${scale})`,
-                opacity,
-                zIndex,
-                pointerEvents: Math.abs(offset) > 2 ? 'none' : 'auto' 
-              }}
-            >
-              <div className={clsx(
-                "w-20 h-20 rounded-2xl flex items-center justify-center overflow-hidden transition-all duration-500",
-                offset === 0 ? "drop-shadow-lg" : "drop-shadow-lg"
-              )}>
-                <img src={getImageUrl(team.logo_url)} alt={team.name} className="w-full h-full object-contain p-2" />
-              </div>
-              
-              <div className={clsx(
-                "absolute top-full mt-2 w-[320px] text-center transition-all duration-500",
-                offset === 0 ? "opacity-100 translate-y-0" : "opacity-0 -translate-y-2 pointer-events-none"
-              )}>
-                <h2 className="text-[14px] font-black uppercase tracking-widest text-content-main leading-tight line-clamp-2">
-                  {team.name}
-                </h2>
-              </div>
-            </div>
-          );
-        })}
+      {/* ФИКСИРОВАННАЯ ШАПКА ВМЕСТО СТАРОЙ ТЯЖЕЛОЙ КАРУСЕЛИ */}
+      <div className="bg-surface-base px-5 py-4 mb-2 flex items-center gap-4 shadow-sm shrink-0 border-b border-surface-level2 snap-start">
+        <div className="w-16 h-16 rounded-2xl flex items-center justify-center overflow-hidden drop-shadow-sm bg-surface-level1 border border-surface-border shrink-0">
+          <img 
+            src={getImageUrl(selectedTeam?.logo_url)} 
+            alt={selectedTeam?.name} 
+            className="w-full h-full object-contain p-1" 
+          />
+        </div>
+        <div className="flex flex-col min-w-0">
+          <h2 className="text-[15px] font-black uppercase tracking-widest text-content-main leading-tight truncate">
+            {selectedTeam?.name}
+          </h2>
+          <span className="text-[10px] font-black text-brand uppercase tracking-[0.2em] mt-1">
+            Текущий состав
+          </span>
+        </div>
       </div>
 
       <div 
@@ -316,7 +232,9 @@ export const MyTeamPage = () => {
 
       <div className="w-full overflow-hidden pt-4 min-h-screen pb-[30vh]">
         {isLoading ? (
-          <div className="flex justify-center items-center h-32 text-brand font-black animate-pulse uppercase tracking-widest text-sm">Загрузка...</div>
+          <div className="flex justify-center items-center h-32 text-brand font-black animate-pulse uppercase tracking-widest text-sm">
+            Загрузка...
+          </div>
         ) : (
           <div 
             className="flex w-[300%] transition-transform duration-500 ease-[cubic-bezier(0.32,0.72,0,1)] items-start"

@@ -1,6 +1,6 @@
 import express from 'express';
 import { getEvents } from '../controllers/EventInfoController.js';
-import { toggleEventAttendance, getEventAttendance, getAvailableRoster } from '../controllers/EventAttendanceController.js';
+import { toggleEventAttendance, getEventAttendance, getAvailableRoster, toggleEventAttendanceTag } from '../controllers/EventAttendanceController.js';
 import { getMatchLines, saveMatchLines, submitMatchRoster, updateLinePlayer } from '../controllers/EventLinesController.js';
 import { verifyToken } from '../middleware/auth.js';
 
@@ -17,6 +17,9 @@ router.get('/:eventId/available-roster', verifyToken, getAvailableRoster);
 
 // Переключить статус присутствия на событии (тумблер)
 router.post('/:eventId/attendance', verifyToken, toggleEventAttendance);
+
+// Изменить финансовую пометку игрока (₽) без удаления его из списка
+router.put('/:eventId/attendance-tag', verifyToken, toggleEventAttendanceTag);
 
 // Получить опубликованные пятерки на матч (черновик)
 router.get('/:eventId/lines', verifyToken, getMatchLines);

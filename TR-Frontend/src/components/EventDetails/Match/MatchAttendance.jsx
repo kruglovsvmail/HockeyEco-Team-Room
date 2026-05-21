@@ -47,7 +47,7 @@ export const MatchAttendance = ({ event }) => {
   const tokenUser = getSafeUserFromToken();
   const activeUserId = user?.id || tokenUser?.id || tokenUser?.userId;
 
-  // Разделение отметившихся на вратарей и полевых игроков
+  // Разделение отметившихся на вратарей и полевых игроков по полю position из БД
   const goalies = useMemo(() => {
     return attendees.filter(a => a.position === 'goalie' || a.position === 'G');
   }, [attendees]);
@@ -137,7 +137,8 @@ export const MatchAttendance = ({ event }) => {
       last_name: playerObj.last_name,
       team_photo: playerObj.team_photo,
       avatar_url: playerObj.avatar_url,
-      position: playerObj.position // Сохраняем позицию для мгновенного реактивного распределения по группам
+      position: playerObj.position,
+      has_pay_tag: false
     };
 
     setAttendees(prev => [...prev, newAttendee]);
@@ -162,6 +163,43 @@ export const MatchAttendance = ({ event }) => {
     } catch (err) {
       console.error('Ошибка при отметке игрока:', err);
       fetchAttendance(); 
+    }
+  };
+
+  // Реактивное переключение бейджа "₽" без выхода из режима редактирования
+  const handleTogglePayTag = async (e, attendeeUser) => {
+    e.stopPropagation();
+    if (!hasManageAccess) return;
+
+    const targetNewState = !attendeeUser.has_pay_tag;
+
+    // Сразу обновляем стейт локально для отзывчивости интерфейса
+    setAttendees(prev => prev.map(u => {
+      if (u.id === attendeeUser.id) {
+        return { ...u, has_pay_tag: targetNewState };
+      }
+      return u;
+    }));
+
+    if (window.navigator && window.navigator.vibrate) {
+      window.navigator.vibrate(30);
+    }
+
+    try {
+      const apiUrl = import.meta.env.VITE_API_URL || '';
+      await fetch(`${apiUrl}/api/events/${event.event_id}/attendance-tag`, {
+        method: 'PUT',
+        headers: { ...getAuthHeaders(), 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          eventType: event.event_type,
+          teamId: event.my_team_id,
+          targetUserId: attendeeUser.id,
+          hasPayTag: targetNewState
+        })
+      });
+    } catch (err) {
+      console.error('Ошибка при изменении финансовой метки:', err);
+      fetchAttendance();
     }
   };
 
@@ -222,7 +260,6 @@ export const MatchAttendance = ({ event }) => {
     player => !attendees.some(att => String(att.id) === String(player.user_id))
   );
 
-  // Общий рендер карточки игрока для исключения дублирования кода в секциях
   const renderAttendeeCard = (attendeeUser, index) => {
     const photoUrl = attendeeUser.team_photo || attendeeUser.avatar_url;
     const canRemove = hasManageAccess || String(activeUserId) === String(attendeeUser.id);
@@ -240,7 +277,7 @@ export const MatchAttendance = ({ event }) => {
         onPointerCancel={cancelPress}
         onPointerMove={cancelPress}
         onClick={(e) => { if (isEditMode) e.stopPropagation(); }}
-        className={clsx("flex flex-col items-center gap-1.5 select-none w-full text-center", jiggleClass)}
+        className={clsx("flex flex-col items-center gap-1.5 select-none w-full text-center relative", jiggleClass)}
       >
         <div className="relative">
           <Avatar 
@@ -254,6 +291,7 @@ export const MatchAttendance = ({ event }) => {
             )}
           />
           
+          {/* Правый верхний угол: Крестик удаления */}
           {isEditMode && canRemove && !isRemoving && (
             <button 
               onClick={(e) => {
@@ -264,6 +302,27 @@ export const MatchAttendance = ({ event }) => {
             >
               <Icon name="close" className="w-3 h-3 text-white" strokeWidth={3.5} />
             </button>
+          )}
+
+          {/* Левый нижний угол: Метка взноса "₽" (Показывается всегда, если заполнена, либо только в режиме редактирования для админа) */}
+          {(isEditMode && hasManageAccess) ? (
+            <button
+              onClick={(e) => handleTogglePayTag(e, attendeeUser)}
+              className={clsx(
+                "absolute -bottom-1.5 -left-1.5 w-[22px] h-[22px] rounded-full flex items-center justify-center text-[11px] font-black shadow-md z-10 transition-all transform hover:scale-110 active:scale-90",
+                attendeeUser.has_pay_tag 
+                  ? "bg-brand text-white border border-brand" 
+                  : "bg-surface-level3 text-content-muted border border-surface-border"
+              )}
+            >
+              ₽
+            </button>
+          ) : (
+            attendeeUser.has_pay_tag && (
+              <div className="absolute -bottom-1.5 -left-1.5 w-[22px] h-[22px] rounded-full bg-brand text-white flex items-center justify-center text-[11px] font-black shadow-sm border border-surface-level1 pointer-events-none">
+                ₽
+              </div>
+            )
           )}
         </div>
 
@@ -321,10 +380,8 @@ export const MatchAttendance = ({ event }) => {
         `}
       </style>
 
-      {/* Компактный флекс-контейнер шапки с иконкой вместо старого текстового экшена */}
-      <div className="flex items-center justify-between w-full px-1 mb-2">
+      <div className="flex items-center justify-between w-full px-2">
         <SectionHeader 
-          title={`Отметились (${attendees.length})`}
           showAction={false}
           className="m-0"
         />
@@ -337,8 +394,8 @@ export const MatchAttendance = ({ event }) => {
               else setIsSheetOpen(true);
             }}
             className={clsx(
-              "w-9 h-9 rounded-xl border flex items-center justify-center transition-all shadow-sm active:scale-90 bg-surface-level2",
-              isEditMode ? "border-red-500/40 text-red-400" : "border-surface-border text-content-main hover:border-brand"
+              "w-9 h-9 rounded-xl flex items-center justify-center transition-all shadow-sm active:scale-90 bg-surface-level2",
+              isEditMode ? "text-brand font-bold" : "text-content-main hover:border-brand"
             )}
           >
             <Icon name={isEditMode ? "save" : "plus"} className="w-5 h-5" />
@@ -346,13 +403,12 @@ export const MatchAttendance = ({ event }) => {
         )}
       </div>
 
-      {/* Секционный список отметившихся по амплуа */}
-      <div className="px-1 flex flex-col gap-5">
+      <div className="px-1 flex flex-col gap-6">
         {attendees.length > 0 ? (
           <>
             {/* Группа: Вратари */}
-            <div className="bg-brand-glow/30 border border-surface-border/40 rounded-3xl p-4 flex flex-col gap-4">
-              <h4 className="text-[10px] font-black text-content-muted uppercase tracking-widest border-b border-surface-border/30 pb-2">
+            <div className="bg-brand-glow rounded-3xl p-3 flex flex-col gap-4">
+              <h4 className="text-[10px] font-black text-content-muted uppercase tracking-widest border-b border-surface-border pt-1 pl-4 pb-4">
                 Вратари ({goalies.length})
               </h4>
               {goalies.length > 0 ? (
@@ -365,8 +421,8 @@ export const MatchAttendance = ({ event }) => {
             </div>
 
             {/* Группа: Полевые игроки */}
-            <div className="bg-brand-glow/30 border border-surface-border/40 rounded-3xl p-4 flex flex-col gap-4">
-              <h4 className="text-[10px] font-black text-content-muted uppercase tracking-widest border-b border-surface-border/30 pb-2">
+            <div className="bg-brand-glow rounded-3xl p-3 flex flex-col gap-4">
+              <h4 className="text-[10px] font-black text-content-muted uppercase tracking-widest border-b border-surface-border pt-1 pl-4 pb-4">
                 Полевые игроки ({skaters.length})
               </h4>
               {skaters.length > 0 ? (

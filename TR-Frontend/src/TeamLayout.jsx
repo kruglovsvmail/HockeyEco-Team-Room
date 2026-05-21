@@ -31,15 +31,14 @@ export function TeamLayout() {
   const [rightPanel, setRightPanel] = useState({ isOpen: false, type: null, data: null, title: '' });
   const [fullPagePanel, setFullPagePanel] = useState({ isOpen: false, type: null, data: null, title: '' });
 
-  // --- ЛОГИКА ИЗМЕНЕНИЯ РАЗМЕРОВ ПАНЕЛЕЙ (RESIZING) ---
   const [sidebarWidth, setSidebarWidth] = useState(() => {
     const saved = localStorage.getItem('teampwa_sidebar_width');
-    return saved ? parseFloat(saved) : 20; // 20% по умолчанию
+    return saved ? parseFloat(saved) : 20; 
   });
 
   const [rightPanelWidth, setRightPanelWidth] = useState(() => {
     const saved = localStorage.getItem('teampwa_right_panel_width');
-    return saved ? parseFloat(saved) : 25; // 25% по умолчанию
+    return saved ? parseFloat(saved) : 25; 
   });
 
   const [isDraggingSidebar, setIsDraggingSidebar] = useState(false);
@@ -47,19 +46,14 @@ export function TeamLayout() {
 
   useEffect(() => {
     const handleMouseMove = (e) => {
-      // Общая ширина экрана
       const totalWidth = window.innerWidth;
       
       if (isDraggingSidebar) {
-        // Вычисляем процент от левого края
         let newWidth = (e.clientX / totalWidth) * 100;
-        // Защита от дурака: мин 20%, макс 50%, но с учетом того, что центр должен быть минимум 30%
         newWidth = Math.max(20, Math.min(newWidth, 50, 70 - rightPanelWidth));
         setSidebarWidth(newWidth);
       } else if (isDraggingRight) {
-        // Вычисляем процент от правого края
         let newWidth = ((totalWidth - e.clientX) / totalWidth) * 100;
-        // Те же лимиты
         newWidth = Math.max(20, Math.min(newWidth, 50, 70 - sidebarWidth));
         setRightPanelWidth(newWidth);
       }
@@ -79,7 +73,6 @@ export function TeamLayout() {
     if (isDraggingSidebar || isDraggingRight) {
       window.addEventListener('mousemove', handleMouseMove);
       window.addEventListener('mouseup', handleMouseUp);
-      // Блокируем выделение текста во время перетаскивания
       document.body.style.userSelect = 'none';
     }
 
@@ -89,12 +82,10 @@ export function TeamLayout() {
       document.body.style.userSelect = '';
     };
   }, [isDraggingSidebar, isDraggingRight, rightPanelWidth, sidebarWidth]);
-  // ----------------------------------------------------
 
   const navigate = useNavigate();
   const location = useLocation();
 
-  // Автоматическое освобождение правой панели при выходе из раздела (смене URL)
   useEffect(() => {
     closeRightPanel();
     setFullPagePanel({ isOpen: false, type: null, data: null, title: '' });
@@ -114,13 +105,14 @@ export function TeamLayout() {
         
         const data = await res.json();
         setUser(data.user);
-        setTeams(data.user.teams || []);
+        const userTeams = data.user.teams || [];
+        setTeams(userTeams);
         
         const savedTeamId = localStorage.getItem('teampwa_selected_team');
-        let currentTeam = data.user.teams.find(t => t.id == savedTeamId);
+        let currentTeam = userTeams.find(t => t.id == savedTeamId);
         
-        if (!currentTeam && data.user.teams.length > 0) {
-          currentTeam = data.user.teams[0];
+        if (!currentTeam && userTeams.length > 0) {
+          currentTeam = userTeams[0];
         }
         
         setSelectedTeam(currentTeam);
@@ -134,6 +126,11 @@ export function TeamLayout() {
 
     fetchMe();
   }, [navigate]);
+
+  const handleTeamChange = (team) => {
+    setSelectedTeam(team);
+    localStorage.setItem('teampwa_selected_team', team.id.toString());
+  };
 
   const handleLogout = () => {
     removeToken();
@@ -170,7 +167,6 @@ export function TeamLayout() {
     );
   }
 
-  // Динамический заголовок даты/времени события для правой панели
   let desktopEventTitle = fullPagePanel.title;
   if (fullPagePanel.data && fullPagePanel.data.event_date) {
     const eventDate = dayjs.utc(fullPagePanel.data.event_date).tz(fullPagePanel.data.arena_timezone || 'UTC');
@@ -186,21 +182,25 @@ export function TeamLayout() {
   return (
     <div 
       className="flex w-full h-full overflow-hidden relative bg-surface-base"
-      // Прокидываем проценты в CSS-переменные для адаптивности
       style={{ '--sidebar-w': `${sidebarWidth}%`, '--right-w': `${rightPanelWidth}%` }}
     >
       
       {/* 1. ЛЕВОЕ МЕНЮ (Сайдбар) */}
       <aside className={clsx(
         "fixed inset-y-0 left-0 z-40 h-full bg-surface-level1 transition-transform duration-500 ease-[cubic-bezier(0.32,0.72,0,1)] flex-shrink-0",
-        // На мобилках 80%, на ПК используем CSS переменную + убрали бордер (его заменяет ресайзер)
         "w-[80%] md:w-[var(--sidebar-w)] md:static md:translate-x-0 md:shadow-xl",
         isSidebarOpen ? "translate-x-0" : "-translate-x-full"
       )}>
-        <Sidebar user={user} teams={teams} selectedTeam={selectedTeam} onClose={() => setIsSidebarOpen(false)} onLogout={handleLogout} />
+        <Sidebar 
+          user={user} 
+          teams={teams} 
+          selectedTeam={selectedTeam} 
+          onTeamChange={handleTeamChange} 
+          onClose={() => setIsSidebarOpen(false)} 
+        />
       </aside>
 
-      {/* --- РЕСАЙЗЕР ЛЕВОЙ ПАНЕЛИ (Виден только на ПК) --- */}
+      {/* РЕСАЙЗЕР ЛЕВОЙ ПАНЕЛИ */}
       <div 
         className={clsx(
           "hidden md:block w-1.5 cursor-col-resize z-50 flex-shrink-0 transition-colors",
@@ -209,7 +209,7 @@ export function TeamLayout() {
         onMouseDown={() => setIsDraggingSidebar(true)}
       />
 
-      {/* 2. ГЛАВНЫЙ ЦЕНТРАЛЬНЫЙ КОНТЕЙНЕР */}
+      {/* 2. ЦЕНТРАЛЬНЫЙ КОНТЕЙНЕР КОНТЕНТА */}
       <div className={clsx(
         "flex flex-col flex-1 w-full h-full min-w-0 transition-transform duration-500 ease-[cubic-bezier(0.32,0.72,0,1)] z-30 bg-surface-base relative",
         isSidebarOpen ? "translate-x-[80%] shadow-2xl md:translate-x-0 md:shadow-none" : "",
@@ -223,11 +223,11 @@ export function TeamLayout() {
         {rightPanel.isOpen && <div className="absolute inset-0 z-50 bg-transparent cursor-pointer md:hidden" onClick={closeRightPanel} />}
 
         <main className="flex-1 overflow-y-auto overflow-x-hidden relative pt-[60px] overscroll-none">
-          <Outlet context={{ user, teams, selectedTeam, openRightPanel, openFullPage }} />
+          <Outlet context={{ user, teams, selectedTeam, handleTeamChange, openRightPanel, openFullPage }} />
         </main>
       </div>
 
-      {/* --- РЕСАЙЗЕР ПРАВОЙ ПАНЕЛИ (Виден только на ПК) --- */}
+      {/* РЕСАЙЗЕР ПРАВОЙ ПАНЕЛИ */}
       <div 
         className={clsx(
           "hidden md:block w-1.5 cursor-col-resize z-50 flex-shrink-0 transition-colors",
@@ -236,17 +236,13 @@ export function TeamLayout() {
         onMouseDown={() => setIsDraggingRight(true)}
       />
 
-      {/* 3. ФИКСИРОВАННАЯ ПРАВАЯ ПАНЕЛЬ ДЕТАЛЕЙ */}
+      {/* 3. ПРАВАЯ ПАНЕЛЬ ДЕТАЛЕЙ */}
       <div className={clsx(
         "fixed top-0 right-0 w-[80%] h-full z-[40] bg-surface-level1 shadow-[-15px_0_30px_rgba(0,0,0,0.1)] flex flex-col overflow-hidden transition-all duration-500 ease-[cubic-bezier(0.32,0.72,0,1)] flex-shrink-0",
-        // На мобилках выезжает, на ПК статична и использует CSS переменную ширины
         "md:static md:w-[var(--right-w)] md:translate-x-0 md:shadow-3xl",
         (rightPanel.isOpen || fullPagePanel.isOpen) ? "translate-x-0" : "translate-x-full"
       )}>
-        {/* Контейнер всегда растянут на 100% родителя, чтобы избежать сплющивания */}
         <div className="w-full h-full flex flex-col overflow-hidden shrink-0">
-          
-          {/* СОСТОЯНИЕ 1: Открыт профиль пользователя */}
           {rightPanel.isOpen ? (
             <>
               <div className="flex items-center bg-surface-base justify-between shadow-md p-4 h-[60px] shrink-0 z-[90]">
@@ -263,10 +259,7 @@ export function TeamLayout() {
                 )}
               </div>
             </>
-          ) : 
-          
-          // СОСТОЯНИЕ 2: Открыты вкладки события
-          fullPagePanel.isOpen ? (
+          ) : fullPagePanel.isOpen ? (
             <>
               <div className="flex items-center bg-surface-base justify-between shadow-md p-4 h-[60px] shrink-0 z-[90]">
                 <button onClick={closeFullPageUi} className="p-2 -ml-2 text-content-muted hover:text-brand transition-colors outline-none cursor-pointer active:scale-95 flex items-center">
@@ -282,23 +275,17 @@ export function TeamLayout() {
                 {fullPagePanel.type === 'meetingDetails' && <EventDetailsMeeting event={fullPagePanel.data} />}
               </div>
             </>
-          ) : 
-          
-          // СОСТОЯНИЕ 3: Свободная панель (Заглушка)
-          (
+          ) : (
             <div className="hidden md:flex flex-col h-full w-full bg-surface-level1 select-none">
               <div className="flex items-center bg-surface-base justify-between p-4 h-[60px] shrink-0 border-b border-surface-border/30">
-                 {/* Место под заголовок */}
               </div>
               <div className="flex-1 flex flex-col items-center justify-center p-6 text-center">
-                 {/* Место под контент пустого состояния */}
               </div>
             </div>
           )}
         </div>
       </div>
 
-      {/* НАТИВНЫЙ ПОЛНОЭКРАННЫЙ ДАШБОРД ДЛЯ МОБИЛОК (На ПК полностью скрыт) */}
       <div className="md:hidden">
         <EventDashboard isOpen={fullPagePanel.isOpen} onClose={closeFullPageUi} type={fullPagePanel.type} data={fullPagePanel.data} title={fullPagePanel.title} />
       </div>

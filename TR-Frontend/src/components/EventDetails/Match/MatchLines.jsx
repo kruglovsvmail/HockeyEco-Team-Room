@@ -648,17 +648,16 @@ export const MatchLines = ({ event }) => {
       </style>
       
       {/* Флекс-контейнер для шапки и компактных иконок действий */}
-      <div className="flex items-center justify-between w-full px-1 mb-2">
+      <div className="flex items-center justify-between w-full px-2">
         <SectionHeader 
-          title={isEditMode ? 'Формирование' : 'Пятерки на матч'}
           showAction={false} 
           className="m-0"
         />
         
-        <div className="flex items-center gap-3 shrink-0 relative">
+        <div className="flex items-center gap-4 shrink-0 relative">
           {/* Инлайн Тултип блокировки */}
           {showTooltip && (
-            <div className="absolute right-12 bg-surface-level1 border border-surface-border rounded-xl px-3 py-1.5 text-[11px] font-bold text-red-400 shadow-xl whitespace-nowrap animate-slot-enter z-20">
+            <div className="absolute right-12 bg-surface-level1 border border-surface-border rounded-xl px-3 py-1.5 text-[11px] font-bold text-danger shadow-xl whitespace-nowrap animate-slot-enter z-20">
               Редактирование заблокировано (осталось &le; {DEADLINES.LINES_EDIT_MINUTES} мин)
             </div>
           )}
@@ -669,10 +668,10 @@ export const MatchLines = ({ event }) => {
               onClick={handleSubmitOfficialRoster}
               disabled={timeToMatch < DEADLINES.ROSTER_SUBMIT_MINUTES}
               className={clsx(
-                "w-9 h-9 rounded-xl border flex items-center justify-center transition-all shadow-sm active:scale-90",
+                "w-9 h-9 rounded-xl flex items-center justify-center transition-all shadow-sm active:scale-90 bg-surface-level2",
                 isPublished 
-                  ? "bg-green-500/10 border-green-500/30 text-green-400" 
-                  : "bg-brand-glow border-surface-border text-brand hover:border-brand",
+                  ? "text-content-main" 
+                  : "text-success",
                 timeToMatch < DEADLINES.ROSTER_SUBMIT_MINUTES && "opacity-30 cursor-not-allowed active:scale-100"
               )}
             >
@@ -685,8 +684,8 @@ export const MatchLines = ({ event }) => {
             <button
               onClick={handleHeaderActionClick}
               className={clsx(
-                "w-9 h-9 rounded-xl border flex items-center justify-center transition-all shadow-sm active:scale-90 bg-surface-level2",
-                isEditMode ? "border-red-500/40 text-red-400" : "border-surface-border text-content-main hover:border-brand",
+                "w-9 h-9 rounded-xl flex items-center justify-center transition-all shadow-sm active:scale-90 bg-surface-level2",
+                isEditMode ? "text-danger" : "border-surface-border text-content-main",
                 timeToMatch <= DEADLINES.LINES_EDIT_MINUTES && !isEditMode && "opacity-40 cursor-not-allowed"
               )}
             >

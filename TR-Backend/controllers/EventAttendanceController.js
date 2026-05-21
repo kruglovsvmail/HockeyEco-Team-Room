@@ -21,7 +21,6 @@ export const getAvailableRoster = async (req, res) => {
     const { stage_type, division_id } = gameCheck.rows[0];
     let rosterRows = [];
 
-    // ДОБАВЛЕНО: tr.is_captain и tr.is_assistant для обоих типов турниров
     if ((stage_type === 'regular' || stage_type === 'playoff') && division_id) {
       const officialQuery = `
         SELECT 
@@ -194,36 +193,93 @@ export const getEventAttendance = async (req, res) => {
     let params = [];
 
     switch (eventType) {
-      case 'match':
+      case 'match': {
         if (!teamId) return res.status(400).json({ success: false, error: 'teamId обязателен для матча' });
-        query = `
-          SELECT u.id, u.first_name, u.last_name, tm.photo_url AS team_photo, u.avatar_url
-          FROM team_game_attendance tga
-          JOIN users u ON tga.user_id = u.id
-          LEFT JOIN team_members tm ON tm.user_id = u.id AND tm.team_id = $2 AND tm.left_at IS NULL
-          WHERE tga.game_id = $1 AND tga.team_id = $2
-          ORDER BY u.last_name ASC, u.first_name ASC
-        `;
-        params = [eventId, teamId];
+        
+        const gameCheck = await pool.query(
+          `SELECT stage_type, division_id FROM games WHERE id = $1`,
+          [eventId]
+        );
+        
+        const stageType = gameCheck.rows[0]?.stage_type || 'friendly';
+        const divisionId = gameCheck.rows[0]?.division_id;
+
+        if ((stageType === 'regular' || stageType === 'playoff') && divisionId) {
+          query = `
+            SELECT u.id, u.first_name, u.last_name, tm.photo_url AS team_photo, u.avatar_url, tr.position, tga.has_pay_tag
+            FROM team_game_attendance tga
+            JOIN users u ON tga.user_id = u.id
+            LEFT JOIN team_members tm ON tm.user_id = u.id AND tm.team_id = $2 AND tm.left_at IS NULL
+            LEFT JOIN tournament_teams tt ON tt.division_id = $3 AND tt.team_id = $2
+            LEFT JOIN tournament_rosters tr ON tr.tournament_team_id = tt.id AND tr.player_id = u.id AND tr.period_end IS NULL
+            WHERE tga.game_id = $1 AND tga.team_id = $2
+            ORDER BY u.last_name ASC, u.first_name ASC
+          `;
+          params = [eventId, teamId, divisionId];
+        } else {
+          query = `
+            SELECT u.id, u.first_name, u.last_name, tm.photo_url AS team_photo, u.avatar_url, tr.position, tga.has_pay_tag
+            FROM team_game_attendance tga
+            JOIN users u ON tga.user_id = u.id
+            LEFT JOIN team_members tm ON tm.user_id = u.id AND tm.team_id = $2 AND tm.left_at IS NULL
+            LEFT JOIN team_rosters tr ON tr.member_id = tm.id AND tr.left_at IS NULL
+            WHERE tga.game_id = $1 AND tga.team_id = $2
+            ORDER BY u.last_name ASC, u.first_name ASC
+          `;
+          params = [eventId, teamId];
+        }
         break;
+      }
 
       case 'team_training':
-        query = `SELECT u.id, u.first_name, u.last_name, u.avatar_url FROM team_training_attendance tta JOIN users u ON tta.user_id = u.id WHERE tta.team_training_id = $1 ORDER BY u.last_name ASC`;
+        query = `
+          SELECT u.id, u.first_name, u.last_name, u.avatar_url, tr.position, tta.has_pay_tag 
+          FROM team_training_attendance tta 
+          JOIN users u ON tta.user_id = u.id 
+          LEFT JOIN team_members tm ON tm.user_id = u.id AND tm.left_at IS NULL
+          LEFT JOIN team_rosters tr ON tr.member_id = tm.id AND tr.left_at IS NULL
+          WHERE tta.team_training_id = $1 
+          ORDER BY u.last_name ASC
+        `;
         params = [eventId];
         break;
 
       case 'team_meeting':
-        query = `SELECT u.id, u.first_name, u.last_name, u.avatar_url FROM team_meeting_attendance tma JOIN users u ON tma.user_id = u.id WHERE tma.team_meeting_id = $1 ORDER BY u.last_name ASC`;
+        query = `
+          SELECT u.id, u.first_name, u.last_name, u.avatar_url, tr.position, tma.has_pay_tag 
+          FROM team_meeting_attendance tma 
+          JOIN users u ON tma.user_id = u.id 
+          LEFT JOIN team_members tm ON tm.user_id = u.id AND tm.left_at IS NULL
+          LEFT JOIN team_rosters tr ON tr.member_id = tm.id AND tr.left_at IS NULL
+          WHERE tma.team_meeting_id = $1 
+          ORDER BY u.last_name ASC
+        `;
         params = [eventId];
         break;
 
       case 'club_training':
-        query = `SELECT u.id, u.first_name, u.last_name, u.avatar_url FROM club_training_attendance cta JOIN users u ON cta.user_id = u.id WHERE cta.club_training_id = $1 ORDER BY u.last_name ASC`;
+        query = `
+          SELECT u.id, u.first_name, u.last_name, u.avatar_url, tr.position, cta.has_pay_tag 
+          FROM club_training_attendance cta 
+          JOIN users u ON cta.user_id = u.id 
+          LEFT JOIN team_members tm ON tm.user_id = u.id AND tm.left_at IS NULL
+          LEFT JOIN team_rosters tr ON tr.member_id = tm.id AND tr.left_at IS NULL
+          WHERE cta.club_training_id = $1 
+          ORDER BY u.last_name ASC
+        `;
         params = [eventId];
         break;
 
       case 'club_meeting':
-        query = `SELECT u.id, u.first_name, u.last_name, u.avatar_url FROM club_meeting_attendance cma JOIN users u ON cma.user_id = u.id WHERE cma.club_meeting_id = $1 ORDER BY u.last_name ASC`;
+        query = `
+          SELECT u.id, u.first_name, u.last_name, u.avatar_url, tr.position, cma.has_pay_tag 
+          FROM club_meeting_attendance cma 
+          JOIN users u ON cma.user_id = u.id 
+          LEFT JOIN team_members tm ON tm.user_id = u.id AND tm.left_at IS NULL
+          LEFT JOIN team_rosters tr ON tr.member_id = tm.id AND tr.left_at IS NULL
+          WHERE cma.club_meeting_id = $1 
+          ORDER BY u.last_name ASC
+        `;
         params = [eventId];
         break;
 
@@ -235,6 +291,63 @@ export const getEventAttendance = async (req, res) => {
     res.json({ success: true, attendees: result.rows });
   } catch (err) {
     console.error('Ошибка получения списка отметившихся:', err);
+    res.status(500).json({ success: false, error: 'Ошибка сервера' });
+  }
+};
+
+export const toggleEventAttendanceTag = async (req, res) => {
+  try {
+    const initiatorId = req.user.id;
+    const { eventId } = req.params;
+    const { eventType, teamId, targetUserId, hasPayTag } = req.body;
+
+    if (!eventType || !targetUserId) {
+      return res.status(400).json({ success: false, error: 'eventType и targetUserId обязательны' });
+    }
+
+    const roleCheckQuery = `
+      SELECT 1 FROM team_members tm
+      JOIN team_roles tr ON tr.member_id = tm.id
+      WHERE tm.user_id = $1 AND tm.team_id = $2 AND tr.left_at IS NULL
+      AND tr.role IN ('team_manager', 'team_admin', 'head_coach')
+      UNION
+      SELECT 1 FROM club_roles cr
+      JOIN teams t ON t.club_id = cr.club_id
+      WHERE cr.user_id = $1 AND t.id = $2 AND cr.role IN ('top_manager', 'club_admin')
+      UNION
+      SELECT 1 FROM users WHERE id = $1 AND global_role = 'admin'
+    `;
+    
+    if (teamId) {
+      const roleCheck = await pool.query(roleCheckQuery, [initiatorId, teamId]);
+      if (roleCheck.rowCount === 0) {
+        return res.status(403).json({ success: false, error: 'У вас нет прав администратора для выставления пометок' });
+      }
+    }
+
+    switch (eventType) {
+      case 'match':
+        await pool.query(`UPDATE team_game_attendance SET has_pay_tag = $1 WHERE game_id = $2 AND user_id = $3 AND team_id = $4`, [hasPayTag, eventId, targetUserId, teamId]);
+        break;
+      case 'team_training':
+        await pool.query(`UPDATE team_training_attendance SET has_pay_tag = $1 WHERE team_training_id = $2 AND user_id = $3`, [hasPayTag, eventId, targetUserId]);
+        break;
+      case 'team_meeting':
+        await pool.query(`UPDATE team_meeting_attendance SET has_pay_tag = $1 WHERE team_meeting_id = $2 AND user_id = $3`, [hasPayTag, eventId, targetUserId]);
+        break;
+      case 'club_training':
+        await pool.query(`UPDATE club_training_attendance SET has_pay_tag = $1 WHERE club_training_id = $2 AND user_id = $3`, [hasPayTag, eventId, targetUserId]);
+        break;
+      case 'club_meeting':
+        await pool.query(`UPDATE club_meeting_attendance SET has_pay_tag = $1 WHERE club_meeting_id = $2 AND user_id = $3`, [hasPayTag, eventId, targetUserId]);
+        break;
+      default:
+        return res.status(400).json({ success: false, error: 'Неизвестный тип события' });
+    }
+
+    res.json({ success: true });
+  } catch (err) {
+    console.error('Ошибка изменения финансовой пометки:', err);
     res.status(500).json({ success: false, error: 'Ошибка сервера' });
   }
 };
