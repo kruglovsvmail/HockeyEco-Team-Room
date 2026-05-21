@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useRef } from 'react';
+import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { getImageUrl, getAuthHeaders } from '../../../utils/helpers';
 import { BottomSheet } from '../../../ui/BottomSheet';
 import { ButtonLP } from '../../../ui/Button-LP';
@@ -6,6 +6,7 @@ import { SectionHeader } from '../../../ui/SectionHeader';
 import { useAccess } from '../../../hooks/useAccess';
 import { ROLES, PERMISSIONS } from '../../../utils/permissions';
 import { Avatar } from '../../../ui/Avatar';
+import { Icon } from '../../../ui/Icon';
 import clsx from 'clsx';
 
 const getSafeUserFromToken = () => {
@@ -45,6 +46,15 @@ export const MatchAttendance = ({ event }) => {
 
   const tokenUser = getSafeUserFromToken();
   const activeUserId = user?.id || tokenUser?.id || tokenUser?.userId;
+
+  // Разделение отметившихся на вратарей и полевых игроков
+  const goalies = useMemo(() => {
+    return attendees.filter(a => a.position === 'goalie' || a.position === 'G');
+  }, [attendees]);
+
+  const skaters = useMemo(() => {
+    return attendees.filter(a => a.position !== 'goalie' && a.position !== 'G');
+  }, [attendees]);
 
   const fetchAttendance = useCallback(async () => {
     try {
@@ -126,7 +136,8 @@ export const MatchAttendance = ({ event }) => {
       first_name: playerObj.first_name,
       last_name: playerObj.last_name,
       team_photo: playerObj.team_photo,
-      avatar_url: playerObj.avatar_url
+      avatar_url: playerObj.avatar_url,
+      position: playerObj.position // Сохраняем позицию для мгновенного реактивного распределения по группам
     };
 
     setAttendees(prev => [...prev, newAttendee]);
@@ -211,6 +222,63 @@ export const MatchAttendance = ({ event }) => {
     player => !attendees.some(att => String(att.id) === String(player.user_id))
   );
 
+  // Общий рендер карточки игрока для исключения дублирования кода в секциях
+  const renderAttendeeCard = (attendeeUser, index) => {
+    const photoUrl = attendeeUser.team_photo || attendeeUser.avatar_url;
+    const canRemove = hasManageAccess || String(activeUserId) === String(attendeeUser.id);
+    const isRemoving = attendeeUser.id === animatingOutId;
+    const isEntering = attendeeUser.id === animatingInId;
+    
+    const jiggleClass = isEditMode && canRemove && !isRemoving ? `animate-jiggle jiggle-delay-${index % 3}` : '';
+
+    return (
+      <div 
+        key={attendeeUser.id} 
+        onPointerDown={handlePointerDown}
+        onPointerUp={cancelPress}
+        onPointerLeave={cancelPress}
+        onPointerCancel={cancelPress}
+        onPointerMove={cancelPress}
+        onClick={(e) => { if (isEditMode) e.stopPropagation(); }}
+        className={clsx("flex flex-col items-center gap-1.5 select-none w-full text-center", jiggleClass)}
+      >
+        <div className="relative">
+          <Avatar 
+            photoUrl={photoUrl}
+            firstName={attendeeUser.first_name}
+            lastName={attendeeUser.last_name}
+            className={clsx(
+              "w-16 h-16 rounded-2xl bg-surface-level2 border border-surface-level2 shadow-sm origin-center",
+              isRemoving && "animate-slot-exit",
+              isEntering && "animate-slot-enter"
+            )}
+          />
+          
+          {isEditMode && canRemove && !isRemoving && (
+            <button 
+              onClick={(e) => {
+                e.stopPropagation();
+                setUserToRemove(attendeeUser); 
+              }}
+              className="absolute -top-1.5 -right-1.5 w-[22px] h-[22px] bg-red-500 rounded-full flex items-center justify-center shadow-md z-10 hover:scale-110 active:scale-90 transition-transform"
+            >
+              <Icon name="close" className="w-3 h-3 text-white" strokeWidth={3.5} />
+            </button>
+          )}
+        </div>
+
+        <div className="w-full text-center px-0.5">
+          <span className="text-[13px] font-bold text-content-main leading-tight break-words block pointer-events-none">
+            {attendeeUser.last_name}
+          </span>
+          <span className="text-[11px] text-content-muted leading-tight break-words block pointer-events-none mt-0.5">
+            {attendeeUser.first_name}
+          </span>
+        </div>
+      </div>
+    );
+  };
+
   if (loading) {
     return (
       <div className="flex justify-center items-center h-32 text-[11px] font-black text-content-muted uppercase tracking-widest bg-surface-level2/30 rounded-2xl border border-surface-border/50 border-dashed">
@@ -253,81 +321,66 @@ export const MatchAttendance = ({ event }) => {
         `}
       </style>
 
-      <SectionHeader 
-        title={`Отметились (${attendees.length})`}
-        showAction={hasManageAccess}
-        actionText={isEditMode ? 'Готово' : '+ Отметить'}
-        onActionClick={(e) => {
-          e.stopPropagation();
-          if (isEditMode) setIsEditMode(false);
-          else setIsSheetOpen(true);
-        }}
-        className="px-1"
-      />
+      {/* Компактный флекс-контейнер шапки с иконкой вместо старого текстового экшена */}
+      <div className="flex items-center justify-between w-full px-1 mb-2">
+        <SectionHeader 
+          title={`Отметились (${attendees.length})`}
+          showAction={false}
+          className="m-0"
+        />
+        
+        {hasManageAccess && (
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              if (isEditMode) setIsEditMode(false);
+              else setIsSheetOpen(true);
+            }}
+            className={clsx(
+              "w-9 h-9 rounded-xl border flex items-center justify-center transition-all shadow-sm active:scale-90 bg-surface-level2",
+              isEditMode ? "border-red-500/40 text-red-400" : "border-surface-border text-content-main hover:border-brand"
+            )}
+          >
+            <Icon name={isEditMode ? "save" : "plus"} className="w-5 h-5" />
+          </button>
+        )}
+      </div>
 
-      <div className="px-1">
+      {/* Секционный список отметившихся по амплуа */}
+      <div className="px-1 flex flex-col gap-5">
         {attendees.length > 0 ? (
-          <div className="grid grid-cols-[repeat(auto-fill,minmax(100px,1fr))] gap-y-5 gap-x-2 justify-items-center">
-            {attendees.map((attendeeUser, index) => {
-              const photoUrl = attendeeUser.team_photo || attendeeUser.avatar_url;
-              const canRemove = hasManageAccess || String(activeUserId) === String(attendeeUser.id);
-              const isRemoving = attendeeUser.id === animatingOutId;
-              const isEntering = attendeeUser.id === animatingInId;
-              
-              const jiggleClass = isEditMode && canRemove && !isRemoving ? `animate-jiggle jiggle-delay-${index % 3}` : '';
-
-              return (
-                <div 
-                  key={attendeeUser.id} 
-                  onPointerDown={handlePointerDown}
-                  onPointerUp={cancelPress}
-                  onPointerLeave={cancelPress}
-                  onPointerMove={cancelPress}
-                  onClick={(e) => { if (isEditMode) e.stopPropagation(); }}
-                  className={`flex flex-col items-center gap-1.5 select-none w-full ${jiggleClass}`}
-                >
-                  <div className="relative">
-                    <Avatar 
-                      photoUrl={photoUrl}
-                      firstName={attendeeUser.first_name}
-                      lastName={attendeeUser.last_name}
-                      className={clsx(
-                        "w-16 h-16 rounded-2xl bg-surface-level2 border border-surface-level2 shadow-sm origin-center",
-                        isRemoving && "animate-slot-exit",
-                        isEntering && "animate-slot-enter"
-                      )}
-                    />
-                    
-                    {isEditMode && canRemove && !isRemoving && (
-                      <button 
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          setUserToRemove(attendeeUser); 
-                        }}
-                        className="absolute -top-1.5 -right-1.5 w-[22px] h-[22px] bg-red-500 rounded-full flex items-center justify-center shadow-md z-10 hover:scale-110 active:scale-90 transition-transform"
-                      >
-                        <svg className="w-3.5 h-3.5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3.5}>
-                          <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
-                        </svg>
-                      </button>
-                    )}
-                  </div>
-
-                  <div className="w-full text-center px-0.5">
-                    <span className="text-[13px] font-bold text-content-main leading-tight break-words block pointer-events-none">
-                      {attendeeUser.last_name}
-                    </span>
-                    <span className="text-[11px] text-content-muted leading-tight break-words block pointer-events-none mt-0.5">
-                      {attendeeUser.first_name}
-                    </span>
-                  </div>
+          <>
+            {/* Группа: Вратари */}
+            <div className="bg-brand-glow/30 border border-surface-border/40 rounded-3xl p-4 flex flex-col gap-4">
+              <h4 className="text-[10px] font-black text-content-muted uppercase tracking-widest border-b border-surface-border/30 pb-2">
+                Вратари ({goalies.length})
+              </h4>
+              {goalies.length > 0 ? (
+                <div className="grid grid-cols-[repeat(auto-fill,minmax(95px,1fr))] gap-y-5 gap-x-2 justify-items-center">
+                  {goalies.map((attendeeUser, idx) => renderAttendeeCard(attendeeUser, idx))}
                 </div>
-              );
-            })}
-          </div>
+              ) : (
+                <span className="text-[11px] text-content-muted italic py-1 pl-1">Вратари еще не отмечались</span>
+              )}
+            </div>
+
+            {/* Группа: Полевые игроки */}
+            <div className="bg-brand-glow/30 border border-surface-border/40 rounded-3xl p-4 flex flex-col gap-4">
+              <h4 className="text-[10px] font-black text-content-muted uppercase tracking-widest border-b border-surface-border/30 pb-2">
+                Полевые игроки ({skaters.length})
+              </h4>
+              {skaters.length > 0 ? (
+                <div className="grid grid-cols-[repeat(auto-fill,minmax(95px,1fr))] gap-y-5 gap-x-2 justify-items-center">
+                  {skaters.map((attendeeUser, idx) => renderAttendeeCard(attendeeUser, idx))}
+                </div>
+              ) : (
+                <span className="text-[11px] text-content-muted italic py-1 pl-1">Полевые игроки еще не отмечались</span>
+              )}
+            </div>
+          </>
         ) : (
-          <div className="flex justify-center items-center h-20 text-[11px] font-black text-content-muted uppercase tracking-widest text-center">
-            Пока никто не отметился
+          <div className="flex justify-center items-center h-24 text-[11px] font-black text-content-muted uppercase tracking-widest text-center bg-brand-glow/20 border border-surface-border/30 border-dashed rounded-2xl">
+            Пока никто не отметил свое присутствие
           </div>
         )}
       </div>

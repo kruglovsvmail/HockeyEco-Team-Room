@@ -1,11 +1,13 @@
-import React, { useState, useEffect, useCallback, useRef } from 'react';
+import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { getImageUrl, getAuthHeaders } from '../../../utils/helpers';
 import { BottomSheet } from '../../../ui/BottomSheet';
 import { ButtonLP } from '../../../ui/Button-LP';
 import { SectionHeader } from '../../../ui/SectionHeader';
 import { useAccess } from '../../../hooks/useAccess';
-import { ROLES, PERMISSIONS } from '../../../utils/permissions';
+import { ROLES, PERMISSIONS, DEADLINES } from '../../../utils/permissions';
 import { Avatar } from '../../../ui/Avatar';
+import { Icon } from '../../../ui/Icon';
+import { CheckboxLP } from '../../../ui/Checkbox-LP';
 import clsx from 'clsx';
 
 const getSafeUserFromToken = () => {
@@ -33,9 +35,7 @@ const sanitizePosition = (pos) => {
     'Ц': 'C', 'Л': 'LW', 'П': 'RW', 'В': 'G',
     'ОСН': 'G', 'ЗАП': 'G', 'РЕЗ': 'G'
   };
-  
   const sanitized = map[upperPos] || upperPos;
-  
   const validKeys = ['LW', 'C', 'RW', 'LD', 'RD', 'G'];
   return validKeys.includes(sanitized) ? sanitized : 'LW';
 };
@@ -48,33 +48,99 @@ export const MatchLines = ({ event }) => {
   const [isDeleteMode, setIsDeleteMode] = useState(false); 
   const [loading, setLoading] = useState(true);
   const [isPublishing, setIsPublishing] = useState(false);
-  const [hasManageAccess, setHasManageAccess] = useState(false);
+  
+  // Список персонала команды из доступного ростера
+  const [staffMembers, setStaffMembers] = useState([]);
+
+  // Тултип и блокировки по времени
+  const [timeToMatch, setTimeToMatch] = useState(999);
+  const [showTooltip, setShowTooltip] = useState(false);
+  const tooltipTimer = useRef(null);
 
   const [currentSlide, setCurrentSlide] = useState(0);
   const [activeSelection, setActiveSelection] = useState(null);
-  
   const [userInteracted, setUserInteracted] = useState(false);
   const [removingSlot, setRemovingSlot] = useState(null);
+
+  // Состояние нижней шторки параметров игрока
+  const [isRosterSheetOpen, setIsRosterSheetOpen] = useState(false);
+  const [selectedPlayer, setSelectedPlayer] = useState(null);
+  const [editJersey, setEditJersey] = useState('');
+  const [editCaptain, setEditCaptain] = useState(false);
+  const [editAssistant, setEditAssistant] = useState(false);
+  const [sheetError, setSheetError] = useState('');
+  const [isSheetSaving, setIsSheetSaving] = useState(false);
 
   const { user, checkAccess, selectedTeam } = useAccess();
   const carouselRef = useRef(null);
   const chipsScrollRef = useRef(null);
   const pressTimer = useRef(null);
   const longPressFired = useRef(false);
-  
-  const cacheKey = `draft_lines_${event?.event_id}_${event?.my_team_id}`;
+
+  // Базовые идентификаторы пользователя
+  const tokenUser = useMemo(() => getSafeUserFromToken(), []);
+  const activeUserId = user?.id || tokenUser?.id || tokenUser?.userId;
+  const activeGlobalRole = useMemo(() => {
+    return String(user?.global_role || user?.globalRole || tokenUser?.global_role || tokenUser?.globalRole || '').toLowerCase();
+  }, [user, tokenUser]);
+
+  // Сбор всех ролей пользователя (с поддержкой совмещения ролей через запятую)
+  const userRoles = useMemo(() => {
+    const rolesSet = new Set();
+    
+    if (activeGlobalRole) {
+      rolesSet.add(activeGlobalRole);
+    }
+    
+    if (selectedTeam?.user_role) {
+      selectedTeam.user_role.split(',').forEach(r => rolesSet.add(r.trim().toLowerCase()));
+    }
+    
+    if (staffMembers.length > 0 && activeUserId) {
+      const myStaff = staffMembers.find(s => String(s.user_id) === String(activeUserId));
+      if (myStaff && myStaff.roles) {
+        myStaff.roles.split(',').forEach(r => rolesSet.add(r.trim().toLowerCase()));
+      }
+    }
+    
+    return Array.from(rolesSet);
+  }, [activeGlobalRole, selectedTeam?.user_role, staffMembers, activeUserId]);
+
+  // Проверка доступа администратора/руководителя команды
+  const hasAdminAccess = useMemo(() => {
+    if (userRoles.includes('admin')) return true;
+    const allowedAdminRoles = (PERMISSIONS.ROSTER_SUBMIT || []).map(r => r.toLowerCase());
+    return userRoles.some(role => allowedAdminRoles.includes(role));
+  }, [userRoles]);
+
+  // Проверка доступа тренера
+  const hasCoachAccess = useMemo(() => {
+    if (userRoles.includes('admin')) return true;
+    const allowedCoachRoles = (PERMISSIONS.LINES_MANAGE || []).map(r => r.toLowerCase());
+    return userRoles.some(role => allowedCoachRoles.includes(role));
+  }, [userRoles]);
+
+  // Счётчик времени до матча
+  useEffect(() => {
+    if (!event?.game_date) return;
+    const checkTime = () => {
+      const diff = (new Date(event.game_date) - new Date()) / 1000 / 60;
+      setTimeToMatch(diff);
+    };
+    checkTime();
+    const interval = setInterval(checkTime, 30000);
+    return () => clearInterval(interval);
+  }, [event?.game_date]);
 
   useEffect(() => {
     const el = chipsScrollRef.current;
     if (!el) return;
-
     const handleWheel = (e) => {
       if (e.deltaY !== 0) {
         e.preventDefault(); 
         el.scrollLeft += e.deltaY;
       }
     };
-
     el.addEventListener('wheel', handleWheel, { passive: false });
     return () => el.removeEventListener('wheel', handleWheel);
   }, [isEditMode]);
@@ -97,63 +163,29 @@ export const MatchLines = ({ event }) => {
       });
       const linesData = await linesRes.json();
 
-      const tokenUser = getSafeUserFromToken();
-      const activeUserId = user?.id || tokenUser?.id || tokenUser?.userId;
-      const activeGlobalRole = String(user?.global_role || user?.globalRole || tokenUser?.global_role || tokenUser?.globalRole || '').toLowerCase();
-
       const rosterRes = await fetch(`${apiUrl}/api/events/${event.event_id}/available-roster?teamId=${event.my_team_id}`, {
         headers: { ...headers, 'Content-Type': 'application/json' }
       });
       const rosterData = await rosterRes.json();
-
-      let access = false;
-      if (activeGlobalRole === (ROLES.GLOBAL_ADMIN || '').toLowerCase()) access = true;
-      else if (selectedTeam && checkAccess('LINES_MANAGE')) access = true;
-      else if (rosterData.staff && activeUserId) {
-        const myStaffRecord = rosterData.staff.find(s => String(s.user_id) === String(activeUserId));
-        if (myStaffRecord && myStaffRecord.roles) {
-          const myRoles = myStaffRecord.roles.split(',').map(r => r.trim().toLowerCase());
-          const allowed = PERMISSIONS.LINES_MANAGE || [];
-          access = myRoles.some(r => allowed.includes(r.toLowerCase()));
-        }
+      if (rosterData.success && rosterData.staff) {
+        setStaffMembers(rosterData.staff);
       }
-      setHasManageAccess(access);
 
       if (linesData.success) {
         setIsPublished(linesData.isPublished);
-        const cached = localStorage.getItem(cacheKey);
-        if (access && cached) {
-          try {
-            const parsedCache = JSON.parse(cached);
-            const sanitizedCache = parsedCache.map(l => ({
-              ...l,
-              position_in_line: sanitizePosition(l.position_in_line)
-            }));
-            setDraftLines(sanitizedCache);
-          } catch (e) {
-            setDraftLines(linesData.lines || []);
-          }
-        } else {
-          setDraftLines(linesData.lines || []);
-        }
+        setDraftLines(linesData.lines || []);
       }
 
     } catch (err) {
-      console.error('Ошибка загрузки пятерок:', err);
+      console.error('Ошибка загрузки данных:', err);
     } finally {
       setLoading(false);
     }
-  }, [event?.event_id, event?.event_type, event?.my_team_id, user, checkAccess, selectedTeam, cacheKey]);
+  }, [event?.event_id, event?.event_type, event?.my_team_id]);
 
   useEffect(() => {
     if (event?.event_id) loadInitialData();
   }, [loadInitialData, event?.event_id]);
-
-  useEffect(() => {
-    if (isEditMode && hasManageAccess) {
-      localStorage.setItem(cacheKey, JSON.stringify(draftLines));
-    }
-  }, [draftLines, isEditMode, hasManageAccess, cacheKey]);
 
   const handleCarouselScroll = (e) => {
     if (!isEditMode) return;
@@ -170,10 +202,7 @@ export const MatchLines = ({ event }) => {
   const scrollToSlide = (index) => {
     if (carouselRef.current) {
       const width = carouselRef.current.clientWidth;
-      carouselRef.current.scrollTo({
-        left: width * index,
-        behavior: 'smooth'
-      });
+      carouselRef.current.scrollTo({ left: width * index, behavior: 'smooth' });
       setCurrentSlide(index);
     }
   };
@@ -190,7 +219,16 @@ export const MatchLines = ({ event }) => {
         const newPlayer = attendees.find(a => a.id === activeSelection.id);
         let newLines = [...draftLines];
         if (existingPlayer) newLines.splice(existingPlayerIndex, 1);
-        newLines.push({ player_id: newPlayer.id, line_number: lineNum, position_in_line: pos, ...newPlayer });
+        
+        newLines.push({ 
+          player_id: newPlayer.id, 
+          line_number: lineNum, 
+          position_in_line: pos, 
+          jersey_number: newPlayer.jersey_number,
+          is_captain: newPlayer.is_captain,
+          is_assistant: newPlayer.is_assistant,
+          ...newPlayer 
+        });
         setDraftLines(newLines);
         setActiveSelection(null);
       } 
@@ -228,7 +266,16 @@ export const MatchLines = ({ event }) => {
         const existingPlayerIndex = draftLines.findIndex(l => l.line_number === activeSelection.line && l.position_in_line === activeSelection.pos);
         let newLines = [...draftLines];
         if (existingPlayerIndex !== -1) newLines.splice(existingPlayerIndex, 1);
-        newLines.push({ player_id: newPlayer.id, line_number: activeSelection.line, position_in_line: activeSelection.pos, ...newPlayer });
+        
+        newLines.push({ 
+          player_id: newPlayer.id, 
+          line_number: activeSelection.line, 
+          position_in_line: activeSelection.pos, 
+          jersey_number: newPlayer.jersey_number,
+          is_captain: newPlayer.is_captain,
+          is_assistant: newPlayer.is_assistant,
+          ...newPlayer 
+        });
         setDraftLines(newLines);
         setActiveSelection(null);
       } else if (activeSelection.type === 'chip' && activeSelection.id === playerId) {
@@ -273,6 +320,10 @@ export const MatchLines = ({ event }) => {
   };
 
   const handlePublish = async () => {
+    if (timeToMatch < DEADLINES.LINES_EDIT_MINUTES) {
+      alert(`Время сохранения истекло (менее ${DEADLINES.LINES_EDIT_MINUTES} минут до матча)`);
+      return;
+    }
     setIsPublishing(true);
     try {
       const apiUrl = import.meta.env.VITE_API_URL || '';
@@ -291,18 +342,124 @@ export const MatchLines = ({ event }) => {
       });
       const data = await res.json();
       if (data.success) {
-        setIsPublished(true);
+        setIsPublished(false); 
         setIsEditMode(false);
         setIsDeleteMode(false);
         setActiveSelection(null);
-        localStorage.removeItem(cacheKey);
-      } else {
-        console.error('Ошибка бэкенда:', data.error);
+        loadInitialData();
       }
     } catch (err) {
-      console.error('Ошибка публикации:', err);
+      console.error(err);
     } finally {
       setIsPublishing(false);
+    }
+  };
+
+  const handleSubmitOfficialRoster = async (e) => {
+    e.stopPropagation();
+    if (timeToMatch < DEADLINES.ROSTER_SUBMIT_MINUTES) {
+      alert(`Время подачи заявки вышло (менее ${DEADLINES.ROSTER_SUBMIT_MINUTES} минут до старта)`);
+      return;
+    }
+    try {
+      const apiUrl = import.meta.env.VITE_API_URL || '';
+      const headers = getAuthHeaders();
+      const res = await fetch(`${apiUrl}/api/events/${event.event_id}/submit-roster`, {
+        method: 'POST',
+        headers: { ...headers, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ teamId: event.my_team_id })
+      });
+      const data = await res.json();
+      if (data.success) {
+        setIsPublished(true);
+        alert('Официальная заявка успешно отправлена в лигу!');
+      } else {
+        alert(data.error || 'Ошибка отправки заявки');
+      }
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
+  const handleViewPlayerClick = (player) => {
+    if (!hasAdminAccess) return;
+    if (timeToMatch < DEADLINES.ROSTER_SUBMIT_MINUTES) {
+      alert(`Редактирование параметров заблокировано (менее ${DEADLINES.ROSTER_SUBMIT_MINUTES} минут до матча)`);
+      return;
+    }
+    setSelectedPlayer(player);
+    setEditJersey(player.jersey_number ?? '');
+    setEditCaptain(player.is_captain || false);
+    setEditAssistant(player.is_assistant || false);
+    setSheetError('');
+    setIsRosterSheetOpen(true);
+  };
+
+  const handleSavePlayerParams = async () => {
+    setSheetError('');
+    
+    if (editJersey !== '') {
+      const num = parseInt(editJersey);
+      const duplicate = draftLines.find(p => String(p.player_id) !== String(selectedPlayer.player_id) && p.jersey_number === num);
+      if (duplicate) {
+        setSheetError(`Номер ${num} уже занят игроком ${duplicate.last_name}`);
+        return;
+      }
+    }
+
+    if (editAssistant) {
+      const assistantsCount = draftLines.filter(p => String(p.player_id) !== String(selectedPlayer.player_id) && p.is_assistant).length;
+      if (assistantsCount >= 2) {
+        setSheetError('В команде уже назначено 2 ассистента. Снимите статус с другого игрока.');
+        return;
+      }
+    }
+
+    setIsSheetSaving(true);
+    try {
+      const apiUrl = import.meta.env.VITE_API_URL || '';
+      const headers = getAuthHeaders();
+      const res = await fetch(`${apiUrl}/api/events/${event.event_id}/line-player`, {
+        method: 'PUT',
+        headers: { ...headers, 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          teamId: event.my_team_id,
+          playerId: selectedPlayer.player_id,
+          jerseyNumber: editJersey === '' ? null : parseInt(editJersey),
+          isCaptain: editCaptain,
+          isAssistant: editAssistant
+        })
+      });
+      const data = await res.json();
+      if (data.success) {
+        setIsRosterSheetOpen(false);
+        setIsPublished(false); 
+        loadInitialData();
+      } else {
+        setSheetError(data.error || 'Ошибка сохранения');
+      }
+    } catch (err) {
+      setSheetError('Ошибка соединения с сервером');
+    } finally {
+      setIsSheetSaving(false);
+    }
+  };
+
+  const handleHeaderActionClick = (e) => {
+    e.stopPropagation();
+    if (isEditMode) {
+      setIsEditMode(false);
+      setIsDeleteMode(false);
+      setActiveSelection(null);
+      loadInitialData(); 
+    } else {
+      if (timeToMatch <= DEADLINES.LINES_EDIT_MINUTES) {
+        setShowTooltip(true);
+        if (tooltipTimer.current) clearTimeout(tooltipTimer.current);
+        tooltipTimer.current = setTimeout(() => setShowTooltip(false), 3500);
+        return;
+      }
+      setIsEditMode(true);
     }
   };
 
@@ -314,12 +471,12 @@ export const MatchLines = ({ event }) => {
     );
   }
 
-  if (!isPublished && !hasManageAccess) {
+  if (!isPublished && !hasCoachAccess && !hasAdminAccess && draftLines.length === 0) {
     return (
       <div className="flex flex-col justify-center items-center p-6 text-center gap-3">   
-        <div>
-          <h3 className="flex justify-center items-center h-24 text-[11px] font-black text-content-muted uppercase tracking-widest">Состав еще не сформирован</h3>
-        </div>
+        <h3 className="flex justify-center items-center h-24 text-[11px] font-black text-content-muted uppercase tracking-widest">
+          Состав еще не сформирован
+        </h3>
       </div>
     );
   }
@@ -330,7 +487,6 @@ export const MatchLines = ({ event }) => {
     const player = draftLines.find(l => l.line_number === lineNum && l.position_in_line === pos);
     const isSelected = activeSelection?.type === 'slot' && activeSelection?.line === lineNum && activeSelection?.pos === pos;
     const isRemoving = removingSlot?.line === lineNum && removingSlot?.pos === pos;
-
     const playerImage = player?.team_photo || player?.avatar_url;
 
     const jiggleDelay = (lineNum + (pos === 'LW' ? 0 : pos === 'C' ? 1 : 2)) % 3;
@@ -349,22 +505,20 @@ export const MatchLines = ({ event }) => {
             e.stopPropagation();
             return;
           }
-
           if (isDeleteMode) {
-            if (player) {
-              e.stopPropagation();
-            } else {
-              setIsDeleteMode(false);
-              e.stopPropagation();
-            }
+            if (!player) setIsDeleteMode(false);
+            e.stopPropagation();
             return;
           }
-          
-          handleSlotClick(lineNum, pos);
+          if (isEditMode) {
+            handleSlotClick(lineNum, pos);
+          } else if (player) {
+            handleViewPlayerClick(player);
+          }
         }}
         className={clsx(
-          "flex flex-col items-center w-[100px] relative transition-opacity duration-200 shrink-0",
-          isEditMode ? "cursor-pointer" : "pointer-events-none",
+          "flex flex-col items-center w-[100px] relative transition-all duration-200 shrink-0",
+          isEditMode ? "cursor-pointer" : (hasAdminAccess && player ? "cursor-pointer active:scale-95" : "pointer-events-none"),
           (isEditMode && !player && !isSelected && !isDeleteMode) ? "opacity-70 hover:opacity-100" : "opacity-100",
           jiggleClass
         )}
@@ -372,7 +526,6 @@ export const MatchLines = ({ event }) => {
         <div className={clsx(
           "w-16 h-16 rounded-2xl bg-brand-glow flex items-center justify-center relative transition-all duration-200 shrink-0 box-border z-0 origin-center",
           isSelected ? "ring-2 ring-brand scale-110" : "",
-          !player && "",
           player && "shadow-lg border border-surface-border bg-surface-level3"
         )}>
           {player ? (
@@ -388,19 +541,40 @@ export const MatchLines = ({ event }) => {
                 fallbackClassName="bg-surface-level2 text-content-main text-[12px]"
               />
               
+              {/* УНИФИЦИРОВАННЫЕ НАВЕСНЫЕ БЕЙДЖИ С АНИМАЦИЕЙ СХЛОПЫВАНИЯ/ВСПЛЫТИЯ КУБИЧЕСКИМ БЕЗЬЕ */}
+              {/* Бейдж Капитана / Ассистента (В точном стиле вкладки Штаб/Состав) */}
+              {(player.is_captain || player.is_assistant) && (
+                <div className={clsx(
+                  "absolute -top-1.5 -right-1.5 w-[20px] h-[20px] rounded-full bg-brand shadow-sm flex items-center justify-center text-[9px] font-black text-content-dark z-20 origin-center",
+                  "transition-all duration-300 ease-[cubic-bezier(0.34,1.56,0.64,1)] will-change-transform",
+                  isEditMode ? "scale-0 opacity-0 pointer-events-none" : "scale-100 opacity-100"
+                )}>
+                  {player.is_captain ? 'К' : 'А'}
+                </div>
+              )}
+
+              {/* Бейдж Игрового Номера (В точном стиле вкладки Состав) */}
+              {player.jersey_number != null && (
+                <div className={clsx(
+                  "absolute -bottom-1 -right-3 w-[32px] h-[32px] bg-brand-glow rounded-full backdrop-blur-[4px] border border-white/50 shadow-sm flex items-center justify-center text-[13px] font-black text-content-dark z-10 origin-center",
+                  "transition-all duration-300 ease-[cubic-bezier(0.34,1.56,0.64,1)] will-change-transform",
+                  isEditMode ? "scale-0 opacity-0 pointer-events-none" : "scale-100 opacity-100"
+                )}>
+                  {player.jersey_number}
+                </div>
+              )}
+
               {isDeleteMode && !isRemoving && (
                 <button 
                   onClick={(e) => handleDeletePlayer(lineNum, pos, e)}
-                  className="absolute -top-1.5 -right-1.5 w-[22px] h-[22px] bg-red-500 rounded-full flex items-center justify-center shadow-md z-20 hover:scale-110 active:scale-90 transition-transform"
+                  className="absolute -top-1.5 -right-1.5 w-[22px] h-[22px] bg-red-500 rounded-full flex items-center justify-center shadow-md z-20 transition-transform"
                 >
-                  <svg className="w-3.5 h-3.5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3.5}>
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
-                  </svg>
+                  <Icon name="close" className="w-3 h-3 text-white" strokeWidth={3.5} />
                 </button>
               )}
 
               <div className="absolute -bottom-2 bg-surface-level2 rounded-md px-1.5 py-0.5 border border-surface-border shadow-sm z-10">
-                <span className="text-[8px] font-black text-content-main uppercase tracking-widest leading-none block">
+                <span className="text-[8px] font-black text-content-muted uppercase tracking-widest leading-none block">
                   {labelText || pos}
                 </span>
               </div>
@@ -426,9 +600,7 @@ export const MatchLines = ({ event }) => {
 
   const renderLineBlock = (lineNum) => (
     <div key={`line-${lineNum}`} className="w-full flex flex-col items-center pb-2">
-      <h3 className="text-[20px] font-black text-content-muted uppercase tracking-widest mb-8">
-        #{lineNum}
-      </h3>
+      <h3 className="text-[20px] font-black text-content-muted uppercase tracking-widest mb-8">#{lineNum}</h3>
       <div className="flex justify-center gap-3 w-full mb-3">
         {renderSlot(lineNum, 'LW', 'ЛН')}
         {renderSlot(lineNum, 'C', 'ЦН')}
@@ -443,9 +615,7 @@ export const MatchLines = ({ event }) => {
 
   const renderGoaliesBlock = () => (
     <div className="w-full flex flex-col items-center pb-6">
-       <h3 className="text-[14px] font-black text-content-muted uppercase tracking-widest mb-8">
-          Вратари
-       </h3>
+       <h3 className="text-[14px] font-black text-content-muted uppercase tracking-widest mb-8">Вратари</h3>
        <div className="flex justify-center gap-3 w-full">
           {renderSlot(5, 'G', 'Осн')}
           {renderSlot(6, 'G', 'Зап')}
@@ -455,56 +625,21 @@ export const MatchLines = ({ event }) => {
   );
 
   return (
-    <div 
-      className="flex flex-col gap-4 mt-4" 
-      onClick={() => { if (isDeleteMode) setIsDeleteMode(false); }}
-    >
+    <div className="flex flex-col gap-4 mt-4" onClick={() => { if (isDeleteMode) setIsDeleteMode(false); }}>
       
       <style>
         {`
           .custom-scrollbar::-webkit-scrollbar { height: 4px; }
           .custom-scrollbar::-webkit-scrollbar-track { background: transparent; }
           .custom-scrollbar::-webkit-scrollbar-thumb { background: rgba(150, 150, 150, 0.2); border-radius: 10px; }
-          
-          .grid-expand-transition {
-            display: grid;
-            grid-template-rows: 0fr;
-            transition: grid-template-rows 0.3s cubic-bezier(0.25, 1, 0.5, 1), opacity 0.2s ease-out;
-            opacity: 0;
-            pointer-events: none;
-          }
-          .grid-expand-transition.expanded { 
-            grid-template-rows: 1fr; 
-            opacity: 1; 
-            pointer-events: auto;
-          }
-          .grid-expand-inner {
-            min-height: 0;
-            overflow: hidden;
-          }
-
-          @keyframes slotEnter {
-            0% { transform: scale(0.2) translateZ(0); opacity: 0; }
-            100% { transform: scale(1) translateZ(0); opacity: 1; }
-          }
-          @keyframes slotExit {
-            0% { transform: scale(1) translateZ(0); opacity: 1; }
-            100% { transform: scale(0.2) translateZ(0); opacity: 0; }
-          }
-          .animate-slot-enter { 
-            animation: slotEnter 0.25s cubic-bezier(0.34, 1.56, 0.64, 1) both; 
-            will-change: transform, opacity;
-          }
-          .animate-slot-exit { 
-            animation: slotExit 0.2s cubic-bezier(0.6, -0.28, 0.735, 0.045) both; 
-            will-change: transform, opacity;
-          }
-
-          @keyframes jiggle {
-            0% { transform: rotate(-1.5deg); }
-            50% { transform: rotate(1.5deg); }
-            100% { transform: rotate(-1.5deg); }
-          }
+          .grid-expand-transition { display: grid; grid-template-rows: 0fr; transition: grid-template-rows 0.3s cubic-bezier(0.25, 1, 0.5, 1), opacity 0.2s ease-out; opacity: 0; pointer-events: none; }
+          .grid-expand-transition.expanded { grid-template-rows: 1fr; opacity: 1; pointer-events: auto; }
+          .grid-expand-inner { min-height: 0; overflow: hidden; }
+          @keyframes slotEnter { 0% { transform: scale(0.2); opacity: 0; } 100% { transform: scale(1); opacity: 1; } }
+          @keyframes slotExit { 0% { transform: scale(1); opacity: 1; } 100% { transform: scale(0.2); opacity: 0; } }
+          .animate-slot-enter { animation: slotEnter 0.25s cubic-bezier(0.34, 1.56, 0.64, 1) both; }
+          .animate-slot-exit { animation: slotExit 0.2s cubic-bezier(0.6, -0.28, 0.735, 0.045) both; }
+          @keyframes jiggle { 0% { transform: rotate(-1.5deg); } 50% { transform: rotate(1.5deg); } 100% { transform: rotate(-1.5deg); } }
           .animate-jiggle { animation: jiggle 0.3s ease-in-out infinite; }
           .jiggle-delay-0 { animation-delay: 0s; }
           .jiggle-delay-1 { animation-delay: 0.1s; }
@@ -512,24 +647,56 @@ export const MatchLines = ({ event }) => {
         `}
       </style>
       
-      <SectionHeader 
-        title={isEditMode ? 'Формирование' : 'Пятерки на матч'}
-        showAction={hasManageAccess}
-        actionText={isEditMode ? 'Отмена' : 'Редактировать'}
-        onActionClick={(e) => {
-          e.stopPropagation();
-          if (isEditMode) {
-            setIsEditMode(false);
-            setIsDeleteMode(false);
-            setActiveSelection(null);
-            loadInitialData(); 
-          } else {
-            setIsEditMode(true);
-          }
-        }}
-        className="px-1"
-      />
+      {/* Флекс-контейнер для шапки и компактных иконок действий */}
+      <div className="flex items-center justify-between w-full px-1 mb-2">
+        <SectionHeader 
+          title={isEditMode ? 'Формирование' : 'Пятерки на матч'}
+          showAction={false} 
+          className="m-0"
+        />
+        
+        <div className="flex items-center gap-3 shrink-0 relative">
+          {/* Инлайн Тултип блокировки */}
+          {showTooltip && (
+            <div className="absolute right-12 bg-surface-level1 border border-surface-border rounded-xl px-3 py-1.5 text-[11px] font-bold text-red-400 shadow-xl whitespace-nowrap animate-slot-enter z-20">
+              Редактирование заблокировано (осталось &le; {DEADLINES.LINES_EDIT_MINUTES} мин)
+            </div>
+          )}
 
+          {/* Иконка отправки заявки в лигу (Доступна руководителям и администраторам) */}
+          {hasAdminAccess && !isEditMode && (
+            <button 
+              onClick={handleSubmitOfficialRoster}
+              disabled={timeToMatch < DEADLINES.ROSTER_SUBMIT_MINUTES}
+              className={clsx(
+                "w-9 h-9 rounded-xl border flex items-center justify-center transition-all shadow-sm active:scale-90",
+                isPublished 
+                  ? "bg-green-500/10 border-green-500/30 text-green-400" 
+                  : "bg-brand-glow border-surface-border text-brand hover:border-brand",
+                timeToMatch < DEADLINES.ROSTER_SUBMIT_MINUTES && "opacity-30 cursor-not-allowed active:scale-100"
+              )}
+            >
+              <Icon name="registry" className="w-5 h-5" />
+            </button>
+          )}
+
+          {/* Иконка управления расстановкой (Доступна тренерам) */}
+          {hasCoachAccess && (
+            <button
+              onClick={handleHeaderActionClick}
+              className={clsx(
+                "w-9 h-9 rounded-xl border flex items-center justify-center transition-all shadow-sm active:scale-90 bg-surface-level2",
+                isEditMode ? "border-red-500/40 text-red-400" : "border-surface-border text-content-main hover:border-brand",
+                timeToMatch <= DEADLINES.LINES_EDIT_MINUTES && !isEditMode && "opacity-40 cursor-not-allowed"
+              )}
+            >
+              <Icon name={isEditMode ? "close" : "edit"} className="w-5 h-5" />
+            </button>
+          )}
+        </div>
+      </div>
+
+      {/* Выдвижная панель игроков (Режим тренера) */}
       <div className="-mx-4">
         <div className={clsx("grid-expand-transition", isEditMode && "expanded")}>
           <div className="grid-expand-inner">
@@ -540,25 +707,18 @@ export const MatchLines = ({ event }) => {
                 </span>
               </div>
               
-              <div 
-                ref={chipsScrollRef}
-                className="flex flex-col flex-wrap content-start overflow-x-auto overflow-y-hidden custom-scrollbar snap-x snap-mandatory px-4 gap-1 h-[120px] w-full"
-              >
+              <div ref={chipsScrollRef} className="flex flex-col flex-wrap content-start overflow-x-auto overflow-y-hidden custom-scrollbar snap-x snap-mandatory px-4 gap-1 h-[120px] w-full">
                 {unassignedPlayers.map((p) => {
                   const isSelected = activeSelection?.type === 'chip' && activeSelection?.id === p.id;
                   return (
                     <button
                       key={p.id}
                       onClick={(e) => {
-                        if (isDeleteMode) {
-                          setIsDeleteMode(false);
-                          e.stopPropagation();
-                          return;
-                        }
+                        if (isDeleteMode) { setIsDeleteMode(false); return; }
                         handleChipClick(p.id);
                       }}
                       className={clsx(
-                        "px-3 py-1 rounded-full text-[12px] font-semibold transition-colors duration-150 shrink-0 select-none outline-none w-max snap-start border border-solid",
+                        "px-3 py-1 rounded-full text-[12px] font-semibold transition-colors shrink-0 snap-start border border-solid",
                         isSelected 
                           ? "bg-brand text-content-dark border-brand" 
                           : "bg-surface-level2 text-content-main border-surface-border hover:bg-surface-border"
@@ -569,9 +729,7 @@ export const MatchLines = ({ event }) => {
                   );
                 })}
                 {unassignedPlayers.length === 0 && (
-                  <span className="text-[11px] text-content-muted italic pl-1 w-full mt-2">
-                    Все игроки распределены
-                  </span>
+                  <span className="text-[11px] text-content-muted italic pl-1 w-full mt-2">Все игроки распределены</span>
                 )}
               </div>
             </div>
@@ -579,13 +737,10 @@ export const MatchLines = ({ event }) => {
         </div>
       </div>
 
+      {/* Игровое поле / Звенья */}
       {isEditMode ? (
         <div className="relative w-full">
-          <div 
-            ref={carouselRef}
-            onScroll={handleCarouselScroll}
-            className="flex overflow-x-auto flex-nowrap snap-x snap-mandatory scrollbar-hide px-1 pt-2"
-          >
+          <div ref={carouselRef} onScroll={handleCarouselScroll} className="flex overflow-x-auto flex-nowrap snap-x snap-mandatory scrollbar-hide px-1 pt-2">
             {[1, 2, 3, 4].map(lineNum => (
                <div key={`slide-${lineNum}`} className="min-w-full snap-center snap-always shrink-0">
                   {renderLineBlock(lineNum)}
@@ -600,18 +755,13 @@ export const MatchLines = ({ event }) => {
             {[0, 1, 2, 3, 4].map((index) => (
               <button
                 key={`dot-${index}`}
-                onClick={(e) => {
-                  e.stopPropagation();
-                  scrollToSlide(index);
-                }}
+                onClick={(e) => { e.stopPropagation(); scrollToSlide(index); }}
                 className="p-1.5 -m-1.5 focus:outline-none" 
               >
-                <div
-                  className={clsx(
-                    "h-2 rounded-full transition-all duration-300 ease-out opacity-50",
-                    currentSlide === index ? "w-10 bg-surface-level1" : "w-2 border border-surface-level1 bg-surface-border hover:bg-surface-border"
-                  )}
-                />
+                <div className={clsx(
+                  "h-2 rounded-full transition-all duration-300 ease-out opacity-50",
+                  currentSlide === index ? "w-10 bg-surface-level1" : "w-2 border border-surface-level1 bg-surface-border hover:bg-surface-border"
+                )} />
               </button>
             ))}
           </div>
@@ -619,10 +769,7 @@ export const MatchLines = ({ event }) => {
       ) : (
         <div className="flex flex-col gap-6 w-full">
           {[1, 2, 3, 4].map(lineNum => (
-            <div 
-              key={`view-line-${lineNum}`} 
-              className="bg-brand-glow rounded-3xl pt-4 pb-1 shadow-sm"
-            >
+            <div key={`view-line-${lineNum}`} className="bg-brand-glow rounded-3xl pt-4 pb-1 shadow-sm">
               {renderLineBlock(lineNum)}
             </div>
           ))}
@@ -632,16 +779,87 @@ export const MatchLines = ({ event }) => {
         </div>
       )}
 
-      {isEditMode && hasManageAccess && (
+      {/* Кнопка публикации состава тренером */}
+      {isEditMode && hasCoachAccess && (
         <div className="pt-8 pb-[5vh]">
-          <ButtonLP onClick={(e) => {
-            e.stopPropagation();
-            handlePublish();
-          }} isLoading={isPublishing}>
+          <ButtonLP onClick={(e) => { e.stopPropagation(); handlePublish(); }} isLoading={isPublishing}>
             Опубликовать состав
           </ButtonLP>
         </div>
       )}
+
+      {/* ШТОРКА АДМИНИСТРАТОРА (Для изменения номеров и статусов C / A) */}
+      <BottomSheet isOpen={isRosterSheetOpen} onClose={() => setIsRosterSheetOpen(false)}>
+        {selectedPlayer && (
+          <div className="flex flex-col gap-6 pt-2">
+            <div className="flex items-center gap-4 border-b border-surface-border pb-4">
+              <div className="w-14 h-14 rounded-2xl bg-surface-level3 overflow-hidden border border-surface-border shrink-0">
+                <Avatar 
+                  photoUrl={selectedPlayer.team_photo || selectedPlayer.avatar_url} 
+                  firstName={selectedPlayer.first_name} 
+                  lastName={selectedPlayer.last_name} 
+                  className="w-full h-full"
+                />
+              </div>
+              <div className="flex flex-col">
+                <span className="text-base font-black text-content-main uppercase tracking-wide">
+                  {selectedPlayer.last_name}
+                </span>
+                <span className="text-sm font-medium text-content-muted">
+                  {selectedPlayer.first_name}
+                </span>
+              </div>
+            </div>
+
+            {sheetError && (
+              <div className="p-3 rounded-xl bg-red-500/10 border border-red-500/20 text-red-400 text-xs font-semibold">
+                {sheetError}
+              </div>
+            )}
+
+            <div className="flex flex-col gap-2">
+              <label className="text-[10px] font-black text-content-muted uppercase tracking-widest">
+                Игровой номер на матч
+              </label>
+              <input 
+                type="number" 
+                pattern="[0-9]*"
+                inputMode="numeric"
+                value={editJersey}
+                onChange={(e) => setEditJersey(e.target.value)}
+                placeholder="Не назначен"
+                className="w-full h-11 bg-surface-level2 border border-surface-border rounded-xl px-4 text-sm font-bold text-content-main focus:border-brand focus:outline-none transition-colors"
+              />
+            </div>
+
+            <div className="flex flex-col gap-4 bg-surface-level2/50 border border-surface-border/60 rounded-2xl p-4">
+              <CheckboxLP 
+                label="Капитан команды (C)" 
+                checked={editCaptain} 
+                onChange={(val) => {
+                  setEditCaptain(val);
+                  if (val) setEditAssistant(false);
+                }} 
+              />
+              <div className="h-px bg-surface-border/50" />
+              <CheckboxLP 
+                label="Ассистент капитана (A)" 
+                checked={editAssistant} 
+                onChange={(val) => {
+                  setEditAssistant(val);
+                  if (val) setEditCaptain(false);
+                }} 
+              />
+            </div>
+
+            <div className="pt-4">
+              <ButtonLP onClick={handleSavePlayerParams} isLoading={isSheetSaving}>
+                Сохранить параметры
+              </ButtonLP>
+            </div>
+          </div>
+        )}
+      </BottomSheet>
 
     </div>
   );

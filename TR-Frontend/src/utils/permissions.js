@@ -20,8 +20,7 @@ export const DEADLINES = {
 export const PERMISSIONS = {
   // Управление базовым составом команды (глобальные ростеры на турнир)
   ROSTER_MANAGE: [
-    ROLES.CLUB_TOP_MANAGER, ROLES.CLUB_ADMIN, 
-    ROLES.TEAM_MANAGER, ROLES.TEAM_ADMIN, ROLES.HEAD_COACH
+    ROLES.CLUB_TOP_MANAGER, ROLES.TEAM_MANAGER
   ],
   
   // Управление тренировками, собраниями и товарняками
@@ -34,7 +33,7 @@ export const PERMISSIONS = {
   // Управление ручными отметками присутствия игроков (плюсики/минусики)
   ATTENDANCE_MANAGE: [
     ROLES.CLUB_TOP_MANAGER, ROLES.CLUB_ADMIN, 
-    ROLES.TEAM_MANAGER, ROLES.TEAM_ADMIN, ROLES.HEAD_COACH
+    ROLES.TEAM_MANAGER, ROLES.TEAM_ADMIN
   ],
 
   // Просмотр внутренней информации (тактика, расписание, контакты)
@@ -46,8 +45,6 @@ export const PERMISSIONS = {
 
   // Сохранение ЧЕРНОВИКА пятерок на матч (внутренняя доска команды)
   LINES_MANAGE: [
-    ROLES.CLUB_TOP_MANAGER, ROLES.CLUB_ADMIN, 
-    ROLES.TEAM_MANAGER, ROLES.TEAM_ADMIN, 
     ROLES.HEAD_COACH, ROLES.COACH
   ],
 
