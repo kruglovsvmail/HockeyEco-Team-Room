@@ -4,8 +4,9 @@ import clsx from 'clsx';
 import { getAuthHeaders, getImageUrl } from '../utils/helpers';
 import { ChipTabs } from '../ui/ChipTabs';
 import { Avatar } from '../ui/Avatar';
+import { ContainerContent } from '../ui/ContainerContent';
+import { Table } from '../ui/Table';
 
-// --- КОМПОНЕНТ КАРТОЧКИ-СЕТКИ ДЛЯ ВЗГЛЯДА "ВСЕ" И "СОСТАВ" ---
 const PersonGridCard = ({ person, onClick, showBadges = false }) => {
   return (
     <div 
@@ -45,59 +46,13 @@ const PersonGridCard = ({ person, onClick, showBadges = false }) => {
   );
 };
 
-// --- КОМПОНЕНТ КАРТОЧКИ-ТАБЛИЦЫ ДЛЯ ВЗГЛЯДА "ШТАБ" ---
-const StaffTableCard = ({ person, onClick }) => {
-  const roleDict = {
-    'team_manager': 'Руководитель',
-    'team_admin': 'Администратор',
-    'coach': 'Тренер',
-    'head_coach': 'Главный тренер'
-  };
-
-  const renderRoles = (rolesString) => {
-    if (!rolesString) return null;
-    const rolesArray = rolesString.split(',').map(r => r.trim());
-    return rolesArray.map((r, i) => (
-      <span key={i} className="text-[10px] font-black text-brand uppercase tracking-widest rounded-md text-right w-fit">
-        {roleDict[r] || r}
-      </span>
-    ));
-  };
-
-  return (
-    <div 
-      onClick={() => onClick(person)}
-      className="flex items-center gap-3 bg-surface-level1 border border-surface-level2 rounded-2xl p-3 shadow-sm h-full cursor-pointer active:scale-[0.98] transition-transform w-full"
-    >
-      <Avatar 
-        photoUrl={person.photo_url || person.avatar_url}
-        firstName={person.first_name}
-        lastName={person.last_name}
-        className="w-16 h-16 rounded-2xl bg-surface-level2 border border-surface-level2 shadow-sm"
-      />
-      <div className="flex flex-col flex-1 justify-center">
-        <span className="text-[13px] font-bold text-content-main leading-tight">
-          {person.last_name}
-        </span>
-        <span className="text-[11px] text-content-muted leading-tight mt-0.5">
-          {person.first_name}
-        </span>
-      </div>
-      <div className="flex flex-col gap-1.5 items-end shrink-0 justify-center">
-        {renderRoles(person.roles)}
-      </div>
-    </div>
-  );
-};
-
 const TEAM_TABS = [
-  { id: 'all', label: 'Все' },
-  { id: 'roster', label: 'Состав' },
-  { id: 'staff', label: 'Штаб' }
+  { id: 'all', label: 'Состав' },
+  { id: 'roster', label: 'Ростер' },
+  { id: 'staff', label: 'Представители' }
 ];
 
 export const MyTeamPage = () => {
-  // Читаем выбранную в сайдбаре команду реактивно из контекста верхнего уровня
   const { openRightPanel, selectedTeam } = useOutletContext();
   
   const [teamData, setTeamData] = useState({ roster: [], staff: [] });
@@ -109,7 +64,13 @@ export const MyTeamPage = () => {
   const scrollContainerRef = useRef(null);
   const stickyHeaderRef = useRef(null);
 
-  // Загружаем ростер и штаб только при изменении id выбранной команды
+  const roleDict = {
+    'team_manager': 'Руководитель',
+    'team_admin': 'Администратор',
+    'coach': 'Тренер',
+    'head_coach': 'Гл. тренер'
+  };
+
   useEffect(() => {
     if (!selectedTeamId) return;
     const fetchTeamData = async () => {
@@ -186,6 +147,53 @@ export const MyTeamPage = () => {
     return unique.sort((a, b) => (a.last_name || '').localeCompare(b.last_name || ''));
   }, [teamData]);
 
+  const staffColumns = useMemo(() => [
+    {
+      key: 'photo',
+      title: 'Фото',
+      width: '64px',
+      align: 'center',
+      render: (person) => (
+        <Avatar 
+          photoUrl={person.photo_url || person.avatar_url}
+          firstName={person.first_name}
+          lastName={person.last_name}
+          className="w-11 h-11 rounded-xl bg-surface-level2 border border-surface-level2 shadow-sm mx-auto pointer-events-none"
+        />
+      )
+    },
+    {
+      key: 'name',
+      title: 'Имя',
+      width: 'auto',
+      render: (person) => (
+        <div className="flex flex-col pointer-events-none">
+          <span className="font-bold text-content-main leading-tight">{person.last_name}</span>
+          <span className="text-[12px] text-content-muted mt-0.5">{person.first_name}</span>
+        </div>
+      )
+    },
+    {
+      key: 'roles',
+      title: 'Роль',
+      width: '140px',
+      align: 'right',
+      render: (person) => {
+        if (!person.roles) return null;
+        const rolesArray = person.roles.split(',').map(r => r.trim());
+        return (
+          <div className="flex flex-col gap-1 items-end justify-center pointer-events-none">
+            {rolesArray.map((r, i) => (
+              <span key={i} className="text-[10px] font-black text-brand uppercase tracking-widest text-right">
+                {roleDict[r] || r}
+              </span>
+            ))}
+          </div>
+        );
+      }
+    }
+  ], []);
+
   const translateX = activeTab === 'all' 
     ? '0%' 
     : activeTab === 'roster' 
@@ -198,9 +206,8 @@ export const MyTeamPage = () => {
       className="h-full overflow-y-auto scrollbar-hide bg-surface-border animate-fade-in relative z-10 snap-y snap-proximity"
       onScroll={handleScroll}
     >
-      {/* ФИКСИРОВАННАЯ ШАПКА ВМЕСТО СТАРОЙ ТЯЖЕЛОЙ КАРУСЕЛИ */}
-      <div className="bg-surface-base px-5 py-4 mb-2 flex items-center gap-4 shadow-sm shrink-0 border-b border-surface-level2 snap-start">
-        <div className="w-16 h-16 rounded-2xl flex items-center justify-center overflow-hidden drop-shadow-sm bg-surface-level1 border border-surface-border shrink-0">
+      <div className="bg-surface-base px-5 pb-4 mb-2 rounded-b-[50px] flex items-center gap-4 shadow-lg shrink-0 border-b border-surface-level2 snap-start">
+        <div className="w-16 h-16 rounded-2xl flex items-center justify-center overflow-hidden drop-shadow-sm shrink-0 ml-4">
           <img 
             src={getImageUrl(selectedTeam?.logo_url)} 
             alt={selectedTeam?.name} 
@@ -208,11 +215,11 @@ export const MyTeamPage = () => {
           />
         </div>
         <div className="flex flex-col min-w-0">
-          <h2 className="text-[15px] font-black uppercase tracking-widest text-content-main leading-tight truncate">
+          <h2 className="text-[14px] font-black uppercase tracking-widest text-content-main leading-tight truncate">
             {selectedTeam?.name}
           </h2>
           <span className="text-[10px] font-black text-brand uppercase tracking-[0.2em] mt-1">
-            Текущий состав
+            Состав команды
           </span>
         </div>
       </div>
@@ -220,7 +227,7 @@ export const MyTeamPage = () => {
       <div 
         ref={stickyHeaderRef}
         data-stuck="false"
-        className="snap-start sticky top-0 z-40 px-5 shrink-0 transition-all duration-300 ease-in-out border-b border-surface-level2 bg-transparent"
+        className="snap-start sticky top-0 z-40 shrink-0 transition-all duration-300 ease-in-out border-b border-surface-level2 bg-transparent"
       >
         <ChipTabs 
           tabs={TEAM_TABS}
@@ -240,43 +247,48 @@ export const MyTeamPage = () => {
             className="flex w-[300%] transition-transform duration-500 ease-[cubic-bezier(0.32,0.72,0,1)] items-start"
             style={{ transform: `translateX(${translateX})` }}
           >
-            <div className="w-1/3 shrink-0 px-5 transition-opacity duration-500" style={{ opacity: activeTab === 'all' ? 1 : 0.3 }}>
-              <div className="grid grid-cols-[repeat(auto-fill,minmax(100px,1fr))] gap-y-5 gap-x-2 justify-items-center">
-                {allMembers.map(m => (
-                  <PersonGridCard key={m.member_id} person={m} onClick={handlePersonClick} showBadges={false} />
-                ))}
-              </div>
+            {/* ВКЛАДКА: ВСЕ (Убраны лишние отступы у колонки слайдера) */}
+            <div className="w-1/3 shrink-0 transition-opacity duration-500" style={{ opacity: activeTab === 'all' ? 1 : 0.3 }}>
+              <ContainerContent title="Общий состав" count={allMembers.length}>
+                <div className="grid grid-cols-[repeat(auto-fill,minmax(94px,1fr))] gap-y-5 gap-x-2 justify-items-center">
+                  {allMembers.map(m => (
+                    <PersonGridCard key={m.member_id} person={m} onClick={handlePersonClick} showBadges={false} />
+                  ))}
+                </div>
+              </ContainerContent>
             </div>
 
-            <div className="w-1/3 shrink-0 px-1 transition-opacity duration-500" style={{ opacity: activeTab === 'roster' ? 1 : 0.3 }}>
-              <div className="flex flex-col gap-10">
-                {[
-                  { m: 'goalie', t: 'Вратари' },
-                  { m: 'defense', t: 'Защитники' },
-                  { m: 'forward', t: 'Нападающие' }
-                ].map(group => {
-                  const players = getPlayersByRole(group.m);
-                  if (!players.length) return null;
-                  return (
-                    <div key={group.m} className="flex flex-col">
-                      <h3 className="text-[11px] font-black text-content-muted uppercase tracking-[0.2em] mb-4 pl-1">{group.t}</h3>
-                      <div className="grid grid-cols-[repeat(auto-fill,minmax(100px,1fr))] gap-y-5 gap-x-2 justify-items-center">
-                        {players.map(p => (
-                          <PersonGridCard key={p.member_id} person={p} onClick={handlePersonClick} showBadges={true} />
-                        ))}
-                      </div>
+            {/* ВКЛАДКА: СОСТАВ */}
+            <div className="w-1/3 shrink-0 transition-opacity duration-500 flex flex-col gap-6" style={{ opacity: activeTab === 'roster' ? 1 : 0.3 }}>
+              {[
+                { m: 'goalie', t: 'Вратари' },
+                { m: 'defense', t: 'Защитники' },
+                { m: 'forward', t: 'Нападающие' }
+              ].map(group => {
+                const players = getPlayersByRole(group.m);
+                if (!players.length) return null;
+                return (
+                  <ContainerContent key={group.m} title={group.t} count={players.length}>
+                    <div className="grid grid-cols-[repeat(auto-fill,minmax(94px,1fr))] gap-y-5 gap-x-2 justify-items-center">
+                      {players.map(p => (
+                        <PersonGridCard key={p.member_id} person={p} onClick={handlePersonClick} showBadges={true} />
+                      ))}
                     </div>
-                  );
-                })}
-              </div>
+                  </ContainerContent>
+                );
+              })}
             </div>
 
-            <div className="w-1/3 shrink-0 px-5 transition-opacity duration-500" style={{ opacity: activeTab === 'staff' ? 1 : 0.3 }}>
-              <div className="grid grid-cols-1 auto-rows-fr gap-3 w-full">
-                {teamData.staff?.map(s => (
-                  <StaffTableCard key={s.member_id} person={s} onClick={handlePersonClick} />
-                ))}
-              </div>
+            {/* ВКЛАДКА: ШТАБ */}
+            <div className="w-1/3 shrink-0 transition-opacity duration-500" style={{ opacity: activeTab === 'staff' ? 1 : 0.3 }}>
+              <ContainerContent title="Руководство и тренеры" count={teamData.staff?.length}>
+                <Table 
+                  columns={staffColumns} 
+                  data={teamData.staff || []} 
+                  rowKey="member_id" 
+                  onRowClick={handlePersonClick}
+                />
+              </ContainerContent>
             </div>
           </div>
         )}

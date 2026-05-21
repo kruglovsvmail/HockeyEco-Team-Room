@@ -17,11 +17,21 @@ import { EventDetailsMatch } from './components/EventDetails/Match/EventDetailsM
 import { EventDetailsTraining } from './components/EventDetails/EventDetailsTraining';
 import { EventDetailsMeeting } from './components/EventDetails/EventDetailsMeeting';
 
+import { BottomActionProvider, useBottomBar } from './ui/BottomActionContext';
+
 dayjs.extend(utc);
 dayjs.extend(timezone);
 dayjs.locale('ru');
 
 export function TeamLayout() {
+  return (
+    <BottomActionProvider>
+      <TeamLayoutContent />
+    </BottomActionProvider>
+  );
+}
+
+function TeamLayoutContent() {
   const [user, setUser] = useState(null);
   const [teams, setTeams] = useState([]);
   const [selectedTeam, setSelectedTeam] = useState(null);
@@ -30,6 +40,9 @@ export function TeamLayout() {
   
   const [rightPanel, setRightPanel] = useState({ isOpen: false, type: null, data: null, title: '' });
   const [fullPagePanel, setFullPagePanel] = useState({ isOpen: false, type: null, data: null, title: '' });
+
+  // Получаем функцию управления видимостью слоя из контекста
+  const { updateLayoutVisibility } = useBottomBar();
 
   const [sidebarWidth, setSidebarWidth] = useState(() => {
     const saved = localStorage.getItem('teampwa_sidebar_width');
@@ -90,6 +103,12 @@ export function TeamLayout() {
     closeRightPanel();
     setFullPagePanel({ isOpen: false, type: null, data: null, title: '' });
   }, [location.pathname]);
+
+  // Следящий предохранитель: переключает видимость панели на основе состояния экранов приложения
+  useEffect(() => {
+    const shouldShowBar = fullPagePanel.isOpen || rightPanel.isOpen;
+    updateLayoutVisibility(shouldShowBar);
+  }, [fullPagePanel.isOpen, rightPanel.isOpen, location.pathname, updateLayoutVisibility]);
 
   useEffect(() => {
     const fetchMe = async () => {

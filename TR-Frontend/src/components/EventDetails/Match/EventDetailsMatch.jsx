@@ -136,11 +136,11 @@ export const EventDetailsMatch = ({ event }) => {
           stickyTabsRef.current.dataset.stuck = isStuck;
           if (isStuck) {
   // Добавляем размытие, тень и 5% темного-синего цвета
-  stickyTabsRef.current.classList.add('backdrop-blur-md', 'shadow-sm', 'bg-brand-opacity/20'); 
+  stickyTabsRef.current.classList.add('backdrop-blur-md', 'shadow-sm', 'bg-brand-glow'); 
   stickyTabsRef.current.classList.remove('bg-transparent');
 } else {
   // Убираем эффекты, возвращаем полную прозрачность
-  stickyTabsRef.current.classList.remove('backdrop-blur-md', 'shadow-sm', 'bg-brand-opacity/20');
+  stickyTabsRef.current.classList.remove('backdrop-blur-md', 'shadow-sm', 'bg-brand-glow');
   stickyTabsRef.current.classList.add('bg-transparent');
 }
         }
@@ -169,7 +169,7 @@ export const EventDetailsMatch = ({ event }) => {
       {/* 1. БЛОК ШАПКИ (Точка примагничивания 1) */}
       <div 
         ref={matchupHeaderRef}
-        className="snap-start bg-surface-base shadow-sm shrink-0 pt-4 pb-6 will-change-transform z-20 relative"
+        className="snap-start bg-surface-base shadow-lg rounded-b-[50px] shrink-0 pt-4 pb-6 will-change-transform z-20 relative"
       >
         <div className="flex items-start justify-between px-6">
         
@@ -270,14 +270,14 @@ export const EventDetailsMatch = ({ event }) => {
         >
           
           <div 
-            className="w-1/5 shrink-0 px-4 transition-opacity duration-500"
+            className="w-1/5 shrink-0 transition-opacity duration-500"
             style={{ opacity: activeTab === 'info' ? 1 : 0.3 }}
           >
             <MatchInfo event={event} />
           </div>
 
           <div 
-            className="w-1/5 shrink-0 px-4 transition-opacity duration-500"
+            className="w-1/5 shrink-0 transition-opacity duration-500"
             style={{ opacity: activeTab === 'attendance' ? 1 : 0.3 }}
           >
             <Suspense fallback={<TabFallback />}>
@@ -286,7 +286,7 @@ export const EventDetailsMatch = ({ event }) => {
           </div>
 
           <div 
-            className="w-1/5 shrink-0 px-4 transition-opacity duration-500"
+            className="w-1/5 shrink-0 transition-opacity duration-500"
             style={{ opacity: activeTab === 'lines' ? 1 : 0.3 }}
           >
             <Suspense fallback={<TabFallback />}>
@@ -295,7 +295,7 @@ export const EventDetailsMatch = ({ event }) => {
           </div>
 
           <div 
-            className="w-1/5 shrink-0 px-4 transition-opacity duration-500"
+            className="w-1/5 shrink-0 transition-opacity duration-500"
             style={{ opacity: activeTab === 'events' ? 1 : 0.3 }}
           >
             <Suspense fallback={<TabFallback />}>
@@ -304,7 +304,7 @@ export const EventDetailsMatch = ({ event }) => {
           </div>
 
           <div 
-            className="w-1/5 shrink-0 px-4 transition-opacity duration-500"
+            className="w-1/5 shrink-0 transition-opacity duration-500"
             style={{ opacity: activeTab === 'stats' ? 1 : 0.3 }}
           >
             <Suspense fallback={<TabFallback />}>

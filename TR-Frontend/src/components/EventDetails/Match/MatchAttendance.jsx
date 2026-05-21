@@ -7,6 +7,8 @@ import { useAccess } from '../../../hooks/useAccess';
 import { ROLES, PERMISSIONS } from '../../../utils/permissions';
 import { Avatar } from '../../../ui/Avatar';
 import { Icon } from '../../../ui/Icon';
+import { ContainerContent } from '../../../ui/ContainerContent';
+import { useBottomBar } from '../../../ui/BottomActionContext';
 import clsx from 'clsx';
 
 const getSafeUserFromToken = () => {
@@ -43,11 +45,11 @@ export const MatchAttendance = ({ event }) => {
   const pressTimer = useRef(null);
 
   const { user, checkAccess, selectedTeam } = useAccess();
+  const { setBottomBar, resetBottomBar } = useBottomBar();
 
   const tokenUser = getSafeUserFromToken();
   const activeUserId = user?.id || tokenUser?.id || tokenUser?.userId;
 
-  // Разделение отметившихся на вратарей и полевых игроков по полю position из БД
   const goalies = useMemo(() => {
     return attendees.filter(a => a.position === 'goalie' || a.position === 'G');
   }, [attendees]);
@@ -130,6 +132,43 @@ export const MatchAttendance = ({ event }) => {
     }
   }, [event?.my_team_id, event?.event_id]);
 
+  // Декларация конфигурации панели экшенов (если компонент живой — кнопки всегда актуальны в контексте)
+  useEffect(() => {
+    if (!loading && hasManageAccess) {
+      const actions = isEditMode 
+        ? [
+            {
+              id: 'save-attendance-mode',
+              icon: 'save',
+              label: 'Готово',
+              onClick: () => setIsEditMode(false),
+              className: 'bg-success text-white border-success'
+            }
+          ]
+        : [
+            {
+              id: 'add-attendance-player',
+              icon: 'plus',
+              label: 'Отметить',
+              onClick: () => setIsSheetOpen(true),
+            }
+          ];
+
+      const timer = setTimeout(() => {
+        setBottomBar({ visible: true, actions });
+      }, 150);
+
+      return () => clearTimeout(timer);
+    } else if (!loading && !hasManageAccess) {
+      resetBottomBar();
+    }
+  }, [loading, hasManageAccess, isEditMode, setBottomBar, resetBottomBar]);
+
+  // Размонтирование вкладки при смене табов (внутри одного и того же матча) корректно очистит панель
+  useEffect(() => {
+    return () => resetBottomBar();
+  }, [resetBottomBar]);
+
   const handleMarkUser = async (playerObj) => {
     const newAttendee = {
       id: playerObj.user_id,
@@ -166,14 +205,12 @@ export const MatchAttendance = ({ event }) => {
     }
   };
 
-  // Реактивное переключение бейджа "₽" без выхода из режима редактирования
   const handleTogglePayTag = async (e, attendeeUser) => {
     e.stopPropagation();
     if (!hasManageAccess) return;
 
     const targetNewState = !attendeeUser.has_pay_tag;
 
-    // Сразу обновляем стейт локально для отзывчивости интерфейса
     setAttendees(prev => prev.map(u => {
       if (u.id === attendeeUser.id) {
         return { ...u, has_pay_tag: targetNewState };
@@ -291,7 +328,6 @@ export const MatchAttendance = ({ event }) => {
             )}
           />
           
-          {/* Правый верхний угол: Крестик удаления */}
           {isEditMode && canRemove && !isRemoving && (
             <button 
               onClick={(e) => {
@@ -304,7 +340,6 @@ export const MatchAttendance = ({ event }) => {
             </button>
           )}
 
-          {/* Левый нижний угол: Метка взноса "₽" (Показывается всегда, если заполнена, либо только в режиме редактирования для админа) */}
           {(isEditMode && hasManageAccess) ? (
             <button
               onClick={(e) => handleTogglePayTag(e, attendeeUser)}
@@ -338,16 +373,8 @@ export const MatchAttendance = ({ event }) => {
     );
   };
 
-  if (loading) {
-    return (
-      <div className="flex justify-center items-center h-32 text-[11px] font-black text-content-muted uppercase tracking-widest bg-surface-level2/30 rounded-2xl border border-surface-border/50 border-dashed">
-        Загрузка списка...
-      </div>
-    );
-  }
-
   return (
-    <div className="flex flex-col gap-4 mt-4 pb-[10vh] min-h-[30vh]" onClick={handleContainerClick}>
+    <div className="flex flex-col gap-2 pb-32 min-h-[30vh]" onClick={handleContainerClick}>
       
       <style>
         {`
@@ -380,62 +407,30 @@ export const MatchAttendance = ({ event }) => {
         `}
       </style>
 
-      <div className="flex items-center justify-between w-full px-2">
+      <div className="flex items-center justify-between w-full px-4">
         <SectionHeader 
           showAction={false}
           className="m-0"
         />
-        
-        {hasManageAccess && (
-          <button
-            onClick={(e) => {
-              e.stopPropagation();
-              if (isEditMode) setIsEditMode(false);
-              else setIsSheetOpen(true);
-            }}
-            className={clsx(
-              "w-9 h-9 rounded-xl flex items-center justify-center transition-all shadow-sm active:scale-90 bg-surface-level2",
-              isEditMode ? "text-brand font-bold" : "text-content-main hover:border-brand"
-            )}
-          >
-            <Icon name={isEditMode ? "save" : "plus"} className="w-5 h-5" />
-          </button>
-        )}
       </div>
 
-      <div className="px-1 flex flex-col gap-6">
+      <div className="flex flex-col gap-4 w-full">
         {attendees.length > 0 ? (
           <>
-            {/* Группа: Вратари */}
-            <div className="bg-brand-glow rounded-3xl p-3 flex flex-col gap-4">
-              <h4 className="text-[10px] font-black text-content-muted uppercase tracking-widest border-b border-surface-border pt-1 pl-4 pb-4">
-                Вратари ({goalies.length})
-              </h4>
-              {goalies.length > 0 ? (
-                <div className="grid grid-cols-[repeat(auto-fill,minmax(95px,1fr))] gap-y-5 gap-x-2 justify-items-center">
-                  {goalies.map((attendeeUser, idx) => renderAttendeeCard(attendeeUser, idx))}
-                </div>
-              ) : (
-                <span className="text-[11px] text-content-muted italic py-1 pl-1">Вратари еще не отмечались</span>
-              )}
-            </div>
+            <ContainerContent title="Вратари" count={goalies.length}>
+              <div className="grid grid-cols-[repeat(auto-fill,minmax(94px,1fr))] gap-y-5 gap-x-2 justify-items-center">
+                {goalies.map((attendeeUser, idx) => renderAttendeeCard(attendeeUser, idx))}
+              </div>
+            </ContainerContent>
 
-            {/* Группа: Полевые игроки */}
-            <div className="bg-brand-glow rounded-3xl p-3 flex flex-col gap-4">
-              <h4 className="text-[10px] font-black text-content-muted uppercase tracking-widest border-b border-surface-border pt-1 pl-4 pb-4">
-                Полевые игроки ({skaters.length})
-              </h4>
-              {skaters.length > 0 ? (
-                <div className="grid grid-cols-[repeat(auto-fill,minmax(95px,1fr))] gap-y-5 gap-x-2 justify-items-center">
-                  {skaters.map((attendeeUser, idx) => renderAttendeeCard(attendeeUser, idx))}
-                </div>
-              ) : (
-                <span className="text-[11px] text-content-muted italic py-1 pl-1">Полевые игроки еще не отмечались</span>
-              )}
-            </div>
+            <ContainerContent title="Полевые игроки" count={skaters.length}>
+              <div className="grid grid-cols-[repeat(auto-fill,minmax(94px,1fr))] gap-y-5 gap-x-2 justify-items-center">
+                {skaters.map((attendeeUser, idx) => renderAttendeeCard(attendeeUser, idx))}
+              </div>
+            </ContainerContent>
           </>
         ) : (
-          <div className="flex justify-center items-center h-24 text-[11px] font-black text-content-muted uppercase tracking-widest text-center bg-brand-glow/20 border border-surface-border/30 border-dashed rounded-2xl">
+          <div className="mx-4 flex justify-center items-center h-24 text-[11px] font-black text-content-muted uppercase tracking-widest text-center bg-brand-glow/20 border border-surface-border/30 border-dashed rounded-2xl">
             Пока никто не отметил свое присутствие
           </div>
         )}
