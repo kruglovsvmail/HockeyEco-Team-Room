@@ -12,7 +12,7 @@ export function Icon({ name, className = "w-6 h-6" }) {
   };
 
   const icons = {
-    // Навигация и разделы
+    // Навигация, локации и разделы
     location_pin: <svg {...baseProps}><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"></path><circle cx="12" cy="10" r="3"></circle></svg>,
     jersey: <svg {...baseProps}><path d="M20.5 5.5l-4.5-2.5-4 1.5-4-1.5-4.5 2.5v5l2.5 1v8h12v-8l2.5-1v-5z"></path></svg>,
     handshake: <svg {...baseProps}><path d="M8 9l5 5v7h-4v-4m6-4l-5-5M14 9l5-5m-5 5h4"></path><circle cx="12" cy="12" r="10"></circle></svg>,
@@ -34,6 +34,7 @@ export function Icon({ name, className = "w-6 h-6" }) {
     view_off: <svg {...baseProps}><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"></path><line x1="1" y1="1" x2="23" y2="23"></line></svg>,
     swap: <svg {...baseProps}><path d="M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4"></path></svg>,
     chevron_left: <svg {...baseProps}><polyline points="15 18 9 12 15 6"></polyline></svg>,
+    chevron_right: <svg {...baseProps}><polyline points="9 18 16 12 9 6"></polyline></svg>,
     calendar: <svg {...baseProps}><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>,
     filter: <svg {...baseProps}><polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"></polygon></svg>,
     clock: <svg {...baseProps}><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>,
@@ -46,6 +47,8 @@ export function Icon({ name, className = "w-6 h-6" }) {
     close: <svg {...baseProps} strokeWidth="3"><path d="M18 6L6 18M6 6l12 12"></path></svg>,
     users: <svg {...baseProps}><path d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" /></svg>,
     gear: <svg {...baseProps}><path d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"></path><path d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path></svg>,
+    
+    // Результативные хоккейные действия и судейство
     shootout_goal: <svg {...baseProps}><ellipse cx="10" cy="10" rx="7" ry="2.5"></ellipse><path d="M3 10v5c0 1.38 3.13 2.5 7 2.5 1.15 0 2.23-.13 3.18-.36"></path><polyline points="14 17 17 20 23 13"></polyline></svg>,
     shootout_miss: <svg {...baseProps}><ellipse cx="10" cy="10" rx="7" ry="2.5"></ellipse><path d="M3 10v5c0 1.38 3.13 2.5 7 2.5 1.15 0 2.23-.13 3.18-.36"></path><line x1="16" y1="14" x2="22" y2="20"></line><line x1="22" y1="14" x2="16" y2="20"></line></svg>,
     play: <svg {...baseProps} strokeWidth="2.5"><path d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z" /><path strokeWidth="2" d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>,
@@ -54,6 +57,9 @@ export function Icon({ name, className = "w-6 h-6" }) {
     trophy: <svg {...baseProps}><path d="M5 3v4M3 5h4M6 17v4m-2-2h4m5-16l2.286 6.857L21 12l-5.714 2.143L13 21l-2.286-6.857L5 12l5.714-2.143L13 3z" /></svg>,
     puck: <svg {...baseProps} fill="currentColor" stroke="none"><ellipse cx="12" cy="7" rx="9" ry="4"></ellipse><path d="M3 7v10c0 2.21 4.03 4 9 4s9-1.79 9-4V7"></path></svg>,
     whistle: <svg {...baseProps}><path d="M12 4H8v4c0 4.42 3.58 8 8 8a4 4 0 1 0 0-8h-2V4h-2z"/><circle cx="16" cy="12" r="1"/><path d="M21 4l-3 3"/></svg>,
+    
+    // Новая иконка загрузки/аплоада файлов в PWA-профили
+    upload: <svg {...baseProps}><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
   };
 
   return icons[name] || null;

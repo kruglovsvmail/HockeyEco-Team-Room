@@ -22,11 +22,19 @@ export const verifyToken = (req, res, next) => {
 };
 
 const getTeamIdFromContext = async (req) => {
-  if (req.params.teamId) return req.params.teamId;
-  if (req.body.teamId) return req.body.teamId;
+  // Использование опциональной цепочки (?.) предотвращает крах, если req.body или req.params равны undefined
+  if (req.params?.teamId) return req.params.teamId;
+  if (req.body?.teamId) return req.body.teamId;
 
-  if (req.params.gameId || req.body.gameId) {
-    const gameId = req.params.gameId || req.body.gameId;
+  // Адаптивный перехват для роутов управления командой (например: /api/teams/9/profile), где ID команды передан как :id
+  const isTeamRoute = req.baseUrl?.includes('/api/teams') || req.originalUrl?.includes('/api/teams');
+  if (req.params?.id && isTeamRoute) {
+    return req.params.id;
+  }
+
+  // Определение контекста через идентификаторы матчей
+  if (req.params?.gameId || req.body?.gameId) {
+    const gameId = req.params?.gameId || req.body?.gameId;
     const res = await pool.query(
       'SELECT home_team_id, away_team_id FROM games WHERE id = $1', 
       [gameId]
@@ -35,12 +43,28 @@ const getTeamIdFromContext = async (req) => {
       return [res.rows[0].home_team_id, res.rows[0].away_team_id]; 
     }
   }
+
+  // Определение контекста через идентификаторы тренировок/событий
+  if (req.params?.eventId || req.body?.eventId) {
+    const eventId = req.params?.eventId || req.body?.eventId;
+    const res = await pool.query(
+      'SELECT my_team_id FROM events WHERE event_id = $1', 
+      [eventId]
+    );
+    if (res.rows.length > 0) {
+      return res.rows[0].my_team_id;
+    }
+  }
+
   return null;
 };
 
 export const requireTeamPermission = (permissionKey) => async (req, res, next) => {
   try {
-    const userId = req.user.id;
+    const userId = req.user?.id;
+    if (!userId) {
+      return res.status(401).json({ message: 'Пользователь не идентифицирован' });
+    }
 
     // Глобальный админ
     const userRes = await pool.query('SELECT global_role FROM users WHERE id = $1', [userId]);
@@ -55,14 +79,14 @@ export const requireTeamPermission = (permissionKey) => async (req, res, next) =
 
     let teamIds = await getTeamIdFromContext(req);
     if (!teamIds) {
-      return res.status(400).json({ message: 'Невозможно определить контекст команды' });
+      return res.status(400).json({ message: 'Невозможно определить контекст команды для проверки прав' });
     }
     if (!Array.isArray(teamIds)) teamIds = [teamIds];
 
     let userRoles = [];
 
     for (const tId of teamIds) {
-      // Роли в команде
+      // Роли в команде (здесь колонка left_at существует)
       const trRes = await pool.query(`
         SELECT role FROM team_roles tr 
         JOIN team_members tm ON tr.member_id = tm.id 
@@ -70,7 +94,7 @@ export const requireTeamPermission = (permissionKey) => async (req, res, next) =
       `, [userId, tId]);
       userRoles.push(...trRes.rows.map(r => r.role));
 
-      // Роли в клубе
+      // Роли в клубе (ошибочное условие cr.left_at удалено согласно схеме БД)
       const crRes = await pool.query(`
         SELECT cr.role FROM club_roles cr
         JOIN teams t ON t.club_id = cr.club_id

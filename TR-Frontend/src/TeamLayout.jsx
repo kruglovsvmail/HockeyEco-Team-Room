@@ -12,7 +12,7 @@ import { Header } from './components/Header';
 import { Icon } from './ui/Icon';
 
 import { EventDashboard } from './components/EventDetails/EventDashboard';
-import { UserDetails } from './components/UserDetails';
+import { UserDetails } from './components/MyTeam/UserDetails';
 import { EventDetailsMatch } from './components/EventDetails/Match/EventDetailsMatch';
 import { EventDetailsTraining } from './components/EventDetails/EventDetailsTraining';
 import { EventDetailsMeeting } from './components/EventDetails/EventDetailsMeeting';
@@ -41,7 +41,6 @@ function TeamLayoutContent() {
   const [rightPanel, setRightPanel] = useState({ isOpen: false, type: null, data: null, title: '' });
   const [fullPagePanel, setFullPagePanel] = useState({ isOpen: false, type: null, data: null, title: '' });
 
-  // Получаем функцию управления видимостью слоя из контекста
   const { updateLayoutVisibility } = useBottomBar();
 
   const [sidebarWidth, setSidebarWidth] = useState(() => {
@@ -104,7 +103,6 @@ function TeamLayoutContent() {
     setFullPagePanel({ isOpen: false, type: null, data: null, title: '' });
   }, [location.pathname]);
 
-  // Следящий предохранитель: переключает видимость панели на основе состояния экранов приложения
   useEffect(() => {
     const shouldShowBar = fullPagePanel.isOpen || rightPanel.isOpen;
     updateLayoutVisibility(shouldShowBar);
@@ -149,11 +147,6 @@ function TeamLayoutContent() {
   const handleTeamChange = (team) => {
     setSelectedTeam(team);
     localStorage.setItem('teampwa_selected_team', team.id.toString());
-  };
-
-  const handleLogout = () => {
-    removeToken();
-    navigate('/login');
   };
 
   const openRightPanel = (type, data, title = 'Детали') => setRightPanel({ isOpen: true, type, data, title });
@@ -210,13 +203,7 @@ function TeamLayoutContent() {
         "w-[80%] md:w-[var(--sidebar-w)] md:static md:translate-x-0 md:shadow-xl",
         isSidebarOpen ? "translate-x-0" : "-translate-x-full"
       )}>
-        <Sidebar 
-          user={user} 
-          teams={teams} 
-          selectedTeam={selectedTeam} 
-          onTeamChange={handleTeamChange} 
-          onClose={() => setIsSidebarOpen(false)} 
-        />
+        <Sidebar user={user} teams={teams} selectedTeam={selectedTeam} onTeamChange={handleTeamChange} onClose={() => setIsSidebarOpen(false)} />
       </aside>
 
       {/* РЕСАЙЗЕР ЛЕВОЙ ПАНЕЛИ */}
@@ -233,10 +220,18 @@ function TeamLayoutContent() {
         "flex flex-col flex-1 w-full h-full min-w-0 transition-transform duration-500 ease-[cubic-bezier(0.32,0.72,0,1)] z-30 bg-surface-base relative",
         isSidebarOpen ? "translate-x-[80%] shadow-2xl md:translate-x-0 md:shadow-none" : "",
         rightPanel.isOpen ? "-translate-x-[80%] md:translate-x-0" : "",
-        fullPagePanel.isOpen ? "-translate-x-[30%] opacity-50 md:translate-x-0 md:opacity-100" : "",
-        !isSidebarOpen && !rightPanel.isOpen && !fullPagePanel.isOpen ? "translate-x-0 opacity-100" : ""
+        fullPagePanel.isOpen ? "-translate-x-[30%] opacity-50 md:translate-x-0 md:opacity-100" : ""
       )}>
-        <Header isSidebarOpen={isSidebarOpen} onToggleSidebar={() => setIsSidebarOpen(!isSidebarOpen)} />
+        <Header 
+          isSidebarOpen={isSidebarOpen} 
+          onToggleSidebar={() => setIsSidebarOpen(!isSidebarOpen)} 
+          user={user}
+          selectedTeam={selectedTeam}
+          onTeamUpdated={(updatedTeam) => {
+            setSelectedTeam(prev => ({ ...prev, ...updatedTeam }));
+            setTeams(prev => prev.map(t => t.id === updatedTeam.id ? { ...t, ...updatedTeam } : t));
+          }}
+        />
 
         {isSidebarOpen && <div className="absolute inset-0 z-50 md:hidden bg-transparent" onClick={() => setIsSidebarOpen(false)} />}
         {rightPanel.isOpen && <div className="absolute inset-0 z-50 bg-transparent cursor-pointer md:hidden" onClick={closeRightPanel} />}

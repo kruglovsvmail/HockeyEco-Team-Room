@@ -23,6 +23,11 @@ export const PERMISSIONS = {
     ROLES.CLUB_TOP_MANAGER, ROLES.TEAM_MANAGER
   ],
   
+  // Управление профилем и визуальным стилем команды в PWA
+  TEAM_EDIT_PROFILE: [
+    ROLES.TEAM_MANAGER
+  ],
+  
   // Управление тренировками, собраниями и товарняками
   EVENTS_MANAGE: [
     ROLES.CLUB_TOP_MANAGER, ROLES.CLUB_ADMIN, 

@@ -1,6 +1,6 @@
 import React from 'react';
 import dayjs from 'dayjs';
-import { getImageUrl } from '../utils/helpers';
+import { getImageUrl } from '../../utils/helpers';
 
 export const UserDetails = ({ data }) => {
   // Защита от белого экрана: если данные еще не загрузились или равны null/undefined

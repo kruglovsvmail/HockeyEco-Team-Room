@@ -3,13 +3,19 @@ import { Menu, X } from 'lucide-react';
 import { Icon } from '../ui/Icon';
 import { TopSheet } from '../ui/TopSheet';
 import { useLocation } from 'react-router-dom';
+import { useAccess } from '../hooks/useAccess';
+import { TeamProfileEditSheet } from './MyTeam/TeamProfileEditSheet';
 
-export function Header({ isSidebarOpen, onToggleSidebar }) {
+export function Header({ isSidebarOpen, onToggleSidebar, user, selectedTeam, onTeamUpdated }) {
   const [isFilterOpen, setIsFilterOpen] = useState(false);
+  const [isEditOpen, setIsEditOpen] = useState(false);
+
   const location = useLocation();
-  
-  // Проверяем, находимся ли мы на главной странице (Расписание)
+  const { checkAccess } = useAccess(user, selectedTeam);
+
   const isSchedulePage = location.pathname === '/';
+  const isMyTeamPage = location.pathname === '/my-team';
+  const hasEditAccess = checkAccess('TEAM_EDIT_PROFILE');
 
   const openCalendar = () => {
     window.dispatchEvent(new Event('open-calendar-sheet'));
@@ -27,7 +33,7 @@ export function Header({ isSidebarOpen, onToggleSidebar }) {
           {isSidebarOpen ? <X size={28} /> : <Menu size={28} />}
         </button>
 
-        {/* Правая панель с кнопками - рендерится только на странице расписания */}
+        {/* Раздел РАСПИСАНИЕ: календарь и фильтры */}
         {isSchedulePage && (
           <div className="flex items-center gap-1 ml-auto">
             <button 
@@ -46,9 +52,22 @@ export function Header({ isSidebarOpen, onToggleSidebar }) {
             </button>
           </div>
         )}
+
+        {/* Раздел МОЯ КОМАНДА: кнопка изменения параметров для Руководителя */}
+        {isMyTeamPage && hasEditAccess && (
+          <div className="flex items-center gap-1 ml-auto">
+            <button
+              onClick={() => setIsEditOpen(true)}
+              className="p-2 text-content-main hover:text-brand transition-colors outline-none cursor-pointer active:scale-95"
+              aria-label="Редактировать профиль команды"
+            >
+              <Icon name="edit" className="w-6 h-6" />
+            </button>
+          </div>
+        )}
       </header>
 
-      {/* Шторка Фильтра */}
+      {/* Шторка Фильтра календаря */}
       <TopSheet isOpen={isFilterOpen} onClose={() => setIsFilterOpen(false)}>
         <div className="p-4 text-center">
           <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-full bg-surface-level2 text-brand shadow-sm">
@@ -60,6 +79,15 @@ export function Header({ isSidebarOpen, onToggleSidebar }) {
           </p>
         </div>
       </TopSheet>
+
+      {/* Выделенная изолированная шторка редактирования профиля команды */}
+      <TeamProfileEditSheet 
+        isOpen={isEditOpen}
+        onClose={() => setIsEditOpen(false)}
+        selectedTeam={selectedTeam}
+        user={user}
+        onTeamUpdated={onTeamUpdated}
+      />
     </>
   );
 }
