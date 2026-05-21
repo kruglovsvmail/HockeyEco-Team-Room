@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useMemo, Suspense, lazy } from 'react';
+import React, { useState, useEffect, useRef, useMemo, Suspense, lazy, useCallback } from 'react';
 import { useOutletContext } from 'react-router-dom';
 import clsx from 'clsx';
 import { getAuthHeaders, getImageUrl } from '../utils/helpers';
@@ -83,7 +83,10 @@ export const MyTeamPage = () => {
     });
   };
 
-  const handlePersonClick = (person) => openRightPanel('userDetails', person, 'Профиль');
+  // Оборачиваем обработчик клика в useCallback, чтобы ссылка на функцию не менялась при перерендерах
+  const handlePersonClick = useCallback((person) => {
+    openRightPanel('userDetails', person, 'Профиль');
+  }, [openRightPanel]);
 
   // Вычисляем объединенный уникальный состав один раз при изменении исходных массивов
   const allMembers = useMemo(() => {

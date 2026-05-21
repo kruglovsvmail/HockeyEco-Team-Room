@@ -1,9 +1,18 @@
-import React from 'react';
+import React, { useMemo } from 'react';
 import { ContainerContent } from '../../ui/ContainerContent';
 import { PersonGridCard } from './PersonGridCard';
 
 export const TeamRosterPlayers = ({ roster = [], onPersonClick }) => {
-  const getPlayersByRole = (match) => roster.filter(p => p.position === match) || [];
+  
+  // Группируем игроков по позициям один раз при изменении самого массива ростера,
+  // а не вычисляем трижды на каждом рендере внутри .map()
+  const groupedPlayers = useMemo(() => {
+    return {
+      goalie: roster.filter(p => p.position === 'goalie'),
+      defense: roster.filter(p => p.position === 'defense'),
+      forward: roster.filter(p => p.position === 'forward')
+    };
+  }, [roster]);
 
   const groups = [
     { id: 'goalie', label: 'Вратари' },
@@ -14,8 +23,9 @@ export const TeamRosterPlayers = ({ roster = [], onPersonClick }) => {
   return (
     <div className="flex flex-col gap-6">
       {groups.map(group => {
-        const players = getPlayersByRole(group.id);
+        const players = groupedPlayers[group.id] || [];
         if (!players.length) return null;
+        
         return (
           <ContainerContent key={group.id} title={group.label} count={players.length}>
             <div className="grid grid-cols-[repeat(auto-fill,minmax(94px,1fr))] gap-y-5 gap-x-2 justify-items-center">

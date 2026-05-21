@@ -1,7 +1,8 @@
 import React from 'react';
 import { Avatar } from '../../ui/Avatar';
 
-export const PersonGridCard = ({ person, onClick, showBadges = false }) => {
+// Оборачиваем в React.memo, чтобы компонент перерисовывался только при реальном изменении пропсов
+export const PersonGridCard = React.memo(({ person, onClick, showBadges = false }) => {
   return (
     <div 
       onClick={() => onClick(person)}
@@ -22,7 +23,8 @@ export const PersonGridCard = ({ person, onClick, showBadges = false }) => {
         )}
 
         {showBadges && person.jersey_number != null && (
-          <div className="absolute -bottom-1 -right-3 w-[32px] h-[32px] bg-brand-glow rounded-full backdrop-blur-[4px] border border-white/50 shadow-sm flex items-center justify-center text-[13px] font-black text-content-dark z-10">
+          /* Убран ресурсоемкий backdrop-blur-[4px], заменен на чистый высокопроизводительный слой */
+          <div className="absolute -bottom-1 -right-3 w-[32px] h-[32px] bg-brand-glow/95 rounded-full border border-white/50 shadow-sm flex items-center justify-center text-[13px] font-black text-content-dark z-10">
             {person.jersey_number}
           </div>
         )}
@@ -38,4 +40,6 @@ export const PersonGridCard = ({ person, onClick, showBadges = false }) => {
       </div>
     </div>
   );
-};
+});
+
+PersonGridCard.displayName = 'PersonGridCard';
