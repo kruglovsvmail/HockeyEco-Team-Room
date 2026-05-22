@@ -142,17 +142,16 @@ function TeamLayoutContent() {
         return navigate('/login');
       }
 
-      // СОЗДАЕМ ТАЙМАУТ ПРОВЕРКИ СЕССИИ (3 СЕКУНДЫ НА ОТВЕТ СЕРВЕРА)
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), 3000);
 
       try {
         const res = await fetch(`${import.meta.env.VITE_API_URL}/api/auth/me`, {
           headers: getAuthHeaders(),
-          signal: controller.signal // Привязываем тайм-аут к сетевому запросу
+          signal: controller.signal
         });
         
-        clearTimeout(timeoutId); // Очищаем тайм-аут, если сервер успел ответить
+        clearTimeout(timeoutId);
         
         if (!res.ok) throw new Error('Not authorized');
         
@@ -175,7 +174,6 @@ function TeamLayoutContent() {
       } catch (err) {
         clearTimeout(timeoutId);
 
-        // Перехватываем либо физический оффлайн, либо падение по нашему тайм-ауту (AbortError)
         if (!navigator.onLine || err.name === 'AbortError' || err.message.includes('Failed to fetch') || err.name === 'TypeError') {
           const cachedUserData = localStorage.getItem('teampwa_cached_user');
           if (cachedUserData) {
@@ -188,13 +186,10 @@ function TeamLayoutContent() {
             const savedTeamId = localStorage.getItem('teampwa_selected_team');
             let currentTeam = userTeams.find(t => t.id == savedTeamId) || userTeams[0];
             setSelectedTeam(currentTeam);
-            
-            setIsLoading(false);
-            return; // Спасаем сессию, уходя на кэшированные рельсы
+            return; 
           }
         }
 
-        // Если это честная 401 ошибка авторизации — сбрасываем токен
         removeToken();
         navigate('/login');
       } finally {
@@ -297,11 +292,11 @@ function TeamLayoutContent() {
         {isSidebarOpen && <div className="absolute inset-0 z-50 md:hidden bg-transparent" onClick={() => setIsSidebarOpen(false)} />}
         {rightPanel.isOpen && <div className="absolute inset-0 z-50 bg-transparent cursor-pointer md:hidden" onClick={closeRightPanel} />}
 
-        {/* ЖЕЛЕЗОБЕТОННЫЙ FIXED БАННЕР ОФФЛАЙНА С ВЫСШИМ Z-INDEX */}
+        {/* НЕУБИВАЕМЫЙ МАТОВЫЙ АБСОЛЮТНЫЙ БАННЕР ОФФЛАЙНА */}
         {!isOnline && (
-          <div className="fixed top-[60px] left-0 md:left-[var(--sidebar-w)] right-0 z-[9999] bg-danger/15 border-b border-danger/25 backdrop-blur-md px-4 py-2 flex items-center justify-center gap-2 animate-fade-in shadow-md transition-all">
-            <Icon name="cloud_off" className="w-4 h-4 text-danger animate-pulse" />
-            <span className="text-[10px] font-black text-danger uppercase tracking-widest text-center">
+          <div className="absolute top-[60px] left-0 right-0 z-[9999] bg-[#1a080a] border-b border-red-500/20 px-4 py-2 flex items-center justify-center gap-2 animate-fade-in shadow-md">
+            <Icon name="cloud_off" className="w-4 h-4 text-red-500 animate-pulse" />
+            <span className="text-[10px] font-black text-red-400 uppercase tracking-widest text-center">
               Нет сети. Режим только просмотра
             </span>
           </div>

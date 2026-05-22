@@ -6,7 +6,7 @@ import { useFocusRevalidate } from '../../../hooks/useFocusRevalidate';
 
 import { MatchInfo } from './MatchInfo';
 
-// Ленивая загрузка вкладок матча
+// Применяем ленивую загрузку с сохранением именованных экспортов.
 const MatchAttendance = lazy(() => import('./MatchAttendance').then(module => ({ default: module.MatchAttendance })));
 const MatchLines = lazy(() => import('./MatchLines').then(module => ({ default: module.MatchLines })));
 const MatchProtocol = lazy(() => import('./MatchProtocol').then(module => ({ default: module.MatchProtocol })));
@@ -24,40 +24,50 @@ const MATCH_TABS = [
 export const EventDetailsMatch = ({ event }) => {
   const [activeTab, setActiveTab] = useState('info');
 
-  // Генерируем уникальный ключ кэша для конкретного матча
+  // Динамический ключ кэша конкретной игры
   const cacheKey = `tr_cached_match_${event?.event_id}`;
 
-  // МГНОВЕННЫЙ СТАРТ: Инициализируем данные из кэша этой игры, если они есть
-  const [matchData, setMatchData] = useState(() => {
-    const cached = localStorage.getItem(cacheKey);
-    return cached ? JSON.parse(cached) : {
-      attendees: [],
-      draftLines: [],
-      isPublished: false,
-      teamRoster: [],
-      staffMembers: []
-    };
+  // Централизованное хранилище состояний данных для всех вкладок матча
+  const [matchData, setMatchData] = useState({
+    attendees: [],
+    draftLines: [],
+    isPublished: false,
+    teamRoster: [],
+    staffMembers: []
   });
-
-  // Лоадер показываем только в том случае, если мы открываем этот матч впервые в жизни и кэша нет
-  const [loading, setLoading] = useState(() => {
-    return !localStorage.getItem(cacheKey);
-  });
+  
+  const [loading, setLoading] = useState(true);
 
   const scrollContainerRef = useRef(null);
   const matchupHeaderRef = useRef(null);
   const stickyTabsRef = useRef(null);
   const rafRef = useRef(null);
 
+  // КРИТИЧЕСКАЯ РЕАКТИВНАЯ СИНХРОНИЗАЦИЯ КЭША
+  // Срабатывает мгновенно при смене event_id, вычищая старый матч и загружая актуальный кэш!
+  useEffect(() => {
+    if (!event?.event_id) return;
+    
+    const cached = localStorage.getItem(cacheKey);
+    if (cached) {
+      setMatchData(JSON.parse(cached));
+      setLoading(false); // Если кэш этой игры есть, убираем лоадер экрана
+    } else {
+      // Если кэша нет, сбрасываем структуру в дефолт и включаем лоадер
+      setMatchData({
+        attendees: [],
+        draftLines: [],
+        isPublished: false,
+        teamRoster: [],
+        staffMembers: []
+      });
+      setLoading(true);
+    }
+  }, [event?.event_id, cacheKey]);
+
   // Параллельный атомарный сбор данных со всех эндпоинтов матча за один проход
   const fetchAllMatchData = useCallback(async () => {
     if (!event?.event_id) return;
-    
-    // Если ОЗУ и локальный кэш пусты — включаем индикатор загрузки
-    if (matchData.attendees.length === 0 && matchData.draftLines.length === 0) {
-      setLoading(true);
-    }
-
     try {
       const apiUrl = import.meta.env.VITE_API_URL || '';
       const headers = getAuthHeaders();
@@ -72,7 +82,7 @@ export const EventDetailsMatch = ({ event }) => {
       const linesData = await linesRes.json();
       const rosterData = await rosterRes.json();
 
-      const combinedData = {
+      const freshData = {
         attendees: attData.success ? attData.attendees : [],
         draftLines: linesData.success ? (linesData.lines || []) : [],
         isPublished: linesData.success ? !!linesData.isPublished : false,
@@ -80,22 +90,21 @@ export const EventDetailsMatch = ({ event }) => {
         staffMembers: rosterData.success ? (rosterData.staff || []) : []
       };
 
-      setMatchData(combinedData);
+      setMatchData(freshData);
       
-      // Сохраняем свежий слепок матча в кэш устройства
-      localStorage.setItem(cacheKey, JSON.stringify(combinedData));
+      // Перезаписываем кэш строго по ID этого матча
+      localStorage.setItem(cacheKey, JSON.stringify(freshData));
     } catch (err) {
-      console.error('Ошибка загрузки данных матча (работаем на сохраненном кэше):', err);
+      console.error('Ошибка централизованной загрузки данных матча (работаем на кэше):', err);
     } finally {
       setLoading(false);
     }
-  }, [event?.event_id, event?.event_type, event?.my_team_id, cacheKey, matchData.attendees.length, matchData.draftLines.length]);
+  }, [event?.event_id, event?.event_type, event?.my_team_id, cacheKey]);
 
   useEffect(() => {
     fetchAllMatchData();
   }, [fetchAllMatchData]);
 
-  // Фоновое обновление данных при возвращении фокуса в приложение
   useFocusRevalidate(fetchAllMatchData);
 
   useEffect(() => {
@@ -104,7 +113,6 @@ export const EventDetailsMatch = ({ event }) => {
     };
   }, []);
 
-  // Умный сброс скролла при переключении вкладок
   useEffect(() => {
     if (scrollContainerRef.current) {
       const currentScroll = scrollContainerRef.current.scrollTop;
@@ -155,6 +163,9 @@ export const EventDetailsMatch = ({ event }) => {
       if (myDisplay === '+') {
         matchStatusText = 'ПОБЕДА';
         matchStatusColor = 'text-success';
+      } else if (myDisplay === '-' && oppDisplay === '-') {
+        matchStatusText = 'ПОРАЖЕНИЕ';
+        matchStatusColor = 'text-danger';
       } else {
         matchStatusText = 'ПОРАЖЕНИЕ';
         matchStatusColor = 'text-danger';
@@ -180,7 +191,6 @@ export const EventDetailsMatch = ({ event }) => {
     }
   }
 
-  // --- ОБРАБОТЧИК СКРОЛЛА ---
   const handleScroll = (e) => {
     const currentScroll = e.target.scrollTop;
 
@@ -235,7 +245,7 @@ export const EventDetailsMatch = ({ event }) => {
       >
         <div className="flex items-start justify-between px-6">
         
-          {/* Хозяева (Слева) */}
+          {/* Хозяева */}
           <div className="flex flex-col items-center w-[30%] relative z-10">
             <div className="w-12 h-12 shrink-0 mb-2 flex items-center justify-center overflow-hidden drop-shadow-md">
               {homeLogo ? (
@@ -249,7 +259,7 @@ export const EventDetailsMatch = ({ event }) => {
             </span>
           </div>
 
-          {/* Центр: Счет или Статус */}
+          {/* Центр */}
           <div className="flex flex-col items-center justify-center w-[40%] px-2">
             {event.status === 'live' ? (
               <div className="flex flex-col items-center">
@@ -294,7 +304,7 @@ export const EventDetailsMatch = ({ event }) => {
             )}
           </div>
 
-          {/* Гости (Справа) */}
+          {/* Гости */}
           <div className="flex flex-col items-center w-[30%] relative z-10">
             <div className="w-12 h-12 shrink-0 mb-2 flex items-center justify-center overflow-hidden drop-shadow-md">
               {awayLogo ? (
