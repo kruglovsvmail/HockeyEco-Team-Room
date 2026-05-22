@@ -14,6 +14,7 @@ import { TopSheet } from '../ui/TopSheet';
 import EventCard from '../components/EventCalendar/EventCard';
 import { getAuthHeaders } from '../utils/helpers';
 import { Loader2 } from 'lucide-react';
+import { useFocusRevalidate } from '../hooks/useFocusRevalidate';
 
 dayjs.extend(isoWeek);
 dayjs.extend(utc);       
@@ -26,8 +27,17 @@ export function SchedulePage() {
 
   const [currentDate, setCurrentDate] = useState(dayjs());
   const [isExpanded, setIsExpanded] = useState(false);
-  const [events, setEvents] = useState([]);
-  const [isLoading, setIsLoading] = useState(true);
+  
+  // МГНОВЕННЫЙ СТАРТ: Инициализируем массив сразу из кэша (0 миллисекунд ожидания)
+  const [events, setEvents] = useState(() => {
+    const cached = localStorage.getItem('tr_cached_events');
+    return cached ? JSON.parse(cached) : [];
+  });
+  
+  // Если у нас уже есть данные в локальной памяти, лоадер не показываем вообще
+  const [isLoading, setIsLoading] = useState(() => {
+    return !localStorage.getItem('tr_cached_events');
+  });
   
   const touchStartX = useRef(null);
   const touchStartY = useRef(null);
@@ -40,32 +50,45 @@ export function SchedulePage() {
   const [isAnimating, setIsAnimating] = useState(false);
   const animationTimer = useRef(null);
 
-  useEffect(() => {
-    const fetchEvents = async () => {
-      setIsLoading(true);
-      try {
-        const startDate = currentDate.subtract(1, 'month').startOf('month').format('YYYY-MM-DD');
-        const endDate = currentDate.add(1, 'month').endOf('month').format('YYYY-MM-DD');
+  const currentMonthKey = currentDate.format('YYYY-MM');
 
-        const response = await fetch(`${import.meta.env.VITE_API_URL}/api/events?startDate=${startDate}&endDate=${endDate}`, {
-          headers: getAuthHeaders()
-        });
-        const data = await response.json();
+  // Выносим загрузку событий в useCallback для поддержки фонового обновления
+  const fetchEvents = useCallback(async () => {
+    // Включаем спиннер только если ОЗУ и кэш абсолютно пусты
+    if (events.length === 0) setIsLoading(true);
+    
+    try {
+      const baseDate = dayjs(currentMonthKey, 'YYYY-MM');
+      const startDate = baseDate.subtract(1, 'month').startOf('month').format('YYYY-MM-DD');
+      const endDate = baseDate.add(1, 'month').endOf('month').format('YYYY-MM-DD');
+
+      const response = await fetch(`${import.meta.env.VITE_API_URL}/api/events?startDate=${startDate}&endDate=${endDate}`, {
+        headers: getAuthHeaders()
+      });
+      const data = await response.json();
+      
+      if (response.ok && data.success) {
+        const fetchedCards = data.cards || [];
+        setEvents(fetchedCards);
         
-        if (response.ok && data.success) {
-          setEvents(data.cards || []);
-        } else {
-          console.error('Ошибка загрузки событий:', data.error);
-        }
-      } catch (err) {
-        console.error('Ошибка сети при загрузке событий:', err);
-      } finally {
-        setIsLoading(false);
+        // Перезаписываем единый кэш (старый JSON стирается, лимит 5мб в безопасности)
+        localStorage.setItem('tr_cached_events', JSON.stringify(fetchedCards));
+      } else {
+        console.error('Ошибка загрузки событий:', data.error);
       }
-    };
+    } catch (err) {
+      console.error('Ошибка сети при загрузке событий (работаем в офлайне):', err);
+    } finally {
+      setIsLoading(false);
+    }
+  }, [currentMonthKey, events.length]);
 
+  useEffect(() => {
     fetchEvents();
-  }, [currentDate.format('YYYY-MM')]);
+  }, [fetchEvents]);
+
+  // Интеграция паттерна Focus Revalidation для авто-обновления календаря
+  useFocusRevalidate(fetchEvents);
 
   useLayoutEffect(() => {
     if (scrollRefs.current[1]) {
@@ -74,7 +97,6 @@ export function SchedulePage() {
   }, [currentDate]);
 
   const handleToggleAttendance = async (eventId, eventType, newValue, teamId) => {
-    // ИСПРАВЛЕНО: Добавлена проверка по event.my_team_id === teamId
     setEvents(prev => prev.map(event => 
       (event.event_id === eventId && event.event_type === eventType && event.my_team_id === teamId) 
         ? { ...event, is_attending: newValue } 
@@ -95,9 +117,13 @@ export function SchedulePage() {
       if (!response.ok || !data.success) {
         throw new Error(data.error || 'Ошибка сохранения');
       }
+      
+      // Обновляем кэш после успешной мутации, чтобы состояние не откатилось в офлайне
+      localStorage.setItem('tr_cached_events', JSON.stringify(
+        events.map(event => (event.event_id === eventId && event.event_type === eventType && event.my_team_id === teamId) ? { ...event, is_attending: newValue } : event)
+      ));
     } catch (err) {
       console.error('Ошибка переключения тумблера:', err);
-      // ИСПРАВЛЕНО: Добавлена проверка по event.my_team_id === teamId при откате ошибки
       setEvents(prev => prev.map(event => 
         (event.event_id === eventId && event.event_type === eventType && event.my_team_id === teamId) 
           ? { ...event, is_attending: !newValue } 
@@ -218,7 +244,7 @@ export function SchedulePage() {
         />
       </div>
 
-      {/* Контейнер карточек теперь занимает 100% высоты, уходя под шапку */}
+      {/* Контейнер карточек занимает 100% высоты, уходя под шапку */}
       <div 
         className="w-full h-full relative overflow-hidden"
         onTouchStart={handleTouchStart}
@@ -246,7 +272,6 @@ export function SchedulePage() {
               <div 
                 key={offset} 
                 ref={el => scrollRefs.current[offset + 1] = el}
-                // pt-[88px] делает так, чтобы первая карточка начиналась точно под шапкой
                 className="w-1/3 shrink-0 flex flex-col px-4 h-full overflow-y-auto scrollbar-hide pt-[88px] pb-8"
               >
                 <div>

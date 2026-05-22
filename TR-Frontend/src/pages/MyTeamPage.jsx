@@ -4,12 +4,12 @@ import clsx from 'clsx';
 import { getAuthHeaders, getImageUrl } from '../utils/helpers';
 import { ChipTabs } from '../ui/ChipTabs';
 import { useAccess } from '../hooks/useAccess';
-import { useBottomBar } from '../ui/BottomActionContext';
 import { BottomSheet } from '../ui/BottomSheet';
 import { ButtonLP } from '../ui/Button-LP';
 import { PhoneInputLP, TextInputLP } from '../ui/Input-LP';
 import { Avatar } from '../ui/Avatar';
 import { Icon } from '../ui/Icon';
+import { useFocusRevalidate } from '../hooks/useFocusRevalidate';
 
 const TeamAllMembers = lazy(() => import('../components/MyTeam/TeamAllMembers').then(m => ({ default: m.TeamAllMembers })));
 const TeamRosterPlayers = lazy(() => import('../components/MyTeam/TeamRosterPlayers').then(m => ({ default: m.TeamRosterPlayers })));
@@ -25,9 +25,27 @@ export const MyTeamPage = () => {
   const { openRightPanel, selectedTeam } = useOutletContext();
   const selectedTeamId = selectedTeam?.id;
 
-  const [teamData, setTeamData] = useState({ members: [], roster: [], staff: [] });
+  // Динамический ключ кэша для разграничения разных хоккейных команд
+  const cacheKey = `tr_cached_team_${selectedTeamId}`;
+
+  // МГНОВЕННЫЙ СТАРТ: Подтягиваем слепок игроков выбранной команды из памяти телефона за 0 миллисекунд
+  const [teamData, setTeamData] = useState(() => {
+    if (selectedTeamId) {
+      const cached = localStorage.getItem(cacheKey);
+      return cached ? JSON.parse(cached) : { members: [], roster: [], staff: [] };
+    }
+    return { members: [], roster: [], staff: [] };
+  });
+
   const [activeTab, setActiveTab] = useState('all');
-  const [isLoading, setIsLoading] = useState(true);
+
+  // Лоадер активируется только если мы зашли в команду впервые и на устройстве нет её кэша
+  const [isLoading, setIsLoading] = useState(() => {
+    if (selectedTeamId) {
+      return !localStorage.getItem(cacheKey);
+    }
+    return true;
+  });
   
   // Режимы удаления и восстановления
   const [isEditMode, setIsEditMode] = useState(false);
@@ -50,38 +68,63 @@ export const MyTeamPage = () => {
   const [isSubmittingRoster, setIsSubmittingRoster] = useState(false);
 
   const { checkAccess } = useAccess();
-  const { setBottomBar, resetBottomBar, updateLayoutVisibility } = useBottomBar();
   const hasManageAccess = checkAccess('ROSTER_MANAGE');
   
   const rafRef = useRef(null);
   const scrollContainerRef = useRef(null);
   const stickyHeaderRef = useRef(null);
 
+  // Реактивная синхронизация стейта при быстром переключении команд в сайдбаре тренером
+  useEffect(() => {
+    if (!selectedTeamId) return;
+    const cached = localStorage.getItem(cacheKey);
+    if (cached) {
+      setTeamData(JSON.parse(cached));
+      setIsLoading(false);
+    } else {
+      setTeamData({ members: [], roster: [], staff: [] });
+      setIsLoading(true);
+    }
+  }, [selectedTeamId, cacheKey]);
+
   const fetchTeamData = useCallback(async () => {
     if (!selectedTeamId) return;
-    setIsLoading(true);
+    
+    // Включаем спиннер только если ОЗУ и кэш этой команды полностью пусты
+    if (teamData.members.length === 0 && teamData.roster.length === 0) {
+      setIsLoading(true);
+    }
+
     try {
       const res = await fetch(`${import.meta.env.VITE_API_URL}/api/teams/${selectedTeamId}/details`, { 
         headers: getAuthHeaders() 
       });
-      if (res.ok) setTeamData(await res.json());
+      if (res.ok) {
+        const data = await res.json();
+        setTeamData(data);
+        
+        // Зажимаем объем в жесткие рамки: полностью перезаписываем кэш этой команды
+        localStorage.setItem(cacheKey, JSON.stringify(data));
+      }
     } catch (err) { 
-      console.error(err); 
+      console.error('Ошибка сети при загрузке состава команды (работаем в офлайне):', err); 
     } finally { 
       setIsLoading(false); 
     }
-  }, [selectedTeamId]);
+  }, [selectedTeamId, cacheKey, teamData.members.length, teamData.roster.length]);
 
   useEffect(() => {
     fetchTeamData();
   }, [fetchTeamData]);
 
+  // Фоновое обновление состава при возвращении пользователя в PWA
+  useFocusRevalidate(fetchTeamData);
+
   useEffect(() => {
     return () => {
       if (rafRef.current) cancelAnimationFrame(rafRef.current);
-      resetBottomBar();
     };
-  }, [resetBottomBar]);
+  }, []);
 
   useEffect(() => {
     setIsEditMode(false);
@@ -113,57 +156,6 @@ export const MyTeamPage = () => {
     }
   }, [searchPhone, selectedTeamId]);
 
-  // Надежное управление панелью Bottom Bar с микротаймаутом
-  useEffect(() => {
-    if (isLoading || !hasManageAccess) {
-      resetBottomBar();
-      return;
-    }
-
-    let actions = [];
-
-    if (isEditMode) {
-      actions = [{ id: 'save-team-mode', icon: 'save', label: 'Готово', onClick: () => setIsEditMode(false) }];
-    } else if (activeTab === 'all') {
-      actions = [{
-        id: 'add-member-action',
-        icon: 'plus',
-        label: 'Добавить',
-        onClick: () => {
-          setSearchPhone('');
-          setSearchResult(null);
-          setIsMemberSheetOpen(true);
-        }
-      }];
-    } else if (activeTab === 'roster') {
-      actions = [{
-        id: 'add-roster-action',
-        icon: 'plus',
-        label: 'Добавить',
-        onClick: () => {
-          setRosterStep('list');
-          setSelectedMemberForRoster(null);
-          setRosterJerseyNumber('');
-          setRosterPosition('forward');
-          setIsRosterSheetOpen(true);
-        }
-      }];
-    }
-
-    if (actions.length > 0) {
-      const timer = setTimeout(() => {
-        setBottomBar({ visible: true, actions });
-        if (typeof updateLayoutVisibility === 'function') {
-          updateLayoutVisibility(true);
-        }
-      }, 150);
-
-      return () => clearTimeout(timer);
-    } else {
-      resetBottomBar();
-    }
-  }, [isLoading, hasManageAccess, isEditMode, activeTab, setBottomBar, resetBottomBar, updateLayoutVisibility]);
-
   const confirmExcludeMember = async () => {
     if (!memberToRemove) return;
     const targetMemberId = memberToRemove.member_id;
@@ -184,20 +176,25 @@ export const MyTeamPage = () => {
 
         if (res.ok) {
           setTeamData(prev => {
+            let updated;
             if (activeTab === 'roster') {
-              return {
+              updated = {
                 ...prev,
                 roster: prev.roster.filter(p => p.member_id !== targetMemberId),
                 members: prev.members.map(m => m.member_id === targetMemberId ? { ...m, position: null, jersey_number: null } : m)
               };
             } else {
-              return {
+              updated = {
                 ...prev,
                 members: prev.members.filter(m => m.member_id !== targetMemberId),
                 roster: prev.roster.filter(p => p.member_id !== targetMemberId),
                 staff: prev.staff.filter(s => s.member_id !== targetMemberId)
               };
             }
+            
+            // Синхронизируем локальный кэш сразу после успешного удаления игрока
+            localStorage.setItem(cacheKey, JSON.stringify(updated));
+            return updated;
           });
         }
       } catch (err) {
@@ -250,6 +247,14 @@ export const MyTeamPage = () => {
     } finally {
       setIsSubmittingRoster(false);
     }
+  };
+
+  const handleOpenRosterSheet = (position) => {
+    setRosterPosition(position);
+    setRosterStep('list');
+    setSelectedMemberForRoster(null);
+    setRosterJerseyNumber('');
+    setIsRosterSheetOpen(true);
   };
 
   const playerWithSameNumber = teamData.roster?.find(p => String(p.jersey_number) === String(rosterJerseyNumber));
@@ -330,6 +335,11 @@ export const MyTeamPage = () => {
                   <TeamAllMembers 
                     members={teamData.members || []} onPersonClick={handlePersonClick} isEditMode={isEditMode}
                     setIsEditMode={setIsEditMode} hasManageAccess={hasManageAccess} onExcludeClick={handleExcludeClick} animatingOutId={animatingOutId}
+                    onAddClick={() => {
+                      setSearchPhone('');
+                      setSearchResult(null);
+                      setIsMemberSheetOpen(true);
+                    }}
                   />
                 )}
               </Suspense>
@@ -341,6 +351,7 @@ export const MyTeamPage = () => {
                   <TeamRosterPlayers 
                     roster={teamData.roster || []} onPersonClick={handlePersonClick} isEditMode={isEditMode}
                     setIsEditMode={setIsEditMode} hasManageAccess={hasManageAccess} onExcludeClick={handleExcludeClick} animatingOutId={animatingOutId}
+                    onAddClick={handleOpenRosterSheet}
                   />
                 )}
               </Suspense>
@@ -398,7 +409,6 @@ export const MyTeamPage = () => {
                 </span>
               </div>
 
-              {/* Мягкая блокировка и предупреждение, если человек уже в составе */}
               {searchResult.user.is_already_in_team && (
                 <div className="p-4 bg-brand/10 border border-brand/20 text-brand rounded-2xl text-xs font-black uppercase tracking-wider text-center mt-4">
                   Этот пользователь уже состоит в вашей команде
@@ -452,7 +462,7 @@ export const MyTeamPage = () => {
           <div className="flex flex-col gap-5 animate-fade-in text-left">
             <div className="flex items-center gap-3 border-b border-surface-level2 pb-3">
               <button onClick={() => setRosterStep('list')} className="p-1 -ml-1 text-brand hover:text-brand-dark">
-                <Icon name="arrow_back" className="w-5 h-5" />
+                <Icon name="chevron_left" className="w-5 h-5" />
               </button>
               <h3 className="text-lg font-black text-content-main">Параметры ростера</h3>
             </div>
@@ -461,24 +471,6 @@ export const MyTeamPage = () => {
               <Avatar photoUrl={selectedMemberForRoster?.avatar_url} firstName={selectedMemberForRoster?.first_name} lastName={selectedMemberForRoster?.last_name} className="w-10 h-10 rounded-xl" />
               <div className="flex flex-col">
                 <span className="text-sm font-bold text-content-main">{selectedMemberForRoster?.last_name} {selectedMemberForRoster?.first_name}</span>
-              </div>
-            </div>
-
-            <div className="flex flex-col gap-1.5">
-              <div className="grid grid-cols-3 gap-2">
-                {['forward', 'defense', 'goalie'].map(pos => (
-                  <button
-                    key={pos} type="button" onClick={() => setRosterPosition(pos)}
-                    className={clsx(
-                      "py-2.5 px-2 rounded-xl border text-[12px] font-black uppercase tracking-wider text-center transition-all",
-                      rosterPosition === pos 
-                        ? "bg-brand-opacity border-brand text-brand" 
-                        : "bg-surface-level1 border-surface-level2 text-content-muted"
-                    )}
-                  >
-                    {pos === 'forward' ? 'Нап.' : pos === 'defense' ? 'Защ.' : 'Вр.'}
-                  </button>
-                ))}
               </div>
             </div>
 

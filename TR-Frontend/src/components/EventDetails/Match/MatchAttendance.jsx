@@ -8,7 +8,6 @@ import { ROLES, PERMISSIONS } from '../../../utils/permissions';
 import { Avatar } from '../../../ui/Avatar';
 import { Icon } from '../../../ui/Icon';
 import { ContainerContent } from '../../../ui/ContainerContent';
-import { useBottomBar } from '../../../ui/BottomActionContext';
 import clsx from 'clsx';
 
 const getSafeUserFromToken = () => {
@@ -27,14 +26,13 @@ const getSafeUserFromToken = () => {
   }
 };
 
-export const MatchAttendance = ({ event }) => {
-  const [attendees, setAttendees] = useState([]);
-  const [loading, setLoading] = useState(true);
+export const MatchAttendance = ({ event, initialAttendees = [], initialTeamRoster = [], initialStaffMembers = [], refreshData }) => {
+  const [attendees, setAttendees] = useState(initialAttendees);
+  const [teamRoster, setTeamRoster] = useState(initialTeamRoster);
+  const [hasManageAccess, setHasManageAccess] = useState(false);
 
   const [isSheetOpen, setIsSheetOpen] = useState(false);
-  const [teamRoster, setTeamRoster] = useState([]);
-  const [loadingRoster, setLoadingRoster] = useState(true);
-  const [hasManageAccess, setHasManageAccess] = useState(false);
+  const [sheetFilterType, setSheetFilterType] = useState('skater'); // 'goalie' или 'skater'
   
   const [isEditMode, setIsEditMode] = useState(false);
   const [userToRemove, setUserToRemove] = useState(null); 
@@ -45,10 +43,39 @@ export const MatchAttendance = ({ event }) => {
   const pressTimer = useRef(null);
 
   const { user, checkAccess, selectedTeam } = useAccess();
-  const { setBottomBar, resetBottomBar } = useBottomBar();
 
   const tokenUser = getSafeUserFromToken();
   const activeUserId = user?.id || tokenUser?.id || tokenUser?.userId;
+
+  // Реактивная синхронизация локального стейта с централизованным хранилищем родителя матча
+  useEffect(() => {
+    setAttendees(initialAttendees);
+  }, [initialAttendees]);
+
+  useEffect(() => {
+    setTeamRoster(initialTeamRoster);
+  }, [initialTeamRoster]);
+
+  // Вычисление прав доступа на основе переданного централизованного списка стаффа
+  useEffect(() => {
+    const activeGlobalRole = String(user?.global_role || user?.globalRole || tokenUser?.global_role || tokenUser?.globalRole || '').toLowerCase();
+    let access = false;
+    
+    if (activeGlobalRole === (ROLES.GLOBAL_ADMIN || '').toLowerCase()) {
+      access = true;
+    } else if (selectedTeam && checkAccess('ATTENDANCE_MANAGE')) {
+      access = true;
+    } else if (initialStaffMembers && activeUserId) {
+      const myStaffRecord = initialStaffMembers.find(s => String(s.user_id) === String(activeUserId));
+      if (myStaffRecord && myStaffRecord.roles) {
+        const myRoles = myStaffRecord.roles.split(',').map(r => r.trim().toLowerCase());
+        const allowed = PERMISSIONS.ATTENDANCE_MANAGE || [];
+        access = myRoles.some(r => allowed.includes(r.toLowerCase()));
+      }
+    }
+
+    setHasManageAccess(access);
+  }, [user, tokenUser, selectedTeam, initialStaffMembers, activeUserId, checkAccess]);
 
   const goalies = useMemo(() => {
     return attendees.filter(a => a.position === 'goalie' || a.position === 'G');
@@ -57,116 +84,6 @@ export const MatchAttendance = ({ event }) => {
   const skaters = useMemo(() => {
     return attendees.filter(a => a.position !== 'goalie' && a.position !== 'G');
   }, [attendees]);
-
-  const fetchAttendance = useCallback(async () => {
-    try {
-      const apiUrl = import.meta.env.VITE_API_URL || '';
-      const headers = getAuthHeaders();
-
-      const res = await fetch(`${apiUrl}/api/events/${event.event_id}/attendance?eventType=${event.event_type}&teamId=${event.my_team_id}`, {
-        headers: { ...headers, 'Content-Type': 'application/json' }
-      });
-
-      if (!res.ok) throw new Error(`Ошибка сервера: ${res.status}`);
-      const data = await res.json();
-
-      if (data.success) {
-        setAttendees(data.attendees);
-      }
-    } catch (err) {
-      console.error('Ошибка при загрузке списка отметившихся:', err);
-    } finally {
-      setLoading(false);
-    }
-  }, [event.event_id, event.event_type, event.my_team_id]);
-
-  useEffect(() => {
-    if (event?.event_id) {
-      fetchAttendance();
-    }
-  }, [fetchAttendance, event?.event_id]);
-
-  useEffect(() => {
-    const fetchSmartRosterAndAccess = async () => {
-      setLoadingRoster(true);
-      try {
-        const apiUrl = import.meta.env.VITE_API_URL || '';
-        
-        const res = await fetch(`${apiUrl}/api/events/${event.event_id}/available-roster?teamId=${event.my_team_id}`, {
-          headers: { ...getAuthHeaders(), 'Content-Type': 'application/json' }
-        });
-        const data = await res.json();
-
-        if (data.roster) {
-          setTeamRoster(data.roster);
-        }
-
-        const activeGlobalRole = String(user?.global_role || user?.globalRole || tokenUser?.global_role || tokenUser?.globalRole || '').toLowerCase();
-
-        let access = false;
-        
-        if (activeGlobalRole === (ROLES.GLOBAL_ADMIN || '').toLowerCase()) {
-          access = true;
-        } else if (selectedTeam && checkAccess('ATTENDANCE_MANAGE')) {
-          access = true;
-        } else if (data.staff && activeUserId) {
-          const myStaffRecord = data.staff.find(s => String(s.user_id) === String(activeUserId));
-          if (myStaffRecord && myStaffRecord.roles) {
-            const myRoles = myStaffRecord.roles.split(',').map(r => r.trim().toLowerCase());
-            const allowed = PERMISSIONS.ATTENDANCE_MANAGE || [];
-            access = myRoles.some(r => allowed.includes(r.toLowerCase()));
-          }
-        }
-
-        setHasManageAccess(access);
-
-      } catch (err) {
-        console.error('Ошибка загрузки умного ростера:', err);
-      } finally {
-        setLoadingRoster(false);
-      }
-    };
-
-    if (event?.my_team_id && event?.event_id) {
-      fetchSmartRosterAndAccess();
-    }
-  }, [event?.my_team_id, event?.event_id]);
-
-  // Декларация конфигурации панели экшенов (если компонент живой — кнопки всегда актуальны в контексте)
-  useEffect(() => {
-    if (!loading && hasManageAccess) {
-      const actions = isEditMode 
-        ? [
-            {
-              id: 'save-attendance-mode',
-              icon: 'save',
-              label: 'Готово',
-              onClick: () => setIsEditMode(false),
-            }
-          ]
-        : [
-            {
-              id: 'add-attendance-player',
-              icon: 'plus',
-              label: 'Отметить',
-              onClick: () => setIsSheetOpen(true),
-            }
-          ];
-
-      const timer = setTimeout(() => {
-        setBottomBar({ visible: true, actions });
-      }, 150);
-
-      return () => clearTimeout(timer);
-    } else if (!loading && !hasManageAccess) {
-      resetBottomBar();
-    }
-  }, [loading, hasManageAccess, isEditMode, setBottomBar, resetBottomBar]);
-
-  // Размонтирование вкладки при смене табов (внутри одного и того же матча) корректно очистит панель
-  useEffect(() => {
-    return () => resetBottomBar();
-  }, [resetBottomBar]);
 
   const handleMarkUser = async (playerObj) => {
     const newAttendee = {
@@ -197,10 +114,10 @@ export const MatchAttendance = ({ event }) => {
           targetUserId: playerObj.user_id
         })
       });
-      fetchAttendance();
+      refreshData(); // Синхронизируем родительский стейт
     } catch (err) {
       console.error('Ошибка при отметке игрока:', err);
-      fetchAttendance(); 
+      refreshData(); 
     }
   };
 
@@ -233,9 +150,10 @@ export const MatchAttendance = ({ event }) => {
           hasPayTag: targetNewState
         })
       });
+      refreshData();
     } catch (err) {
       console.error('Ошибка при изменении финансовой метки:', err);
-      fetchAttendance();
+      refreshData();
     }
   };
 
@@ -266,10 +184,10 @@ export const MatchAttendance = ({ event }) => {
             targetUserId: targetUserId
           })
         });
-        fetchAttendance(); 
+        refreshData(); 
       } catch (err) {
         console.error('Ошибка при удалении игрока:', err);
-        fetchAttendance(); 
+        refreshData(); 
       }
     }, 200);
   };
@@ -292,8 +210,12 @@ export const MatchAttendance = ({ event }) => {
     if (isEditMode) setIsEditMode(false);
   };
 
+  // Умный фильтр списка доступных игроков на основе выбранной шапки добавления
   const availablePlayers = teamRoster.filter(
-    player => !attendees.some(att => String(att.id) === String(player.user_id))
+    player => !attendees.some(att => String(att.id) === String(player.user_id)) &&
+              (sheetFilterType === 'goalie'
+                ? (player.position === 'goalie' || player.position === 'G')
+                : (player.position !== 'goalie' && player.position !== 'G'))
   );
 
   const renderAttendeeCard = (attendeeUser, index) => {
@@ -372,6 +294,33 @@ export const MatchAttendance = ({ event }) => {
     );
   };
 
+  // Контекстные кнопки "+" для шапок контейнеров
+  const goalieAddButton = hasManageAccess && !isEditMode && (
+    <button
+      onClick={(e) => {
+        e.stopPropagation();
+        setSheetFilterType('goalie');
+        setIsSheetOpen(true);
+      }}
+      className="text-content-muted transition-colors active:scale-90 outline-none flex items-center justify-center"
+    >
+      <Icon name="user_plus" className="w-5 h-5" />
+    </button>
+  );
+
+  const skaterAddButton = hasManageAccess && !isEditMode && (
+    <button
+      onClick={(e) => {
+        e.stopPropagation();
+        setSheetFilterType('skater');
+        setIsSheetOpen(true);
+      }}
+      className="text-content-muted transition-colors active:scale-90 outline-none flex items-center justify-center"
+    >
+      <Icon name="user_plus" className="w-5 h-5" />
+    </button>
+  );
+
   return (
     <div className="flex flex-col gap-2 pb-32 min-h-[30vh]" onClick={handleContainerClick}>
       
@@ -414,36 +363,41 @@ export const MatchAttendance = ({ event }) => {
       </div>
 
       <div className="flex flex-col gap-4 w-full">
-        {attendees.length > 0 ? (
-          <>
-            <ContainerContent title="Вратари" count={goalies.length}>
-              <div className="grid grid-cols-[repeat(auto-fill,minmax(94px,1fr))] gap-y-5 gap-x-2 justify-items-center">
-                {goalies.map((attendeeUser, idx) => renderAttendeeCard(attendeeUser, idx))}
-              </div>
-            </ContainerContent>
+        {/* Контейнер вратарей */}
+        <ContainerContent title="Вратари" count={goalies.length} action={goalieAddButton}>
+          {goalies.length > 0 ? (
+            <div className="grid grid-cols-[repeat(auto-fill,minmax(94px,1fr))] gap-y-5 gap-x-2 justify-items-center">
+              {goalies.map((attendeeUser, idx) => renderAttendeeCard(attendeeUser, idx))}
+            </div>
+          ) : (
+            <div className="text-center py-6 text-[11px] font-bold uppercase tracking-widest text-content-subtle opacity-50 select-none">
+              Вратари не отмечены
+            </div>
+          )}
+        </ContainerContent>
 
-            <ContainerContent title="Полевые игроки" count={skaters.length}>
-              <div className="grid grid-cols-[repeat(auto-fill,minmax(94px,1fr))] gap-y-5 gap-x-2 justify-items-center">
-                {skaters.map((attendeeUser, idx) => renderAttendeeCard(attendeeUser, idx))}
-              </div>
-            </ContainerContent>
-          </>
-        ) : (
-          <div className="mx-4 flex justify-center items-center h-24 text-[11px] font-black text-content-muted uppercase tracking-widest text-center bg-brand-glow/20 border border-surface-border/30 border-dashed rounded-2xl">
-            Пока никто не отметил свое присутствие
-          </div>
-        )}
+        {/* Контейнер полевых игроков */}
+        <ContainerContent title="Полевые игроки" count={skaters.length} action={skaterAddButton}>
+          {skaters.length > 0 ? (
+            <div className="grid grid-cols-[repeat(auto-fill,minmax(94px,1fr))] gap-y-5 gap-x-2 justify-items-center">
+              {skaters.map((attendeeUser, idx) => renderAttendeeCard(attendeeUser, idx))}
+            </div>
+          ) : (
+            <div className="text-center py-6 text-[11px] font-bold uppercase tracking-widest text-content-subtle opacity-50 select-none">
+              Полевые игроки не отмечены
+            </div>
+          )}
+        </ContainerContent>
       </div>
 
+      {/* ШТОРКА ОПРЕДЕЛЕНИЯ ПРИСУТСТВИЯ */}
       <BottomSheet isOpen={isSheetOpen} onClose={() => setIsSheetOpen(false)}>
         <div className="flex flex-col gap-4">
-          <h3 className="text-lg font-black text-content-main mb-2">Отметить игрока</h3>
+          <h3 className="text-lg font-black text-content-main mb-2">
+            {sheetFilterType === 'goalie' ? 'Отметить вратаря' : 'Отметить полевого игрока'}
+          </h3>
 
-          {loadingRoster ? (
-            <div className="flex justify-center items-center h-24 text-[11px] font-black text-content-muted uppercase tracking-widest">
-              Загрузка ростера...
-            </div>
-          ) : availablePlayers.length > 0 ? (
+          {availablePlayers.length > 0 ? (
             <div className="flex flex-col gap-2 max-h-[60vh] overflow-y-auto scrollbar-hide">
               {availablePlayers.map(player => {
                 const photoUrl = player.team_photo || player.avatar_url;
@@ -486,13 +440,16 @@ export const MatchAttendance = ({ event }) => {
               })}
             </div>
           ) : (
-            <div className="flex justify-center items-center h-24 text-[11px] font-black text-content-muted uppercase tracking-widest text-center">
-              Все игроки состава уже отметились
+            <div className="flex justify-center items-center h-24 text-[11px] font-black text-content-muted uppercase tracking-widest text-center py-4">
+              {sheetFilterType === 'goalie' 
+                ? 'Все вратари состава уже отмечены' 
+                : 'Все полевые игроки состава уже отмечены'}
             </div>
           )}
         </div>
       </BottomSheet>
 
+      {/* ШТОРКА ПОДТВЕРЖДЕНИЯ УДАЛЕНИЯ */}
       <BottomSheet isOpen={!!userToRemove} onClose={() => setUserToRemove(null)}>
         <div className="flex flex-col items-center text-center gap-4 py-2">
           <div className="w-16 h-16 bg-red-500/10 text-red-500 rounded-full flex items-center justify-center mb-2">

@@ -38,6 +38,9 @@ function TeamLayoutContent() {
   const [isLoading, setIsLoading] = useState(true);
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   
+  // Состояние глобального статуса сети (true - онлайн, false - офлайн)
+  const [isOnline, setIsOnline] = useState(() => navigator.onLine);
+
   const [rightPanel, setRightPanel] = useState({ isOpen: false, type: null, data: null, title: '' });
   const [fullPagePanel, setFullPagePanel] = useState({ isOpen: false, type: null, data: null, title: '' });
 
@@ -55,6 +58,33 @@ function TeamLayoutContent() {
 
   const [isDraggingSidebar, setIsDraggingSidebar] = useState(false);
   const [isDraggingRight, setIsDraggingRight] = useState(false);
+
+  // СЛУШАТЕЛЬ ИЗМЕНЕНИЯ СТАТУСА СЕТИ И FOCUS REVALIDATION
+  useEffect(() => {
+    const handleGlobalRefresh = () => {
+      if (document.visibilityState === 'visible') {
+        window.dispatchEvent(new Event('app-global-refresh'));
+      }
+    };
+
+    const handleOnline = () => setIsOnline(true);
+    const handleOffline = () => setIsOnline(false);
+
+    // Подписки на системные события фокуса
+    window.addEventListener('focus', handleGlobalRefresh);
+    document.addEventListener('visibilitychange', handleGlobalRefresh);
+
+    // Подписки на системные изменения статуса интернета на смартфоне
+    window.addEventListener('online', handleOnline);
+    window.addEventListener('offline', handleOffline);
+
+    return () => {
+      window.removeEventListener('focus', handleGlobalRefresh);
+      document.removeEventListener('visibilitychange', handleGlobalRefresh);
+      window.removeEventListener('online', handleOnline);
+      window.removeEventListener('offline', handleOffline);
+    };
+  }, []);
 
   useEffect(() => {
     const handleMouseMove = (e) => {
@@ -104,9 +134,9 @@ function TeamLayoutContent() {
   }, [location.pathname]);
 
   useEffect(() => {
-    const shouldShowBar = fullPagePanel.isOpen || rightPanel.isOpen;
-    updateLayoutVisibility(shouldShowBar);
-  }, [fullPagePanel.isOpen, rightPanel.isOpen, location.pathname, updateLayoutVisibility]);
+    updateLayoutVisibility(true);
+    return () => updateLayoutVisibility(false);
+  }, [updateLayoutVisibility]);
 
   useEffect(() => {
     const fetchMe = async () => {
@@ -122,6 +152,9 @@ function TeamLayoutContent() {
         
         const data = await res.json();
         setUser(data.user);
+        
+        localStorage.setItem('teampwa_cached_user', JSON.stringify(data.user));
+        
         const userTeams = data.user.teams || [];
         setTeams(userTeams);
         
@@ -134,6 +167,24 @@ function TeamLayoutContent() {
         
         setSelectedTeam(currentTeam);
       } catch (err) {
+        if (!navigator.onLine || err.message.includes('Failed to fetch') || err.name === 'TypeError') {
+          const cachedUserData = localStorage.getItem('teampwa_cached_user');
+          if (cachedUserData) {
+            const parsedUser = JSON.parse(cachedUserData);
+            setUser(parsedUser);
+            
+            const userTeams = parsedUser.teams || [];
+            setTeams(userTeams);
+            
+            const savedTeamId = localStorage.getItem('teampwa_selected_team');
+            let currentTeam = userTeams.find(t => t.id == savedTeamId) || userTeams[0];
+            setSelectedTeam(currentTeam);
+            
+            setIsLoading(false);
+            return; 
+          }
+        }
+
         removeToken();
         navigate('/login');
       } finally {
@@ -236,9 +287,21 @@ function TeamLayoutContent() {
         {isSidebarOpen && <div className="absolute inset-0 z-50 md:hidden bg-transparent" onClick={() => setIsSidebarOpen(false)} />}
         {rightPanel.isOpen && <div className="absolute inset-0 z-50 bg-transparent cursor-pointer md:hidden" onClick={closeRightPanel} />}
 
+        {/* ГЛОБАЛЬНЫЙ БАННЕР ОТСУТСТВИЯ СЕТИ (Отображается поверх контента текущей страницы) */}
+        {!isOnline && (
+          <div className="absolute top-[60px] inset-x-0 z-[100] bg-danger/10 border-b border-danger/20 backdrop-blur-md px-4 py-2 flex items-center justify-center gap-2 animate-fade-in">
+            <Icon name="cloud_off" className="w-4 h-4 text-danger animate-pulse" />
+            <span className="text-[10px] font-black text-danger uppercase tracking-widest text-center">
+              Нет сети. Режим только просмотра
+            </span>
+          </div>
+        )}
+
         <main className="flex-1 overflow-y-auto overflow-x-hidden relative pt-[60px] overscroll-none">
           <Outlet context={{ user, teams, selectedTeam, handleTeamChange, openRightPanel, openFullPage }} />
         </main>
+
+        <div id="bottom-bar-portal-container" className="absolute bottom-0 left-0 w-full pointer-events-none z-[95]" />
       </div>
 
       {/* РЕСАЙЗЕР ПРАВОЙ ПАНЕЛИ */}

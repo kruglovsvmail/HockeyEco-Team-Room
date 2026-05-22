@@ -11,7 +11,8 @@ export const TeamAllMembers = ({
   setIsEditMode, 
   hasManageAccess, 
   onExcludeClick, 
-  animatingOutId 
+  animatingOutId,
+  onAddClick 
 }) => {
   const pressTimer = useRef(null);
 
@@ -29,8 +30,21 @@ export const TeamAllMembers = ({
     if (pressTimer.current) clearTimeout(pressTimer.current);
   };
 
+  // Контекстная кнопка добавления в правый угол шапки
+  const addButton = hasManageAccess && !isEditMode && (
+    <button
+      onClick={(e) => {
+        e.stopPropagation();
+        onAddClick();
+      }}
+      className="text-content-muted hover:text-brand-dark transition-colors active:scale-90 outline-none flex items-center justify-center"
+    >
+      <Icon name="user_plus" className="w-5 h-5" />
+    </button>
+  );
+
   return (
-    <ContainerContent title="Общий состав" count={members.length}>
+    <ContainerContent title="Общий состав" count={members.length} action={addButton}>
       <div className="grid grid-cols-[repeat(auto-fill,minmax(94px,1fr))] gap-y-5 gap-x-2 justify-items-center">
         {members.map((m, index) => {
           const isRemoving = m.member_id === animatingOutId;
@@ -55,7 +69,7 @@ export const TeamAllMembers = ({
                 isRemoving && "animate-slot-exit"
               )}
             >
-              {/* Передаем undefined вместо клика, если включен режим редактирования, чтобы карточка не открывала правое боковое меню профиля */}
+              {/* Передаем undefined вместо клика, если включен режим редактирования */}
               <PersonGridCard 
                 person={m} 
                 onClick={isEditMode ? undefined : onPersonClick} 

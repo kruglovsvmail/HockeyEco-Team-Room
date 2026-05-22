@@ -59,7 +59,10 @@ export function Icon({ name, className = "w-6 h-6" }) {
     whistle: <svg {...baseProps}><path d="M12 4H8v4c0 4.42 3.58 8 8 8a4 4 0 1 0 0-8h-2V4h-2z"/><circle cx="16" cy="12" r="1"/><path d="M21 4l-3 3"/></svg>,
     
     // Новая иконка загрузки/аплоада файлов в PWA-профили
-    upload: <svg {...baseProps}><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+    upload: <svg {...baseProps}><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>,
+
+    // Иконка добавления пользователя (человек + плюс)
+    user_plus: <svg {...baseProps}><path d="M16 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="8" cy="7" r="4"/><line x1="20" y1="8" x2="20" y2="14"/><line x1="17" y1="11" x2="23" y2="11"/></svg>
   };
 
   return icons[name] || null;

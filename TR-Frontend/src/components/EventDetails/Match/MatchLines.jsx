@@ -9,7 +9,6 @@ import { Avatar } from '../../../ui/Avatar';
 import { Icon } from '../../../ui/Icon';
 import { CheckboxLP } from '../../../ui/Checkbox-LP';
 import { ContainerContent } from '../../../ui/ContainerContent';
-import { useBottomBar } from '../../../ui/BottomActionContext';
 import { TooltipLP } from '../../../ui/TooltipLP';
 import clsx from 'clsx';
 
@@ -43,20 +42,17 @@ const sanitizePosition = (pos) => {
   return validKeys.includes(sanitized) ? sanitized : 'LW';
 };
 
-export const MatchLines = ({ event }) => {
-  const [attendees, setAttendees] = useState([]);
-  const [draftLines, setDraftLines] = useState([]);
-  const [isPublished, setIsPublished] = useState(false);
+export const MatchLines = ({ event, initialAttendees = [], initialDraftLines = [], initialIsPublished = false, initialStaffMembers = [], refreshData }) => {
+  const [attendees, setAttendees] = useState(initialAttendees);
+  const [draftLines, setDraftLines] = useState(initialDraftLines);
+  const [isPublished, setIsPublished] = useState(initialIsPublished);
+  const [staffMembers, setStaffMembers] = useState(initialStaffMembers);
+  
   const [isEditMode, setIsEditMode] = useState(false);
   const [isDeleteMode, setIsDeleteMode] = useState(false); 
-  const [loading, setLoading] = useState(true);
   const [isPublishing, setIsPublishing] = useState(false);
-  
-  const [staffMembers, setStaffMembers] = useState([]);
-
   const [timeToMatch, setTimeToMatch] = useState(999);
   
-  // Объекты координат { x, y } для точечного позиционирования
   const [showTooltip, setShowTooltip] = useState(false);
   const [showSubmitTooltip, setShowSubmitTooltip] = useState(false);
   const [showPlayerEditTooltip, setShowPlayerEditTooltip] = useState(false);
@@ -83,7 +79,6 @@ export const MatchLines = ({ event }) => {
   const [isSheetSaving, setIsSheetSaving] = useState(false);
 
   const { user, checkAccess, selectedTeam } = useAccess();
-  const { setBottomBar, resetBottomBar } = useBottomBar();
 
   const carouselRef = useRef(null);
   const chipsScrollRef = useRef(null);
@@ -95,6 +90,18 @@ export const MatchLines = ({ event }) => {
   const activeGlobalRole = useMemo(() => {
     return String(user?.global_role || user?.globalRole || tokenUser?.global_role || tokenUser?.globalRole || '').toLowerCase();
   }, [user, tokenUser]);
+
+  // Высокопроизводительная синхронизация с централизованным реактивным хранилищем родительского контейнера матча
+  useEffect(() => { setAttendees(initialAttendees); }, [initialAttendees]);
+  useEffect(() => { setIsPublished(initialIsPublished); }, [initialIsPublished]);
+  useEffect(() => { setStaffMembers(initialStaffMembers); }, [initialStaffMembers]);
+  
+  // Обновляем драфт-формации из пропсов только тогда, когда тренер не редактирует состав прямо сейчас
+  useEffect(() => {
+    if (!isEditMode) {
+      setDraftLines(initialDraftLines);
+    }
+  }, [initialDraftLines, isEditMode]);
 
   const userRoles = useMemo(() => {
     const rolesSet = new Set();
@@ -179,48 +186,6 @@ export const MatchLines = ({ event }) => {
     return () => el.removeEventListener('wheel', handleWheel);
   }, [isEditMode, attendees]);
 
-  const loadInitialData = useCallback(async () => {
-    try {
-      const apiUrl = import.meta.env.VITE_API_URL || '';
-      const headers = getAuthHeaders();
-
-      const attRes = await fetch(`${apiUrl}/api/events/${event.event_id}/attendance?eventType=${event.event_type}&teamId=${event.my_team_id}`, {
-        headers: { ...headers, 'Content-Type': 'application/json' }
-      });
-      const attData = await attRes.json();
-      if (attData.success) {
-        setAttendees(attData.attendees);
-      }
-
-      const linesRes = await fetch(`${apiUrl}/api/events/${event.event_id}/lines?teamId=${event.my_team_id}`, {
-        headers: { ...headers, 'Content-Type': 'application/json' }
-      });
-      const linesData = await linesRes.json();
-
-      const rosterRes = await fetch(`${apiUrl}/api/events/${event.event_id}/available-roster?teamId=${event.my_team_id}`, {
-        headers: { ...headers, 'Content-Type': 'application/json' }
-      });
-      const rosterData = await rosterRes.json();
-      if (rosterData.success && rosterData.staff) {
-        setStaffMembers(rosterData.staff);
-      }
-
-      if (linesData.success) {
-        setIsPublished(linesData.isPublished);
-        setDraftLines(linesData.lines || []);
-      }
-
-    } catch (err) {
-      console.error('Ошибка загрузки данных:', err);
-    } finally {
-      setLoading(false);
-    }
-  }, [event?.event_id, event?.event_type, event?.my_team_id]);
-
-  useEffect(() => {
-    if (event?.event_id) loadInitialData();
-  }, [loadInitialData, event?.event_id]);
-
   const handlePublish = async () => {
     if (timeToMatch < DEADLINES.LINES_EDIT_MINUTES) {
       return;
@@ -247,7 +212,7 @@ export const MatchLines = ({ event }) => {
         setIsEditMode(false);
         setIsDeleteMode(false);
         setActiveSelection(null);
-        loadInitialData();
+        refreshData(); // Триггерим централизованное обновление родителя
       }
     } catch (err) {
       console.error(err);
@@ -281,6 +246,7 @@ export const MatchLines = ({ event }) => {
       if (data.success) {
         setIsPublished(true);
         alert('Официальная заявка успешно отправлена в лигу!');
+        refreshData(); // Триггерим централизованное обновление родителя
       } else {
         alert(data.error || 'Ошибка отправки заявки');
       }
@@ -294,7 +260,7 @@ export const MatchLines = ({ event }) => {
       setIsEditMode(false);
       setIsDeleteMode(false);
       setActiveSelection(null);
-      loadInitialData(); 
+      refreshData(); // Сбрасываем изменения воркспейса до актуального состояния базы данных
     } else {
       if (timeToMatch <= DEADLINES.LINES_EDIT_MINUTES) {
         if (e && e.currentTarget) {
@@ -311,76 +277,6 @@ export const MatchLines = ({ event }) => {
       setIsEditMode(true);
     }
   };
-
-  useEffect(() => {
-    if (!loading) {
-      let actions = [];
-
-      if (isEditMode) {
-        actions = [
-          {
-            id: 'cancel-line-edit',
-            icon: 'close',
-            label: 'Отмена',
-            onClick: handleHeaderActionClick,
-            className: 'text-danger'
-          },
-          {
-            id: 'save-line-edit',
-            icon: 'save',
-            label: 'Сохранить',
-            onClick: handlePublish,
-            isLoading: isPublishing,
-            className: 'text-success'
-          }
-        ];
-      } else {
-        if (hasAdminAccess) {
-          const isSubmitLocked = timeToMatch < DEADLINES.ROSTER_SUBMIT_MINUTES;
-          actions.push({
-            id: 'submit-official-roster',
-            icon: 'registry',
-            label: 'Отправить',
-            onClick: handleSubmitOfficialRoster,
-            className: clsx(
-              'pointer-events-auto',
-              isSubmitLocked 
-                ? 'opacity-40 text-content-muted cursor-not-allowed' 
-                : (isPublished ? 'text-success' : 'text-content-main')
-            )
-          });
-        }
-        if (hasCoachAccess) {
-          const isEditLocked = timeToMatch <= DEADLINES.LINES_EDIT_MINUTES;
-          actions.push({
-            id: 'enter-line-edit',
-            icon: 'edit',
-            label: 'Состав',
-            onClick: handleHeaderActionClick,
-            className: clsx(
-              'pointer-events-auto',
-              isEditLocked ? 'opacity-40 text-content-muted cursor-not-allowed' : ''
-            )
-          });
-        }
-      }
-
-      const barTimer = setTimeout(() => {
-        setBottomBar({
-          visible: actions.length > 0,
-          actions: actions
-        });
-      }, 150);
-
-      return () => clearTimeout(barTimer);
-    } else if (!loading && !hasAdminAccess && !hasCoachAccess) {
-      resetBottomBar();
-    }
-  }, [loading, isEditMode, isPublishing, hasAdminAccess, hasCoachAccess, timeToMatch, isPublished, draftLines]);
-
-  useEffect(() => {
-    return () => resetBottomBar();
-  }, [resetBottomBar]);
 
   const handleCarouselScroll = (e) => {
     if (!isEditMode) return;
@@ -575,7 +471,7 @@ export const MatchLines = ({ event }) => {
       if (data.success) {
         setIsRosterSheetOpen(false);
         setIsPublished(false); 
-        loadInitialData();
+        refreshData(); // Обновляем состояние на верхнем уровне
       } else {
         setSheetError(data.error || 'Ошибка сохранения');
       }
@@ -638,28 +534,20 @@ export const MatchLines = ({ event }) => {
                 firstName={player.first_name}
                 lastName={player.last_name}
                 className={clsx(
-                  "w-full h-full rounded-3xl origin-center",
+                  "w-full h-full rounded-2xl origin-center",
                   isRemoving ? "animate-slot-exit" : (userInteracted ? "animate-slot-enter" : "")
                 )}
                 fallbackClassName="bg-surface-level2 text-content-main text-[12px]"
               />
               
-              {(player.is_captain || player.is_assistant) && (
-                <div className={clsx(
-                  "absolute -top-1 -right-2 w-[20px] h-[20px] rounded-full bg-brand shadow-sm flex items-center justify-center text-[9px] font-black text-content-dark z-20",
-                  "transition-all duration-300 ease-[cubic-bezier(0.34,1.56,0.64,1)] will-change-transform",
-                  isEditMode ? "scale-0 opacity-0 pointer-events-none" : "scale-100 opacity-100"
-                )}>
+              {!isEditMode && (player.is_captain || player.is_assistant) && (
+                <div className="absolute -top-1 -right-2 w-[20px] h-[20px] rounded-full bg-brand shadow-sm flex items-center justify-center text-[9px] font-black text-content-dark z-20">
                   {player.is_captain ? 'К' : 'А'}
                 </div>
               )}
 
-              {player.jersey_number != null && (
-                <div className={clsx(
-                  "absolute -bottom-1 -right-2 w-[24px] h-[24px] bg-content-muted rounded-full shadow-sm flex items-center justify-center text-[12px] font-bold text-content-dark z-10",
-                  "transition-all duration-300 ease-[cubic-bezier(0.34,1.56,0.64,1)] will-change-transform",
-                  isEditMode ? "scale-0 opacity-0 pointer-events-none" : "scale-100 opacity-100"
-                )}>
+              {!isEditMode && player.jersey_number != null && (
+                <div className="absolute -bottom-1 -right-2 w-[24px] h-[24px] bg-content-muted rounded-full shadow-sm flex items-center justify-center text-[12px] font-bold text-content-dark z-10">
                   {player.jersey_number}
                 </div>
               )}
@@ -667,7 +555,7 @@ export const MatchLines = ({ event }) => {
               {isDeleteMode && !isRemoving && (
                 <button 
                   onClick={(e) => handleDeletePlayer(lineNum, pos, e)}
-                  className="absolute -top-1.5 -right-1.5 w-[22px] h-[22px] bg-red-500 rounded-full flex items-center justify-center shadow-md z-20 transition-transform"
+                  className="absolute -top-1.5 -right-1.5 w-[22px] h-[22px] bg-red-500 rounded-full flex items-center justify-center shadow-md z-20"
                 >
                   <Icon name="close" className="w-3 h-3 text-white" strokeWidth={3.5} />
                 </button>
@@ -732,7 +620,7 @@ export const MatchLines = ({ event }) => {
           handleChipClick(p.id);
         }}
         className={clsx(
-          "px-3 py-1 rounded-full text-[12px] font-semibold transition-colors border border-solid shrink-0 w-auto",
+          "px-3 py-1.5 rounded-xl text-[12px] font-semibold transition-colors border border-solid shrink-0 w-auto",
           isSelected 
             ? "bg-brand text-content-dark border-brand" 
             : "bg-surface-level2 text-content-main border-surface-border hover:bg-surface-border"
@@ -792,6 +680,7 @@ export const MatchLines = ({ event }) => {
         />
       </div>
 
+      {/* БЛОК ДОСТУПНЫХ ИГРОКОВ (ЧИПСЫ) */}
       <div className="-mx-0">
         <div className={clsx("grid-expand-transition", isEditMode && "expanded")}>
           <div className="grid-expand-inner pb-2">
@@ -829,6 +718,91 @@ export const MatchLines = ({ event }) => {
         </div>
       </div>
 
+      {/* ========================================================================= */}
+      {/* ЛОКАЛЬНЫЕ КНОПКИ УПРАВЛЕНИЯ, ПЕРЕМЕЩЕННЫЕ ИЗ BOTTOMACTIONCONTEXT           */}
+      {/* ========================================================================= */}
+      <div className="flex justify-center items-center gap-8 py-3 my-1 w-full bg-transparent">
+        {isEditMode ? (
+          <>
+            {/* Кнопка Отмена */}
+            <button
+              onClick={(e) => handleHeaderActionClick(e)}
+              disabled={isPublishing}
+              className="flex flex-col items-center justify-center transition-all active:scale-90 relative outline-none min-w-[72px] hover:scale-105"
+            >
+              <div className="w-11 h-11 rounded-full bg-surface-level2 border border-surface-border flex items-center justify-center text-red-500 shadow-sm">
+                <Icon name="close" className="w-4 h-4" strokeWidth={3} />
+              </div>
+              <span className="text-[9px] font-black uppercase tracking-widest text-content-main block text-center select-none mt-1">
+                Отмена
+              </span>
+            </button>
+
+            {/* Кнопка Сохранить */}
+            <button
+              onClick={handlePublish}
+              disabled={isPublishing}
+              className="flex flex-col items-center justify-center transition-all active:scale-90 relative outline-none min-w-[72px] hover:scale-105"
+            >
+              <div className="w-11 h-11 rounded-full bg-brand flex items-center justify-center text-white shadow-md">
+                {isPublishing ? (
+                  <div className="w-4 h-4 rounded-full border-2 border-white border-t-transparent animate-spin" />
+                ) : (
+                  <Icon name="save" className="w-4 h-4" strokeWidth={2.5} />
+                )}
+              </div>
+              <span className="text-[9px] font-black uppercase tracking-widest text-content-main block text-center select-none mt-1">
+                Сохранить
+              </span>
+            </button>
+          </>
+        ) : (
+          <>
+            {/* Кнопка В лигу (Отправить) */}
+            {hasAdminAccess && (
+              <button
+                onClick={(e) => handleSubmitOfficialRoster(e)}
+                disabled={isPublished}
+                className={clsx(
+                  "flex flex-col items-center justify-center transition-all relative outline-none min-w-[72px]",
+                  isPublished ? "opacity-50 cursor-not-allowed" : "active:scale-90 hover:scale-105"
+                )}
+              >
+                <div className={clsx(
+                  "w-11 h-11 rounded-full flex items-center justify-center shadow-sm border border-surface-border",
+                  isPublished ? "bg-green-500 text-white" : "bg-surface-level2 text-content-main",
+                  timeToMatch < DEADLINES.ROSTER_SUBMIT_MINUTES && "opacity-40"
+                )}>
+                  <Icon name="registry" className="w-4 h-4" />
+                </div>
+                <span className="text-[9px] font-black uppercase tracking-widest text-content-main block text-center select-none mt-1">
+                  {isPublished ? 'Отправлено' : 'В лигу'}
+                </span>
+              </button>
+            )}
+
+            {/* Кнопка Изменить (Состав) */}
+            {hasCoachAccess && !isPublished && (
+              <button
+                onClick={(e) => handleHeaderActionClick(e)}
+                className="flex flex-col items-center justify-center transition-all active:scale-90 relative outline-none min-w-[72px] hover:scale-105"
+              >
+                <div className={clsx(
+                  "w-11 h-11 rounded-full bg-surface-level2 border border-surface-border flex items-center justify-center text-brand shadow-sm",
+                  timeToMatch <= DEADLINES.LINES_EDIT_MINUTES && "opacity-40"
+                )}>
+                  <Icon name="edit" className="w-4 h-4" />
+                </div>
+                <span className="text-[9px] font-black uppercase tracking-widest text-content-main block text-center select-none mt-1">
+                  Состав
+                </span>
+              </button>
+            )}
+          </>
+        )}
+      </div>
+
+      {/* ОРИГИНАЛЬНЫЙ СЛАЙДЕР-КАРУСЕЛЬ ПЯТЕРОК */}
       {isEditMode ? (
         <div className="relative w-full">
           <div ref={carouselRef} onScroll={handleCarouselScroll} className="flex overflow-x-auto flex-nowrap snap-x snap-mandatory scrollbar-hide pt-2 w-full">
@@ -855,7 +829,7 @@ export const MatchLines = ({ event }) => {
               >
                 <div className={clsx(
                   "h-2 rounded-full transition-all duration-300 ease-out opacity-50",
-                  currentSlide === index ? "w-10 bg-content-muted" : "w-2 border border-content-muted bg-content-muted hover:bg-surface-border"
+                  currentSlide === index ? "w-10 bg-content-muted" : "w-2 border border-content-muted bg-content-muted"
                 )} />
               </button>
             ))}
@@ -874,9 +848,10 @@ export const MatchLines = ({ event }) => {
         </div>
       )}
 
+      {/* ОРИГИНАЛЬНАЯ ШТОРКА РЕДАКТИРОВАНИЯ ИГРОВЫХ ПАРАМЕТРОВ */}
       <BottomSheet isOpen={isRosterSheetOpen} onClose={() => setIsRosterSheetOpen(false)}>
         {selectedPlayer && (
-          <div className="flex flex-col gap-6 pt-2">
+          <div className="flex flex-col gap-6 pt-2 text-left">
             <div className="flex items-center gap-4 border-b border-surface-border pb-4">
               <div className="w-20 h-20 rounded-3xl bg-surface-level3 overflow-hidden border border-surface-border shrink-0">
                 <Avatar 
@@ -913,7 +888,7 @@ export const MatchLines = ({ event }) => {
                 value={editJersey}
                 onChange={(e) => setEditJersey(e.target.value)}
                 placeholder="Не назначен"
-                className="w-full h-11 bg-surface-level2 border border-surface-border rounded-2xl px-4 text-ms font-bold text-content-main focus:border-brand focus:outline-none transition-colors"
+                className="w-full h-11 bg-surface-level2 border border-surface-border rounded-2xl px-4 text-ms font-bold text-content-main focus:border-brand focus:outline-none"
               />
             </div>
 

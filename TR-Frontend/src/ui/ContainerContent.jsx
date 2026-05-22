@@ -10,6 +10,7 @@ export function ContainerContent({
   logoUrl,
   children,
   className,
+  action,
   ...props
 }) {
   const hasCount = count !== undefined && count !== null;
@@ -39,12 +40,15 @@ export function ContainerContent({
         />
       )}
 
-      {/* Шапка контейнера с заголовком и счетчиком */}
+      {/* Шапка контейнера с заголовком, счетчиком и кнопкой действия */}
       {title && (
-        <h4 className="text-[12px] font-black text-content-muted uppercase tracking-widest border-b border-surface-border pt-1 pl-4 pb-4">
-          {title}
-          {hasCount && ` (${count})`}
-        </h4>
+        <div className="flex items-center justify-between border-b border-surface-border pt-1 pl-4 pr-1 pb-4">
+          <h4 className="text-[12px] font-bold text-content-muted uppercase tracking-wider">
+            {title}
+            {hasCount && ` (${count})`}
+          </h4>
+          {action && <div className="flex items-center shrink-0">{action}</div>}
+        </div>
       )}
 
       {/* Рендеринг основного контента напрямую для сохранения flex/grid структуры */}

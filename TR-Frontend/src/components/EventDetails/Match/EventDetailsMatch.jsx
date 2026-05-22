@@ -1,11 +1,12 @@
-import React, { useState, useEffect, useRef, Suspense, lazy } from 'react';
-import { getImageUrl } from '../../../utils/helpers';
+import React, { useState, useEffect, useRef, Suspense, lazy, useCallback } from 'react';
+import { getImageUrl, getAuthHeaders } from '../../../utils/helpers';
 import { Icon } from '../../../ui/Icon';
 import { ChipTabs } from '../../../ui/ChipTabs';
+import { useFocusRevalidate } from '../../../hooks/useFocusRevalidate';
 
 import { MatchInfo } from './MatchInfo';
 
-// Применяем ленивую загрузку с сохранением именованных экспортов.
+// Ленивая загрузка вкладок матча
 const MatchAttendance = lazy(() => import('./MatchAttendance').then(module => ({ default: module.MatchAttendance })));
 const MatchLines = lazy(() => import('./MatchLines').then(module => ({ default: module.MatchLines })));
 const MatchProtocol = lazy(() => import('./MatchProtocol').then(module => ({ default: module.MatchProtocol })));
@@ -23,10 +24,79 @@ const MATCH_TABS = [
 export const EventDetailsMatch = ({ event }) => {
   const [activeTab, setActiveTab] = useState('info');
 
+  // Генерируем уникальный ключ кэша для конкретного матча
+  const cacheKey = `tr_cached_match_${event?.event_id}`;
+
+  // МГНОВЕННЫЙ СТАРТ: Инициализируем данные из кэша этой игры, если они есть
+  const [matchData, setMatchData] = useState(() => {
+    const cached = localStorage.getItem(cacheKey);
+    return cached ? JSON.parse(cached) : {
+      attendees: [],
+      draftLines: [],
+      isPublished: false,
+      teamRoster: [],
+      staffMembers: []
+    };
+  });
+
+  // Лоадер показываем только в том случае, если мы открываем этот матч впервые в жизни и кэша нет
+  const [loading, setLoading] = useState(() => {
+    return !localStorage.getItem(cacheKey);
+  });
+
   const scrollContainerRef = useRef(null);
   const matchupHeaderRef = useRef(null);
   const stickyTabsRef = useRef(null);
   const rafRef = useRef(null);
+
+  // Параллельный атомарный сбор данных со всех эндпоинтов матча за один проход
+  const fetchAllMatchData = useCallback(async () => {
+    if (!event?.event_id) return;
+    
+    // Если ОЗУ и локальный кэш пусты — включаем индикатор загрузки
+    if (matchData.attendees.length === 0 && matchData.draftLines.length === 0) {
+      setLoading(true);
+    }
+
+    try {
+      const apiUrl = import.meta.env.VITE_API_URL || '';
+      const headers = getAuthHeaders();
+
+      const [attRes, linesRes, rosterRes] = await Promise.all([
+        fetch(`${apiUrl}/api/events/${event.event_id}/attendance?eventType=${event.event_type}&teamId=${event.my_team_id}`, { headers }),
+        fetch(`${apiUrl}/api/events/${event.event_id}/lines?teamId=${event.my_team_id}`, { headers }),
+        fetch(`${apiUrl}/api/events/${event.event_id}/available-roster?teamId=${event.my_team_id}`, { headers })
+      ]);
+
+      const attData = await attRes.json();
+      const linesData = await linesRes.json();
+      const rosterData = await rosterRes.json();
+
+      const combinedData = {
+        attendees: attData.success ? attData.attendees : [],
+        draftLines: linesData.success ? (linesData.lines || []) : [],
+        isPublished: linesData.success ? !!linesData.isPublished : false,
+        teamRoster: rosterData.success ? (rosterData.roster || []) : [],
+        staffMembers: rosterData.success ? (rosterData.staff || []) : []
+      };
+
+      setMatchData(combinedData);
+      
+      // Сохраняем свежий слепок матча в кэш устройства
+      localStorage.setItem(cacheKey, JSON.stringify(combinedData));
+    } catch (err) {
+      console.error('Ошибка загрузки данных матча (работаем на сохраненном кэше):', err);
+    } finally {
+      setLoading(false);
+    }
+  }, [event?.event_id, event?.event_type, event?.my_team_id, cacheKey, matchData.attendees.length, matchData.draftLines.length]);
+
+  useEffect(() => {
+    fetchAllMatchData();
+  }, [fetchAllMatchData]);
+
+  // Фоновое обновление данных при возвращении фокуса в приложение
+  useFocusRevalidate(fetchAllMatchData);
 
   useEffect(() => {
     return () => {
@@ -34,12 +104,11 @@ export const EventDetailsMatch = ({ event }) => {
     };
   }, []);
 
-  // Умный сброс скролла при переключении вкладок (исправлена диагональная анимация)
+  // Умный сброс скролла при переключении вкладок
   useEffect(() => {
     if (scrollContainerRef.current) {
       const currentScroll = scrollContainerRef.current.scrollTop;
       if (currentScroll > 110) {
-        // behavior: 'auto' убирает диагональный эффект, делая моментальный прыжок по Y
         scrollContainerRef.current.scrollTo({ top: 140, behavior: 'auto' });
       }
     }
@@ -86,9 +155,6 @@ export const EventDetailsMatch = ({ event }) => {
       if (myDisplay === '+') {
         matchStatusText = 'ПОБЕДА';
         matchStatusColor = 'text-success';
-      } else if (myDisplay === '-' && oppDisplay === '-') {
-        matchStatusText = 'ПОРАЖЕНИЕ';
-        matchStatusColor = 'text-danger';
       } else {
         matchStatusText = 'ПОРАЖЕНИЕ';
         matchStatusColor = 'text-danger';
@@ -114,7 +180,7 @@ export const EventDetailsMatch = ({ event }) => {
     }
   }
 
-  // --- ОБРАБОТЧИК СКРОЛЛА: Ускоренный визуальный эффект ---
+  // --- ОБРАБОТЧИК СКРОЛЛА ---
   const handleScroll = (e) => {
     const currentScroll = e.target.scrollTop;
 
@@ -122,7 +188,6 @@ export const EventDetailsMatch = ({ event }) => {
     rafRef.current = requestAnimationFrame(() => {
       const isStuck = currentScroll > 110;
 
-      // Ускоряем скрытие: затухает к 60px и уезжает быстрее
       if (matchupHeaderRef.current) {
         const opacity = Math.max(0, 1 - currentScroll / 80);
         const translateY = currentScroll * 0.1;
@@ -130,19 +195,16 @@ export const EventDetailsMatch = ({ event }) => {
         matchupHeaderRef.current.style.transform = `translateY(${translateY}px) translateZ(0)`;
       }
 
-      // Эффект матового стекла на прилипшей плашке чипсов
       if (stickyTabsRef.current) {
         if (String(isStuck) !== stickyTabsRef.current.dataset.stuck) {
           stickyTabsRef.current.dataset.stuck = isStuck;
           if (isStuck) {
-  // Добавляем размытие, тень и 5% темного-синего цвета
-  stickyTabsRef.current.classList.add('backdrop-blur-md', 'shadow-sm', 'bg-brand-glow'); 
-  stickyTabsRef.current.classList.remove('bg-transparent');
-} else {
-  // Убираем эффекты, возвращаем полную прозрачность
-  stickyTabsRef.current.classList.remove('backdrop-blur-md', 'shadow-sm', 'bg-brand-glow');
-  stickyTabsRef.current.classList.add('bg-transparent');
-}
+            stickyTabsRef.current.classList.add('backdrop-blur-md', 'shadow-sm', 'bg-brand-glow'); 
+            stickyTabsRef.current.classList.remove('bg-transparent');
+          } else {
+            stickyTabsRef.current.classList.remove('backdrop-blur-md', 'shadow-sm', 'bg-brand-glow');
+            stickyTabsRef.current.classList.add('bg-transparent');
+          }
         }
       }
     });
@@ -166,7 +228,7 @@ export const EventDetailsMatch = ({ event }) => {
       className="h-full overflow-y-auto scrollbar-hide bg-surface-border relative z-10 snap-y snap-proximity"
     >
       
-      {/* 1. БЛОК ШАПКИ (Точка примагничивания 1) */}
+      {/* 1. БЛОК ШАПКИ */}
       <div 
         ref={matchupHeaderRef}
         className="snap-start bg-surface-base shadow-lg rounded-b-3xl shrink-0 pt-4 pb-4 will-change-transform z-20 relative"
@@ -224,7 +286,7 @@ export const EventDetailsMatch = ({ event }) => {
                 )}
               </div>
             ) : (
-                <div className="flex flex-col items-center">
+              <div className="flex flex-col items-center">
                 <span className="text-2xl font-black text-content-muted tracking-widest">
                   -- : --
                 </span>
@@ -248,7 +310,7 @@ export const EventDetailsMatch = ({ event }) => {
         </div>
       </div>
 
-      {/* 2. ЗАКРЕПЛЕННЫЕ ЧИПСЫ-МЕНЮ (Точка примагничивания 2) */}
+      {/* 2. ЗАКРЕПЛЕННЫЕ ЧИПСЫ-МЕНЮ */}
       <div 
         ref={stickyTabsRef}
         data-stuck="false"
@@ -264,55 +326,78 @@ export const EventDetailsMatch = ({ event }) => {
 
       {/* 3. КОНТЕНТНАЯ ЧАСТЬ */}
       <div className="w-full overflow-hidden pt-2 min-h-screen pb-[30vh]">
-        <div 
-          className="flex w-[500%] transition-transform duration-500 ease-[cubic-bezier(0.32,0.72,0,1)] items-start"
-          style={{ transform: `translateX(${translateX})` }}
-        >
-          
-          <div 
-            className="w-1/5 shrink-0 transition-opacity duration-500"
-            style={{ opacity: activeTab === 'info' ? 1 : 0.3 }}
-          >
-            <MatchInfo event={event} />
+        {loading ? (
+          <div className="flex justify-center items-center h-48 text-brand font-black animate-pulse uppercase tracking-widest text-sm">
+            Загрузка вкладок...
           </div>
-
+        ) : (
           <div 
-            className="w-1/5 shrink-0 transition-opacity duration-500"
-            style={{ opacity: activeTab === 'attendance' ? 1 : 0.3 }}
+            className="flex w-[500%] transition-transform duration-500 ease-[cubic-bezier(0.32,0.72,0,1)] items-start"
+            style={{ transform: `translateX(${translateX})` }}
           >
-            <Suspense fallback={<TabFallback />}>
-              {activeTab === 'attendance' && <MatchAttendance event={event} />}
-            </Suspense>
-          </div>
+            
+            <div 
+              className="w-1/5 shrink-0 transition-opacity duration-500"
+              style={{ opacity: activeTab === 'info' ? 1 : 0.3 }}
+            >
+              <MatchInfo event={event} />
+            </div>
 
-          <div 
-            className="w-1/5 shrink-0 transition-opacity duration-500"
-            style={{ opacity: activeTab === 'lines' ? 1 : 0.3 }}
-          >
-            <Suspense fallback={<TabFallback />}>
-              {activeTab === 'lines' && <MatchLines event={event} />}
-            </Suspense>
-          </div>
+            <div 
+              className="w-1/5 shrink-0 transition-opacity duration-500"
+              style={{ opacity: activeTab === 'attendance' ? 1 : 0.3 }}
+            >
+              <Suspense fallback={<TabFallback />}>
+                {activeTab === 'attendance' && (
+                  <MatchAttendance 
+                    event={event} 
+                    initialAttendees={matchData.attendees}
+                    initialTeamRoster={matchData.teamRoster}
+                    initialStaffMembers={matchData.staffMembers}
+                    refreshData={fetchAllMatchData}
+                  />
+                )}
+              </Suspense>
+            </div>
 
-          <div 
-            className="w-1/5 shrink-0 transition-opacity duration-500"
-            style={{ opacity: activeTab === 'events' ? 1 : 0.3 }}
-          >
-            <Suspense fallback={<TabFallback />}>
-              {activeTab === 'events' && <MatchProtocol event={event} />}
-            </Suspense>
-          </div>
+            <div 
+              className="w-1/5 shrink-0 transition-opacity duration-500"
+              style={{ opacity: activeTab === 'lines' ? 1 : 0.3 }}
+            >
+              <Suspense fallback={<TabFallback />}>
+                {activeTab === 'lines' && (
+                  <MatchLines 
+                    event={event} 
+                    initialAttendees={matchData.attendees}
+                    initialDraftLines={matchData.draftLines}
+                    initialIsPublished={matchData.isPublished}
+                    initialStaffMembers={matchData.staffMembers}
+                    refreshData={fetchAllMatchData}
+                  />
+                )}
+              </Suspense>
+            </div>
 
-          <div 
-            className="w-1/5 shrink-0 transition-opacity duration-500"
-            style={{ opacity: activeTab === 'stats' ? 1 : 0.3 }}
-          >
-            <Suspense fallback={<TabFallback />}>
-              {activeTab === 'stats' && <MatchStats event={event} />}
-            </Suspense>
-          </div>
+            <div 
+              className="w-1/5 shrink-0 transition-opacity duration-500"
+              style={{ opacity: activeTab === 'events' ? 1 : 0.3 }}
+            >
+              <Suspense fallback={<TabFallback />}>
+                {activeTab === 'events' && <MatchProtocol event={event} />}
+              </Suspense>
+            </div>
 
-        </div>
+            <div 
+              className="w-1/5 shrink-0 transition-opacity duration-500"
+              style={{ opacity: activeTab === 'stats' ? 1 : 0.3 }}
+            >
+              <Suspense fallback={<TabFallback />}>
+                {activeTab === 'stats' && <MatchStats event={event} />}
+              </Suspense>
+            </div>
+
+          </div>
+        )}
       </div>
     </div>
   );

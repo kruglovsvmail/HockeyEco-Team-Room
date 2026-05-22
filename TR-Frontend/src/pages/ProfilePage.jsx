@@ -1,6 +1,7 @@
 import React from 'react';
 import { useNavigate } from 'react-router-dom';
 import { removeToken } from '../utils/helpers';
+import { useFocusRevalidate } from '../hooks/useFocusRevalidate';
 
 export function ProfilePage() {
   const navigate = useNavigate();
@@ -9,6 +10,12 @@ export function ProfilePage() {
     removeToken();
     navigate('/login');
   };
+
+  // Подключаем страницу профиля к глобальному диспетчеру автоматического обновления.
+  // Пока экран не делает изолированных fetch-запросов, передаем пустую функцию-заглушку.
+  useFocusRevalidate(() => {
+    // Сюда можно добавить локальный сброс кэша или fetchProfileData, когда расширишь этот экран
+  });
 
   return (
     <div className="flex flex-col h-full px-4 pt-6 bg-surface-border">
