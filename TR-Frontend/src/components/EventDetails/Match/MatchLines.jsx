@@ -10,6 +10,7 @@ import { Icon } from '../../../ui/Icon';
 import { CheckboxLP } from '../../../ui/Checkbox-LP';
 import { ContainerContent } from '../../../ui/ContainerContent';
 import { useBottomBar } from '../../../ui/BottomActionContext';
+import { TooltipLP } from '../../../ui/TooltipLP';
 import clsx from 'clsx';
 
 const getSafeUserFromToken = () => {
@@ -55,7 +56,9 @@ export const MatchLines = ({ event }) => {
 
   const [timeToMatch, setTimeToMatch] = useState(999);
   const [showTooltip, setShowTooltip] = useState(false);
+  const [showSubmitTooltip, setShowSubmitTooltip] = useState(false);
   const tooltipTimer = useRef(null);
+  const submitTooltipTimer = useRef(null);
 
   const [currentSlide, setCurrentSlide] = useState(0);
   const [activeSelection, setActiveSelection] = useState(null);
@@ -134,15 +137,24 @@ export const MatchLines = ({ event }) => {
   }, [unassignedPlayers]);
 
   useEffect(() => {
-    if (!event?.game_date) return;
+    const targetDate = event?.event_date || event?.game_date;
+    if (!targetDate) return;
+    
     const checkTime = () => {
-      const diff = (new Date(event.game_date) - new Date()) / 1000 / 60;
+      const diff = (new Date(targetDate) - new Date()) / 1000 / 60;
       setTimeToMatch(diff);
     };
     checkTime();
     const interval = setInterval(checkTime, 30000);
     return () => clearInterval(interval);
-  }, [event?.game_date]);
+  }, [event?.event_date, event?.game_date]);
+
+  useEffect(() => {
+    return () => {
+      if (tooltipTimer.current) clearTimeout(tooltipTimer.current);
+      if (submitTooltipTimer.current) clearTimeout(submitTooltipTimer.current);
+    };
+  }, []);
 
   useEffect(() => {
     const el = chipsScrollRef.current;
@@ -201,7 +213,6 @@ export const MatchLines = ({ event }) => {
 
   const handlePublish = async () => {
     if (timeToMatch < DEADLINES.LINES_EDIT_MINUTES) {
-      alert(`Время сохранения изменилось (менее ${DEADLINES.LINES_EDIT_MINUTES} минут до матча)`);
       return;
     }
     setIsPublishing(true);
@@ -237,7 +248,10 @@ export const MatchLines = ({ event }) => {
 
   const handleSubmitOfficialRoster = async () => {
     if (timeToMatch < DEADLINES.ROSTER_SUBMIT_MINUTES) {
-      alert(`Время подачи заявки вышло (менее ${DEADLINES.ROSTER_SUBMIT_MINUTES} минут до старта)`);
+      setShowTooltip(false);
+      setShowSubmitTooltip(true);
+      if (submitTooltipTimer.current) clearTimeout(submitTooltipTimer.current);
+      submitTooltipTimer.current = setTimeout(() => setShowSubmitTooltip(false), 4000);
       return;
     }
     try {
@@ -268,16 +282,16 @@ export const MatchLines = ({ event }) => {
       loadInitialData(); 
     } else {
       if (timeToMatch <= DEADLINES.LINES_EDIT_MINUTES) {
+        setShowSubmitTooltip(false);
         setShowTooltip(true);
         if (tooltipTimer.current) clearTimeout(tooltipTimer.current);
-        tooltipTimer.current = setTimeout(() => setShowTooltip(false), 3500);
+        tooltipTimer.current = setTimeout(() => setShowTooltip(false), 4000);
         return;
       }
       setIsEditMode(true);
     }
   };
 
-  // Декларация конфигурации панели экшенов звеньев
   useEffect(() => {
     if (!loading) {
       let actions = [];
@@ -302,22 +316,31 @@ export const MatchLines = ({ event }) => {
         ];
       } else {
         if (hasAdminAccess) {
+          const isSubmitLocked = timeToMatch < DEADLINES.ROSTER_SUBMIT_MINUTES;
           actions.push({
             id: 'submit-official-roster',
             icon: 'registry',
-            label:  'Отправить',
-            disabled: timeToMatch < DEADLINES.ROSTER_SUBMIT_MINUTES,
+            label: 'Отправить',
             onClick: handleSubmitOfficialRoster,
-            className: isPublished ? 'text-success' : 'text-content-main'
+            className: clsx(
+              'pointer-events-auto',
+              isSubmitLocked 
+                ? 'opacity-40 text-content-muted cursor-not-allowed' 
+                : (isPublished ? 'text-success' : 'text-content-main')
+            )
           });
         }
         if (hasCoachAccess) {
+          const isEditLocked = timeToMatch <= DEADLINES.LINES_EDIT_MINUTES;
           actions.push({
             id: 'enter-line-edit',
             icon: 'edit',
             label: 'Состав',
-            disabled: timeToMatch <= DEADLINES.LINES_EDIT_MINUTES,
             onClick: handleHeaderActionClick,
+            className: clsx(
+              'pointer-events-auto',
+              isEditLocked ? 'opacity-40 text-content-muted cursor-not-allowed' : ''
+            )
           });
         }
       }
@@ -335,7 +358,6 @@ export const MatchLines = ({ event }) => {
     }
   }, [loading, isEditMode, isPublishing, hasAdminAccess, hasCoachAccess, timeToMatch, isPublished, draftLines]);
 
-  // Размонтирование вкладки при смене табов (внутри одного и того же матча) корректно очистит панель
   useEffect(() => {
     return () => resetBottomBar();
   }, [resetBottomBar]);
@@ -475,7 +497,10 @@ export const MatchLines = ({ event }) => {
   const handleViewPlayerClick = (player) => {
     if (!hasAdminAccess) return;
     if (timeToMatch < DEADLINES.ROSTER_SUBMIT_MINUTES) {
-      alert(`Редактирование параметров заблокировано (менее ${DEADLINES.ROSTER_SUBMIT_MINUTES} минут до матча)`);
+      setShowTooltip(false);
+      setShowSubmitTooltip(true);
+      if (submitTooltipTimer.current) clearTimeout(submitTooltipTimer.current);
+      submitTooltipTimer.current = setTimeout(() => setShowSubmitTooltip(false), 4000);
       return;
     }
     setSelectedPlayer(player);
@@ -694,7 +719,7 @@ export const MatchLines = ({ event }) => {
   };
 
   return (
-    <div className="flex flex-col" onClick={() => { if (isDeleteMode) setIsDeleteMode(false); }}>
+    <div className="flex flex-col relative" onClick={() => { if (isDeleteMode) setIsDeleteMode(false); }}>
       
       <style>
         {`
@@ -713,17 +738,26 @@ export const MatchLines = ({ event }) => {
         `}
       </style>
       
+      {/* ИНТЕГРАЦИЯ ТУЛТИПОВ С ТЕЛЕПОРТАЦИЕЙ ИЗ КОНТЕКСТА ДОМ-ДЕРЕВА */}
+      <TooltipLP 
+        isOpen={showSubmitTooltip} 
+        position="left" 
+        message={`Отправка заблокирована. До игры осталось меньше ${DEADLINES.ROSTER_SUBMIT_MINUTES} минут.`} 
+        onClose={() => setShowSubmitTooltip(false)}
+      />
+
+      <TooltipLP 
+        isOpen={showTooltip} 
+        position="right" 
+        message={`Изменение пятерок заблокировано. До игры осталось меньше ${DEADLINES.LINES_EDIT_MINUTES} минут.`} 
+        onClose={() => setShowTooltip(false)}
+      />
+
       <div className="flex items-center justify-between w-full px-4 relative">
         <SectionHeader 
           showAction={false} 
           className="m-0"
         />
-        
-        {showTooltip && (
-          <div className="absolute right-4 top-0 bg-surface-level1 border border-surface-border rounded-xl px-3 py-1.5 text-[11px] font-bold text-danger shadow-xl whitespace-nowrap animate-slot-enter z-20">
-            Редактирование заблокировано (осталось &le; {DEADLINES.LINES_EDIT_MINUTES} мин)
-          </div>
-        )}
       </div>
 
       <div className="-mx-0">

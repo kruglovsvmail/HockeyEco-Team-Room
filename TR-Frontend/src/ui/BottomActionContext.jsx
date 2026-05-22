@@ -36,7 +36,7 @@ export const BottomActionProvider = ({ children }) => {
         <div
           className={clsx(
             "fixed -bottom-1 left-1/2 -translate-x-1/2 z-[95] flex items-center justify-center gap-8 pb-2", // Добавлен justify-center и удобный gap-8 между кнопками
-            "rounded-t-2xl bg-surface-base w-full shadow-2xl pb-[calc(12px+env(safe-area-inset-bottom))]",
+            "rounded-t-2xl bg-surface-base w-full shadow-[0_-6px_16px_rgba(0,0,0,0.1)] pb-[calc(12px+env(safe-area-inset-bottom))]",
             "transition-all duration-500 ease-[cubic-bezier(0.32,0.72,0,1)] will-change-transform",
             isBarActive
               ? "translate-y-0 opacity-100 pointer-events-auto"
