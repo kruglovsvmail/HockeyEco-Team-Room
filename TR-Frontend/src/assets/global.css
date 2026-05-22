@@ -5,9 +5,9 @@
 @layer base {
   :root {
     /* --- АКЦЕНТНЫЕ ЦВЕТА (БРЕНД) --- */
-    --color-brand: #1794dd;
-    --color-brand-hover: #1e679b;
-    --color-brand-dark: #267ec2;
+    --color-brand: #8e17dd;
+    --color-brand-hover: #7c1e9b;
+    --color-brand-dark: #6b1d92;
     --color-brand-glow: #11395715;
     --color-brand-opacity: color-mix(in srgb, var(--color-brand) 10%, transparent);
 
