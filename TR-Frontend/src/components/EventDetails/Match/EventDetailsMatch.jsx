@@ -169,7 +169,7 @@ export const EventDetailsMatch = ({ event }) => {
       {/* 1. БЛОК ШАПКИ (Точка примагничивания 1) */}
       <div 
         ref={matchupHeaderRef}
-        className="snap-start bg-surface-base shadow-lg rounded-b-[50px] shrink-0 pt-4 pb-6 will-change-transform z-20 relative"
+        className="snap-start bg-surface-base shadow-lg rounded-b-3xl shrink-0 pt-4 pb-4 will-change-transform z-20 relative"
       >
         <div className="flex items-start justify-between px-6">
         

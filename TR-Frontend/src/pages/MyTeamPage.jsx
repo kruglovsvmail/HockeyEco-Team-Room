@@ -123,7 +123,7 @@ export const MyTeamPage = () => {
       onScroll={handleScroll}
     >
       {/* Шапка страницы */}
-      <div className="bg-surface-base px-5 pb-4 mb-2 rounded-b-[50px] flex items-center gap-4 shadow-lg shrink-0 border-b border-surface-level2 snap-start">
+      <div className="bg-surface-base px-5 pb-4 mb-2 rounded-b-3xl flex items-center gap-4 shadow-lg shrink-0 border-b border-surface-level2 snap-start">
         <div className="w-16 h-16 rounded-2xl flex items-center justify-center overflow-hidden drop-shadow-sm shrink-0 ml-4">
           <img 
             src={getImageUrl(selectedTeam?.logo_url)} 

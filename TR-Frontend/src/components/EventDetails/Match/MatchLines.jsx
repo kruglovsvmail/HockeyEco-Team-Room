@@ -289,7 +289,7 @@ export const MatchLines = ({ event }) => {
             icon: 'close',
             label: 'Отмена',
             onClick: handleHeaderActionClick,
-            className: 'bg-surface-level2 text-red-500 border border-red-500/30'
+            className: 'text-danger'
           },
           {
             id: 'save-line-edit',
@@ -297,7 +297,7 @@ export const MatchLines = ({ event }) => {
             label: 'Сохранить',
             onClick: handlePublish,
             isLoading: isPublishing,
-            className: 'bg-brand text-content-dark border-brand'
+            className: 'text-success'
           }
         ];
       } else {
@@ -308,7 +308,7 @@ export const MatchLines = ({ event }) => {
             label:  'Отправить',
             disabled: timeToMatch < DEADLINES.ROSTER_SUBMIT_MINUTES,
             onClick: handleSubmitOfficialRoster,
-            className: isPublished ? 'bg-surface-level2 text-success' : 'bg-surface-level2 text-content-main'
+            className: isPublished ? 'text-success' : 'text-content-main'
           });
         }
         if (hasCoachAccess) {
@@ -318,7 +318,6 @@ export const MatchLines = ({ event }) => {
             label: 'Состав',
             disabled: timeToMatch <= DEADLINES.LINES_EDIT_MINUTES,
             onClick: handleHeaderActionClick,
-            className: 'bg-surface-level2 text-content-main border-surface-border'
           });
         }
       }
@@ -597,7 +596,7 @@ export const MatchLines = ({ event }) => {
               
               {(player.is_captain || player.is_assistant) && (
                 <div className={clsx(
-                  "absolute -top-1.5 -right-1.5 w-[20px] h-[20px] rounded-full bg-brand shadow-sm flex items-center justify-center text-[9px] font-black text-content-dark z-20 origin-center",
+                  "absolute -top-1 -right-2 w-[20px] h-[20px] rounded-full bg-brand shadow-sm flex items-center justify-center text-[9px] font-black text-content-dark z-20",
                   "transition-all duration-300 ease-[cubic-bezier(0.34,1.56,0.64,1)] will-change-transform",
                   isEditMode ? "scale-0 opacity-0 pointer-events-none" : "scale-100 opacity-100"
                 )}>
@@ -607,7 +606,7 @@ export const MatchLines = ({ event }) => {
 
               {player.jersey_number != null && (
                 <div className={clsx(
-                  "absolute -bottom-1 -right-3 w-[32px] h-[32px] bg-brand-glow rounded-full backdrop-blur-[4px] border border-white/40 shadow-sm flex items-center justify-center text-[13px] font-black text-content-dark z-10 origin-center",
+                  "absolute -bottom-1 -right-2 w-[24px] h-[24px] bg-content-muted rounded-full shadow-sm flex items-center justify-center text-[12px] font-bold text-content-dark z-10",
                   "transition-all duration-300 ease-[cubic-bezier(0.34,1.56,0.64,1)] will-change-transform",
                   isEditMode ? "scale-0 opacity-0 pointer-events-none" : "scale-100 opacity-100"
                 )}>

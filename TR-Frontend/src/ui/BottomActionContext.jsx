@@ -35,8 +35,8 @@ export const BottomActionProvider = ({ children }) => {
       {createPortal(
         <div
           className={clsx(
-            "fixed -bottom-1 left-1/2 -translate-x-1/2 z-[95] flex items-center gap-5 pt-2 pb-2 ",
-            "rounded-t-3xl border border-white/40 bg-brand-glow backdrop-blur-md shadow-2xl pb-[calc(12px+env(safe-area-inset-bottom))]",
+            "fixed -bottom-1 left-1/2 -translate-x-1/2 z-[95] flex items-center justify-center gap-8 pb-2", // Добавлен justify-center и удобный gap-8 между кнопками
+            "rounded-t-2xl bg-surface-base w-full shadow-2xl pb-[calc(12px+env(safe-area-inset-bottom))]",
             "transition-all duration-500 ease-[cubic-bezier(0.32,0.72,0,1)] will-change-transform",
             isBarActive
               ? "translate-y-0 opacity-100 pointer-events-auto"
@@ -49,17 +49,17 @@ export const BottomActionProvider = ({ children }) => {
               onClick={action.onClick}
               disabled={action.disabled || action.isLoading}
               className={clsx(
-                "flex flex-col items-center justify-center gap-1.5 transition-all active:scale-90 relative outline-none",
+                "flex flex-col items-center justify-center transition-all active:scale-90 relative outline-none min-w-[72px]", // Добавлен min-w для одинаковой и ровной площади клика подписей
                 action.disabled ? "opacity-30 cursor-not-allowed active:scale-100" : "hover:scale-105"
               )}
             >
               {/* Круглая подложка для иконки */}
               <div className={clsx(
-                "w-11 h-11 rounded-full flex items-center justify-center shadow-md border transition-colors mx-8",
-                action.className || "bg-surface-level2 text-content-main border-surface-border"
+                "w-11 h-11 rounded-full flex items-center justify-center transition-colors", // Убран деструктивный mx-8
+                action.className || "text-content-main"
               )}>
                 {action.isLoading ? (
-                  <div className="w-4 h-4 border-2 border-current border-t-transparent rounded-full animate-spin" />
+                  <div className="w-4 h-4 rounded-full border-2 border-current border-t-transparent animate-spin" />
                 ) : (
                   <Icon name={action.icon} className="w-4 h-4" />
                 )}
@@ -67,7 +67,7 @@ export const BottomActionProvider = ({ children }) => {
               
               {/* Подпись кнопки */}
               {action.label && (
-                <span className="text-[8px] font-bold uppercase tracking-widest text-content-main block text-center truncate w-full select-none">
+                <span className="text-[8px] font-bold uppercase tracking-widest text-content-main block text-center truncate w-full select-none -mt-1">
                   {action.label}
                 </span>
               )}

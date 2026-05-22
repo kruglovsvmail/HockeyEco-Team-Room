@@ -17,14 +17,14 @@ export const PersonGridCard = React.memo(({ person, onClick, showBadges = false 
         />
 
         {showBadges && (person.is_captain || person.is_assistant) && (
-          <div className="absolute -top-1.5 -right-1.5 w-[20px] h-[20px] rounded-full bg-brand shadow-sm flex items-center justify-center text-[9px] font-black text-content-dark z-20">
+          <div className="absolute -top-1 -right-2 w-[20px] h-[20px] rounded-full bg-brand shadow-sm flex items-center justify-center text-[9px] font-black text-content-dark z-20">
             {person.is_captain ? 'К' : 'А'}
           </div>
         )}
 
         {showBadges && person.jersey_number != null && (
           /* Убран ресурсоемкий backdrop-blur-[4px], заменен на чистый высокопроизводительный слой */
-          <div className="absolute -bottom-1 -right-3 w-[32px] h-[32px] bg-brand-glow/95 rounded-full border border-white/50 shadow-sm flex items-center justify-center text-[13px] font-black text-content-dark z-10">
+          <div className="absolute -bottom-1 -right-2 w-[24px] h-[24px] bg-content-muted rounded-full shadow-sm flex items-center justify-center text-[12px] font-bold text-content-dark z-10">
             {person.jersey_number}
           </div>
         )}

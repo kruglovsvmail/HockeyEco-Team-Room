@@ -142,7 +142,6 @@ export const MatchAttendance = ({ event }) => {
               icon: 'save',
               label: 'Готово',
               onClick: () => setIsEditMode(false),
-              className: 'bg-success text-white border-success'
             }
           ]
         : [
