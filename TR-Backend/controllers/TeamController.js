@@ -26,6 +26,21 @@ export const getTeamDetails = async (req, res) => {
     try {
         const teamId = req.params.id;
         
+        // 1. Запрос полного списка членов команды (активные участники состава)
+        const membersQuery = `
+            SELECT 
+                tm.id as member_id, u.id as user_id, 
+                u.first_name, u.last_name, u.birth_date, u.height, u.weight,
+                COALESCE(tm.photo_url, u.avatar_url) as avatar_url,
+                tr.position, tr.jersey_number, tr.is_captain, tr.is_assistant
+            FROM team_members tm
+            JOIN users u ON u.id = tm.user_id
+            LEFT JOIN team_rosters tr ON tm.id = tr.member_id AND tr.left_at IS NULL
+            WHERE tm.team_id = $1 AND tm.left_at IS NULL
+            ORDER BY u.last_name, u.first_name
+        `;
+
+        // 2. Запрос только активного игрового ростера на текущие турниры
         const rosterQuery = `
             SELECT 
                 tm.id as member_id, u.id as user_id, 
@@ -39,6 +54,7 @@ export const getTeamDetails = async (req, res) => {
             ORDER BY tr.jersey_number
         `;
         
+        // 3. Запрос административного и тренерского штаба
         const staffQuery = `
             SELECT 
                 tm.id as member_id, u.id as user_id, 
@@ -53,13 +69,19 @@ export const getTeamDetails = async (req, res) => {
             ORDER BY u.last_name, u.first_name
         `;
         
-        const [rosterRes, staffRes] = await Promise.all([
+        const [membersRes, rosterRes, staffRes] = await Promise.all([
+            pool.query(membersQuery, [teamId]),
             pool.query(rosterQuery, [teamId]),
             pool.query(staffQuery, [teamId])
         ]);
         
-        res.json({ roster: rosterRes.rows, staff: staffRes.rows });
+        res.json({ 
+            members: membersRes.rows, 
+            roster: rosterRes.rows, 
+            staff: staffRes.rows 
+        });
     } catch (error) {
+        console.error('[Get Team Details Error]:', error);
         res.status(500).json({ error: 'Internal server error' });
     }
 };
@@ -102,7 +124,6 @@ export const updateTeamProfile = async (req, res) => {
     let jersey_dark_url = undefined;
     let jersey_light_url = undefined;
 
-    // 1. Логика обработки Логотипа
     if (req.files?.['logo']?.[0]) {
       const file = req.files['logo'][0];
       const ext = path.extname(file.originalname) || '.png';
@@ -110,10 +131,9 @@ export const updateTeamProfile = async (req, res) => {
       await uploadBufferToS3(file, key);
       logo_url = `/${key}`;
     } else if (delete_logo === 'true') {
-      logo_url = null; // Принудительное стирание в БД
+      logo_url = null;
     }
 
-    // 2. Логика обработки Темной джерси
     if (req.files?.['jersey_dark']?.[0]) {
       const file = req.files['jersey_dark'][0];
       const ext = path.extname(file.originalname) || '.png';
@@ -124,7 +144,6 @@ export const updateTeamProfile = async (req, res) => {
       jersey_dark_url = null;
     }
 
-    // 3. Логика обработки Светлой джерси
     if (req.files?.['jersey_light']?.[0]) {
       const file = req.files['jersey_light'][0];
       const ext = path.extname(file.originalname) || '.png';
@@ -140,7 +159,6 @@ export const updateTeamProfile = async (req, res) => {
     let counter = 1;
 
     const pushField = (columnName, value) => {
-      // Разрешаем null значения проходить валидацию для полной очистки полей в БД
       if (value !== undefined) {
         updateFields.push(`"${columnName}" = $${counter}`);
         queryValues.push(value);
@@ -178,6 +196,163 @@ export const updateTeamProfile = async (req, res) => {
 
   } catch (error) {
     console.error('[Update Team Profile Error]:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+};
+
+export const excludeFromRoster = async (req, res) => {
+  const { teamId, memberId } = req.params;
+  try {
+    const updateRosterQuery = `
+      UPDATE team_rosters 
+      SET left_at = CURRENT_DATE 
+      WHERE member_id = $1 AND team_id = $2 AND left_at IS NULL
+    `;
+    await pool.query(updateRosterQuery, [memberId, teamId]);
+    res.json({ success: true, message: 'Игрок успешно исключен из турнирного ростера' });
+  } catch (error) {
+    console.error('[Exclude From Roster Error]:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+};
+
+export const excludeFromMembership = async (req, res) => {
+  const { teamId, memberId } = req.params;
+  try {
+    await pool.query('BEGIN');
+
+    const updateMemberQuery = `
+      UPDATE team_members 
+      SET left_at = CURRENT_DATE 
+      WHERE id = $1 AND team_id = $2 AND left_at IS NULL
+    `;
+    await pool.query(updateMemberQuery, [memberId, teamId]);
+
+    const updateRosterQuery = `
+      UPDATE team_rosters 
+      SET left_at = CURRENT_DATE 
+      WHERE member_id = $1 AND team_id = $2 AND left_at IS NULL
+    `;
+    await pool.query(updateRosterQuery, [memberId, teamId]);
+
+    await pool.query('COMMIT');
+    res.json({ success: true, message: 'Пользователь полностью удален из членства команды и ростера' });
+  } catch (error) {
+    await pool.query('ROLLBACK');
+    console.error('[Exclude From Membership Error]:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+};
+
+// ПОИСК ПОЛЬЗОВАТЕЛЯ С ОПРЕДЕЛЕНИЕМ СТАТУСА ТЕКУЩЕГО ЧЛЕНСТВА В КОМАНДЕ
+export const searchUserByPhone = async (req, res) => {
+  const { teamId } = req.params;
+  const { phone } = req.query;
+
+  if (!phone) {
+    return res.status(400).json({ error: 'Параметр phone обязателен' });
+  }
+
+  try {
+    const cleanPhone = phone.replace(/\D/g, '');
+    const last10Digits = cleanPhone.slice(-10);
+
+    const query = `
+      SELECT u.id, u.first_name, u.last_name, u.avatar_url, u.virtual_code, u.status,
+             (tm.id IS NOT NULL AND tm.left_at IS NULL) as is_already_in_team,
+             (tm.id IS NOT NULL AND tm.left_at IS NOT NULL) as is_archived_in_team
+      FROM users u
+      LEFT JOIN team_members tm ON tm.user_id = u.id AND tm.team_id = $1
+      WHERE right(regexp_replace(u.phone, '\\D', '', 'g'), 10) = $2
+      LIMIT 1
+    `;
+
+    const { rows } = await pool.query(query, [teamId, last10Digits]);
+
+    if (rows.length === 0) {
+      return res.json({ success: false, message: 'Пользователь с таким номером не зарегистрирован' });
+    }
+
+    res.json({ success: true, user: rows[0] });
+  } catch (error) {
+    console.error('[Search User By Phone Error]:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+};
+
+export const addOrRestoreTeamMember = async (req, res) => {
+  const { teamId } = req.params;
+  const { userId } = req.body;
+
+  try {
+    const checkQuery = `SELECT id, left_at FROM team_members WHERE team_id = $1 AND user_id = $2`;
+    const { rows } = await pool.query(checkQuery, [teamId, userId]);
+
+    if (rows.length > 0) {
+      const existing = rows[0];
+      if (existing.left_at === null) {
+        return res.status(400).json({ error: 'Пользователь уже находится в основном составе команды' });
+      }
+
+      await pool.query(
+        `UPDATE team_members SET left_at = NULL, joined_at = CURRENT_DATE WHERE id = $1`, 
+        [existing.id]
+      );
+      return res.json({ success: true, message: 'Членство пользователя в команде успешно восстановлено' });
+    }
+
+    await pool.query(
+      `INSERT INTO team_members (team_id, user_id, joined_at) VALUES ($1, $2, CURRENT_DATE)`, 
+      [teamId, userId]
+    );
+    res.json({ success: true, message: 'Пользователь успешно добавлен в состав команды' });
+  } catch (error) {
+    console.error('[Add/Restore Member Error]:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+};
+
+export const addTeamMemberToRoster = async (req, res) => {
+  const { teamId } = req.params;
+  const { memberId, position, jerseyNumber } = req.body;
+
+  try {
+    const numCheck = `
+      SELECT tr.id FROM team_rosters tr
+      WHERE tr.team_id = $1 AND tr.jersey_number = $2 AND tr.left_at IS NULL
+    `;
+    const { rows: numRows } = await pool.query(numCheck, [teamId, jerseyNumber]);
+    if (numRows.length > 0) {
+      return res.status(400).json({ error: 'Этот игровой номер уже занят активным игроком ростера' });
+    }
+
+    const teamRes = await pool.query(`SELECT club_id FROM teams WHERE id = $1`, [teamId]);
+    const clubId = teamRes.rows[0]?.club_id || null;
+
+    const rosterCheck = `SELECT id, left_at FROM team_rosters WHERE member_id = $1`;
+    const { rows: rosterRows } = await pool.query(rosterCheck, [memberId]);
+
+    if (rosterRows.length > 0) {
+      const existingRoster = rosterRows[0];
+      if (existingRoster.left_at === null) {
+        return res.status(400).json({ error: 'Игрок уже занимает активную позицию в ростере' });
+      }
+
+      await pool.query(`
+        UPDATE team_rosters 
+        SET left_at = NULL, team_id = $1, club_id = $2, position = $3, jersey_number = $4, joined_at = NOW()
+        WHERE id = $5
+      `, [teamId, clubId, position, jerseyNumber, existingRoster.id]);
+    } else {
+      await pool.query(`
+        INSERT INTO team_rosters (club_id, team_id, member_id, position, jersey_number, joined_at)
+        VALUES ($1, $2, $3, $4, $5, NOW())
+      `, [clubId, teamId, memberId, position, jerseyNumber]);
+    }
+
+    res.json({ success: true, message: 'Игрок успешно добавлен в активный ростер' });
+  } catch (error) {
+    console.error('[Add Member To Roster Error]:', error);
     res.status(500).json({ error: 'Internal server error' });
   }
 };

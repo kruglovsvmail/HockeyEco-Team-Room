@@ -55,10 +55,19 @@ export const MatchLines = ({ event }) => {
   const [staffMembers, setStaffMembers] = useState([]);
 
   const [timeToMatch, setTimeToMatch] = useState(999);
+  
+  // Объекты координат { x, y } для точечного позиционирования
   const [showTooltip, setShowTooltip] = useState(false);
   const [showSubmitTooltip, setShowSubmitTooltip] = useState(false);
+  const [showPlayerEditTooltip, setShowPlayerEditTooltip] = useState(false);
+  
+  const [tooltipCoords, setTooltipCoords] = useState(null);
+  const [submitTooltipCoords, setSubmitTooltipCoords] = useState(null);
+  const [playerEditTooltipCoords, setPlayerEditTooltipCoords] = useState(null);
+  
   const tooltipTimer = useRef(null);
   const submitTooltipTimer = useRef(null);
+  const playerEditTooltipTimer = useRef(null);
 
   const [currentSlide, setCurrentSlide] = useState(0);
   const [activeSelection, setActiveSelection] = useState(null);
@@ -153,6 +162,7 @@ export const MatchLines = ({ event }) => {
     return () => {
       if (tooltipTimer.current) clearTimeout(tooltipTimer.current);
       if (submitTooltipTimer.current) clearTimeout(submitTooltipTimer.current);
+      if (playerEditTooltipTimer.current) clearTimeout(playerEditTooltipTimer.current);
     };
   }, []);
 
@@ -246,12 +256,17 @@ export const MatchLines = ({ event }) => {
     }
   };
 
-  const handleSubmitOfficialRoster = async () => {
+  const handleSubmitOfficialRoster = async (e) => {
     if (timeToMatch < DEADLINES.ROSTER_SUBMIT_MINUTES) {
+      if (e && e.currentTarget) {
+        const rect = e.currentTarget.getBoundingClientRect();
+        setSubmitTooltipCoords({ x: rect.left + rect.width / 2, y: rect.top });
+      }
       setShowTooltip(false);
+      setShowPlayerEditTooltip(false);
       setShowSubmitTooltip(true);
       if (submitTooltipTimer.current) clearTimeout(submitTooltipTimer.current);
-      submitTooltipTimer.current = setTimeout(() => setShowSubmitTooltip(false), 4000);
+      submitTooltipTimer.current = setTimeout(() => setShowSubmitTooltip(false), 2000);
       return;
     }
     try {
@@ -274,7 +289,7 @@ export const MatchLines = ({ event }) => {
     }
   };
 
-  const handleHeaderActionClick = () => {
+  const handleHeaderActionClick = (e) => {
     if (isEditMode) {
       setIsEditMode(false);
       setIsDeleteMode(false);
@@ -282,10 +297,15 @@ export const MatchLines = ({ event }) => {
       loadInitialData(); 
     } else {
       if (timeToMatch <= DEADLINES.LINES_EDIT_MINUTES) {
+        if (e && e.currentTarget) {
+          const rect = e.currentTarget.getBoundingClientRect();
+          setTooltipCoords({ x: rect.left + rect.width / 2, y: rect.top });
+        }
         setShowSubmitTooltip(false);
+        setShowPlayerEditTooltip(false);
         setShowTooltip(true);
         if (tooltipTimer.current) clearTimeout(tooltipTimer.current);
-        tooltipTimer.current = setTimeout(() => setShowTooltip(false), 4000);
+        tooltipTimer.current = setTimeout(() => setShowTooltip(false), 2000);
         return;
       }
       setIsEditMode(true);
@@ -494,13 +514,18 @@ export const MatchLines = ({ event }) => {
     if (pressTimer.current) clearTimeout(pressTimer.current);
   };
 
-  const handleViewPlayerClick = (player) => {
+  const handleViewPlayerClick = (player, e) => {
     if (!hasAdminAccess) return;
     if (timeToMatch < DEADLINES.ROSTER_SUBMIT_MINUTES) {
+      if (e && e.currentTarget) {
+        const rect = e.currentTarget.getBoundingClientRect();
+        setPlayerEditTooltipCoords({ x: rect.left + rect.width / 2, y: rect.top });
+      }
       setShowTooltip(false);
-      setShowSubmitTooltip(true);
-      if (submitTooltipTimer.current) clearTimeout(submitTooltipTimer.current);
-      submitTooltipTimer.current = setTimeout(() => setShowSubmitTooltip(false), 4000);
+      setShowSubmitTooltip(false);
+      setShowPlayerEditTooltip(true);
+      if (playerEditTooltipTimer.current) clearTimeout(playerEditTooltipTimer.current);
+      playerEditTooltipTimer.current = setTimeout(() => setShowPlayerEditTooltip(false), 2000);
       return;
     }
     setSelectedPlayer(player);
@@ -591,7 +616,7 @@ export const MatchLines = ({ event }) => {
           if (isEditMode) {
             handleSlotClick(lineNum, pos);
           } else if (player) {
-            handleViewPlayerClick(player);
+            handleViewPlayerClick(player, e);
           }
         }}
         className={clsx(
@@ -738,19 +763,26 @@ export const MatchLines = ({ event }) => {
         `}
       </style>
       
-      {/* ИНТЕГРАЦИЯ ТУЛТИПОВ С ТЕЛЕПОРТАЦИЕЙ ИЗ КОНТЕКСТА ДОМ-ДЕРЕВА */}
+      {/* ИНТЕГРАЦИЯ ДИНАМИЧЕСКИХ ТУЛТИПОВ С АВТОПРИЦЕЛИВАНИЕМ ПО ОСЯМ X И Y */}
       <TooltipLP 
         isOpen={showSubmitTooltip} 
-        position="left" 
+        coords={submitTooltipCoords}
         message={`Отправка заблокирована. До игры осталось меньше ${DEADLINES.ROSTER_SUBMIT_MINUTES} минут.`} 
         onClose={() => setShowSubmitTooltip(false)}
       />
 
       <TooltipLP 
         isOpen={showTooltip} 
-        position="right" 
+        coords={tooltipCoords}
         message={`Изменение пятерок заблокировано. До игры осталось меньше ${DEADLINES.LINES_EDIT_MINUTES} минут.`} 
         onClose={() => setShowTooltip(false)}
+      />
+
+      <TooltipLP 
+        isOpen={showPlayerEditTooltip} 
+        coords={playerEditTooltipCoords}
+        message={`Изменение параметров игрока заблокировано. До игры осталось меньше ${DEADLINES.ROSTER_SUBMIT_MINUTES} минут.`} 
+        onClose={() => setShowPlayerEditTooltip(false)}
       />
 
       <div className="flex items-center justify-between w-full px-4 relative">
