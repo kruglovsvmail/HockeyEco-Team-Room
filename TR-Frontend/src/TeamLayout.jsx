@@ -38,7 +38,7 @@ function TeamLayoutContent() {
   const [isLoading, setIsLoading] = useState(true);
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   
-  // Состояние глобального статуса сети (true - онлайн, false - офлайн)
+  // Отслеживание физического статуса сети
   const [isOnline, setIsOnline] = useState(() => navigator.onLine);
 
   const [rightPanel, setRightPanel] = useState({ isOpen: false, type: null, data: null, title: '' });
@@ -59,7 +59,6 @@ function TeamLayoutContent() {
   const [isDraggingSidebar, setIsDraggingSidebar] = useState(false);
   const [isDraggingRight, setIsDraggingRight] = useState(false);
 
-  // СЛУШАТЕЛЬ ИЗМЕНЕНИЯ СТАТУСА СЕТИ И FOCUS REVALIDATION
   useEffect(() => {
     const handleGlobalRefresh = () => {
       if (document.visibilityState === 'visible') {
@@ -70,11 +69,8 @@ function TeamLayoutContent() {
     const handleOnline = () => setIsOnline(true);
     const handleOffline = () => setIsOnline(false);
 
-    // Подписки на системные события фокуса
     window.addEventListener('focus', handleGlobalRefresh);
     document.addEventListener('visibilitychange', handleGlobalRefresh);
-
-    // Подписки на системные изменения статуса интернета на смартфоне
     window.addEventListener('online', handleOnline);
     window.addEventListener('offline', handleOffline);
 
@@ -141,12 +137,22 @@ function TeamLayoutContent() {
   useEffect(() => {
     const fetchMe = async () => {
       const token = getToken();
-      if (!token) return navigate('/login');
+      if (!token) {
+        setIsLoading(false);
+        return navigate('/login');
+      }
+
+      // СОЗДАЕМ ТАЙМАУТ ПРОВЕРКИ СЕССИИ (3 СЕКУНДЫ НА ОТВЕТ СЕРВЕРА)
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 3000);
 
       try {
         const res = await fetch(`${import.meta.env.VITE_API_URL}/api/auth/me`, {
-          headers: getAuthHeaders()
+          headers: getAuthHeaders(),
+          signal: controller.signal // Привязываем тайм-аут к сетевому запросу
         });
+        
+        clearTimeout(timeoutId); // Очищаем тайм-аут, если сервер успел ответить
         
         if (!res.ok) throw new Error('Not authorized');
         
@@ -167,7 +173,10 @@ function TeamLayoutContent() {
         
         setSelectedTeam(currentTeam);
       } catch (err) {
-        if (!navigator.onLine || err.message.includes('Failed to fetch') || err.name === 'TypeError') {
+        clearTimeout(timeoutId);
+
+        // Перехватываем либо физический оффлайн, либо падение по нашему тайм-ауту (AbortError)
+        if (!navigator.onLine || err.name === 'AbortError' || err.message.includes('Failed to fetch') || err.name === 'TypeError') {
           const cachedUserData = localStorage.getItem('teampwa_cached_user');
           if (cachedUserData) {
             const parsedUser = JSON.parse(cachedUserData);
@@ -181,10 +190,11 @@ function TeamLayoutContent() {
             setSelectedTeam(currentTeam);
             
             setIsLoading(false);
-            return; 
+            return; // Спасаем сессию, уходя на кэшированные рельсы
           }
         }
 
+        // Если это честная 401 ошибка авторизации — сбрасываем токен
         removeToken();
         navigate('/login');
       } finally {
@@ -287,9 +297,9 @@ function TeamLayoutContent() {
         {isSidebarOpen && <div className="absolute inset-0 z-50 md:hidden bg-transparent" onClick={() => setIsSidebarOpen(false)} />}
         {rightPanel.isOpen && <div className="absolute inset-0 z-50 bg-transparent cursor-pointer md:hidden" onClick={closeRightPanel} />}
 
-        {/* ГЛОБАЛЬНЫЙ БАННЕР ОТСУТСТВИЯ СЕТИ (Отображается поверх контента текущей страницы) */}
+        {/* ЖЕЛЕЗОБЕТОННЫЙ FIXED БАННЕР ОФФЛАЙНА С ВЫСШИМ Z-INDEX */}
         {!isOnline && (
-          <div className="absolute top-[60px] inset-x-0 z-[100] bg-danger/10 border-b border-danger/20 backdrop-blur-md px-4 py-2 flex items-center justify-center gap-2 animate-fade-in">
+          <div className="fixed top-[60px] left-0 md:left-[var(--sidebar-w)] right-0 z-[9999] bg-danger/15 border-b border-danger/25 backdrop-blur-md px-4 py-2 flex items-center justify-center gap-2 animate-fade-in shadow-md transition-all">
             <Icon name="cloud_off" className="w-4 h-4 text-danger animate-pulse" />
             <span className="text-[10px] font-black text-danger uppercase tracking-widest text-center">
               Нет сети. Режим только просмотра
