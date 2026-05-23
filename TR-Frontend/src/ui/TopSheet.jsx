@@ -1,32 +1,55 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useRef, useEffect } from 'react';
 import clsx from 'clsx';
 
 export function TopSheet({ isOpen, onClose, children }) {
-  const [dragY, setDragY] = useState(0);
+  // Убираем стейт dragY, чтобы исключить циклы тяжелого рендеринга React при высокочастотных touch-событиях
+  const panelRef = useRef(null);
   const startY = useRef(0);
-  const currentY = useRef(0);
+  const currentTransformY = useRef(0);
   
   useEffect(() => {
-    if (isOpen) setDragY(0);
+    if (isOpen && panelRef.current) {
+      // Очищаем инлайн-стили при открытии, возвращая управление стандартным классам транзишна
+      panelRef.current.style.transform = '';
+      panelRef.current.style.transition = '';
+      currentTransformY.current = 0;
+    }
   }, [isOpen]);
 
   const handleTouchStart = (e) => {
     startY.current = e.touches[0].clientY;
+    if (panelRef.current) {
+      // Жестко выключаем CSS-анимацию на время движения пальца, чтобы шторка не отставала от руки
+      panelRef.current.style.transition = 'none';
+    }
   };
 
   const handleTouchMove = (e) => {
-    currentY.current = e.touches[0].clientY;
-    const delta = currentY.current - startY.current;
-    if (delta < 0) {
-      setDragY(delta);
+    const currentY = e.touches[0].clientY;
+    const delta = currentY - startY.current;
+    
+    // Перетаскивание вверх (delta < 0) плавно уводит шторку под верхнюю кромку экрана
+    if (delta < 0 && panelRef.current) {
+      currentTransformY.current = delta;
+      // Прямое изменение стиля DOM-элемента (минуя Main Thread и диффинг виртуального дерева)
+      panelRef.current.style.transform = `translateY(${delta}px)`;
     }
   };
 
   const handleTouchEnd = () => {
-    if (dragY < -80) {
+    if (!panelRef.current) return;
+
+    // Возвращаем плавный физический транзишн закрытия/возврата шторки на место
+    panelRef.current.style.transition = 'transform 350ms cubic-bezier(0.32, 0.72, 0, 1)';
+
+    if (currentTransformY.current < -80) {
+      // Если шторку свайпнули вверх достаточно высоко — сбрасываем стили и вызываем закрытие
+      panelRef.current.style.transform = '';
       onClose();
     } else {
-      setDragY(0); 
+      // Если движение было коротким — возвращаем шторку в нулевое положение
+      panelRef.current.style.transform = 'translateY(0px)';
+      currentTransformY.current = 0;
     }
   };
 
@@ -45,15 +68,12 @@ export function TopSheet({ isOpen, onClose, children }) {
 
       {/* Верхняя шторка */}
       <div 
+        ref={panelRef}
         className={clsx(
           "fixed inset-x-0 top-0 z-[110] bg-sheet-bg backdrop-blur-sheet rounded-b-3xl border-b border-sheet-border shadow-xl flex flex-col touch-none", // <--- ДОБАВЛЕН touch-none: убивает bounce эффект
           "transition-transform duration-400 ease-[cubic-bezier(0.32,0.72,0,1)] pt-[env(safe-area-inset-top)] outline-none",
           isOpen ? "translate-y-0" : "-translate-y-[calc(100%+50px)]"
         )}
-        style={{ 
-          transform: isOpen && dragY < 0 ? `translateY(${dragY}px)` : undefined,
-          transition: dragY < 0 ? 'none' : ''
-        }}
       >
         {/* Контент шторки */}
         <div className="px-6 pt-4 pb-2">

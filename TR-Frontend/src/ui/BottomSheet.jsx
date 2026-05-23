@@ -3,15 +3,21 @@ import { createPortal } from 'react-dom';
 import clsx from 'clsx';
 
 export function BottomSheet({ isOpen, onClose, children }) {
-  const [dragY, setDragY] = useState(0);
+  // Заменяем стейт dragY на refs, чтобы убрать тяжелые перерендеры из Main Thread при свайпах
+  const panelRef = useRef(null);
   const startY = useRef(0);
-  const currentY = useRef(0);
+  const currentTransformY = useRef(0);
   
   const contentRef = useRef(null);
   const [contentHeight, setContentHeight] = useState('auto');
 
   useEffect(() => {
-    if (isOpen) setDragY(0);
+    if (isOpen && panelRef.current) {
+      // Сбрасываем инлайн-стили при открытии, чтобы шторка плавно выезжала за счет CSS-классов
+      panelRef.current.style.transform = '';
+      panelRef.current.style.transition = '';
+      currentTransformY.current = 0;
+    }
   }, [isOpen]);
 
   useEffect(() => {
@@ -29,21 +35,37 @@ export function BottomSheet({ isOpen, onClose, children }) {
 
   const handleTouchStart = (e) => {
     startY.current = e.touches[0].clientY;
+    if (panelRef.current) {
+      // Жестко отключаем CSS-transition на время перетаскивания, чтобы шторка шла за пальцем без задержек
+      panelRef.current.style.transition = 'none';
+    }
   };
 
   const handleTouchMove = (e) => {
-    currentY.current = e.touches[0].clientY;
-    const delta = currentY.current - startY.current;
-    if (delta > 0) {
-      setDragY(delta);
+    const currentY = e.touches[0].clientY;
+    const delta = currentY - startY.current;
+    
+    if (delta > 0 && panelRef.current) {
+      currentTransformY.current = delta;
+      // Прямая мутация DOM-ноды на уровне композитных слоев GPU (минуя движок React)
+      panelRef.current.style.transform = `translateY(${delta}px)`;
     }
   };
 
   const handleTouchEnd = () => {
-    if (dragY > 100) {
+    if (!panelRef.current) return;
+
+    // Возвращаем стандартный плавный физический транзишн нашей шторки
+    panelRef.current.style.transition = 'transform 300ms cubic-bezier(0.32, 0.72, 0, 1)';
+
+    if (currentTransformY.current > 100) {
+      // Если стянули шторку низко — очищаем трансформацию и отдаем скрытие системному классу Tailwind
+      panelRef.current.style.transform = '';
       onClose();
     } else {
-      setDragY(0);
+      // Если свайп был короткий — возвращаем шторку обратно наверх
+      panelRef.current.style.transform = 'translateY(0px)';
+      currentTransformY.current = 0;
     }
   };
 
@@ -61,15 +83,12 @@ export function BottomSheet({ isOpen, onClose, children }) {
 
       {/* Сама шторка */}
       <div 
+        ref={panelRef}
         className={clsx(
           "fixed inset-x-0 bottom-0 z-[110] bg-sheet-bg backdrop-blur-sheet rounded-t-3xl border-t border-sheet-border shadow-sheet-top flex flex-col",
           "transition-transform duration-300 ease-[cubic-bezier(0.32,0.72,0,1)]",
           isOpen ? "translate-y-0 pointer-events-auto" : "translate-y-[calc(100%+50px)] pointer-events-none"
         )}
-        style={{ 
-          transform: isOpen && dragY > 0 ? `translateY(${dragY}px)` : undefined,
-          transition: dragY > 0 ? 'none' : ''
-        }}
       >
         <div 
           className="p-5 flex justify-center shrink-0 cursor-grab active:cursor-grabbing touch-none"
@@ -85,8 +104,10 @@ export function BottomSheet({ isOpen, onClose, children }) {
           style={{ height: contentHeight === 'auto' ? 'auto' : `${contentHeight}px` }}
         >
           <div className="overflow-y-auto scrollbar-hide max-h-[85dvh] overscroll-none">
-            <div ref={contentRef} className="px-6 pb-8 pb-safe">
-              {children}
+            <div className="px-6 pb-8 pb-safe">
+              <div ref={contentRef}>
+                {children}
+              </div>
             </div>
           </div>
         </div>

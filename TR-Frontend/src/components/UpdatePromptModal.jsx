@@ -1,17 +1,47 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { Icon } from '../ui/Icon';
 import { ButtonLP } from '../ui/Button-LP';
 
 export function UpdatePromptModal({ isOpen, onUpdate, onLater }) {
-  if (!isOpen) return null;
+  const [changelog, setChangelog] = useState([]);
+  const [isLoading, setIsLoading] = useState(true);
 
-  // Текст со списком обновлений текущего релиза (меняешь перед деплоем)
-  const changelog = [
-    "Статистика, теперь считаем взгляды тренера, полные надежды и отчаяния.",
-    "Статистика считает голы и литры фанатских слёз.",
-    "Спинер квадратный.",
-    "Улучшина анимация и плавность"
-  ];
+  useEffect(() => {
+    // Если модалка закрыта — ничего не делаем
+    if (!isOpen) return;
+
+    let isMounted = true;
+    setIsLoading(true);
+
+    // Делаем фоновый запрос к статической ноде на сервере.
+    // Флаг t=${Date.now()} гарантирует обход кэша Service Worker и браузера (Cache Busting)
+    fetch(`/version.json?t=${Date.now()}`)
+      .then((res) => {
+        if (!res.ok) throw new Error('Не удалось получить актуальный манифест версии');
+        return res.json();
+      })
+      .then((data) => {
+        if (isMounted && data && Array.isArray(data.changelog)) {
+          setChangelog(data.changelog);
+        }
+      })
+      .catch((err) => {
+        console.error('Ошибка чтения свежего чейнджлога с сервера:', err);
+        // Безопасный фолбэк на случай проблем со связью, чтобы модалка не осталась пустой
+        if (isMounted) {
+          setChangelog(["Доступна новая версия с исправлениями стабильности и производительности интерфейса."]);
+        }
+      })
+      .finally(() => {
+        if (isMounted) setIsLoading(false);
+      });
+
+    return () => {
+      isMounted = false;
+    };
+  }, [isOpen]);
+
+  if (!isOpen) return null;
 
   return (
     <div className="fixed inset-0 z-[200] flex items-center justify-center p-4 animate-fade-in">
@@ -41,14 +71,24 @@ export function UpdatePromptModal({ isOpen, onUpdate, onLater }) {
           <span className="text-[10px] font-black text-brand uppercase tracking-widest block">
             Что нового:
           </span>
-          <ul className="flex flex-col gap-2 pl-1">
-            {changelog.map((item, index) => (
-              <li key={index} className="flex items-start gap-2 text-xs text-content-main font-medium leading-relaxed">
-                <span className="text-brand shrink-0 mt-1.5 select-none text-[8px]">•</span>
-                <span>{item}</span>
-              </li>
-            ))}
-          </ul>
+          
+          {isLoading ? (
+            // Аккуратный скелетон-анимация на время ультра-быстрой загрузки JSON файла
+            <div className="py-2 flex flex-col gap-2 animate-pulse">
+              <div className="h-3 bg-surface-level2 rounded w-3/4" />
+              <div className="h-3 bg-surface-level2 rounded w-5/6" />
+              <div className="h-3 bg-surface-level2 rounded w-2/3" />
+            </div>
+          ) : (
+            <ul className="flex flex-col gap-2 pl-1">
+              {changelog.map((item, index) => (
+                <li key={index} className="flex items-start gap-2 text-xs text-content-main font-medium leading-relaxed">
+                  <span className="text-brand shrink-0 mt-1.5 select-none text-[8px]">•</span>
+                  <span>{item}</span>
+                </li>
+              ))}
+            </ul>
+          )}
         </div>
 
         {/* Кнопки управления */}
