@@ -249,7 +249,7 @@ export function SchedulePage() {
         className="flex flex-col w-full h-full overflow-hidden relative bg-surface-border"
         style={{ touchAction: 'pan-y' }}
       >
-        {/* ПЛАВАЮЩАЯ ШАПКА С ЭФФЕКТОМ РАЗМЫТИЯ */}
+        {/* ШАПКА */}
         <div className="absolute top-0 left-0 right-0 z-40 px-4 pt-2 pb-4 bg-surface-border border-b border-surface-level3 shadow-md">
           <CompactWeek 
             date={currentDate} 

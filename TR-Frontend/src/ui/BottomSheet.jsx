@@ -25,6 +25,7 @@ export function BottomSheet({ isOpen, onClose, children }) {
     
     const resizeObserver = new ResizeObserver((entries) => {
       for (let entry of entries) {
+        // Считываем высоту контента вместе с пре-вычисленными паддингами безопасных зон
         setContentHeight(entry.target.offsetHeight);
       }
     });
@@ -90,6 +91,7 @@ export function BottomSheet({ isOpen, onClose, children }) {
           isOpen ? "translate-y-0 pointer-events-auto" : "translate-y-[calc(100%+50px)] pointer-events-none"
         )}
       >
+        {/* Верхняя шторка-индикатор (Хэндл для свайпа вниз) */}
         <div 
           className="p-5 flex justify-center shrink-0 cursor-grab active:cursor-grabbing touch-none"
           onTouchStart={handleTouchStart}
@@ -99,15 +101,15 @@ export function BottomSheet({ isOpen, onClose, children }) {
           <div className="w-14 h-1.5 bg-sheet-border rounded-full pointer-events-none" />
         </div>
 
+        {/* Главная контентная зона шторки */}
         <div 
           className="overflow-hidden transition-all duration-700 ease-[cubic-bezier(0.32,0.72,0,1)] max-h-[85dvh]"
           style={{ height: contentHeight === 'auto' ? 'auto' : `${contentHeight}px` }}
         >
           <div className="overflow-y-auto scrollbar-hide max-h-[85dvh] overscroll-none">
-            <div className="px-6 pb-8 pb-safe">
-              <div ref={contentRef}>
-                {children}
-              </div>
+            {/* 🛠 РЕШЕНИЕ БАГА: ref перенесен сюда. Паддинги теперь учитываются в ResizeObserver */}
+            <div ref={contentRef} className="px-6 pb-12 pb-safe">
+              {children}
             </div>
           </div>
         </div>

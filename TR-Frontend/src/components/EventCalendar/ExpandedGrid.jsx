@@ -12,25 +12,40 @@ const RENDER_BUFFER = 1;
 const MonthView = React.memo(({ baseDate, selectedDate, onSelectDate, onPrev, onNext, matchDatesSet }) => {
   const targetMonth = baseDate.month();
 
-  const weeks = useMemo(() => {
+  const weeksData = useMemo(() => {
     const startOfMonth = baseDate.startOf('month');
     const endOfMonth = baseDate.endOf('month');
     const startGrid = startOfMonth.startOf('isoWeek');
     const endGrid = endOfMonth.startOf('isoWeek');
-    
+    const todayStr = dayjs().format('YYYY-MM-DD');
+
     let weeksArray = [];
     let currentWeek = startGrid;
     
     while (currentWeek.isBefore(endGrid) || currentWeek.isSame(endGrid, 'day')) {
       let days = [];
       for (let j = 0; j < 7; j++) {
-        days.push(currentWeek.add(j, 'day'));
+        const day = currentWeek.add(j, 'day');
+        const dayStr = day.format('YYYY-MM-DD');
+        
+        days.push({
+          day,
+          dayLabel: day.format('D'),
+          dayStr,
+          isToday: dayStr === todayStr,
+          isWeekend: j === 5 || j === 6,
+          isTargetMonth: day.month() === targetMonth,
+        });
       }
       weeksArray.push(days);
       currentWeek = currentWeek.add(1, 'week');
     }
     return weeksArray;
-  }, [baseDate]);
+  }, [baseDate, targetMonth]);
+
+  const selectedWeekStr = useMemo(() => {
+    return selectedDate.startOf('isoWeek').format('YYYY-MM-DD');
+  }, [selectedDate]);
 
   return (
     <div className="flex flex-col shrink-0 pb-4 h-full w-[340px] select-none [contain:content]">
@@ -72,14 +87,14 @@ const MonthView = React.memo(({ baseDate, selectedDate, onSelectDate, onPrev, on
         </div>
 
         {/* Сетка недель */}
-        {weeks.map((week, weekIdx) => {
-          const isSelectedWeek = week[0].isSame(selectedDate.startOf('isoWeek'), 'day');
+        {weeksData.map((week, weekIdx) => {
+          const isSelectedWeek = week[0].dayStr === selectedWeekStr;
           
           return (
             <button 
               type="button"
               key={weekIdx} 
-              onClick={() => onSelectDate(week[0])}
+              onClick={() => onSelectDate(week[0].day)}
               className={clsx(
                 "flex flex-col items-center w-11 rounded-xl pb-2 pt-1 cursor-pointer outline-none transition-colors",
                 isSelectedWeek 
@@ -87,28 +102,23 @@ const MonthView = React.memo(({ baseDate, selectedDate, onSelectDate, onPrev, on
                   : "border-transparent bg-transparent md:hover:bg-surface-level2"
               )}
             >
-              {week.map((day, dayIdx) => {
-                const isToday = day.isSame(dayjs(), 'day');
-                const isWeekend = dayIdx === 5 || dayIdx === 6;
-                const isTargetMonth = day.month() === targetMonth;
-
-                const dayStr = day.format('YYYY-MM-DD');
-                const hasMatch = matchDatesSet?.has(dayStr);
+              {week.map((dayObj, dayIdx) => {
+                const hasMatch = matchDatesSet?.has(dayObj.dayStr);
 
                 return (
                   <div key={dayIdx} className="w-full flex items-center justify-center h-8 relative border-b border-surface-level3">
-                    {isToday && (
+                    {dayObj.isToday && (
                       <div className="absolute inset-[2px] border-[1px] border-brand rounded-lg pointer-events-none opacity-50 z-20" />
                     )}
 
-                    {isTargetMonth ? (
+                    {dayObj.isTargetMonth ? (
                       <div className="relative w-full h-full flex flex-col items-center justify-center">
                         <span className={clsx(
                           "text-xs transition-colors duration-200 relative z-10",
-                          isSelectedWeek ? "text-content-main font-medium" : (isWeekend ? "text-danger/90 font-medium" : "text-content-muted font-medium"),
-                          isToday && "!text-brand"
+                          isSelectedWeek ? "text-content-main font-medium" : (dayObj.isWeekend ? "text-danger font-medium" : "text-content-muted font-medium"),
+                          dayObj.isToday && "!text-brand"
                         )}>
-                          {day.format('D')}
+                          {dayObj.dayLabel}
                         </span>
                         
                         {hasMatch && (
@@ -133,7 +143,8 @@ export const ExpandedGrid = React.memo(function ExpandedGrid({ date, onChangeDat
   const [viewDate, setViewDate] = useState(date);
   const isInternalChange = useRef(false);
   
-  // Рефы для идеального свайпа
+  // Рефы для принудительных нативных тач-событий
+  const touchContainerRef = useRef(null);
   const touchStartX = useRef(null);
   const touchStartY = useRef(null);
   const isHorizontalSwipe = useRef(false);
@@ -142,6 +153,12 @@ export const ExpandedGrid = React.memo(function ExpandedGrid({ date, onChangeDat
   const [isAnimating, setIsAnimating] = useState(false);
   const [offsetIndex, setOffsetIndex] = useState(0);
   const animationTimer = useRef(null);
+
+  // Синхронизируем стейт анимации в стабильный реф для нативных слушателей
+  const isAnimatingRef = useRef(isAnimating);
+  useEffect(() => {
+    isAnimatingRef.current = isAnimating;
+  }, [isAnimating]);
 
   useEffect(() => {
     if (isInternalChange.current) {
@@ -158,7 +175,7 @@ export const ExpandedGrid = React.memo(function ExpandedGrid({ date, onChangeDat
   }, []);
 
   const slideTo = useCallback((direction) => {
-    if (isAnimating) return;
+    if (isAnimatingRef.current) return;
   
     setIsAnimating(true);
     setOffsetIndex(direction === 'next' ? 1 : -1);
@@ -166,76 +183,107 @@ export const ExpandedGrid = React.memo(function ExpandedGrid({ date, onChangeDat
     if (animationTimer.current) clearTimeout(animationTimer.current);
 
     animationTimer.current = setTimeout(() => {
-      setIsAnimating(false);
       setViewDate(prev => direction === 'next' ? prev.add(1, 'month') : prev.subtract(1, 'month'));
       setOffsetIndex(0); 
-    }, 290);
-  }, [isAnimating]);
+      setIsAnimating(false);
+    }, 300);
+  }, []);
 
   const handleDateSelect = useCallback((selectedDate) => {
     isInternalChange.current = true;
     onChangeDate(selectedDate);
   }, [onChangeDate]);
 
-  // --- ОБРАБОТКА СВАЙПОВ ---
-  const handleTouchStart = (e) => {
-    if (isAnimating) return;
-    
-    const x = e.touches[0].clientX;
-    
-    // Блокировка системного Edge Swipe (Safari) - 40px мертвой зоны
-    if (x < 40 || x > window.innerWidth - 40) return;
+  // --- НАДЁЖНЫЙ НАТИВНЫЙ ПЕРЕХВАТ ЖЕСТОВ С ФЛАГОМ { passive: false } ---
+  useEffect(() => {
+    const el = touchContainerRef.current;
+    if (!el) return;
 
-    touchStartX.current = x;
-    touchStartY.current = e.touches[0].clientY;
-    isHorizontalSwipe.current = false;
-    isSwipeLocked.current = false;
-  };
+    const handleNativeTouchStart = (e) => {
+      if (isAnimatingRef.current) return;
+      
+      const x = e.touches[0].clientX;
+      if (x < 40 || x > window.innerWidth - 40) return;
 
-  const handleTouchMove = (e) => {
-    if (touchStartX.current === null || isAnimating) return;
+      touchStartX.current = x;
+      touchStartY.current = e.touches[0].clientY;
+      isHorizontalSwipe.current = false;
+      isSwipeLocked.current = false;
+    };
 
-    const diffX = touchStartX.current - e.touches[0].clientX;
-    const diffY = touchStartY.current - e.touches[0].clientY;
+    const handleNativeTouchMove = (e) => {
+      if (touchStartX.current === null || isAnimatingRef.current) return;
 
-    if (!isSwipeLocked.current) {
-      // Порог чувствительности (6px) для предотвращения фантомных жестов
-      if (Math.abs(diffX) > 6 || Math.abs(diffY) > 6) {
-        isSwipeLocked.current = true;
-        if (Math.abs(diffX) > Math.abs(diffY)) {
-          isHorizontalSwipe.current = true;
-        } else {
-          // Вертикальное движение отсекаем
-          touchStartX.current = null;
+      const diffX = touchStartX.current - e.touches[0].clientX;
+      const diffY = touchStartY.current - e.touches[0].clientY;
+
+      if (!isSwipeLocked.current) {
+        if (Math.abs(diffX) > 6 || Math.abs(diffY) > 6) {
+          isSwipeLocked.current = true;
+          if (Math.abs(diffX) > Math.abs(diffY)) {
+            isHorizontalSwipe.current = true;
+          } else {
+            touchStartX.current = null;
+          }
         }
       }
-    }
 
-  };
+      // Если зафиксирован горизонтальный свайп — отменяем нативный скролл страницы
+      if (isHorizontalSwipe.current) {
+        if (e.cancelable) e.preventDefault();
+        e.stopPropagation();
+      }
+    };
 
-  const handleTouchEnd = (e) => {
-    if (touchStartX.current === null || isAnimating) {
+    const handleNativeTouchEnd = (e) => {
+      if (touchStartX.current === null || isAnimatingRef.current) {
+        touchStartX.current = null;
+        return;
+      }
+      
+      const touchEndX = e.changedTouches[0].clientX;
+      const diffX = touchStartX.current - touchEndX;
+
+      if (isHorizontalSwipe.current) {
+        // 🛠 КРИТИЧЕСКИЙ ФИКС: Вызываем отмену только если свайп преодолел порог в 40px
+        // и действительно сменит месяц. Ложные микро-тапы пальцем теперь пролетают насквозь!
+        if (Math.abs(diffX) > 40) {
+          if (e.cancelable) e.preventDefault();
+          e.stopPropagation();
+          slideTo(diffX > 0 ? 'next' : 'prev');
+        }
+      }
+
       touchStartX.current = null;
-      return;
-    }
-    
-    const touchEndX = e.changedTouches[0].clientX;
-    const diffX = touchStartX.current - touchEndX;
+      touchStartY.current = null;
+      isHorizontalSwipe.current = false;
+    };
 
-    if (isHorizontalSwipe.current && Math.abs(diffX) > 40) {
-      if (diffX > 0) slideTo('next');
-      else slideTo('prev');
-    }
+    const handleNativeTouchCancel = () => {
+      touchStartX.current = null;
+      touchStartY.current = null;
+      isHorizontalSwipe.current = false;
+      isSwipeLocked.current = false;
+    };
 
-    touchStartX.current = null;
-    touchStartY.current = null;
-    isHorizontalSwipe.current = false;
-  };
+    // Вешаем нативные события, обходя ограничения React
+    el.addEventListener('touchstart', handleNativeTouchStart, { passive: false });
+    el.addEventListener('touchmove', handleNativeTouchMove, { passive: false });
+    el.addEventListener('touchend', handleNativeTouchEnd, { passive: false });
+    el.addEventListener('touchcancel', handleNativeTouchCancel, { passive: false });
+
+    return () => {
+      el.removeEventListener('touchstart', handleNativeTouchStart);
+      el.removeEventListener('touchmove', handleNativeTouchMove);
+      el.removeEventListener('touchend', handleNativeTouchEnd);
+      el.removeEventListener('touchcancel', handleNativeTouchCancel);
+    };
+  }, [slideTo]);
 
   return (
     <div 
       className="pt-2 overflow-hidden w-full relative group"
-      style={{ touchAction: 'none' }} // <--- ИЗМЕНЕНО: Отключает абсолютно все системные жесты внутри календаря
+      style={{ touchAction: 'none' }} // Отключает системный пулл-скролл браузера
     >
       {/* Кнопки переключения для десктопа/планшета */}
       <div className="hidden md:block">
@@ -255,10 +303,8 @@ export const ExpandedGrid = React.memo(function ExpandedGrid({ date, onChangeDat
 
       {/* Зона перехвата жестов */}
       <div 
+        ref={touchContainerRef}
         className="flex justify-center w-full"
-        onTouchStart={handleTouchStart}
-        onTouchMove={handleTouchMove}
-        onTouchEnd={handleTouchEnd}
       >
         <div 
           className="flex items-start"
@@ -266,8 +312,7 @@ export const ExpandedGrid = React.memo(function ExpandedGrid({ date, onChangeDat
             gap: `${GAP_BETWEEN_MONTHS}px`,
             transform: `translateX(${-offsetIndex * STRIDE}px)`,
             transition: isAnimating ? 'transform 300ms cubic-bezier(0.32, 0.72, 0, 1)' : 'none',
-            pointerEvents: isAnimating ? 'none' : 'auto', 
-            willChange: 'transform' 
+            willChange: 'transform' // 🛠 УБРАНО pointerEvents: ничто больше искусственно не блокирует клики
           }}
         >
           {Array.from({ length: RENDER_BUFFER * 2 + 1 }, (_, i) => i - RENDER_BUFFER).map(offset => {
