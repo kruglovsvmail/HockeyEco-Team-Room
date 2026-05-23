@@ -38,7 +38,7 @@ function TeamLayoutContent() {
   const [isLoading, setIsLoading] = useState(true);
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   
-  // Отслеживание физического статуса сети
+  // Отслеживание физического статуса сети для динамического сдвига main-контента
   const [isOnline, setIsOnline] = useState(() => navigator.onLine);
 
   const [rightPanel, setRightPanel] = useState({ isOpen: false, type: null, data: null, title: '' });
@@ -292,17 +292,11 @@ function TeamLayoutContent() {
         {isSidebarOpen && <div className="absolute inset-0 z-50 md:hidden bg-transparent" onClick={() => setIsSidebarOpen(false)} />}
         {rightPanel.isOpen && <div className="absolute inset-0 z-50 bg-transparent cursor-pointer md:hidden" onClick={closeRightPanel} />}
 
-        {/* НЕУБИВАЕМЫЙ МАТОВЫЙ АБСОЛЮТНЫЙ БАННЕР ОФФЛАЙНА */}
-        {!isOnline && (
-          <div className="absolute top-[60px] left-0 right-0 z-[9999] bg-[#1a080a] border-b border-red-500/20 px-4 py-2 flex items-center justify-center gap-2 animate-fade-in shadow-md">
-            <Icon name="cloud_off" className="w-4 h-4 text-red-500 animate-pulse" />
-            <span className="text-[10px] font-black text-red-400 uppercase tracking-widest text-center">
-              Нет сети. Режим только просмотра
-            </span>
-          </div>
-        )}
-
-        <main className="flex-1 overflow-y-auto overflow-x-hidden relative pt-[60px] overscroll-none">
+        {/* Динамический сдвиг контента pt-[60px] -> pt-[92px] при появлении плашки */}
+        <main className={clsx(
+          "flex-1 overflow-y-auto overflow-x-hidden relative overscroll-none transition-all duration-300 ease-[cubic-bezier(0.32,0.72,0,1)]",
+          isOnline ? "pt-[60px]" : "pt-[92px]"
+        )}>
           <Outlet context={{ user, teams, selectedTeam, handleTeamChange, openRightPanel, openFullPage }} />
         </main>
 
