@@ -1,8 +1,9 @@
 import React, { useRef, useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import clsx from 'clsx';
 
 export function TopSheet({ isOpen, onClose, children }) {
-  // Убираем стейт dragY, чтобы исключить циклы тяжелого рендеринга React при высокочастотных touch-событиях
+  // text-заменяем стейты рендеринга на рефы, чтобы убрать просадки FPS в Main Thread при свайпах
   const panelRef = useRef(null);
   const startY = useRef(0);
   const currentTransformY = useRef(0);
@@ -53,7 +54,8 @@ export function TopSheet({ isOpen, onClose, children }) {
     }
   };
 
-  return (
+  // Используем createPortal, чтобы вынести шторку на самый верхний уровень документа
+  return createPortal(
     <>
       {/* ОВЕРЛЕЙ: Заменен на <button>, чтобы гарантировать мгновенное срабатывание клика без багов Safari */}
       <button 
@@ -70,7 +72,7 @@ export function TopSheet({ isOpen, onClose, children }) {
       <div 
         ref={panelRef}
         className={clsx(
-          "fixed inset-x-0 top-0 z-[110] bg-sheet-bg backdrop-blur-sheet rounded-b-3xl border-b border-sheet-border shadow-xl flex flex-col touch-none", // <--- ДОБАВЛЕН touch-none: убивает bounce эффект
+          "fixed inset-x-0 top-0 z-[110] bg-sheet-bg backdrop-blur-sheet rounded-b-3xl border-b border-sheet-border shadow-xl flex flex-col touch-none",
           "transition-transform duration-400 ease-[cubic-bezier(0.32,0.72,0,1)] pt-[env(safe-area-inset-top)] outline-none",
           isOpen ? "translate-y-0" : "-translate-y-[calc(100%+50px)]"
         )}
@@ -91,6 +93,7 @@ export function TopSheet({ isOpen, onClose, children }) {
           <div className="w-14 h-1.5 bg-sheet-border rounded-full pointer-events-none" />
         </div>
       </div>
-    </>
+    </>,
+    document.body
   );
 }

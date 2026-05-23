@@ -250,7 +250,7 @@ export function SchedulePage() {
         style={{ touchAction: 'pan-y' }}
       >
         {/* ПЛАВАЮЩАЯ ШАПКА С ЭФФЕКТОМ РАЗМЫТИЯ */}
-        <div className="absolute top-0 left-0 right-0 z-40 px-4 pt-4 pb-3 bg-brand-glow backdrop-blur-md border-b border-surface-level3 shadow-sm">
+        <div className="absolute top-0 left-0 right-0 z-40 px-4 pt-2 pb-4 bg-surface-border border-b border-surface-level3 shadow-md">
           <CompactWeek 
             date={currentDate} 
             offsetIndex={offsetIndex}

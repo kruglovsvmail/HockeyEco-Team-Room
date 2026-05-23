@@ -213,10 +213,10 @@ export const EventDetailsMatch = ({ event }) => {
         if (String(isStuck) !== stickyTabsRef.current.dataset.stuck) {
           stickyTabsRef.current.dataset.stuck = isStuck;
           if (isStuck) {
-            stickyTabsRef.current.classList.add('backdrop-blur-md', 'shadow-sm', 'bg-brand-glow'); 
+            stickyTabsRef.current.classList.add('shadow-md', 'bg-surface-border'); 
             stickyTabsRef.current.classList.remove('bg-transparent');
           } else {
-            stickyTabsRef.current.classList.remove('backdrop-blur-md', 'shadow-sm', 'bg-brand-glow');
+            stickyTabsRef.current.classList.remove('shadow-md', 'bg-surface-border');
             stickyTabsRef.current.classList.add('bg-transparent');
           }
         }
@@ -237,7 +237,7 @@ export const EventDetailsMatch = ({ event }) => {
       {/* 1. БЛОК ШАПКИ */}
       <div 
         ref={matchupHeaderRef}
-        className="snap-start bg-surface-base shadow-lg rounded-b-3xl shrink-0 pt-4 pb-4 will-change-transform z-20 relative"
+        className="snap-start bg-surface-base shadow-lg rounded-3xl shrink-0 pt-4 pb-4 will-change-transform z-20 relative mx-4"
       >
         <div className="flex items-start justify-between px-6">
         

@@ -287,10 +287,10 @@ export const MyTeamPage = () => {
         const isStuck = currentScroll > 84;
         stickyHeaderRef.current.dataset.stuck = isStuck;
         if (isStuck) {
-          stickyHeaderRef.current.classList.add('backdrop-blur-md', 'shadow-sm', 'bg-blue-900/5');
+          stickyHeaderRef.current.classList.add('shadow-md', 'bg-surface-border');
           stickyHeaderRef.current.classList.remove('bg-transparent');
         } else {
-          stickyHeaderRef.current.classList.remove('backdrop-blur-md', 'shadow-sm', 'bg-blue-900/5');
+          stickyHeaderRef.current.classList.remove('shadow-md', 'bg-surface-border');
           stickyHeaderRef.current.classList.add('bg-transparent');
         }
       }
@@ -331,7 +331,7 @@ export const MyTeamPage = () => {
         </style>
 
         {/* Шапка профиля команды */}
-        <div className="bg-surface-base pt-3 px-5 pb-4 mb-2 rounded-b-3xl flex items-center gap-4 shadow-lg shrink-0 border-b border-surface-level2 snap-start">
+        <div className="bg-surface-base pt-4 px-5 pb-4 mb-2 mx-4 rounded-3xl flex items-center gap-4 shadow-lg shrink-0 border-b border-surface-level2 snap-start">
           <div className="w-16 h-16 rounded-2xl flex items-center justify-center overflow-hidden drop-shadow-sm shrink-0 ml-4">
             <img src={getImageUrl(selectedTeam?.logo_url)} alt={selectedTeam?.name} className="w-full h-full object-contain p-1" />
           </div>
