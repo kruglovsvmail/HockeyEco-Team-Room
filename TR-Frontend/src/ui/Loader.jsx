@@ -2,65 +2,122 @@ import React from 'react';
 import clsx from 'clsx';
 
 // =========================================================================
-// ХОККЕЙНЫЙ КОНФИГУРАТОР (Твой инструмент для настройки анимации)
+// РАСШИРЕННЫЙ ХОККЕЙНЫЙ КОНФИГУРАТОР
 // =========================================================================
 const PUCK_CONFIG = {
-  strokeColor: '#b3b3b3ff',       // Цвет контура шайбы и скоростных линий
-  strokeWidth: 5,               // Толщина линий (в пикселях)
-  puckScale: 1.1,               // Масштаб самой шайбы (например: 1 — базовый, 1.2 — крупнее)
-  wobbleSpeed: '0.5s',         // Скорость покачивания шайбы (чем меньше, тем быстрее)
-  wobbleIntensity: '5px',       // Амплитуда движения вверх-вниз в полете
-  rotateIntensity: '3deg',      // Угол наклона шайбы при покачивании
-  linesBaseSpeed: '0.3s',      // Базовая скорость пролета аниме-линий
+  // Габариты всего контейнера лоудера
+  containerWidth: '140px',        // Общая ширина области анимации
+  containerHeight: '80px',       // Общая высота области анимации
+  strokeColor: '#656565ff',         // Цвет всех контуров (шайба и линии)
+  
+  // Геометрические размеры (без искажения толщины линий)
+  puckWidth: 50,                  // РАЗМЕР ШАЙБЫ: Физическая ширина в пикселях
+  puckHeight: 30,                 // РАЗМЕР ШАЙБЫ: Физическая высота в пикселях
+  puckStrokeWidth: 2,             // ТОЛЩИНА ЛИНИЙ ШАЙБЫ (в пикселях)
+  
+  // Настройки скоростных линий
+  speedLineStrokeWidth: 1,        // ТОЛЩИНА ЛИНИЙ СКОРОСТИ (в пикселях)
+  speedLineCount: 5,              // КОЛИЧЕСТВО ЛИНИЙ СКОРОСТИ
+  linesBaseSpeed: '0.3s',        // Базовая скорость пролета линий через экран
+  
+  // Настройки физики движения и покачивания
+  wobbleSpeedY: '0.35s',          // СКОРОСТЬ движения вверх-вниз
+  wobbleAmplitudeY: '3px',        // АМПЛИТУДА движения вверх-вниз (высота прыжка)
+  wobbleSpeedRotate: '0.18s',     // СКОРОСТЬ покачивания (наклона)
+  wobbleAmplitudeRotate: '5deg',  // АМПЛИТУДА покачивания (угол наклона в градусах)
 };
 
 /**
  * 1. Легковесный центрированный лоадер для страниц и панелей.
- * Шайба зафиксирована строго по центру. Настройки лоадера регулируются через PUCK_CONFIG.
+ * Полностью настраиваемый независимый компонент с плавающей шайбой по центру.
  */
 export function PageLoader({ className }) {
-  // Транслируем настройки из конфигуратора в CSS-переменные
+  // Маппинг настроек конфигуратора в CSS-переменные для использования внутри @keyframes
   const configStyles = {
+    '--container-w': PUCK_CONFIG.containerWidth,
+    '--container-h': PUCK_CONFIG.containerHeight,
     '--puck-color': PUCK_CONFIG.strokeColor,
-    '--puck-stroke': `${PUCK_CONFIG.strokeWidth}px`,
-    '--puck-scale': PUCK_CONFIG.puckScale,
-    '--wobble-speed': PUCK_CONFIG.wobbleSpeed,
-    '--wobble-y': PUCK_CONFIG.wobbleIntensity,
-    '--wobble-deg': PUCK_CONFIG.rotateIntensity,
+    '--puck-stroke': `${PUCK_CONFIG.puckStrokeWidth}px`,
+    '--line-stroke': `${PUCK_CONFIG.speedLineStrokeWidth}px`,
+    '--wobble-y-speed': PUCK_CONFIG.wobbleSpeedY,
+    '--wobble-y-amp': PUCK_CONFIG.wobbleAmplitudeY,
+    '--wobble-rot-speed': PUCK_CONFIG.wobbleSpeedRotate,
+    '--wobble-rot-amp': PUCK_CONFIG.wobbleAmplitudeRotate,
     '--lines-speed': PUCK_CONFIG.linesBaseSpeed,
   };
+
+  // Динамическая генерация заданного количества линий скорости
+  const speedLines = Array.from({ length: PUCK_CONFIG.speedLineCount }).map((_, index) => {
+    // Равномерно распределяем линии по высоте рабочей зоны с отступами сверху и снизу
+    const minTop = 15; 
+    const maxTop = 85;
+    const step = PUCK_CONFIG.speedLineCount > 1 ? (maxTop - minTop) / (PUCK_CONFIG.speedLineCount - 1) : 0;
+    const topPosition = minTop + step * index;
+
+    // Добавляем псевдослучайный сдвиг по времени (stagger effect), чтобы линии шли не синхронно
+    const delay = (index * 0.06).toFixed(2) + 's';
+    // Небольшое варьирование скорости отдельных линий для органичного аниме-эффекта
+    const speedModifier = 0.8 + (index % 3) * 0.15; 
+
+    return (
+      <div 
+        key={index}
+        className="anime-speed-line" 
+        style={{ 
+          top: `${topPosition}%`, 
+          animationDelay: delay,
+          animationDuration: `calc(var(--lines-speed) * ${speedModifier})`
+        }} 
+      />
+    );
+  });
 
   return (
     <div 
       className={clsx("flex-1 flex flex-col items-center justify-center h-full w-full min-h-[250px] bg-transparent select-none", className)}
       style={configStyles}
     >
-      {/* Рабочая зона анимации */}
-      <div className="relative flex items-center justify-center w-72 h-32 overflow-hidden">
+      {/* Контейнер анимации */}
+      <div 
+        className="relative flex items-center justify-center overflow-hidden"
+        style={{ width: 'var(--container-w)', height: 'var(--container-h)' }}
+      >
         
-        {/* Изолированные CSS-анимации */}
+        {/* Стили анимации */}
         <style>{`
-          @keyframes puckCenterWobble {
-            0%, 100% { transform: scale(var(--puck-scale)) translateY(0) rotate(0deg); }
-            25% { transform: scale(var(--puck-scale)) translateY(calc(-1 * var(--wobble-y))) rotate(calc(-1 * var(--wobble-deg))); }
-            75% { transform: scale(var(--puck-scale)) translateY(var(--wobble-y)) rotate(var(--wobble-deg)); }
+          /* Раздельная анимация: Слой 1 — Вертикальная амплитуда */
+          @keyframes puckWobbleY {
+            0%, 100% { transform: translateY(0); }
+            50% { transform: translateY(calc(-1 * var(--wobble-y-amp))); }
           }
           
+          /* Раздельная анимация: Слой 2 — Скорость покачивания (угол) */
+          @keyframes puckRotate {
+            0%, 100% { transform: rotate(0deg); }
+            25% { transform: rotate(calc(-1 * var(--wobble-rot-amp))); }
+            75% { transform: rotate(var(--wobble-rot-amp)); }
+          }
+          
+          /* Движение линий скорости слева направо (визуальный вылет влево) */
           @keyframes animeSpeedLine {
             0% { left: 110%; width: 0px; opacity: 0; }
-            15% { width: 45px; opacity: 1; }
-            80% { width: 75px; opacity: 1; }
-            100% { left: -40%; width: 0px; opacity: 0; }
+            12% { width: 40px; opacity: 1; }
+            80% { width: 70px; opacity: 1; }
+            100% { left: -35%; width: 0px; opacity: 0; }
           }
 
-          .puck-centered-anim {
-            animation: puckCenterWobble var(--wobble-speed) ease-in-out infinite;
+          .puck-y-layer {
+            animation: puckWobbleY var(--wobble-y-speed) ease-in-out infinite;
             z-index: 10;
+          }
+
+          .puck-rot-layer {
+            animation: puckRotate var(--wobble-rot-speed) ease-in-out infinite;
           }
 
           .anime-speed-line {
             position: absolute;
-            height: calc(var(--puck-stroke) * 0.8);
+            height: var(--line-stroke);
             background-color: var(--puck-color);
             border-radius: 9999px;
             animation: animeSpeedLine var(--lines-speed) linear infinite;
@@ -68,27 +125,49 @@ export function PageLoader({ className }) {
           }
         `}</style>
 
-        {/* Аниме-линии скорости (размытый хаотичный поток под шайбой) */}
+        {/* Сгенерированный поток линий скорости */}
         <div className="absolute inset-0 pointer-events-none w-full h-full">
-          <div className="anime-speed-line" style={{ top: '22%', animationDelay: '0s', animationDuration: 'calc(var(--lines-speed) * 0.95)' }} />
-          <div className="anime-speed-line" style={{ top: '48%', animationDelay: '0.08s', animationDuration: 'calc(var(--lines-speed) * 0.75)' }} />
-          <div className="anime-speed-line" style={{ top: '68%', animationDelay: '0.03s', animationDuration: 'calc(var(--lines-speed) * 1.15)' }} />
-          <div className="anime-speed-line" style={{ top: '82%', animationDelay: '0.14s', animationDuration: 'calc(var(--lines-speed) * 0.85)' }} />
+          {speedLines}
         </div>
 
-        {/* Шайба — строго отцентрована геометрически */}
-        <div className="puck-centered-anim flex items-center justify-center">
-          <svg width="76" height="48" viewBox="0 0 76 48" fill="none" xmlns="http://www.w3.org/2000/svg">
-            {/* Верхняя плоскость */}
-            <ellipse cx="38" cy="16" rx="30" ry="11" stroke="var(--puck-color)" strokeWidth="var(--puck-stroke)" fill="none" />
-            {/* Нижняя грань */}
-            <path d="M 8 16 V 32 A 30 11 0 0 0 68 32 V 16" stroke="var(--puck-color)" strokeWidth="var(--puck-stroke)" strokeLinecap="round" strokeLinejoin="round" fill="none" />
-          </svg>
+        {/* Шайба с независимыми слоями анимации */}
+        <div className="puck-y-layer">
+          <div className="puck-rot-layer flex items-center justify-center">
+            <svg 
+              width={PUCK_CONFIG.puckWidth} 
+              height={PUCK_CONFIG.puckHeight} 
+              viewBox="0 0 76 48" 
+              fill="none" 
+              xmlns="http://www.w3.org/2000/svg"
+            >
+              {/* Верхний эллипс */}
+              <ellipse 
+                cx="38" 
+                cy="16" 
+                rx="30" 
+                ry="11" 
+                vectorEffect="non-scaling-stroke" 
+                stroke="var(--puck-color)" 
+                strokeWidth="var(--puck-stroke)" 
+                fill="none" 
+              />
+              {/* Нижний обод */}
+              <path 
+                d="M 8 16 V 32 A 30 11 0 0 0 68 32 V 16" 
+                vectorEffect="non-scaling-stroke" 
+                stroke="var(--puck-color)" 
+                strokeWidth="var(--puck-stroke)" 
+                strokeLinecap="round" 
+                strokeLinejoin="round" 
+                fill="none" 
+              />
+            </svg>
+          </div>
         </div>
         
       </div>
       
-      {/* Текстовый индикатор */}
+      {/* Текстовые точки загрузки */}
       <span className="text-[10px] font-black text-brand tracking-[0.25em] uppercase mt-4 animate-pulse">
         ...
       </span>
@@ -114,8 +193,7 @@ export function Skeleton({ className, variant = 'rect' }) {
 }
 
 /**
- * 3. Готовый пресет матовой скелетон-карточки (например, для игрока или события) 
- * для быстрой сборки списков во время загрузки данных.
+ * 3. Готовый пресет матовой скелетон-карточки для быстрой сборки списков во время загрузки данных.
  */
 export function SkeletonCard({ className }) {
   return (

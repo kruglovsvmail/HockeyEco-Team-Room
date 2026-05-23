@@ -67,28 +67,28 @@ export function Header({ isSidebarOpen, onToggleSidebar, user, selectedTeam, onT
         <div className="flex-1 flex items-center justify-between p-4 h-[60px] w-full">
           <button 
             onClick={onToggleSidebar}
-            className="md:hidden p-2 -ml-2 text-content-main hover:text-brand transition-colors outline-none"
+            className="md:hidden p-2  bg-white/40 rounded-full text-content-main hover:text-brand transition-colors outline-none"
             aria-label="Menu"
           >
-            {isSidebarOpen ? <X size={28} /> : <Menu size={28} />}
+            {isSidebarOpen ? <X size={20} /> : <Menu size={20} />}
           </button>
 
           {/* Раздел РАСПИСАНИЕ: календарь и фильтры (скрываются, если передан флаг hideActions) */}
           {isSchedulePage && !hideActions && (
-            <div className="flex items-center gap-1 ml-auto">
+            <div className="flex items-center gap-3 ml-auto">
               <button 
                 onClick={openCalendar}
-                className="p-2 text-content-main hover:text-brand transition-colors outline-none"
+                className="p-2 text-content-main bg-white/40 rounded-full hover:text-brand transition-colors outline-none"
                 aria-label="Календарь"
               >
-                <Icon name="calendar" className="w-6 h-6" />
+                <Icon name="calendar" className="w-5 h-5" />
               </button>
               <button 
                 onClick={() => setIsFilterOpen(true)}
-                className="p-2 text-content-main hover:text-brand transition-colors outline-none"
+                className="p-2 text-content-main bg-white/40 rounded-full hover:text-brand transition-colors outline-none"
                 aria-label="Фильтр"
               >
-                <Icon name="filter" className="w-6 h-6" />
+                <Icon name="filter" className="w-5 h-5" />
               </button>
             </div>
           )}
@@ -101,7 +101,7 @@ export function Header({ isSidebarOpen, onToggleSidebar, user, selectedTeam, onT
                 className="p-2 text-content-main hover:text-brand transition-colors outline-none cursor-pointer active:scale-95"
                 aria-label="Редактировать профиль команды"
               >
-                <Icon name="edit" className="w-6 h-6" />
+                <Icon name="edit" className="w-5 h-5" />
               </button>
             </div>
           )}

@@ -134,7 +134,7 @@ const EventCard = ({ event, onToggleAttendance, onClick }) => {
         <div className="relative w-[50%] shrink-0 flex items-center justify-center pl-3">
           {/* Векторный фон челки */}
           <svg 
-            className="absolute inset-0 w-full h-full text-[#3f6e92ff]" 
+            className="absolute inset-0 w-full h-full text-[#4d845bff]" 
             viewBox="0 0 140 38" 
             fill="currentColor"
             preserveAspectRatio="none"
