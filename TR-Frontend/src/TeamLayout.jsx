@@ -38,7 +38,7 @@ function TeamLayoutContent() {
   const [isLoading, setIsLoading] = useState(true);
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   
-  // Отслеживание физического статуса сети для динамического сдвига main-контента
+  // Отслеживание физического статуса сети
   const [isOnline, setIsOnline] = useState(() => navigator.onLine);
 
   const [rightPanel, setRightPanel] = useState({ isOpen: false, type: null, data: null, title: '' });
@@ -76,7 +76,7 @@ function TeamLayoutContent() {
 
     return () => {
       window.removeEventListener('focus', handleGlobalRefresh);
-      document.removeEventListener('visibilitychange', handleGlobalRefresh);
+      document.addEventListener('visibilitychange', handleGlobalRefresh);
       window.removeEventListener('online', handleOnline);
       window.removeEventListener('offline', handleOffline);
     };
@@ -292,11 +292,15 @@ function TeamLayoutContent() {
         {isSidebarOpen && <div className="absolute inset-0 z-50 md:hidden bg-transparent" onClick={() => setIsSidebarOpen(false)} />}
         {rightPanel.isOpen && <div className="absolute inset-0 z-50 bg-transparent cursor-pointer md:hidden" onClick={closeRightPanel} />}
 
-        {/* Динамический сдвиг контента pt-[60px] -> pt-[92px] при появлении плашки */}
-        <main className={clsx(
-          "flex-1 overflow-y-auto overflow-x-hidden relative overscroll-none transition-all duration-300 ease-[cubic-bezier(0.32,0.72,0,1)]",
-          isOnline ? "pt-[60px]" : "pt-[92px]"
-        )}>
+        {/* Динамический сдвиг контента с учетом высоты хедера и системного статус-бара устройства */}
+        <main 
+          className="flex-1 overflow-y-auto overflow-x-hidden relative overscroll-none transition-all duration-300 ease-[cubic-bezier(0.32,0.72,0,1)]"
+          style={{
+            paddingTop: isOnline 
+              ? 'calc(60px + env(safe-area-inset-top, 0px))' 
+              : 'calc(92px + env(safe-area-inset-top, 0px))'
+          }}
+        >
           <Outlet context={{ user, teams, selectedTeam, handleTeamChange, openRightPanel, openFullPage }} />
         </main>
 
@@ -363,8 +367,20 @@ function TeamLayoutContent() {
       </div>
 
       <div className="md:hidden">
-        <EventDashboard isOpen={fullPagePanel.isOpen} onClose={closeFullPageUi} type={fullPagePanel.type} data={fullPagePanel.data} title={fullPagePanel.title} />
-      </div>
+  <EventDashboard 
+    isOpen={fullPagePanel.isOpen} 
+    onClose={closeFullPageUi} 
+    type={fullPagePanel.type} 
+    data={fullPagePanel.data} 
+    title={fullPagePanel.title}
+    user={user}
+    selectedTeam={selectedTeam}
+    onTeamUpdated={(updatedTeam) => {
+      setSelectedTeam(prev => ({ ...prev, ...updatedTeam }));
+      setTeams(prev => prev.map(t => t.id === updatedTeam.id ? { ...t, ...updatedTeam } : t));
+    }}
+  />
+</div>
 
     </div>
   );

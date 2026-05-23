@@ -41,13 +41,18 @@ export function Header({ isSidebarOpen, onToggleSidebar, user, selectedTeam, onT
 
   return (
     <>
-      {/* Динамическая высота всей шапки с поддержкой плавного перехода transition-all */}
-      <header className={clsx(
-        "absolute top-0 left-0 bg-surface-base right-0 flex flex-col z-40 transition-all duration-300 ease-[cubic-bezier(0.32,0.72,0,1)] overflow-hidden border-b border-surface-border/10 shadow-sm",
-        isOnline ? "h-[60px]" : "h-[92px]"
-      )}>
+      {/* Автоматический расчет высоты: базовые 60px/92px + системная высота статус-бара устройства */}
+      <header 
+        className="absolute top-0 left-0 bg-surface-base right-0 flex flex-col z-40 transition-all duration-300 ease-[cubic-bezier(0.32,0.72,0,1)] overflow-hidden border-b border-surface-border/10 shadow-sm"
+        style={{
+          height: isOnline 
+            ? 'calc(60px + env(safe-area-inset-top, 0px))' 
+            : 'calc(92px + env(safe-area-inset-top, 0px))',
+          paddingTop: 'env(safe-area-inset-top, 0px)' // Сдвигаем весь контент шапки ниже системных часов телефона
+        }}
+      >
         
-        {/* ЖЕЛЕЗОБЕТОННАЯ ПЛАШКА МЕЖДУ СТАТУС-БАРОМ И КОНТЕНТОМ ШАПКИ */}
+        {/* МАТОВЫЙ ИЗОЛИРОВАННЫЙ БАННЕР ОФФЛАЙНА — ТЕПЕРЬ ПОД СТАТУС-БАРОМ */}
         <div className={clsx(
           "w-full bg-[#1a080a] border-b border-red-500/10 flex items-center justify-center gap-2 transition-all duration-300 ease-[cubic-bezier(0.32,0.72,0,1)] overflow-hidden shrink-0",
           isOnline ? "h-0 opacity-0" : "h-8 opacity-100"

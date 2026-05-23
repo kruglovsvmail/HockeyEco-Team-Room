@@ -1,10 +1,12 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import clsx from 'clsx';
-import { Icon } from '../../ui/Icon';
 import dayjs from 'dayjs';
 import utc from 'dayjs/plugin/utc';
 import timezone from 'dayjs/plugin/timezone';
 import 'dayjs/locale/ru';
+
+// Импортируем нашу общую портированную шапку проекта
+import { Header } from '../Header';
 
 import { EventDetailsMatch } from './Match/EventDetailsMatch';
 import { EventDetailsTraining } from './EventDetailsTraining';
@@ -15,19 +17,24 @@ dayjs.extend(utc);
 dayjs.extend(timezone);
 dayjs.locale('ru');
 
-export const EventDashboard = ({ isOpen, onClose, data, type, title }) => {
-  // Динамически подменяем заголовок на Дату и Время события
-  let displayTitle = title;
-  if (data && data.event_date) {
-    const eventDate = dayjs.utc(data.event_date).tz(data.arena_timezone || 'UTC');
-    displayTitle = (
-      <span className="flex items-center gap-2 text-content-main justify-end">
-        <span>{eventDate.format('D MMM YYYY')}</span>
-        <span className="text-brand opacity-60">•</span>
-        <span>{eventDate.format('HH:mm')}</span>
-      </span>
-    );
-  }
+export const EventDashboard = ({ isOpen, onClose, data, type, title, user, selectedTeam, onTeamUpdated }) => {
+  
+  // Локальный статус сети для синхронизации верхнего отступа контента с высотой шапки Header
+  const [isOnline, setIsOnline] = useState(() => navigator.onLine);
+
+  // Реактивный слушатель системного интернета на смартфоне
+  useEffect(() => {
+    const handleOnline = () => setIsOnline(true);
+    const handleOffline = () => setIsOnline(false);
+
+    window.addEventListener('online', handleOnline);
+    window.addEventListener('offline', handleOffline);
+
+    return () => {
+      window.removeEventListener('online', handleOnline);
+      window.removeEventListener('offline', handleOffline);
+    };
+  }, []);
 
   return (
     <div 
@@ -36,22 +43,25 @@ export const EventDashboard = ({ isOpen, onClose, data, type, title }) => {
         isOpen ? "translate-x-0" : "translate-x-full"
       )}
     >
-      {/* ШАПКА ПАНЕЛИ СОБЫТИЯ */}
-      <div className="flex items-center justify-between p-4 h-[60px] shrink-0 bg-surface-base z-[110]">
-        <button 
-          onClick={onClose}
-          className="p-2 -ml-2 text-content-muted hover:text-brand transition-colors outline-none cursor-pointer active:scale-95 flex items-center"
-          aria-label="Назад"
-        >
-          <Icon name="chevron_left" className="w-7 h-7 text-content-main" />
-        </button>
-        <h3 className="text-[14px] font-bold uppercase tracking-widest text-right pl-4">
-          {displayTitle}
-        </h3>
-      </div>
+      {/* ИМПОРТИРОВАННАЯ СИСТЕМНАЯ ШАПКА ПРИЛОЖЕНИЯ */}
+      {/* Передаем крестик и биндим его на закрытие дашборда */}
+      <Header 
+        isSidebarOpen={true} 
+        onToggleSidebar={onClose} 
+        user={user}
+        selectedTeam={selectedTeam}
+        onTeamUpdated={onTeamUpdated}
+      />
 
-      {/* КОНТЕНТНАЯ ЗОНА (100% ШИРИНЫ) */}
-      <div className="flex-1 overflow-hidden bg-surface-level1 relative">
+      {/* КОНТЕНТНАЯ ЗОНА С ДИНАМИЧЕСКИМ СДВИГОМ ПОД ВЫСОТУ ШАПКИ И СТАТУС-БАРА */}
+      <div 
+        className="flex-1 overflow-hidden bg-surface-level1 relative transition-all duration-300 ease-[cubic-bezier(0.32,0.72,0,1)]"
+        style={{
+          paddingTop: isOnline 
+            ? 'calc(60px + env(safe-area-inset-top, 0px))' 
+            : 'calc(92px + env(safe-area-inset-top, 0px))'
+        }}
+      >
         {type === 'matchDetails' && <EventDetailsMatch event={data} />}
         {type === 'trainingDetails' && <EventDetailsTraining event={data} />}
         {type === 'meetingDetails' && <EventDetailsMeeting event={data} />}
