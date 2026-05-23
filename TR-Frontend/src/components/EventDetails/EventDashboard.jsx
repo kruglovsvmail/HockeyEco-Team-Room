@@ -44,13 +44,14 @@ export const EventDashboard = ({ isOpen, onClose, data, type, title, user, selec
       )}
     >
       {/* ИМПОРТИРОВАННАЯ СИСТЕМНАЯ ШАПКА ПРИЛОЖЕНИЯ */}
-      {/* Передаем крестик и биндим его на закрытие дашборда */}
+      {/* Передаем флаг hideActions={true} для жесткого скрытия кнопок фильтра и календаря */}
       <Header 
         isSidebarOpen={true} 
         onToggleSidebar={onClose} 
         user={user}
         selectedTeam={selectedTeam}
         onTeamUpdated={onTeamUpdated}
+        hideActions={true}
       />
 
       {/* КОНТЕНТНАЯ ЗОНА С ДИНАМИЧЕСКИМ СДВИГОМ ПОД ВЫСОТУ ШАПКИ И СТАТУС-БАРА */}

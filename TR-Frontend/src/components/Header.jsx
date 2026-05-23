@@ -7,7 +7,7 @@ import { useAccess } from '../hooks/useAccess';
 import { TeamProfileEditSheet } from './MyTeam/TeamProfileEditSheet';
 import clsx from 'clsx';
 
-export function Header({ isSidebarOpen, onToggleSidebar, user, selectedTeam, onTeamUpdated }) {
+export function Header({ isSidebarOpen, onToggleSidebar, user, selectedTeam, onTeamUpdated, hideActions = false }) {
   const [isFilterOpen, setIsFilterOpen] = useState(false);
   const [isEditOpen, setIsEditOpen] = useState(false);
 
@@ -52,7 +52,7 @@ export function Header({ isSidebarOpen, onToggleSidebar, user, selectedTeam, onT
         }}
       >
         
-        {/* МАТОВЫЙ ИЗОЛИРОВАННЫЙ БАННЕР ОФФЛАЙНА — ТЕПЕРЬ ПОД СТАТУС-БАРОМ */}
+        {/* МАТОВЫЙ ИЗОЛИРОВАННЫЙ БАННЕР ОФФЛАЙНА — ПОД СТАТУС-БАРОМ */}
         <div className={clsx(
           "w-full bg-[#1a080a] border-b border-red-500/10 flex items-center justify-center gap-2 transition-all duration-300 ease-[cubic-bezier(0.32,0.72,0,1)] overflow-hidden shrink-0",
           isOnline ? "h-0 opacity-0" : "h-8 opacity-100"
@@ -73,8 +73,8 @@ export function Header({ isSidebarOpen, onToggleSidebar, user, selectedTeam, onT
             {isSidebarOpen ? <X size={28} /> : <Menu size={28} />}
           </button>
 
-          {/* Раздел РАСПИСАНИЕ: календарь и фильтры */}
-          {isSchedulePage && (
+          {/* Раздел РАСПИСАНИЕ: календарь и фильтры (скрываются, если передан флаг hideActions) */}
+          {isSchedulePage && !hideActions && (
             <div className="flex items-center gap-1 ml-auto">
               <button 
                 onClick={openCalendar}
@@ -93,8 +93,8 @@ export function Header({ isSidebarOpen, onToggleSidebar, user, selectedTeam, onT
             </div>
           )}
 
-          {/* Раздел МОЯ КОМАНДА: кнопка изменения параметров для Руководителя */}
-          {isMyTeamPage && hasEditAccess && (
+          {/* Раздел МОЯ КОМАНДА: кнопка изменения параметров для Руководителя (также подчиняется hideActions) */}
+          {isMyTeamPage && hasEditAccess && !hideActions && (
             <div className="flex items-center gap-1 ml-auto">
               <button
                 onClick={() => setIsEditOpen(true)}
