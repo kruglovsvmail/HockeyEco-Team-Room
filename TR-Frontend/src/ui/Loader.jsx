@@ -168,8 +168,8 @@ export function PageLoader({ className }) {
       </div>
       
       {/* Текстовые точки загрузки */}
-      <span className="text-[10px] font-black text-brand tracking-[0.25em] uppercase mt-4 animate-pulse">
-        ...
+      <span className="text-[0px] font-semibold uppercase mt-4 animate-pulse">
+        Шайба Летит к кэшу...
       </span>
     </div>
   );
