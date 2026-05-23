@@ -12,6 +12,10 @@ import { ContainerContent } from '../../../ui/ContainerContent';
 import { TooltipLP } from '../../../ui/TooltipLP';
 import clsx from 'clsx';
 
+// Импортируем наши новые унифицированные компоненты производительности
+import { PageLoader } from '../../../ui/Loader';
+import { FadeIn } from '../../../ui/FadeIn';
+
 const getSafeUserFromToken = () => {
   try {
     const auth = getAuthHeaders().Authorization;
@@ -473,7 +477,7 @@ export const MatchLines = ({ event, initialAttendees = [], initialDraftLines = [
         setIsPublished(false); 
         refreshData(); // Обновляем состояние на верхнем уровне
       } else {
-        setSheetError(data.error || 'Ошибка сохранения');
+        setSheetError(data.error || 'Ошибка保存');
       }
     } catch (err) {
       setSheetError('Ошибка соединения с сервером');
@@ -632,7 +636,7 @@ export const MatchLines = ({ event, initialAttendees = [], initialDraftLines = [
   };
 
   return (
-    <div className="flex flex-col relative" onClick={() => { if (isDeleteMode) setIsDeleteMode(false); }}>
+    <FadeIn className="flex flex-col relative" onClick={() => { if (isDeleteMode) setIsDeleteMode(false); }}>
       
       <style>
         {`
@@ -718,9 +722,7 @@ export const MatchLines = ({ event, initialAttendees = [], initialDraftLines = [
         </div>
       </div>
 
-      {/* ========================================================================= */}
-      {/* ЛОКАЛЬНЫЕ КНОПКИ УПРАВЛЕНИЯ, ПЕРЕМЕЩЕННЫЕ ИЗ BOTTOMACTIONCONTEXT           */}
-      {/* ========================================================================= */}
+      {/* КНОПКИ УПРАВЛЕНИЯ ПЯТЕРКАМИ */}
       <div className="flex justify-center items-center gap-8 py-3 my-1 w-full bg-transparent">
         {isEditMode ? (
           <>
@@ -848,7 +850,7 @@ export const MatchLines = ({ event, initialAttendees = [], initialDraftLines = [
         </div>
       )}
 
-      {/* ОРИГИНАЛЬНАЯ ШТОРКА РЕДАКТИРОВАНИЯ ИГРОВЫХ ПАРАМЕТРОВ */}
+      {/* ШТОРКА РЕДАКТИРОВАНИЯ ИГРОВЫХ ПАРАМЕТРОВ */}
       <BottomSheet isOpen={isRosterSheetOpen} onClose={() => setIsRosterSheetOpen(false)}>
         {selectedPlayer && (
           <div className="flex flex-col gap-6 pt-2 text-left">
@@ -921,6 +923,7 @@ export const MatchLines = ({ event, initialAttendees = [], initialDraftLines = [
         )}
       </BottomSheet>
 
-    </div>
-  );
+
+  </FadeIn>
+);
 };

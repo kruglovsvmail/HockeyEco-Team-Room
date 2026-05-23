@@ -6,6 +6,10 @@ import { useFocusRevalidate } from '../../../hooks/useFocusRevalidate';
 
 import { MatchInfo } from './MatchInfo';
 
+// Импортируем наши новые унифицированные компоненты производительности
+import { PageLoader } from '../../../ui/Loader';
+import { FadeIn } from '../../../ui/FadeIn';
+
 // Применяем ленивую загрузку с сохранением именованных экспортов.
 const MatchAttendance = lazy(() => import('./MatchAttendance').then(module => ({ default: module.MatchAttendance })));
 const MatchLines = lazy(() => import('./MatchLines').then(module => ({ default: module.MatchLines })));
@@ -223,14 +227,6 @@ export const EventDetailsMatch = ({ event }) => {
   const tabIndex = MATCH_TABS.findIndex(t => t.id === activeTab);
   const translateX = `-${tabIndex * 20}%`;
 
-  const TabFallback = () => (
-    <div className="flex justify-center items-center h-48">
-      <span className="text-[11px] font-black text-content-muted uppercase tracking-widest animate-pulse">
-        Загрузка...
-      </span>
-    </div>
-  );
-
   return (
     <div 
       ref={scrollContainerRef}
@@ -337,9 +333,7 @@ export const EventDetailsMatch = ({ event }) => {
       {/* 3. КОНТЕНТНАЯ ЧАСТЬ */}
       <div className="w-full overflow-hidden pt-2 min-h-screen pb-[30vh]">
         {loading ? (
-          <div className="flex justify-center items-center h-48 text-brand font-black animate-pulse uppercase tracking-widest text-sm">
-            Загрузка вкладок...
-          </div>
+          <PageLoader />
         ) : (
           <div 
             className="flex w-[500%] transition-transform duration-500 ease-[cubic-bezier(0.32,0.72,0,1)] items-start"
@@ -350,22 +344,26 @@ export const EventDetailsMatch = ({ event }) => {
               className="w-1/5 shrink-0 transition-opacity duration-500"
               style={{ opacity: activeTab === 'info' ? 1 : 0.3 }}
             >
-              <MatchInfo event={event} />
+              <FadeIn>
+                <MatchInfo event={event} />
+              </FadeIn>
             </div>
 
             <div 
               className="w-1/5 shrink-0 transition-opacity duration-500"
               style={{ opacity: activeTab === 'attendance' ? 1 : 0.3 }}
             >
-              <Suspense fallback={<TabFallback />}>
+              <Suspense fallback={<PageLoader />}>
                 {activeTab === 'attendance' && (
-                  <MatchAttendance 
-                    event={event} 
-                    initialAttendees={matchData.attendees}
-                    initialTeamRoster={matchData.teamRoster}
-                    initialStaffMembers={matchData.staffMembers}
-                    refreshData={fetchAllMatchData}
-                  />
+                  <FadeIn>
+                    <MatchAttendance 
+                      event={event} 
+                      initialAttendees={matchData.attendees}
+                      initialTeamRoster={matchData.teamRoster}
+                      initialStaffMembers={matchData.staffMembers}
+                      refreshData={fetchAllMatchData}
+                    />
+                  </FadeIn>
                 )}
               </Suspense>
             </div>
@@ -374,16 +372,18 @@ export const EventDetailsMatch = ({ event }) => {
               className="w-1/5 shrink-0 transition-opacity duration-500"
               style={{ opacity: activeTab === 'lines' ? 1 : 0.3 }}
             >
-              <Suspense fallback={<TabFallback />}>
+              <Suspense fallback={<PageLoader />}>
                 {activeTab === 'lines' && (
-                  <MatchLines 
-                    event={event} 
-                    initialAttendees={matchData.attendees}
-                    initialDraftLines={matchData.draftLines}
-                    initialIsPublished={matchData.isPublished}
-                    initialStaffMembers={matchData.staffMembers}
-                    refreshData={fetchAllMatchData}
-                  />
+                  <FadeIn>
+                    <MatchLines 
+                      event={event} 
+                      initialAttendees={matchData.attendees}
+                      initialDraftLines={matchData.draftLines}
+                      initialIsPublished={matchData.isPublished}
+                      initialStaffMembers={matchData.staffMembers}
+                      refreshData={fetchAllMatchData}
+                    />
+                  </FadeIn>
                 )}
               </Suspense>
             </div>
@@ -392,8 +392,12 @@ export const EventDetailsMatch = ({ event }) => {
               className="w-1/5 shrink-0 transition-opacity duration-500"
               style={{ opacity: activeTab === 'events' ? 1 : 0.3 }}
             >
-              <Suspense fallback={<TabFallback />}>
-                {activeTab === 'events' && <MatchProtocol event={event} />}
+              <Suspense fallback={<PageLoader />}>
+                {activeTab === 'events' && (
+                  <FadeIn>
+                    <MatchProtocol event={event} />
+                  </FadeIn>
+                )}
               </Suspense>
             </div>
 
@@ -401,8 +405,12 @@ export const EventDetailsMatch = ({ event }) => {
               className="w-1/5 shrink-0 transition-opacity duration-500"
               style={{ opacity: activeTab === 'stats' ? 1 : 0.3 }}
             >
-              <Suspense fallback={<TabFallback />}>
-                {activeTab === 'stats' && <MatchStats event={event} />}
+              <Suspense fallback={<PageLoader />}>
+                {activeTab === 'stats' && (
+                  <FadeIn>
+                    <MatchStats event={event} />
+                  </FadeIn>
+                )}
               </Suspense>
             </div>
 

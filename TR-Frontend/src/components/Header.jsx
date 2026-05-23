@@ -68,7 +68,7 @@ export function Header({ isSidebarOpen, onToggleSidebar, user, selectedTeam, onT
           <button 
             onClick={onToggleSidebar}
             className="md:hidden p-2 -ml-2 text-content-main hover:text-brand transition-colors outline-none"
-            aria-label="Меню"
+            aria-label="Menu"
           >
             {isSidebarOpen ? <X size={28} /> : <Menu size={28} />}
           </button>

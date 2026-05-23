@@ -3,6 +3,9 @@ import { ContainerContent } from '../../ui/ContainerContent';
 import { Table } from '../../ui/Table';
 import { Avatar } from '../../ui/Avatar';
 
+// Импортируем наш новый унифицированный компонент производительности
+import { FadeIn } from '../../ui/FadeIn';
+
 export const TeamStaffMembers = ({ staff = [], onPersonClick }) => {
   const roleDict = {
     'team_manager': 'Руководитель',
@@ -59,13 +62,15 @@ export const TeamStaffMembers = ({ staff = [], onPersonClick }) => {
   ], []);
 
   return (
-    <ContainerContent title="Руководство и тренеры" count={staff.length}>
-      <Table 
-        columns={staffColumns} 
-        data={staff} 
-        rowKey="member_id" 
-        onRowClick={onPersonClick}
-      />
-    </ContainerContent>
+    <FadeIn>
+      <ContainerContent title="Руководство и тренеры" count={staff.length}>
+        <Table 
+          columns={staffColumns} 
+          data={staff} 
+          rowKey="member_id" 
+          onRowClick={onPersonClick}
+        />
+      </ContainerContent>
+    </FadeIn>
   );
 };

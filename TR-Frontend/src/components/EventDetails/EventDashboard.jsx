@@ -8,6 +8,10 @@ import 'dayjs/locale/ru';
 // Импортируем нашу общую портированную шапку проекта
 import { Header } from '../Header';
 
+// Импортируем новые унифицированные компоненты производительности
+import { PageLoader } from '../../ui/Loader';
+import { FadeIn } from '../../ui/FadeIn';
+
 import { EventDetailsMatch } from './Match/EventDetailsMatch';
 import { EventDetailsTraining } from './EventDetailsTraining';
 import { EventDetailsMeeting } from './EventDetailsMeeting';
@@ -22,6 +26,9 @@ export const EventDashboard = ({ isOpen, onClose, data, type, title, user, selec
   // Локальный статус сети для синхронизации верхнего отступа контента с высотой шапки Header
   const [isOnline, setIsOnline] = useState(() => navigator.onLine);
 
+  // Локальное состояние готовности контента панели (устраняет выполнение тяжелого JS во время анимации)
+  const [isPanelReady, setIsPanelReady] = useState(false);
+
   // Реактивный слушатель системного интернета на смартфоне
   useEffect(() => {
     const handleOnline = () => setIsOnline(true);
@@ -35,6 +42,20 @@ export const EventDashboard = ({ isOpen, onClose, data, type, title, user, selec
       window.removeEventListener('offline', handleOffline);
     };
   }, []);
+
+  // Синхронизация жизненного цикла анимации скольжения шторки на мобильных устройствах
+  useEffect(() => {
+    if (isOpen) {
+      setIsPanelReady(false);
+      // Задержка в 400мс идеально координирует завершение движения шторки на 500мс
+      const timer = setTimeout(() => {
+        setIsPanelReady(true);
+      }, 400);
+      return () => clearTimeout(timer);
+    } else {
+      setIsPanelReady(false);
+    }
+  }, [isOpen]);
 
   return (
     <div 
@@ -63,9 +84,15 @@ export const EventDashboard = ({ isOpen, onClose, data, type, title, user, selec
             : 'calc(92px + env(safe-area-inset-top, 0px))'
         }}
       >
-        {type === 'matchDetails' && <EventDetailsMatch event={data} />}
-        {type === 'trainingDetails' && <EventDetailsTraining event={data} />}
-        {type === 'meetingDetails' && <EventDetailsMeeting event={data} />}
+        {!isPanelReady ? (
+          <PageLoader />
+        ) : (
+          <FadeIn className="h-full w-full">
+            {type === 'matchDetails' && <EventDetailsMatch event={data} />}
+            {type === 'trainingDetails' && <EventDetailsTraining event={data} />}
+            {type === 'meetingDetails' && <EventDetailsMeeting event={data} />}
+          </FadeIn>
+        )}
       </div>
     </div>
   );

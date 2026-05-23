@@ -10,6 +10,10 @@ import { Icon } from '../../../ui/Icon';
 import { ContainerContent } from '../../../ui/ContainerContent';
 import clsx from 'clsx';
 
+// Импортируем наши новые унифицированные компоненты производительности
+import { PageLoader } from '../../../ui/Loader';
+import { FadeIn } from '../../../ui/FadeIn';
+
 const getSafeUserFromToken = () => {
   try {
     const auth = getAuthHeaders().Authorization;
@@ -322,158 +326,160 @@ export const MatchAttendance = ({ event, initialAttendees = [], initialTeamRoste
   );
 
   return (
-    <div className="flex flex-col gap-2 pb-32 min-h-[30vh]" onClick={handleContainerClick}>
-      
-      <style>
-        {`
-          @keyframes jiggle {
-            0% { transform: rotate(-1.5deg); }
-            50% { transform: rotate(1.5deg); }
-            100% { transform: rotate(-1.5deg); }
-          }
-          .animate-jiggle { animation: jiggle 0.3s ease-in-out infinite; }
-          .jiggle-delay-0 { animation-delay: 0s; }
-          .jiggle-delay-1 { animation-delay: 0.1s; }
-          .jiggle-delay-2 { animation-delay: 0.2s; }
+    <FadeIn className="flex flex-col gap-2 pb-32 min-h-[30vh]">
+      <div className="flex flex-col gap-2 w-full" onClick={handleContainerClick}>
+        
+        <style>
+          {`
+            @keyframes jiggle {
+              0% { transform: rotate(-1.5deg); }
+              50% { transform: rotate(1.5deg); }
+              100% { transform: rotate(-1.5deg); }
+            }
+            .animate-jiggle { animation: jiggle 0.3s ease-in-out infinite; }
+            .jiggle-delay-0 { animation-delay: 0s; }
+            .jiggle-delay-1 { animation-delay: 0.1s; }
+            .jiggle-delay-2 { animation-delay: 0.2s; }
 
-          @keyframes slotEnter {
-            0% { transform: scale(0.2) translateZ(0); opacity: 0; }
-            100% { transform: scale(1) translateZ(0); opacity: 1; }
-          }
-          @keyframes slotExit {
-            0% { transform: scale(1) translateZ(0); opacity: 1; }
-            100% { transform: scale(0.2) translateZ(0); opacity: 0; }
-          }
-          .animate-slot-enter { 
-            animation: slotEnter 0.25s cubic-bezier(0.34, 1.56, 0.64, 1) both; 
-            will-change: transform, opacity;
-          }
-          .animate-slot-exit { 
-            animation: slotExit 0.2s cubic-bezier(0.6, -0.28, 0.735, 0.045) both; 
-            will-change: transform, opacity;
-          }
-        `}
-      </style>
+            @keyframes slotEnter {
+              0% { transform: scale(0.2) translateZ(0); opacity: 0; }
+              100% { transform: scale(1) translateZ(0); opacity: 1; }
+            }
+            @keyframes slotExit {
+              0% { transform: scale(1) translateZ(0); opacity: 1; }
+              100% { transform: scale(0.2) translateZ(0); opacity: 0; }
+            }
+            .animate-slot-enter { 
+              animation: slotEnter 0.25s cubic-bezier(0.34, 1.56, 0.64, 1) both; 
+              will-change: transform, opacity;
+            }
+            .animate-slot-exit { 
+              animation: slotExit 0.2s cubic-bezier(0.6, -0.28, 0.735, 0.045) both; 
+              will-change: transform, opacity;
+            }
+          `}
+        </style>
 
-      <div className="flex items-center justify-between w-full px-4">
-        <SectionHeader 
-          showAction={false}
-          className="m-0"
-        />
-      </div>
+        <div className="flex items-center justify-between w-full px-4">
+          <SectionHeader 
+            showAction={false}
+            className="m-0"
+          />
+        </div>
 
-      <div className="flex flex-col gap-4 w-full">
-        {/* Контейнер вратарей */}
-        <ContainerContent title="Вратари" count={goalies.length} action={goalieAddButton}>
-          {goalies.length > 0 ? (
-            <div className="grid grid-cols-[repeat(auto-fill,minmax(94px,1fr))] gap-y-5 gap-x-2 justify-items-center">
-              {goalies.map((attendeeUser, idx) => renderAttendeeCard(attendeeUser, idx))}
-            </div>
-          ) : (
-            <div className="text-center py-6 text-[11px] font-bold uppercase tracking-widest text-content-subtle opacity-50 select-none">
-              Вратари не отмечены
-            </div>
-          )}
-        </ContainerContent>
+        <div className="flex flex-col gap-4 w-full">
+          {/* Контейнер вратарей */}
+          <ContainerContent title="Вратари" count={goalies.length} action={goalieAddButton}>
+            {goalies.length > 0 ? (
+              <div className="grid grid-cols-[repeat(auto-fill,minmax(94px,1fr))] gap-y-5 gap-x-2 justify-items-center">
+                {goalies.map((attendeeUser, idx) => renderAttendeeCard(attendeeUser, idx))}
+              </div>
+            ) : (
+              <div className="text-center py-6 text-[11px] font-bold uppercase tracking-widest text-content-subtle opacity-50 select-none">
+                Вратари не отмечены
+              </div>
+            )}
+          </ContainerContent>
 
-        {/* Контейнер полевых игроков */}
-        <ContainerContent title="Полевые игроки" count={skaters.length} action={skaterAddButton}>
-          {skaters.length > 0 ? (
-            <div className="grid grid-cols-[repeat(auto-fill,minmax(94px,1fr))] gap-y-5 gap-x-2 justify-items-center">
-              {skaters.map((attendeeUser, idx) => renderAttendeeCard(attendeeUser, idx))}
-            </div>
-          ) : (
-            <div className="text-center py-6 text-[11px] font-bold uppercase tracking-widest text-content-subtle opacity-50 select-none">
-              Полевые игроки не отмечены
-            </div>
-          )}
-        </ContainerContent>
-      </div>
+          {/* Контейнер полевых игроков */}
+          <ContainerContent title="Полевые игроки" count={skaters.length} action={skaterAddButton}>
+            {skaters.length > 0 ? (
+              <div className="grid grid-cols-[repeat(auto-fill,minmax(94px,1fr))] gap-y-5 gap-x-2 justify-items-center">
+                {skaters.map((attendeeUser, idx) => renderAttendeeCard(attendeeUser, idx))}
+              </div>
+            ) : (
+              <div className="text-center py-6 text-[11px] font-bold uppercase tracking-widest text-content-subtle opacity-50 select-none">
+                Полевые игроки не отмечены
+              </div>
+            )}
+          </ContainerContent>
+        </div>
 
-      {/* ШТОРКА ОПРЕДЕЛЕНИЯ ПРИСУТСТВИЯ */}
-      <BottomSheet isOpen={isSheetOpen} onClose={() => setIsSheetOpen(false)}>
-        <div className="flex flex-col gap-4">
-          <h3 className="text-lg font-black text-content-main mb-2">
-            {sheetFilterType === 'goalie' ? 'Отметить вратаря' : 'Отметить полевого игрока'}
-          </h3>
+        {/* ШТОРКА ОПРЕДЕЛЕНИЯ ПРИСУТСТВИЯ */}
+        <BottomSheet isOpen={isSheetOpen} onClose={() => setIsSheetOpen(false)}>
+          <div className="flex flex-col gap-4">
+            <h3 className="text-lg font-black text-content-main mb-2">
+              {sheetFilterType === 'goalie' ? 'Отметить вратаря' : 'Отметить полевого игрока'}
+            </h3>
 
-          {availablePlayers.length > 0 ? (
-            <div className="flex flex-col gap-2 max-h-[60vh] overflow-y-auto scrollbar-hide">
-              {availablePlayers.map(player => {
-                const photoUrl = player.team_photo || player.avatar_url;
-                return (
-                  <div key={player.user_id} className="flex items-center justify-between p-3 bg-surface-level2 rounded-xl">
-                    <div className="flex items-center gap-3">
-                      <Avatar 
-                        photoUrl={photoUrl}
-                        firstName={player.first_name}
-                        lastName={player.last_name}
-                        className="w-10 h-10 rounded-xl bg-surface-level1 border border-surface-border"
-                      />
-                      <div className="flex flex-col">
-                        <span className="text-[12px] font-bold text-content-main">
-                          {player.last_name} {player.first_name}
-                        </span>
-                        {player.jersey_number && (
-                          <span className="text-[10px] text-content-muted leading-none mt-0.5">
-                            #{player.jersey_number} • {player.position === 'goalie' ? 'Вратарь' : player.position === 'defense' ? 'Защитник' : 'Нападающий'}
+            {availablePlayers.length > 0 ? (
+              <div className="flex flex-col gap-2 max-h-[60vh] overflow-y-auto scrollbar-hide">
+                {availablePlayers.map(player => {
+                  const photoUrl = player.team_photo || player.avatar_url;
+                  return (
+                    <div key={player.user_id} className="flex items-center justify-between p-3 bg-surface-level2 rounded-xl">
+                      <div className="flex items-center gap-3">
+                        <Avatar 
+                          photoUrl={photoUrl}
+                          firstName={player.first_name}
+                          lastName={player.last_name}
+                          className="w-10 h-10 rounded-xl bg-surface-level1 border border-surface-border"
+                        />
+                        <div className="flex flex-col">
+                          <span className="text-[12px] font-bold text-content-main">
+                            {player.last_name} {player.first_name}
                           </span>
-                        )}
+                          {player.jersey_number && (
+                            <span className="text-[10px] text-content-muted leading-none mt-0.5">
+                              #{player.jersey_number} • {player.position === 'goalie' ? 'Вратарь' : player.position === 'defense' ? 'Защитник' : 'Нападающий'}
+                            </span>
+                          )}
+                        </div>
                       </div>
+                      
+                      {player.is_disqualified ? (
+                        <span className="text-[10px] font-black text-red-500 uppercase tracking-wider bg-red-500/10 border border-red-500/20 px-2.5 py-1.5 rounded-lg">
+                          Дисквал.
+                        </span>
+                      ) : (
+                        <ButtonLP
+                          onClick={() => handleMarkUser(player)}
+                          variant="primary"
+                          className="!w-auto !py-1.5 !px-3 !text-[10px] ml-2 shrink-0"
+                        >
+                          Добавить
+                        </ButtonLP>
+                      )}
                     </div>
-                    
-                    {player.is_disqualified ? (
-                      <span className="text-[10px] font-black text-red-500 uppercase tracking-wider bg-red-500/10 border border-red-500/20 px-2.5 py-1.5 rounded-lg">
-                        Дисквал.
-                      </span>
-                    ) : (
-                      <ButtonLP
-                        onClick={() => handleMarkUser(player)}
-                        variant="primary"
-                        className="!w-auto !py-1.5 !px-3 !text-[10px] ml-2 shrink-0"
-                      >
-                        Добавить
-                      </ButtonLP>
-                    )}
-                  </div>
-                );
-              })}
-            </div>
-          ) : (
-            <div className="flex justify-center items-center h-24 text-[11px] font-black text-content-muted uppercase tracking-widest text-center py-4">
-              {sheetFilterType === 'goalie' 
-                ? 'Все вратари состава уже отмечены' 
-                : 'Все полевые игроки состава уже отмечены'}
-            </div>
-          )}
-        </div>
-      </BottomSheet>
-
-      {/* ШТОРКА ПОДТВЕРЖДЕНИЯ УДАЛЕНИЯ */}
-      <BottomSheet isOpen={!!userToRemove} onClose={() => setUserToRemove(null)}>
-        <div className="flex flex-col items-center text-center gap-4 py-2">
-          <div className="w-16 h-16 bg-red-500/10 text-red-500 rounded-full flex items-center justify-center mb-2">
-            <svg className="w-8 h-8" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-              <path strokeLinecap="round" strokeLinejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-            </svg>
+                  );
+                })}
+              </div>
+            ) : (
+              <div className="flex justify-center items-center h-24 text-[11px] font-black text-content-muted uppercase tracking-widest text-center py-4">
+                {sheetFilterType === 'goalie' 
+                  ? 'Все вратари состава уже отмечены' 
+                  : 'Все полевые игроки состава уже отмечены'}
+              </div>
+            )}
           </div>
-          <h3 className="text-lg font-black text-content-main leading-tight">
-            Удалить отметку?
-          </h3>
-          <p className="text-[13px] text-content-muted max-w-[250px]">
-            Вы уверены, что хотите удалить игрока <span className="font-bold text-content-main">{userToRemove?.last_name}</span> из списка отметившихся?
-          </p>
-          <div className="flex gap-3 w-full mt-4">
-            <ButtonLP variant="outline" onClick={() => setUserToRemove(null)} className="flex-1">
-              Отмена
-            </ButtonLP>
-            <ButtonLP variant="primary" className="flex-1 !bg-red-500 hover:!bg-red-600 !border-red-500 !text-white" onClick={confirmRemoveUser}>
-              Да, удалить
-            </ButtonLP>
-          </div>
-        </div>
-      </BottomSheet>
+        </BottomSheet>
 
-    </div>
+        {/* ШТОРКА ПОДТВЕРЖДЕНИЯ УДАЛЕНИЯ */}
+        <BottomSheet isOpen={!!userToRemove} onClose={() => setUserToRemove(null)}>
+          <div className="flex flex-col items-center text-center gap-4 py-2">
+            <div className="w-16 h-16 bg-red-500/10 text-red-500 rounded-full flex items-center justify-center mb-2">
+              <svg className="w-8 h-8" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+              </svg>
+            </div>
+            <h3 className="text-lg font-black text-content-main leading-tight">
+              Удалить отметку?
+            </h3>
+            <p className="text-[13px] text-content-muted max-w-[250px]">
+              Вы уверены, что хотите удалить игрока <span className="font-bold text-content-main">{userToRemove?.last_name}</span> из списка отметившихся?
+            </p>
+            <div className="flex gap-3 w-full mt-4">
+              <ButtonLP variant="outline" onClick={() => setUserToRemove(null)} className="flex-1">
+                Отмена
+              </ButtonLP>
+              <ButtonLP variant="primary" className="flex-1 !bg-red-500 hover:!bg-red-600 !border-red-500 !text-white" onClick={confirmRemoveUser}>
+                Да, удалить
+              </ButtonLP>
+            </div>
+          </div>
+        </BottomSheet>
+
+      </div>
+    </FadeIn>
   );
 };

@@ -11,24 +11,22 @@ import { Sidebar } from './components/Sidebar';
 import { Header } from './components/Header';
 import { Icon } from './ui/Icon';
 
+// Импортируем наши новые унифицированные компоненты производительности
+import { PageLoader } from './ui/Loader';
+import { FadeIn } from './ui/FadeIn';
+
 import { EventDashboard } from './components/EventDetails/EventDashboard';
 import { UserDetails } from './components/MyTeam/UserDetails';
 import { EventDetailsMatch } from './components/EventDetails/Match/EventDetailsMatch';
 import { EventDetailsTraining } from './components/EventDetails/EventDetailsTraining';
 import { EventDetailsMeeting } from './components/EventDetails/EventDetailsMeeting';
 
-import { BottomActionProvider, useBottomBar } from './ui/BottomActionContext';
-
 dayjs.extend(utc);
 dayjs.extend(timezone);
 dayjs.locale('ru');
 
 export function TeamLayout() {
-  return (
-    <BottomActionProvider>
-      <TeamLayoutContent />
-    </BottomActionProvider>
-  );
+  return <TeamLayoutContent />;
 }
 
 function TeamLayoutContent() {
@@ -44,7 +42,8 @@ function TeamLayoutContent() {
   const [rightPanel, setRightPanel] = useState({ isOpen: false, type: null, data: null, title: '' });
   const [fullPagePanel, setFullPagePanel] = useState({ isOpen: false, type: null, data: null, title: '' });
 
-  const { updateLayoutVisibility } = useBottomBar();
+  // Локальное состояние готовности контента боковых панелей (устраняет Layout Thrashing при анимации)
+  const [isPanelReady, setIsPanelReady] = useState(false);
 
   const [sidebarWidth, setSidebarWidth] = useState(() => {
     const saved = localStorage.getItem('teampwa_sidebar_width');
@@ -76,11 +75,25 @@ function TeamLayoutContent() {
 
     return () => {
       window.removeEventListener('focus', handleGlobalRefresh);
-      document.addEventListener('visibilitychange', handleGlobalRefresh);
+      document.removeEventListener('visibilitychange', handleGlobalRefresh);
       window.removeEventListener('online', handleOnline);
       window.removeEventListener('offline', handleOffline);
     };
   }, []);
+
+  // Синхронизация жизненного цикла анимации скольжения панелей десктопа
+  useEffect(() => {
+    if (rightPanel.isOpen || fullPagePanel.isOpen) {
+      setIsPanelReady(false);
+      // Задержка в 400мс идеально координирует завершение движения шторки на 500мс
+      const timer = setTimeout(() => {
+        setIsPanelReady(true);
+      }, 400);
+      return () => clearTimeout(timer);
+    } else {
+      setIsPanelReady(false);
+    }
+  }, [rightPanel.isOpen, fullPagePanel.isOpen]);
 
   useEffect(() => {
     const handleMouseMove = (e) => {
@@ -128,11 +141,6 @@ function TeamLayoutContent() {
     closeRightPanel();
     setFullPagePanel({ isOpen: false, type: null, data: null, title: '' });
   }, [location.pathname]);
-
-  useEffect(() => {
-    updateLayoutVisibility(true);
-    return () => updateLayoutVisibility(false);
-  }, [updateLayoutVisibility]);
 
   useEffect(() => {
     const fetchMe = async () => {
@@ -225,14 +233,9 @@ function TeamLayoutContent() {
     return () => window.removeEventListener('popstate', handlePopState);
   }, [fullPagePanel.isOpen]);
 
+  // Вызов нашего унифицированного легковесного лоадера при инициализации
   if (isLoading) {
-    return (
-      <div className="flex-1 flex items-center justify-center h-full">
-        <div className="text-brand font-medium animate-pulse tracking-widest uppercase text-sm">
-          Загрузка...
-        </div>
-      </div>
-    );
+    return <PageLoader />;
   }
 
   let desktopEventTitle = fullPagePanel.title;
@@ -303,8 +306,6 @@ function TeamLayoutContent() {
         >
           <Outlet context={{ user, teams, selectedTeam, handleTeamChange, openRightPanel, openFullPage }} />
         </main>
-
-        <div id="bottom-bar-portal-container" className="absolute bottom-0 left-0 w-full pointer-events-none z-[95]" />
       </div>
 
       {/* РЕСАЙЗЕР ПРАВОЙ ПАНЕЛИ */}
@@ -334,8 +335,14 @@ function TeamLayoutContent() {
                 </h3>
               </div>
               <div className="flex-1 overflow-hidden relative">
-                {rightPanel.type === 'userDetails' && (
-                  <UserDetails data={rightPanel.data} />
+                {!isPanelReady ? (
+                  <PageLoader />
+                ) : (
+                  <FadeIn className="h-full w-full">
+                    {rightPanel.type === 'userDetails' && (
+                      <UserDetails data={rightPanel.data} />
+                    )}
+                  </FadeIn>
                 )}
               </div>
             </>
@@ -350,9 +357,15 @@ function TeamLayoutContent() {
                 </h3>
               </div>
               <div className="flex-1 overflow-hidden relative bg-surface-level1">
-                {fullPagePanel.type === 'matchDetails' && <EventDetailsMatch event={fullPagePanel.data} />}
-                {fullPagePanel.type === 'trainingDetails' && <EventDetailsTraining event={fullPagePanel.data} />}
-                {fullPagePanel.type === 'meetingDetails' && <EventDetailsMeeting event={fullPagePanel.data} />}
+                {!isPanelReady ? (
+                  <PageLoader />
+                ) : (
+                  <FadeIn className="h-full w-full bg-surface-level1">
+                    {fullPagePanel.type === 'matchDetails' && <EventDetailsMatch event={fullPagePanel.data} />}
+                    {fullPagePanel.type === 'trainingDetails' && <EventDetailsTraining event={fullPagePanel.data} />}
+                    {fullPagePanel.type === 'meetingDetails' && <EventDetailsMeeting event={fullPagePanel.data} />}
+                  </FadeIn>
+                )}
               </div>
             </>
           ) : (
@@ -367,20 +380,20 @@ function TeamLayoutContent() {
       </div>
 
       <div className="md:hidden">
-  <EventDashboard 
-    isOpen={fullPagePanel.isOpen} 
-    onClose={closeFullPageUi} 
-    type={fullPagePanel.type} 
-    data={fullPagePanel.data} 
-    title={fullPagePanel.title}
-    user={user}
-    selectedTeam={selectedTeam}
-    onTeamUpdated={(updatedTeam) => {
-      setSelectedTeam(prev => ({ ...prev, ...updatedTeam }));
-      setTeams(prev => prev.map(t => t.id === updatedTeam.id ? { ...t, ...updatedTeam } : t));
-    }}
-  />
-</div>
+        <EventDashboard 
+          isOpen={fullPagePanel.isOpen} 
+          onClose={closeFullPageUi} 
+          type={fullPagePanel.type} 
+          data={fullPagePanel.data} 
+          title={fullPagePanel.title}
+          user={user}
+          selectedTeam={selectedTeam}
+          onTeamUpdated={(updatedTeam) => {
+            setSelectedTeam(prev => ({ ...prev, ...updatedTeam }));
+            setTeams(prev => prev.map(t => t.id === updatedTeam.id ? { ...t, ...updatedTeam } : t));
+          }}
+        />
+      </div>
 
     </div>
   );

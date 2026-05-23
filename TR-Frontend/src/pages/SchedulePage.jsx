@@ -13,8 +13,11 @@ import { ExpandedGrid } from '../components/EventCalendar/ExpandedGrid';
 import { TopSheet } from '../ui/TopSheet';
 import EventCard from '../components/EventCalendar/EventCard';
 import { getAuthHeaders } from '../utils/helpers';
-import { Loader2 } from 'lucide-react';
 import { useFocusRevalidate } from '../hooks/useFocusRevalidate';
+
+// Импортируем наши новые унифицированные компоненты производительности
+import { PageLoader } from '../ui/Loader';
+import { FadeIn } from '../ui/FadeIn';
 
 dayjs.extend(isoWeek);
 dayjs.extend(utc);       
@@ -28,6 +31,9 @@ export function SchedulePage() {
   const [currentDate, setCurrentDate] = useState(dayjs());
   const [isExpanded, setIsExpanded] = useState(false);
   
+  // Состояние готовности анимации перехода страницы (предотвращает лаги Main Thread)
+  const [isPageReady, setIsPageReady] = useState(false);
+
   // МГНОВЕННЫЙ СТАРТ: Инициализируем массив сразу из кэша (0 миллисекунд ожидания)
   const [events, setEvents] = useState(() => {
     const cached = localStorage.getItem('tr_cached_events');
@@ -51,6 +57,14 @@ export function SchedulePage() {
   const animationTimer = useRef(null);
 
   const currentMonthKey = currentDate.format('YYYY-MM');
+
+  // Активация легкого отложенного рендеринга страницы при её монтировании
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setIsPageReady(true);
+    }, 150); // Даем браузеру завершить системный переход между страницами
+    return () => clearTimeout(timer);
+  }, []);
 
   // Выносим загрузку событий в useCallback для поддержки фонового обновления
   const fetchEvents = useCallback(async () => {
@@ -224,111 +238,116 @@ export function SchedulePage() {
     isHorizontalSwipe.current = false;
   };
 
+  // Сначала загружаем пустую страницу с легковесным лоадером
+  if (!isPageReady) {
+    return <PageLoader />;
+  }
+
   return (
-    <div 
-      className="flex flex-col w-full h-full overflow-hidden relative bg-surface-border"
-      style={{ touchAction: 'pan-y' }}
-    >
-      {/* ПЛАВАЮЩАЯ ШАПКА С ЭФФЕКТОМ РАЗМЫТИЯ */}
-      <div className="absolute top-0 left-0 right-0 z-40 px-4 pt-4 pb-3 bg-brand-glow backdrop-blur-md border-b border-surface-level3 shadow-sm">
-        <CompactWeek 
-          date={currentDate} 
-          offsetIndex={offsetIndex}
-          isAnimating={isAnimating}
-          onChangeDate={(newDate) => {
-            if (newDate.isBefore(currentDate, 'day')) slideTo('prev');
-            else if (newDate.isAfter(currentDate, 'day')) slideTo('next');
-            else setCurrentDate(newDate);
-          }}
-          onToggleExpand={() => setIsExpanded(true)} 
-        />
-      </div>
-
-      {/* Контейнер карточек занимает 100% высоты, уходя под шапку */}
+    <FadeIn className="w-full h-full">
       <div 
-        className="w-full h-full relative overflow-hidden"
-        onTouchStart={handleTouchStart}
-        onTouchMove={handleTouchMove}
-        onTouchEnd={handleTouchEnd}
+        className="flex flex-col w-full h-full overflow-hidden relative bg-surface-border"
+        style={{ touchAction: 'pan-y' }}
       >
-        <div 
-          className="w-[300%] flex items-start h-full"
-          style={{
-            transform: `translateX(calc(-33.33333% - ${offsetIndex * 33.33333}%))`,
-            transition: isAnimating ? 'transform 350ms cubic-bezier(0.32, 0.72, 0, 1)' : 'none',
-            pointerEvents: isAnimating ? 'none' : 'auto',
-            willChange: 'transform'
-          }}
-        >
-          {[-1, 0, 1].map(offset => {
-            const slideDate = currentDate.add(offset, 'week');
-            const slideEvents = events.filter(event => {
-              if (!event.event_date) return false;
-              const eventDate = dayjs(event.event_date).tz(event.arena_timezone || 'UTC');
-              return eventDate.isSame(slideDate, 'isoWeek');
-            });
-
-            return (
-              <div 
-                key={offset} 
-                ref={el => scrollRefs.current[offset + 1] = el}
-                className="w-1/3 shrink-0 flex flex-col px-4 h-full overflow-y-auto scrollbar-hide pt-[88px] pb-8"
-              >
-                <div>
-                  {isLoading && offset === 0 ? (
-                    <div className="flex justify-center items-center h-32 text-brand">
-                      <Loader2 className="w-8 h-8 animate-spin" />
-                    </div>
-                  ) : slideEvents.length > 0 ? (
-                    <div className="flex flex-col gap-0">
-                      {slideEvents.map(event => {
-                        let panelType = 'matchDetails';
-                        let panelTitle = 'Детали матча';
-
-                        if (event.event_type.includes('training')) {
-                          panelType = 'trainingDetails';
-                          panelTitle = 'Детали тренировки';
-                        } else if (event.event_type.includes('meeting')) {
-                          panelType = 'meetingDetails';
-                          panelTitle = 'Детали собрания';
-                        }
-
-                        return (
-                          <EventCard 
-                            key={`${event.event_type}-${event.event_id}-${event.my_team_id || 'club'}`} 
-                            event={event} 
-                            onToggleAttendance={handleToggleAttendance}
-                            onClick={() => openFullPage(panelType, event, panelTitle)}
-                          />
-                        );
-                      })}
-                    </div>
-                  ) : (
-                    <div className="text-center p-10">
-                      <p className="text-sm text-content-muted italic leading-relaxed">
-                        На эту неделю событий не запланировано.
-                      </p>
-                    </div>
-                  )}
-                </div>
-              </div>
-            );
-          })}
-        </div>
-      </div>
-
-      <TopSheet isOpen={isExpanded} onClose={() => setIsExpanded(false)}>
-        <div className="pb-2">
-          <ExpandedGrid 
+        {/* ПЛАВАЮЩАЯ ШАПКА С ЭФФЕКТОМ РАЗМЫТИЯ */}
+        <div className="absolute top-0 left-0 right-0 z-40 px-4 pt-4 pb-3 bg-brand-glow backdrop-blur-md border-b border-surface-level3 shadow-sm">
+          <CompactWeek 
             date={currentDate} 
+            offsetIndex={offsetIndex}
+            isAnimating={isAnimating}
             onChangeDate={(newDate) => {
-              setCurrentDate(newDate);
-            }} 
-            matchDatesSet={eventDatesSet} 
+              if (newDate.isBefore(currentDate, 'day')) slideTo('prev');
+              else if (newDate.isAfter(currentDate, 'day')) slideTo('next');
+              else setCurrentDate(newDate);
+            }}
+            onToggleExpand={() => setIsExpanded(true)} 
           />
         </div>
-      </TopSheet>
 
-    </div>
+        {/* Контейнер карточек занимает 100% высоты, уходя под шапку */}
+        <div 
+          className="w-full h-full relative overflow-hidden"
+          onTouchStart={handleTouchStart}
+          onTouchMove={handleTouchMove}
+          onTouchEnd={handleTouchEnd}
+        >
+          <div 
+            className="w-[300%] flex items-start h-full"
+            style={{
+              transform: `translateX(calc(-33.33333% - ${offsetIndex * 33.33333}%))`,
+              transition: isAnimating ? 'transform 350ms cubic-bezier(0.32, 0.72, 0, 1)' : 'none',
+              pointerEvents: isAnimating ? 'none' : 'auto',
+              willChange: 'transform'
+            }}
+          >
+            {[-1, 0, 1].map(offset => {
+              const slideDate = currentDate.add(offset, 'week');
+              const slideEvents = events.filter(event => {
+                if (!event.event_date) return false;
+                const eventDate = dayjs(event.event_date).tz(event.arena_timezone || 'UTC');
+                return eventDate.isSame(slideDate, 'isoWeek');
+              });
+
+              return (
+                <div 
+                  key={offset} 
+                  ref={el => scrollRefs.current[offset + 1] = el}
+                  className="w-1/3 shrink-0 flex flex-col px-4 h-full overflow-y-auto scrollbar-hide pt-[88px] pb-8"
+                >
+                  <div>
+                    {isLoading && offset === 0 ? (
+                      <PageLoader />
+                    ) : slideEvents.length > 0 ? (
+                      <FadeIn className="flex flex-col gap-0">
+                        {slideEvents.map(event => {
+                          let panelType = 'matchDetails';
+                          let panelTitle = 'Детали матча';
+
+                          if (event.event_type.includes('training')) {
+                            panelType = 'trainingDetails';
+                            panelTitle = 'Детали тренировки';
+                          } else if (event.event_type.includes('meeting')) {
+                            panelType = 'meetingDetails';
+                            panelTitle = 'Детали собрания';
+                          }
+
+                          return (
+                            <EventCard 
+                              key={`${event.event_type}-${event.event_id}-${event.my_team_id || 'club'}`} 
+                              event={event} 
+                              onToggleAttendance={handleToggleAttendance}
+                              onClick={() => openFullPage(panelType, event, panelTitle)}
+                            />
+                          );
+                        })}
+                      </FadeIn>
+                    ) : (
+                      <div className="text-center p-10">
+                        <p className="text-sm text-content-muted italic leading-relaxed">
+                          На эту неделю событий не запланировано.
+                        </p>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+
+        <TopSheet isOpen={isExpanded} onClose={() => setIsExpanded(false)}>
+          <div className="pb-2">
+            <ExpandedGrid 
+              date={currentDate} 
+              onChangeDate={(newDate) => {
+                setCurrentDate(newDate);
+              }} 
+              matchDatesSet={eventDatesSet} 
+            />
+          </div>
+        </TopSheet>
+
+      </div>
+    </FadeIn>
   );
 }

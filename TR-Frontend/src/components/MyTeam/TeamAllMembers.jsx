@@ -4,6 +4,9 @@ import { PersonGridCard } from './PersonGridCard';
 import { Icon } from '../../ui/Icon';
 import clsx from 'clsx';
 
+// Импортируем наш новый унифицированный компонент производительности
+import { FadeIn } from '../../ui/FadeIn';
+
 export const TeamAllMembers = ({ 
   members, 
   onPersonClick, 
@@ -53,42 +56,48 @@ export const TeamAllMembers = ({
             : '';
 
           return (
-            <div
-              key={m.member_id}
-              onPointerDown={handlePointerDown}
-              onPointerUp={cancelPress}
-              onPointerLeave={cancelPress}
-              onPointerCancel={cancelPress}
-              onPointerMove={cancelPress}
-              onClick={(e) => {
-                if (isEditMode) e.stopPropagation();
-              }}
-              className={clsx(
-                "relative select-none w-full text-center transition-all duration-200",
-                jiggleClass,
-                isRemoving && "animate-slot-exit"
-              )}
+            <FadeIn 
+              key={m.member_id} 
+              delay={index * 30} 
+              duration={300} 
+              className="w-full flex justify-center"
             >
-              {/* Передаем undefined вместо клика, если включен режим редактирования */}
-              <PersonGridCard 
-                person={m} 
-                onClick={isEditMode ? undefined : onPersonClick} 
-                showBadges={false} 
-              />
-              
-              {/* Оверлейная плавающая кнопка удаления над аватаром */}
-              {isEditMode && hasManageAccess && !isRemoving && (
-                <button
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    onExcludeClick(m);
-                  }}
-                  className="absolute top-0 right-1/2 translate-x-10 -translate-y-1.5 w-[22px] h-[22px] bg-red-500 rounded-full flex items-center justify-center shadow-md z-30 hover:scale-110 active:scale-90 transition-transform"
-                >
-                  <Icon name="close" className="w-3 h-3 text-white" strokeWidth={3.5} />
-                </button>
-              )}
-            </div>
+              <div
+                onPointerDown={handlePointerDown}
+                onPointerUp={cancelPress}
+                onPointerLeave={cancelPress}
+                onPointerCancel={cancelPress}
+                onPointerMove={cancelPress}
+                onClick={(e) => {
+                  if (isEditMode) e.stopPropagation();
+                }}
+                className={clsx(
+                  "relative select-none w-full text-center transition-all duration-200",
+                  jiggleClass,
+                  isRemoving && "animate-slot-exit"
+                )}
+              >
+                {/* Передаем undefined вместо клика, если включен режим редактирования */}
+                <PersonGridCard 
+                  person={m} 
+                  onClick={isEditMode ? undefined : onPersonClick} 
+                  showBadges={false} 
+                />
+                
+                {/* Оверлейная плавающая кнопка удаления над аватаром */}
+                {isEditMode && hasManageAccess && !isRemoving && (
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onExcludeClick(m);
+                    }}
+                    className="absolute top-0 right-1/2 translate-x-10 -translate-y-1.5 w-[22px] h-[22px] bg-red-500 rounded-full flex items-center justify-center shadow-md z-30 hover:scale-110 active:scale-90 transition-transform"
+                  >
+                    <Icon name="close" className="w-3 h-3 text-white" strokeWidth={3.5} />
+                  </button>
+                )}
+              </div>
+            </FadeIn>
           );
         })}
       </div>
