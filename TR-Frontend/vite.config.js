@@ -21,8 +21,11 @@ export default defineConfig({
         name: 'HockeyEco Team Room',
         short_name: 'HockeyEco TR',
         description: 'Кабинет хоккейной команды для управления статистикой и составами',
-        theme_color: '#f3f4f6', 
-        background_color: '#f3f4f6',
+        
+        // 🎨 ХАБ УПРАВЛЕНИЯ ЦВЕТОМ СТАРТОВОГО ЭКРАНА (Замените #0f172a на ваш hex-код)
+        theme_color: '#d1d5db',      // Цвет сервисной строки браузера и шапки PWA
+        background_color: '#d1d5db', // Физический фон системного Splash Screen при клике на иконку
+        
         display: 'standalone',
         orientation: 'portrait',
         scope: '/',

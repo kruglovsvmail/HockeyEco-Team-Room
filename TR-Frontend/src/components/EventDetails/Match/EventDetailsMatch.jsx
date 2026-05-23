@@ -231,7 +231,7 @@ export const EventDetailsMatch = ({ event }) => {
     <div 
       ref={scrollContainerRef}
       onScroll={handleScroll}
-      className="h-full overflow-y-auto scrollbar-hide bg-surface-border relative z-10 snap-y snap-proximity"
+      className="h-full overflow-y-auto scrollbar-hide relative z-10 snap-y snap-proximity"
     >
       
       {/* 1. БЛОК ШАПКИ */}

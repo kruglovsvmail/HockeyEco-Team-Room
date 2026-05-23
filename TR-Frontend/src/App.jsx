@@ -36,7 +36,7 @@ export default function App() {
   });
 
   return (
-    <div className="fixed inset-0 w-full h-[100dvh] flex flex-col bg-surface-base text-content font-sans overflow-hidden overscroll-none">
+    <div className="fixed inset-0 w-full h-[100dvh] flex flex-col bg-surface-border text-content font-sans overflow-hidden overscroll-none">
       
       {/* Фоновые decorative элементы */}
       <div className="absolute top-1/4 right-[-20%] w-80 h-80 bg-brand-glow saturate-[40%] blur-ambient rounded-full pointer-events-none z-0 opacity-100"></div>

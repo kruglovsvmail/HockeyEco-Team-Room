@@ -252,7 +252,7 @@ function TeamLayoutContent() {
 
   return (
     <div 
-      className="flex w-full h-full overflow-hidden relative bg-surface-base"
+      className="flex w-full h-full overflow-hidden relative "
       style={{ '--sidebar-w': `${sidebarWidth}%`, '--right-w': `${rightPanelWidth}%` }}
     >
       
@@ -276,7 +276,7 @@ function TeamLayoutContent() {
 
       {/* 2. ЦЕНТРАЛЬНЫЙ КОНТЕЙНЕР КОНТЕНТА */}
       <div className={clsx(
-        "flex flex-col flex-1 w-full h-full min-w-0 transition-transform duration-500 ease-[cubic-bezier(0.32,0.72,0,1)] z-30 bg-surface-base relative",
+        "flex flex-col flex-1 w-full h-full min-w-0 transition-transform duration-500 ease-[cubic-bezier(0.32,0.72,0,1)] z-30 relative",
         isSidebarOpen ? "translate-x-[80%] shadow-2xl md:translate-x-0 md:shadow-none" : "",
         rightPanel.isOpen ? "-translate-x-[80%] md:translate-x-0" : "",
         fullPagePanel.isOpen ? "-translate-x-[30%] opacity-50 md:translate-x-0 md:opacity-100" : ""
@@ -326,7 +326,7 @@ function TeamLayoutContent() {
         <div className="w-full h-full flex flex-col overflow-hidden shrink-0">
           {rightPanel.isOpen ? (
             <>
-              <div className="flex items-center bg-surface-base justify-between shadow-md p-4 h-[60px] shrink-0 z-[90]">
+              <div className="flex items-center justify-between shadow-md p-4 h-[60px] shrink-0 z-[90]">
                 <button onClick={closeRightPanel} className="p-2 -ml-2 text-content-muted hover:text-brand transition-colors outline-none cursor-pointer active:scale-95 flex items-center">
                   <Icon name="chevron_left" className="w-7 h-7 text-content-main" />
                 </button>
@@ -348,7 +348,7 @@ function TeamLayoutContent() {
             </>
           ) : fullPagePanel.isOpen ? (
             <>
-              <div className="flex items-center bg-surface-base justify-between shadow-md p-4 h-[60px] shrink-0 z-[90]">
+              <div className="flex items-center justify-between shadow-md p-4 h-[60px] shrink-0 z-[90]">
                 <button onClick={closeFullPageUi} className="p-2 -ml-2 text-content-muted hover:text-brand transition-colors outline-none cursor-pointer active:scale-95 flex items-center">
                   <Icon name="chevron_left" className="w-7 h-7 text-content-main" />
                 </button>

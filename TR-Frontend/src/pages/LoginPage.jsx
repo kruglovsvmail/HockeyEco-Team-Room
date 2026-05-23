@@ -376,7 +376,7 @@ export default function LoginPage() {
   };
 
   return (
-    <div className="w-full h-full max-w-md mx-auto flex flex-col flex-1 px-6 py-10 relative z-10">
+    <div className="w-full h-full max-w-md mx-auto flex bg-surface-base flex-col flex-1 px-6 py-10 relative z-10">
   
       <div className="relative mt-1 mb-16 shrink-0">
         <h1 className="text-4xl font-bold uppercase tracking-widest mb-1 text-content-main">
