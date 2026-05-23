@@ -45,6 +45,9 @@ export const getEvents = async (req, res) => {
           my_team.name::varchar AS my_team_name,
           my_team.logo_url::varchar AS my_team_logo_url,
           
+          -- ДОБАВЛЕНО: Запрос основного цвета домашней формы команды для челки
+          my_team.color_home_1::varchar AS team_color,
+          
           (CASE WHEN g.home_team_id = ut.team_id THEN g.away_team_id ELSE g.home_team_id END)::int AS opponent_team_id,
           COALESCE(opp_team.name, ext_opp.name)::varchar AS opponent_name,
           COALESCE(opp_team.logo_url, ext_opp.logo_url)::varchar AS opponent_logo_url,
@@ -56,7 +59,6 @@ export const getEvents = async (req, res) => {
           (g.is_technical::text IN ('true', 't', '1', 'yes', 'y'))::boolean AS is_technical,
           g.end_type::varchar AS end_type,
           
-          -- Новые поля для вкладки Инфо
           d.name::varchar AS division_name,
           l.name::varchar AS league_name,
           l.logo_url::varchar AS league_logo_url,
@@ -71,7 +73,6 @@ export const getEvents = async (req, res) => {
           g.video_yt_url::varchar AS video_yt_url,
           g.video_vk_url::varchar AS video_vk_url,
 
-          -- Поля ссылок на джерси (с проверкой на NULL и дефолтными заглушками)
           COALESCE(tt_my.custom_jersey_dark_url, my_team.jersey_dark_url, '/default/jersey_dark.webp')::varchar AS my_team_jersey_dark_url,
           COALESCE(tt_my.custom_jersey_light_url, my_team.jersey_light_url, '/default/jersey_light.webp')::varchar AS my_team_jersey_light_url,
           COALESCE(tt_opp.custom_jersey_dark_url, opp_team.jersey_dark_url, '/default/jersey_dark.webp')::varchar AS opponent_jersey_dark_url,
@@ -129,7 +130,7 @@ export const getEvents = async (req, res) => {
       ),
 
       -- ==========================================
-      -- БЛОК 2: КОМАНДНЫЕ ТРЕНИРОВКИ (team_training)
+      -- БЛОК 2: ТРЕНИРОВКИ КОМАНДЫ (team_training)
       -- ==========================================
       team_trainings_cte AS (
         SELECT 
@@ -145,6 +146,9 @@ export const getEvents = async (req, res) => {
           
           my_team.name::varchar AS my_team_name,
           my_team.logo_url::varchar AS my_team_logo_url,
+          
+          -- ДОБАВЛЕНО: Цвет команды для челки тренировок
+          my_team.color_home_1::varchar AS team_color,
           
           NULL::int AS opponent_team_id, 
           NULL::varchar AS opponent_name,
@@ -170,7 +174,6 @@ export const getEvents = async (req, res) => {
           NULL::varchar AS video_yt_url,
           NULL::varchar AS video_vk_url,
           
-          -- Для тренировок берем базовые джерси команды или заглушки (соперника нет)
           COALESCE(my_team.jersey_dark_url, '/default/jersey_dark.webp')::varchar AS my_team_jersey_dark_url,
           COALESCE(my_team.jersey_light_url, '/default/jersey_light.webp')::varchar AS my_team_jersey_light_url,
           '/default/jersey_dark.webp'::varchar AS opponent_jersey_dark_url,
@@ -194,7 +197,7 @@ export const getEvents = async (req, res) => {
       ),
 
       -- ==========================================
-      -- БЛОК 3: КОМАНДНЫЕ СОБРАНИЯ (team_meeting)
+      -- БЛОК 3: СОБРАНИЯ КОМАНДЫ (team_meeting)
       -- ==========================================
       team_meetings_cte AS (
         SELECT 
@@ -210,6 +213,9 @@ export const getEvents = async (req, res) => {
           
           my_team.name::varchar AS my_team_name,
           my_team.logo_url::varchar AS my_team_logo_url,
+          
+          -- ДОБАВЛЕНО: Цвет команды для челки собраний
+          my_team.color_home_1::varchar AS team_color,
           
           NULL::int AS opponent_team_id, 
           NULL::varchar AS opponent_name,
@@ -235,7 +241,6 @@ export const getEvents = async (req, res) => {
           NULL::varchar AS video_yt_url,
           NULL::varchar AS video_vk_url,
           
-          -- Для собраний аналогично тренировкам
           COALESCE(my_team.jersey_dark_url, '/default/jersey_dark.webp')::varchar AS my_team_jersey_dark_url,
           COALESCE(my_team.jersey_light_url, '/default/jersey_light.webp')::varchar AS my_team_jersey_light_url,
           '/default/jersey_dark.webp'::varchar AS opponent_jersey_dark_url,
@@ -269,6 +274,9 @@ export const getEvents = async (req, res) => {
           c.name::varchar AS my_team_name,
           c.logo_url::varchar AS my_team_logo_url,
           
+          -- ДОБАВЛЕНО: Клубные события принудительно отдают NULL, чтобы челка оставалась серой
+          NULL::varchar AS team_color,
+          
           NULL::int AS opponent_team_id, 
           NULL::varchar AS opponent_name,
           NULL::varchar AS opponent_logo_url,
@@ -293,7 +301,6 @@ export const getEvents = async (req, res) => {
           NULL::varchar AS video_yt_url,
           NULL::varchar AS video_vk_url,
           
-          -- Для общеклубных мероприятий жестко привязываем заглушки
           '/default/jersey_dark.webp'::varchar AS my_team_jersey_dark_url,
           '/default/jersey_light.webp'::varchar AS my_team_jersey_light_url,
           '/default/jersey_dark.webp'::varchar AS opponent_jersey_dark_url,
@@ -327,6 +334,9 @@ export const getEvents = async (req, res) => {
           c.name::varchar AS my_team_name,
           c.logo_url::varchar AS my_team_logo_url,
           
+          -- ДОБАВЛЕНО: Клубные события принудительно отдают NULL
+          NULL::varchar AS team_color,
+          
           NULL::int AS opponent_team_id, 
           NULL::varchar AS opponent_name,
           NULL::varchar AS opponent_logo_url,
@@ -351,7 +361,6 @@ export const getEvents = async (req, res) => {
           NULL::varchar AS video_yt_url,
           NULL::varchar AS video_vk_url,
           
-          -- Для общеклубных мероприятий жестко привязываем заглушки
           '/default/jersey_dark.webp'::varchar AS my_team_jersey_dark_url,
           '/default/jersey_light.webp'::varchar AS my_team_jersey_light_url,
           '/default/jersey_dark.webp'::varchar AS opponent_jersey_dark_url,

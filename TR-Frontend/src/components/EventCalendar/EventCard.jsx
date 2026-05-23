@@ -12,18 +12,28 @@ dayjs.extend(utc);
 dayjs.extend(timezone);
 dayjs.locale('ru');
 
+// Математический расчет контраста YIQ (W3C Стандарт) для предотвращения слияния белого текста со светлыми джерси
+const getContrastTextColor = (hexColor) => {
+  if (!hexColor) return 'text-white'; // Дефолт для серого цвета клуба
+  
+  const cleanHex = hexColor.replace('#', '');
+  const r = parseInt(cleanHex.substring(0, 2), 16);
+  const g = parseInt(cleanHex.substring(2, 4), 16);
+  const b = parseInt(cleanHex.substring(4, 6), 16);
+  
+  const yiq = (r * 299 + g * 587 + b * 114) / 1000;
+  return yiq >= 128 ? 'text-content-main' : 'text-white';
+};
+
 const EventCard = ({ event, onToggleAttendance, onClick }) => {
   const eventDate = dayjs.utc(event.event_date).tz(event.arena_timezone || 'UTC');
   const isFinished = event.status === 'finished';
 
-  // Логика форматирования: если строка слишком длинная, используем сокращенный месяц
   const fullDateStr = eventDate.format('D MMMM, dd');
   const displayDateStr = fullDateStr.length > 12 ? eventDate.format('D MMM, dd') : fullDateStr;
 
-  // Обесцвечиваем и "гасим" ВСЮ карточку для ЛЮБОГО завершенного события
   const cardOpacityClass = isFinished ? 'opacity-60 grayscale transition-all duration-300' : 'transition-all duration-300';
 
-  // --- ОПРЕДЕЛЕНИЕ ТИПА СОБЫТИЯ И СТОРОНЫ ---
   const isMatch = event.event_type === 'match';
   const isHome = isMatch ? event.my_team_id === event.home_team_id : false;
 
@@ -32,7 +42,6 @@ const EventCard = ({ event, onToggleAttendance, onClick }) => {
   else if (event.event_type.includes('training')) eventTitle = 'ТРЕНИРОВКА';
   else if (event.event_type.includes('meeting')) eventTitle = 'СОБРАНИЕ';
 
-  // --- ЛОГИКА ДЛЯ ЗАВЕРШЕННЫХ МАТЧЕЙ (Победа/Поражение/Ничья) ---
   let matchStatusText = '';
   let matchStatusColor = '';
   let matchScoreText = '';
@@ -41,8 +50,6 @@ const EventCard = ({ event, onToggleAttendance, onClick }) => {
   if (isMatch && isFinished) {
     const myScore = isHome ? event.home_score : event.away_score;
     const oppScore = isHome ? event.away_score : event.home_score;
-    
-    // Бэкенд может присылать технарь либо в is_technical, либо в end_type
     const isTech = event.is_technical || event.end_type === 'tech';
 
     if (isTech) {
@@ -58,9 +65,7 @@ const EventCard = ({ event, onToggleAttendance, onClick }) => {
       }
 
       matchScoreText = `${homeDisplay} : ${awayDisplay}`;
-
       const myDisplay = isHome ? homeDisplay : awayDisplay;
-      const oppDisplay = isHome ? awayDisplay : homeDisplay;
 
       if (myDisplay === '+') {
         matchStatusText = 'ПОБЕДА';
@@ -90,7 +95,6 @@ const EventCard = ({ event, onToggleAttendance, onClick }) => {
     }
   }
 
-  // --- ЛОГИКА ЦВЕТА ФОРМЫ ---
   let jerseyText = 'Не определено';
   if (isMatch) {
     const jerseyType = isHome ? event.home_jersey : event.away_jersey;
@@ -98,7 +102,6 @@ const EventCard = ({ event, onToggleAttendance, onClick }) => {
     else if (jerseyType === 'dark') jerseyText = 'Тёмная';
   }
 
-  // --- РЕНДЕР ИКОНКИ ДИВИЗИОНА / ТОВАРИЩЕСКОГО МАТЧА ---
   const renderMatchIcon = () => {
     if (!isMatch) return null;
     if (event.stage_type === 'friendly') {
@@ -110,8 +113,11 @@ const EventCard = ({ event, onToggleAttendance, onClick }) => {
     return null;
   };
 
-  // Флаг для отображения всего блока команд
   const shouldRenderTeamsBlock = event.show_team_context || isMatch;
+
+  // ИСПРАВЛЕНО: Вычисляем динамический HEX-цвет челки и класс контрастности текста
+  const badgeColor = event.team_color ? event.team_color : 'var(--color-content-subtle)';
+  const contrastTextColor = getContrastTextColor(event.team_color);
 
   return (
     <div 
@@ -132,17 +138,18 @@ const EventCard = ({ event, onToggleAttendance, onClick }) => {
 
         {/* Дата */}
         <div className="relative w-[50%] shrink-0 flex items-center justify-center pl-3">
-          {/* Векторный фон челки */}
+          {/* ИСПРАВЛЕНО: Динамический цвет заливки SVG через инлайн-стили */}
           <svg 
-            className="absolute inset-0 w-full h-full text-[#4d845bff]" 
+            className="absolute inset-0 w-full h-full" 
             viewBox="0 0 140 38" 
+            style={{ color: badgeColor }}
             fill="currentColor"
             preserveAspectRatio="none"
           >
             <path d="M0 0 H140 V38 H24 Q16 38 13.5 32 L0 0 Z" />
           </svg>
-          {/* Текст поверх */}
-          <span className="relative z-10 text-white text-[11px] font-bold uppercase tracking-widest">
+          {/* ИСПРАВЛЕНО: Применение contrastTextColor для защиты от слепоты на ярких фонах */}
+          <span className={`relative z-10 text-[11px] font-black uppercase tracking-widest ${contrastTextColor}`}>
             {displayDateStr}
           </span>
         </div>
@@ -166,9 +173,8 @@ const EventCard = ({ event, onToggleAttendance, onClick }) => {
         <div className="flex w-full px-5 mb-4 min-h-[60px] items-end">
           
           {event.show_team_context ? (
-            /* СТАНДАРТНЫЙ ВАРИАНТ (У пользователя несколько команд) */
             <>
-              {/* Моя команда (40% ширины) */}
+              {/* Моя команда */}
               <div className="w-[50%] flex items-center gap-2.5">
                 <div className="w-9 h-9 shrink-0 overflow-hidden flex items-center justify-center">
                   {event.my_team_logo_url ? (
@@ -182,10 +188,9 @@ const EventCard = ({ event, onToggleAttendance, onClick }) => {
                 </span>
               </div>
 
-              {/* Пустая зона по середине (20% ширины) */}
               <div className="w-[10%] shrink-0"></div>
 
-              {/* Соперник (40% ширины) */}
+              {/* Соперник */}
               <div className="w-[40%] flex justify-end">
                 {isMatch && event.opponent_name && (
                   <div className="flex flex-col items-end justify-center text-right w-full">
@@ -200,7 +205,6 @@ const EventCard = ({ event, onToggleAttendance, onClick }) => {
               </div>
             </>
           ) : (
-            /* УПРОЩЕННЫЙ ВАРИАНТ (Пользователь в одной команде) */
             <div className="w-full flex items-center">
               {isMatch && event.opponent_name && (
                 <div className="flex flex-col items-start justify-center w-full">
@@ -221,11 +225,10 @@ const EventCard = ({ event, onToggleAttendance, onClick }) => {
       {/* Разделительная линия */}
       <div className="h-[1px] w-[calc(100%-40px)] mx-auto bg-surface-level3" />
 
-      {/* 4. ПОДВАЛ: Форма, Стоимость, Тумблер */}
+      {/* 4. ПОДВАЛ */}
       <div className="px-5 py-3 flex justify-between items-center bg-surface-level1 min-h-[56px]">
         
         {isMatch && isFinished ? (
-          /* ПОДВАЛ ЗАВЕРШЕННОГО МАТЧА */
           <div className="w-full flex justify-between items-center">
             <span className={`text-sm font-black uppercase tracking-widest ${matchStatusColor}`}>
               {matchStatusText}
@@ -238,7 +241,6 @@ const EventCard = ({ event, onToggleAttendance, onClick }) => {
             </span>
           </div>
         ) : (
-          /* ОБЫЧНЫЙ ПОДВАЛ */
           <>
             {/* Форма */}
             <div className="flex items-center gap-1.5 w-1/3">

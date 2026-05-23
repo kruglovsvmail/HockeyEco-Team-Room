@@ -7,18 +7,58 @@ import {
   excludeFromMembership,
   searchUserByPhone,
   addOrRestoreTeamMember,
-  addTeamMemberToRoster
+  addTeamMemberToRoster,
+  getTeamMemberDetails,
+  updateMemberDetails,
+  updateMemberPhoto,
+  deleteMemberPhoto
 } from '../controllers/TeamController.js';
 import { verifyToken, requireTeamPermission } from '../middleware/auth.js';
 import multer from 'multer';
 
 const router = express.Router();
-
 const upload = multer({ storage: multer.memoryStorage() });
 
+// Получение списка моих команд (где пользователь игрок или представитель)
 router.get('/my', verifyToken, getMyTeams);
+
+// Получение списков составов, ростеров и штаба конкретной команды
 router.get('/:id/details', verifyToken, getTeamDetails);
 
+// Получение развернутого профиля участника команды с автоматической маскировкой virtual_code
+router.get(
+  '/:teamId/members/:userId',
+  verifyToken,
+  requireTeamPermission('INTERNAL_VIEW'),
+  getTeamMemberDetails
+);
+
+// Обновление административного статуса и игрового профиля участника команды (внутри гранулярная проверка)
+router.put(
+  '/:teamId/members/:memberId/details',
+  verifyToken,
+  requireTeamPermission('INTERNAL_VIEW'),
+  updateMemberDetails
+);
+
+// Загрузка или обновление фотографии участника команды менеджером
+router.put(
+  '/:teamId/members/:memberId/photo',
+  verifyToken,
+  requireTeamPermission('EDIT_MEMBER_HEADER'),
+  upload.single('photo'),
+  updateMemberPhoto
+);
+
+// Удаление переопределенной фотографии участника из состава команды
+router.delete(
+  '/:teamId/members/:memberId/photo',
+  verifyToken,
+  requireTeamPermission('EDIT_MEMBER_HEADER'),
+  deleteMemberPhoto
+);
+
+// Обновление визуального профиля, логотипов и цветов команды в PWA
 router.put(
   '/:id/profile',
   verifyToken,
@@ -31,7 +71,7 @@ router.put(
   updateTeamProfile
 );
 
-// Исключение из ростера
+// Исключение игрока из активного игрового ростера на турнир
 router.post(
   '/:teamId/roster/:memberId/exclude',
   verifyToken,
@@ -39,7 +79,7 @@ router.post(
   excludeFromRoster
 );
 
-// Исключение из членства команды
+// Полное удаление пользователя из членства команды и ростера
 router.post(
   '/:teamId/members/:memberId/exclude',
   verifyToken,
@@ -47,7 +87,7 @@ router.post(
   excludeFromMembership
 );
 
-// Поиск пользователя по телефону для добавления в команду
+// Поиск пользователя по номеру телефона для добавления в команду
 router.get(
   '/:teamId/users/search',
   verifyToken,
@@ -55,7 +95,7 @@ router.get(
   searchUserByPhone
 );
 
-// Создание или восстановление членства в команде
+// Создание нового членства или восстановление заархивированного участника
 router.post(
   '/:teamId/members',
   verifyToken,
@@ -63,7 +103,7 @@ router.post(
   addOrRestoreTeamMember
 );
 
-// Включение члена команды в игровой ростер турнира
+// Включение члена команды в игровой ростер турнира с фиксацией амплуа и номера
 router.post(
   '/:teamId/roster',
   verifyToken,

@@ -18,7 +18,7 @@ export function ContainerContent({
   return (
     <div
       className={clsx(
-        "bg-brand-glow rounded-3xl p-4 flex flex-col gap-4 relative z-0 overflow-hidden mx-4",
+        "bg-brand-glow rounded-2xl p-3 flex flex-col gap-4 relative z-0 overflow-hidden mx-4",
         className
       )}
       {...props}
@@ -42,7 +42,7 @@ export function ContainerContent({
 
       {/* Шапка контейнера с заголовком, счетчиком и кнопкой действия */}
       {title && (
-        <div className="flex items-center justify-between border-b border-surface-border pt-1 pl-4 pr-1 pb-4">
+        <div className="flex items-center justify-between border-b border-surface-border pt-1 pl-4 pr-1 pb-3">
           <h4 className="text-[12px] font-bold text-content-muted uppercase tracking-wider">
             {title}
             {hasCount && ` (${count})`}

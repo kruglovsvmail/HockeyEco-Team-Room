@@ -98,7 +98,7 @@ export function Header({ isSidebarOpen, onToggleSidebar, user, selectedTeam, onT
             <div className="flex items-center gap-1 ml-auto">
               <button
                 onClick={() => setIsEditOpen(true)}
-                className="p-2 text-content-main hover:text-brand transition-colors outline-none cursor-pointer active:scale-95"
+                className="p-2 bg-white/40 rounded-full text-content-main hover:text-brand transition-colors outline-none cursor-pointer active:scale-95"
                 aria-label="Редактировать профиль команды"
               >
                 <Icon name="edit" className="w-5 h-5" />

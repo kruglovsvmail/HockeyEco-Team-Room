@@ -2,6 +2,7 @@ import pool from '../config/db.js';
 import s3 from '../config/s3.js';
 import path from 'path';
 
+// Получение всех команд текущего пользователя
 export const getMyTeams = async (req, res) => {
     try {
         const userId = req.user.id;
@@ -18,10 +19,12 @@ export const getMyTeams = async (req, res) => {
         const { rows } = await pool.query(query, [userId]);
         res.json({ teams: rows });
     } catch (error) {
+        console.error('[Get My Teams Error]:', error);
         res.status(500).json({ error: 'Internal server error' });
     }
 };
 
+// Получение детализированных списков участников хоккейной команды
 export const getTeamDetails = async (req, res) => {
     try {
         const teamId = req.params.id;
@@ -40,7 +43,7 @@ export const getTeamDetails = async (req, res) => {
             ORDER BY u.last_name, u.first_name
         `;
 
-        // 2. Запрос только активного игрового ростера на текущие турниры
+        // 2. Запрос активного игрового ростера на турниры
         const rosterQuery = `
             SELECT 
                 tm.id as member_id, u.id as user_id, 
@@ -86,6 +89,232 @@ export const getTeamDetails = async (req, res) => {
     }
 };
 
+// Получение анкеты участника команды с селективной защитой виртуального кода и выдачей карты прав
+export const getTeamMemberDetails = async (req, res) => {
+  const { teamId, userId } = req.params;
+  const reqUserId = req.user?.id;
+
+  try {
+    if (!reqUserId) {
+      return res.status(401).json({ error: 'Пользователь не идентифицирован' });
+    }
+
+    // Собираем все активные роли запрашивающего сотрудника в этой команде
+    const reqUserRolesRes = await pool.query(`
+      SELECT 'admin' as role FROM users WHERE id = $1 AND global_role = 'admin'
+      UNION
+      SELECT tr.role FROM team_roles tr
+      JOIN team_members tm ON tr.member_id = tm.id
+      WHERE tm.user_id = $1 AND tm.team_id = $2 AND tr.left_at IS NULL
+    `, [reqUserId, teamId]);
+
+    const reqUserRoles = reqUserRolesRes.rows.map(r => r.role);
+    const hasGlobalAdmin = reqUserRoles.includes('admin');
+    const isTeamManager = reqUserRoles.includes('team_manager');
+    const isTeamAdmin = reqUserRoles.includes('team_admin');
+
+    const query = `
+      SELECT 
+        u.id as user_id, tm.id as member_id, u.first_name, u.last_name, u.middle_name, 
+        u.phone, u.birth_date, u.height, u.weight, u.grip, u.virtual_code,
+        tm.photo_url as team_photo_url,
+        COALESCE(tm.photo_url, u.avatar_url) as avatar_url,
+        tr.id as roster_id, tr.position, tr.jersey_number, tr.is_captain, tr.is_assistant,
+        (
+          SELECT string_agg(trole.role, ', ') 
+          FROM team_roles trole 
+          WHERE trole.member_id = tm.id AND trole.left_at IS NULL
+        ) as roles
+      FROM team_members tm
+      JOIN users u ON u.id = tm.user_id
+      LEFT JOIN team_rosters tr ON tm.id = tr.member_id AND tr.left_at IS NULL
+      WHERE tm.team_id = $1 AND u.id = $2 AND tm.left_at IS NULL
+    `;
+
+    const { rows } = await pool.query(query, [teamId, userId]);
+
+    if (rows.length === 0) {
+      return res.status(404).json({ error: 'Участник команды не найден' });
+    }
+
+    const memberData = rows[0];
+
+    // Только руководитель команды видит виртуальный код (VIEW_VIRTUAL_CODE)
+    if (!isTeamManager && !hasGlobalAdmin) {
+      delete memberData.virtual_code;
+    }
+
+    // Возвращаем строго вычисленные флаги доступов согласно разрешенным правилам
+    res.json({ 
+      success: true, 
+      member: memberData, 
+      isManager: isTeamManager,
+      isOwnProfile: reqUserId === memberData.user_id,
+      permissions: {
+        canEditRoles: isTeamManager || hasGlobalAdmin,
+        canEditGameProfile: isTeamManager || isTeamAdmin || hasGlobalAdmin,
+        canEditHeader: isTeamManager || isTeamAdmin || hasGlobalAdmin
+      }
+    });
+  } catch (error) {
+    console.error('[Get Team Member Details Error]:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+};
+
+// Интерактивное автоматическое сохранение параметров участника команды руководителем / админом
+export const updateMemberDetails = async (req, res) => {
+  const { teamId, memberId } = req.params;
+  const { position, jerseyNumber, roles, isCaptain, isAssistant } = req.body;
+  const reqUserId = req.user?.id;
+
+  try {
+    // Вычисляем роли запрашивающего пользователя перед выполнением транзакции
+    const reqUserRolesRes = await pool.query(`
+      SELECT 'admin' as role FROM users WHERE id = $1 AND global_role = 'admin'
+      UNION
+      SELECT tr.role FROM team_roles tr
+      JOIN team_members tm ON tr.member_id = tm.id
+      WHERE tm.user_id = $1 AND tm.team_id = $2 AND tr.left_at IS NULL
+    `, [reqUserId, teamId]);
+
+    const reqUserRoles = reqUserRolesRes.rows.map(r => r.role);
+    const hasGlobalAdmin = reqUserRoles.includes('admin');
+    const isTeamManager = reqUserRoles.includes('team_manager');
+    const isTeamAdmin = reqUserRoles.includes('team_admin');
+
+    await pool.query('BEGIN');
+
+    // 1. ПРОВЕРКА ПРАВ ДЛЯ ИГРОВОГО ПРОФИЛЬНОГО БЛОКА (Менеджер и Админ)
+    if (position !== undefined || jerseyNumber !== undefined) {
+      if (!isTeamManager && !isTeamAdmin && !hasGlobalAdmin) {
+        return res.status(403).json({ error: 'Недостаточно прав для изменения игрового профиля' });
+      }
+
+      if (jerseyNumber) {
+        const numCheck = await pool.query(
+          `SELECT 1 FROM team_rosters 
+           WHERE team_id = $1 AND jersey_number = $2 AND member_id != $3 AND left_at IS NULL`,
+          [teamId, jerseyNumber, memberId]
+        );
+        if (numCheck.rows.length > 0) {
+          return res.status(400).json({ error: 'Этот игровой номер уже занят другим активным игроком' });
+        }
+      }
+
+      await pool.query(
+        `UPDATE team_rosters 
+         SET position = COALESCE($1, position), 
+             jersey_number = COALESCE($2, jersey_number)
+         WHERE member_id = $3 AND team_id = $4 AND left_at IS NULL`,
+        [position, jerseyNumber, memberId, teamId]
+      );
+    }
+
+    // 2. ПРОВЕРКА ПРАВ ДЛЯ БЛОКА ШАПКИ/КАПИТАНСТВА (Менеджер и Админ)
+    if (isCaptain !== undefined || isAssistant !== undefined) {
+      if (!isTeamManager && !isTeamAdmin && !hasGlobalAdmin) {
+        return res.status(403).json({ error: 'Недостаточно прав для изменения капитанских статусов' });
+      }
+
+      if (isCaptain !== undefined) {
+        if (isCaptain === true) {
+          await pool.query(
+            `UPDATE team_rosters SET is_captain = false WHERE team_id = $1 AND left_at IS NULL`,
+            [teamId]
+          );
+          await pool.query(
+            `UPDATE team_rosters SET is_captain = true, is_assistant = false WHERE member_id = $1 AND team_id = $2 AND left_at IS NULL`,
+            [memberId, teamId]
+          );
+        } else {
+          await pool.query(
+            `UPDATE team_rosters SET is_captain = false WHERE member_id = $1 AND team_id = $2 AND left_at IS NULL`,
+            [memberId, teamId]
+          );
+        }
+      }
+
+      if (isAssistant !== undefined) {
+        if (isAssistant === true) {
+          const assistCheck = await pool.query(
+            `SELECT COUNT(*) FROM team_rosters 
+             WHERE team_id = $1 AND is_assistant = true AND member_id != $2 AND left_at IS NULL`,
+            [teamId, memberId]
+          );
+          if (parseInt(assistCheck.rows[0].count) >= 2) {
+            return res.status(400).json({ error: 'В ростере команды уже зафиксировано 2 ассистента' });
+          }
+          await pool.query(
+            `UPDATE team_rosters SET is_assistant = true, is_captain = false WHERE member_id = $1 AND team_id = $2 AND left_at IS NULL`,
+            [memberId, teamId]
+          );
+        } else {
+          await pool.query(
+            `UPDATE team_rosters SET is_assistant = false WHERE member_id = $1 AND team_id = $2 AND left_at IS NULL`,
+            [memberId, teamId]
+          );
+        }
+      }
+    }
+
+    // 3. ПРОВЕРКА ПРАВ ДЛЯ АДМИНИСТРАТИВНЫХ СТАТУСОВ (Только руководитель)
+    if (roles !== undefined) {
+      if (!isTeamManager && !hasGlobalAdmin) {
+        return res.status(403).json({ error: 'Недостаточно прав для изменения административного статуса' });
+      }
+
+      const memberUserRes = await pool.query(
+        `SELECT user_id FROM team_members WHERE id = $1`,
+        [memberId]
+      );
+      
+      const rolesArray = roles.split(',').map(r => r.trim()).filter(Boolean);
+
+      // Защита от саморазжалования руководителя
+      if (memberUserRes.rows.length > 0 && memberUserRes.rows[0].user_id === reqUserId) {
+        if (!rolesArray.includes('team_manager')) {
+          return res.status(400).json({ error: 'Вы не можете лишить самого себя роли Руководителя команды' });
+        }
+      }
+
+      if (rolesArray.length > 0) {
+        await pool.query(
+          `UPDATE team_roles 
+           SET left_at = CURRENT_DATE 
+           WHERE member_id = $1 AND left_at IS NULL AND NOT (role = ANY($2))`,
+          [memberId, rolesArray]
+        );
+      } else {
+        await pool.query(
+          `UPDATE team_roles 
+           SET left_at = CURRENT_DATE 
+           WHERE member_id = $1 AND left_at IS NULL`,
+          [memberId]
+        );
+      }
+
+      for (const role of rolesArray) {
+        await pool.query(
+          `INSERT INTO team_roles (member_id, role, joined_at, left_at) 
+           VALUES ($1, $2, NOW(), NULL)
+           ON CONFLICT (member_id, role) 
+           DO UPDATE SET left_at = NULL`,
+          [memberId, role]
+        );
+      }
+    }
+
+    await pool.query('COMMIT');
+    res.json({ success: true, message: 'Изменения успешно сохранены' });
+  } catch (error) {
+    await pool.query('ROLLBACK');
+    console.error('[Update Member Details Error]:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+};
+
+// Вспомогательный метод загрузки в S3-хранилище
 const uploadBufferToS3 = async (file, bucketKey) => {
   const params = {
     Bucket: process.env.S3_BUCKET || 'hockeyeco-s3-storage',
@@ -99,18 +328,64 @@ const uploadBufferToS3 = async (file, bucketKey) => {
     const { PutObjectCommand } = await import('@aws-sdk/client-s3');
     return s3.send(new PutObjectCommand(params));
   }
-
   if (s3 && typeof s3.putObject === 'function') {
     const request = s3.putObject(params);
-    if (request && typeof request.promise === 'function') {
-      return request.promise();
-    }
-    return request;
+    return typeof request.promise === 'function' ? request.promise() : request;
   }
-
-  throw new Error('Конфигурация S3 S3Client не поддерживается бэкендом');
+  throw new Error('S3 Client не настроен на сервере');
 };
 
+// ВОЗВРАЩЕНО: Метод загрузки/замены кастомной аватарки игрока в S3
+export const updateMemberPhoto = async (req, res) => {
+  const { teamId, memberId } = req.params;
+  if (!req.file) {
+    return res.status(400).json({ error: 'Файл фотографии не предоставлен' });
+  }
+
+  try {
+    const memberRes = await pool.query(
+      `SELECT user_id FROM team_members WHERE id = $1 AND team_id = $2`,
+      [memberId, teamId]
+    );
+    if (memberRes.rows.length === 0) {
+      return res.status(404).json({ error: 'Участник состава не найден' });
+    }
+    const userId = memberRes.rows[0].user_id;
+
+    const ext = path.extname(req.file.originalname) || '.png';
+    const bucketKey = `uploads/teams_${teamId}_users_${userId}_photo${ext}`;
+    
+    await uploadBufferToS3(req.file, bucketKey);
+    const photoUrl = `/${bucketKey}`;
+
+    await pool.query(
+      `UPDATE team_members SET photo_url = $1 WHERE id = $2 AND team_id = $3`,
+      [photoUrl, memberId, teamId]
+    );
+
+    res.json({ success: true, photo_url: photoUrl });
+  } catch (error) {
+    console.error('[Update Member Photo Error]:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+};
+
+// ВОЗВРАЩЕНО: Метод удаления кастомного фото участника
+export const deleteMemberPhoto = async (req, res) => {
+  const { teamId, memberId } = req.params;
+  try {
+    await pool.query(
+      `UPDATE team_members SET photo_url = NULL WHERE id = $1 AND team_id = $2`,
+      [memberId, teamId]
+    );
+    res.json({ success: true, message: 'Фотография успешно удалена' });
+  } catch (error) {
+    console.error('[Delete Member Photo Error]:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+};
+
+// Обновление визуального профиля хоккейной команды
 export const updateTeamProfile = async (req, res) => {
   try {
     const teamId = req.params.id;
@@ -200,6 +475,7 @@ export const updateTeamProfile = async (req, res) => {
   }
 };
 
+// Исключение участника из игрового ростера на турнир
 export const excludeFromRoster = async (req, res) => {
   const { teamId, memberId } = req.params;
   try {
@@ -216,6 +492,7 @@ export const excludeFromRoster = async (req, res) => {
   }
 };
 
+// Полное исключение из членства команды (состав + ростер)
 export const excludeFromMembership = async (req, res) => {
   const { teamId, memberId } = req.params;
   try {
@@ -236,7 +513,7 @@ export const excludeFromMembership = async (req, res) => {
     await pool.query(updateRosterQuery, [memberId, teamId]);
 
     await pool.query('COMMIT');
-    res.json({ success: true, message: 'Пользователь полностью удален из членства команды и ростера' });
+    res.json({ success: true, message: 'Пользователь полностью удален из состава и ростеров команды' });
   } catch (error) {
     await pool.query('ROLLBACK');
     console.error('[Exclude From Membership Error]:', error);
@@ -244,7 +521,7 @@ export const excludeFromMembership = async (req, res) => {
   }
 };
 
-// ПОИСК ПОЛЬЗОВАТЕЛЯ С ОПРЕДЕЛЕНИЕМ СТАТУСА ТЕКУЩЕГО ЧЛЕНСТВА В КОМАНДЕ
+// Поиск зарегистрированного пользователя по номеру телефона
 export const searchUserByPhone = async (req, res) => {
   const { teamId } = req.params;
   const { phone } = req.query;
@@ -280,6 +557,7 @@ export const searchUserByPhone = async (req, res) => {
   }
 };
 
+// Добавление или восстановление членства пользователя в команде
 export const addOrRestoreTeamMember = async (req, res) => {
   const { teamId } = req.params;
   const { userId } = req.body;
@@ -291,7 +569,7 @@ export const addOrRestoreTeamMember = async (req, res) => {
     if (rows.length > 0) {
       const existing = rows[0];
       if (existing.left_at === null) {
-        return res.status(400).json({ error: 'Пользователь уже находится в основном составе команды' });
+        return res.status(400).json({ error: 'Пользователь уже находится в составе команды' });
       }
 
       await pool.query(
@@ -312,6 +590,7 @@ export const addOrRestoreTeamMember = async (req, res) => {
   }
 };
 
+// Включение члена основного состава в турнирный игровой ростер
 export const addTeamMemberToRoster = async (req, res) => {
   const { teamId } = req.params;
   const { memberId, position, jerseyNumber } = req.body;
@@ -334,10 +613,6 @@ export const addTeamMemberToRoster = async (req, res) => {
 
     if (rosterRows.length > 0) {
       const existingRoster = rosterRows[0];
-      if (existingRoster.left_at === null) {
-        return res.status(400).json({ error: 'Игрок уже занимает активную позицию в ростере' });
-      }
-
       await pool.query(`
         UPDATE team_rosters 
         SET left_at = NULL, team_id = $1, club_id = $2, position = $3, jersey_number = $4, joined_at = NOW()

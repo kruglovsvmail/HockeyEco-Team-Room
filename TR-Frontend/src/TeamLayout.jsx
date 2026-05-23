@@ -319,7 +319,7 @@ function TeamLayoutContent() {
 
       {/* 3. ПРАВАЯ ПАНЕЛЬ ДЕТАЛЕЙ */}
       <div className={clsx(
-        "fixed top-0 right-0 w-[80%] h-full z-[40] bg-surface-level1 shadow-[-15px_0_30px_rgba(0,0,0,0.1)] flex flex-col overflow-hidden transition-all duration-500 ease-[cubic-bezier(0.32,0.72,0,1)] flex-shrink-0",
+        "fixed top-0 right-0 w-[80%] h-full z-[40] bg-surface-level2 shadow-[-15px_0_30px_rgba(0,0,0,0.1)] flex flex-col overflow-hidden transition-all duration-500 ease-[cubic-bezier(0.32,0.72,0,1)] flex-shrink-0",
         "md:static md:w-[var(--right-w)] md:translate-x-0 md:shadow-3xl",
         (rightPanel.isOpen || fullPagePanel.isOpen) ? "translate-x-0" : "translate-x-full"
       )}>
@@ -327,8 +327,8 @@ function TeamLayoutContent() {
           {rightPanel.isOpen ? (
             <>
               <div className="flex items-center justify-between shadow-md p-4 h-[60px] shrink-0 z-[90]">
-                <button onClick={closeRightPanel} className="p-2 -ml-2 text-content-muted hover:text-brand transition-colors outline-none cursor-pointer active:scale-95 flex items-center">
-                  <Icon name="chevron_left" className="w-7 h-7 text-content-main" />
+                <button onClick={closeRightPanel} className="p-1 ml-1 bg-white/40 rounded-full text-content-muted hover:text-brand transition-colors outline-none cursor-pointer active:scale-95 flex items-center">
+                  <Icon name="chevron_left" className="w-7 h-7  text-content-main" />
                 </button>
                 <h3 className="text-sm font-bold text-content-main uppercase tracking-wider text-right truncate pl-4">
                   {rightPanel.title}

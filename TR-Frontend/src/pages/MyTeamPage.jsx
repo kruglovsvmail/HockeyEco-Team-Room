@@ -297,9 +297,15 @@ export const MyTeamPage = () => {
     });
   };
 
+  // ИСПРАВЛЕНО: Добавлен проп onRefresh для сквозной синхронизации стейтов списков и панели деталей
   const handlePersonClick = useCallback((person) => {
-    openRightPanel('userDetails', person, 'Профиль');
-  }, [openRightPanel]);
+    openRightPanel('userDetails', { 
+      ...person, 
+      team_id: selectedTeamId,
+      currentRoster: teamData.roster,
+      onRefresh: fetchTeamData
+    }, 'Профиль');
+  }, [openRightPanel, selectedTeamId, teamData.roster, fetchTeamData]);
 
   const handleExcludeClick = useCallback((member) => setMemberToRemove(member), []);
   const handleContainerClick = () => { if (isEditMode) setIsEditMode(false); };
@@ -307,7 +313,6 @@ export const MyTeamPage = () => {
   const tabIndex = TEAM_TABS.findIndex(t => t.id === activeTab);
   const translateX = `-${tabIndex * 33.333333}%`;
 
-  // Сначала загружаем пустую страницу с легковесным лоадером
   if (!isPageReady) {
     return <PageLoader />;
   }
