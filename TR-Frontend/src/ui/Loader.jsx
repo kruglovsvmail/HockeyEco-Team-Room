@@ -1,19 +1,94 @@
 import React from 'react';
 import clsx from 'clsx';
 
+// =========================================================================
+// ХОККЕЙНЫЙ КОНФИГУРАТОР (Твой инструмент для настройки анимации)
+// =========================================================================
+const PUCK_CONFIG = {
+  strokeColor: '#b3b3b3ff',       // Цвет контура шайбы и скоростных линий
+  strokeWidth: 5,               // Толщина линий (в пикселях)
+  puckScale: 1.1,               // Масштаб самой шайбы (например: 1 — базовый, 1.2 — крупнее)
+  wobbleSpeed: '0.5s',         // Скорость покачивания шайбы (чем меньше, тем быстрее)
+  wobbleIntensity: '5px',       // Амплитуда движения вверх-вниз в полете
+  rotateIntensity: '3deg',      // Угол наклона шайбы при покачивании
+  linesBaseSpeed: '0.3s',      // Базовая скорость пролета аниме-линий
+};
+
 /**
  * 1. Легковесный центрированный лоадер для страниц и панелей.
- * Занимает всё доступное пространство, не нагружает поток вычислений.
+ * Шайба зафиксирована строго по центру. Настройки лоадера регулируются через PUCK_CONFIG.
  */
 export function PageLoader({ className }) {
+  // Транслируем настройки из конфигуратора в CSS-переменные
+  const configStyles = {
+    '--puck-color': PUCK_CONFIG.strokeColor,
+    '--puck-stroke': `${PUCK_CONFIG.strokeWidth}px`,
+    '--puck-scale': PUCK_CONFIG.puckScale,
+    '--wobble-speed': PUCK_CONFIG.wobbleSpeed,
+    '--wobble-y': PUCK_CONFIG.wobbleIntensity,
+    '--wobble-deg': PUCK_CONFIG.rotateIntensity,
+    '--lines-speed': PUCK_CONFIG.linesBaseSpeed,
+  };
+
   return (
-    <div className={clsx("flex-1 flex flex-col items-center justify-center h-full w-full min-h-[200px] bg-transparent select-none", className)}>
-      <div className="relative flex items-center justify-center">
-        {/* Минималистичное кольцо крутилки */}
-        <div className="w-9 h-9 rounded-xl border-2 border-surface-level2 border-t-brand animate-spin" />
-        {/* Внутреннее легкое свечение в стиле платформы */}
-        <div className="absolute w-6 h-6 rounded-full bg-brand-glow/10 blur-sm pointer-events-none" />
+    <div 
+      className={clsx("flex-1 flex flex-col items-center justify-center h-full w-full min-h-[250px] bg-transparent select-none", className)}
+      style={configStyles}
+    >
+      {/* Рабочая зона анимации */}
+      <div className="relative flex items-center justify-center w-72 h-32 overflow-hidden">
+        
+        {/* Изолированные CSS-анимации */}
+        <style>{`
+          @keyframes puckCenterWobble {
+            0%, 100% { transform: scale(var(--puck-scale)) translateY(0) rotate(0deg); }
+            25% { transform: scale(var(--puck-scale)) translateY(calc(-1 * var(--wobble-y))) rotate(calc(-1 * var(--wobble-deg))); }
+            75% { transform: scale(var(--puck-scale)) translateY(var(--wobble-y)) rotate(var(--wobble-deg)); }
+          }
+          
+          @keyframes animeSpeedLine {
+            0% { left: 110%; width: 0px; opacity: 0; }
+            15% { width: 45px; opacity: 1; }
+            80% { width: 75px; opacity: 1; }
+            100% { left: -40%; width: 0px; opacity: 0; }
+          }
+
+          .puck-centered-anim {
+            animation: puckCenterWobble var(--wobble-speed) ease-in-out infinite;
+            z-index: 10;
+          }
+
+          .anime-speed-line {
+            position: absolute;
+            height: calc(var(--puck-stroke) * 0.8);
+            background-color: var(--puck-color);
+            border-radius: 9999px;
+            animation: animeSpeedLine var(--lines-speed) linear infinite;
+            opacity: 0;
+          }
+        `}</style>
+
+        {/* Аниме-линии скорости (размытый хаотичный поток под шайбой) */}
+        <div className="absolute inset-0 pointer-events-none w-full h-full">
+          <div className="anime-speed-line" style={{ top: '22%', animationDelay: '0s', animationDuration: 'calc(var(--lines-speed) * 0.95)' }} />
+          <div className="anime-speed-line" style={{ top: '48%', animationDelay: '0.08s', animationDuration: 'calc(var(--lines-speed) * 0.75)' }} />
+          <div className="anime-speed-line" style={{ top: '68%', animationDelay: '0.03s', animationDuration: 'calc(var(--lines-speed) * 1.15)' }} />
+          <div className="anime-speed-line" style={{ top: '82%', animationDelay: '0.14s', animationDuration: 'calc(var(--lines-speed) * 0.85)' }} />
+        </div>
+
+        {/* Шайба — строго отцентрована геометрически */}
+        <div className="puck-centered-anim flex items-center justify-center">
+          <svg width="76" height="48" viewBox="0 0 76 48" fill="none" xmlns="http://www.w3.org/2000/svg">
+            {/* Верхняя плоскость */}
+            <ellipse cx="38" cy="16" rx="30" ry="11" stroke="var(--puck-color)" strokeWidth="var(--puck-stroke)" fill="none" />
+            {/* Нижняя грань */}
+            <path d="M 8 16 V 32 A 30 11 0 0 0 68 32 V 16" stroke="var(--puck-color)" strokeWidth="var(--puck-stroke)" strokeLinecap="round" strokeLinejoin="round" fill="none" />
+          </svg>
+        </div>
+        
       </div>
+      
+      {/* Текстовый индикатор */}
       <span className="text-[10px] font-black text-brand tracking-[0.25em] uppercase mt-4 animate-pulse">
         ...
       </span>
