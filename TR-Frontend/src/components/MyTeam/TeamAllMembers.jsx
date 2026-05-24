@@ -4,7 +4,7 @@ import { PersonGridCard } from './PersonGridCard';
 import { Icon } from '../../ui/Icon';
 import clsx from 'clsx';
 
-// Импортируем наш новый унифицированные компонент производительности
+// Импортируем наш новый унифицированный компонент производительности
 import { FadeIn } from '../../ui/FadeIn';
 
 export const TeamAllMembers = ({ 
@@ -16,7 +16,7 @@ export const TeamAllMembers = ({
   onExcludeClick, 
   animatingOutId,
   onAddClick,
-  activeColor // Добавлен проп цвета бренда команды
+  activeBrandColor
 }) => {
   const pressTimer = useRef(null);
 
@@ -34,15 +34,15 @@ export const TeamAllMembers = ({
     if (pressTimer.current) clearTimeout(pressTimer.current);
   };
 
-  // Контекстная кнопка добавления в правый угол шапки (Иконка перенимает цвет бренда)
+  // Контекстная кнопка добавления в правый угол шапки (динамический цвет)
   const addButton = hasManageAccess && !isEditMode && (
     <button
       onClick={(e) => {
         e.stopPropagation();
         onAddClick();
       }}
-      style={activeColor ? { color: activeColor } : {}}
-      className="text-content-muted hover:text-brand-dark transition-colors active:scale-90 outline-none flex items-center justify-center"
+      className="transition-colors active:scale-90 outline-none flex items-center justify-center text-content-muted hover:opacity-80"
+      style={activeBrandColor ? { color: activeBrandColor } : {}}
     >
       <Icon name="user_plus" className="w-5 h-5" />
     </button>
@@ -79,12 +79,12 @@ export const TeamAllMembers = ({
                   isRemoving && "animate-slot-exit"
                 )}
               >
-                {/* Передаем undefined вместо клика, если включен режим редактирования */}
+                {/* Передаем активный цвет команды в карточку */}
                 <PersonGridCard 
                   person={m} 
                   onClick={isEditMode ? undefined : onPersonClick} 
                   showBadges={false} 
-                  activeColor={activeColor}
+                  activeBrandColor={activeBrandColor}
                 />
                 
                 {/* Оверлейная плавающая кнопка удаления над аватаром */}

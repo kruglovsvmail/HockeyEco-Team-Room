@@ -10,6 +10,7 @@ import { Icon } from '../../../ui/Icon';
 import { CheckboxLP } from '../../../ui/Checkbox-LP';
 import { ContainerContent } from '../../../ui/ContainerContent';
 import { TooltipLP } from '../../../ui/TooltipLP';
+import { Toast } from '../../../ui/Toast';
 import clsx from 'clsx';
 
 // Импортируем наши новые унифицированные компоненты производительности
@@ -57,6 +58,9 @@ export const MatchLines = ({ event, initialAttendees = [], initialDraftLines = [
   const [isPublishing, setIsPublishing] = useState(false);
   const [timeToMatch, setTimeToMatch] = useState(999);
   
+  // Состояние кастомного тост-уведомления
+  const [toast, setToast] = useState({ isOpen: false, message: '', type: 'success' });
+
   const [showTooltip, setShowTooltip] = useState(false);
   const [showSubmitTooltip, setShowSubmitTooltip] = useState(false);
   const [showPlayerEditTooltip, setShowPlayerEditTooltip] = useState(false);
@@ -106,7 +110,7 @@ export const MatchLines = ({ event, initialAttendees = [], initialDraftLines = [
   useEffect(() => { setIsPublished(initialIsPublished); }, [initialIsPublished]);
   useEffect(() => { setStaffMembers(initialStaffMembers); }, [initialStaffMembers]);
   
-  // Обновляем драфт-формации из пропсов только тогда, когда тренер не редактирует состав прямо сейчас
+  // Обновляем формации из пропсов только тогда, когда тренер не находится в режиме ручного редактирования
   useEffect(() => {
     if (!isEditMode) {
       setDraftLines(initialDraftLines);
@@ -189,7 +193,8 @@ export const MatchLines = ({ event, initialAttendees = [], initialDraftLines = [
   }, [isEditMode, attendees]);
 
   const handlePublish = async () => {
-    if (timeToMatch < DEADLINES.LINES_EDIT_MINUTES) {
+    // Проверка лимитов времени через корректное системное свойство
+    if (timeToMatch < DEADLINES.MIDDLE_EDIT_MINUTES) {
       return;
     }
     setIsPublishing(true);
@@ -247,13 +252,26 @@ export const MatchLines = ({ event, initialAttendees = [], initialDraftLines = [
       const data = await res.json();
       if (data.success) {
         setIsPublished(true);
-        alert('Официальная заявка успешно отправлена в лигу!');
+        setToast({
+          isOpen: true,
+          message: 'Заявка отправлена в лигу!',
+          type: 'success'
+        });
         refreshData(); 
       } else {
-        alert(data.error || 'Ошибка отправки заявки');
+        setToast({
+          isOpen: true,
+          message: data.error || 'Ошибка отправки заявки',
+          type: 'danger'
+        });
       }
     } catch (err) {
       console.error(err);
+      setToast({
+        isOpen: true,
+        message: 'Ошибка отправки заявки: сервер не отвечает',
+        type: 'danger'
+      });
     }
   };
 
@@ -264,7 +282,8 @@ export const MatchLines = ({ event, initialAttendees = [], initialDraftLines = [
       setActiveSelection(null);
       refreshData(); 
     } else {
-      if (timeToMatch <= DEADLINES.LINES_EDIT_MINUTES) {
+      // Исправлена системная константа ограничений времени
+      if (timeToMatch <= DEADLINES.MIDDLE_EDIT_MINUTES) {
         if (e && e.currentTarget) {
           const rect = e.currentTarget.getBoundingClientRect();
           setTooltipCoords({ x: rect.left + rect.width / 2, y: rect.top });
@@ -672,7 +691,7 @@ export const MatchLines = ({ event, initialAttendees = [], initialDraftLines = [
       <TooltipLP 
         isOpen={showTooltip} 
         coords={tooltipCoords}
-        message={`Изменение пятерок заблокировано. До игры осталось меньше ${DEADLINES.LINES_EDIT_MINUTES} минут.`} 
+        message={`Изменение пятерок заблокировано. До игры осталось меньше ${DEADLINES.MIDDLE_EDIT_MINUTES} минут.`} 
         onClose={() => setShowTooltip(false)}
       />
 
@@ -897,7 +916,6 @@ export const MatchLines = ({ event, initialAttendees = [], initialDraftLines = [
               />
             </div>
 
-            {/* ИСПРАВЛЕНО: Чекбоксы анкеты автоматически красятся в HEX-код хоккейного клуба через проп activeColor */}
             <div className="flex flex-col gap-3 border border-surface-border rounded-2xl p-4">
               <CheckboxLP 
                 label="Капитан команды (C)" 
@@ -920,7 +938,6 @@ export const MatchLines = ({ event, initialAttendees = [], initialDraftLines = [
               />
             </div>
 
-            {/* ИСПРАВЛЕНО: Кнопка сохранения параметров принимает activeColor и генерирует идеальный контраст и тени */}
             <div className="pt-4">
               <ButtonLP 
                 onClick={handleSavePlayerParams} 
@@ -933,6 +950,15 @@ export const MatchLines = ({ event, initialAttendees = [], initialDraftLines = [
           </div>
         )}
       </BottomSheet>
+
+      {/* ИНТЕГРАЦИЯ КАСТОВНОГО ТОСТА ВМЕСТО ALERT */}
+      <Toast 
+        isOpen={toast.isOpen}
+        message={toast.message}
+        type={toast.type}
+        onClose={() => setToast(prev => ({ ...prev, isOpen: false }))}
+        activeColor={hasTeamColor ? event.team_color : null}
+      />
 
     </FadeIn>
   );

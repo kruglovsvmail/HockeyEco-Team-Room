@@ -85,7 +85,7 @@ export function SchedulePage() {
         const fetchedCards = data.cards || [];
         setEvents(fetchedCards);
         
-        // Перезаписываем единый кэш (старый JSON стирается, лимит 5мб в безопасности)
+        // Перезаписываем единый кэш (старый JSON стабильно обновляется)
         localStorage.setItem('tr_cached_events', JSON.stringify(fetchedCards));
       } else {
         console.error('Ошибка загрузки событий:', data.error);
@@ -129,7 +129,7 @@ export function SchedulePage() {
 
       const data = await response.json();
       if (!response.ok || !data.success) {
-        throw new Error(data.error || 'Ошибка сохранения');
+        throw new Error(data.error || 'Ошибка保存ения');
       }
       
       // Обновляем кэш после успешной мутации, чтобы состояние не откатилось в офлайне
@@ -280,8 +280,12 @@ export function SchedulePage() {
               willChange: 'transform'
             }}
           >
-            {[-1, 0, 1].map(offset => {
+            {[-1, 0, 1].map((offset, idx) => {
               const slideDate = currentDate.add(offset, 'week');
+              
+              // ИСПРАВЛЕНО: Уникальный ключ на основе даты начала недели предотвращает мигание FadeIn при перелистывании пустых недель
+              const slideWeekKey = slideDate.startOf('isoWeek').format('YYYY-MM-DD');
+
               const slideEvents = events.filter(event => {
                 if (!event.event_date) return false;
                 const eventDate = dayjs(event.event_date).tz(event.arena_timezone || 'UTC');
@@ -290,8 +294,8 @@ export function SchedulePage() {
 
               return (
                 <div 
-                  key={offset} 
-                  ref={el => scrollRefs.current[offset + 1] = el}
+                  key={slideWeekKey} 
+                  ref={el => scrollRefs.current[idx] = el}
                   className="w-1/3 shrink-0 flex flex-col px-4 h-full overflow-y-auto scrollbar-hide pt-[88px] pb-8"
                 >
                   <div>

@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { TopSheet } from '../../ui/TopSheet';
 import { ImageUploaderLP } from '../../ui/ImageUploaderLP';
 import { ButtonLP } from '../../ui/Button-LP';
+import { TextInputLP } from '../../ui/Input-LP'; 
 import { getAuthHeaders } from '../../utils/helpers';
 
 export function TeamProfileEditSheet({ isOpen, onClose, selectedTeam, user, onTeamUpdated }) {
@@ -24,9 +25,11 @@ export function TeamProfileEditSheet({ isOpen, onClose, selectedTeam, user, onTe
   const [isSaving, setIsSaving] = useState(false);
   const [errorMessage, setErrorMessage] = useState('');
 
-  // Динамическое определение флага включения цветов из localStorage (по дефолту true)
+  // Логика динамического определения флага включения цветов из localStorage
   const isColorsEnabled = localStorage.getItem('tr_use_team_colors') !== 'false';
-  const activeColor = isColorsEnabled && selectedTeam?.color_home_1 ? selectedTeam.color_home_1 : null;
+  // Считываем цвет прямо из стейта формы, чтобы перекрашивание происходило "на лету" при интерактивном выборе в палитре
+  const hasTeamColor = isColorsEnabled && !!formData.color_home_1 && formData.color_home_1.toLowerCase() !== '#ffffff';
+  const activeBrandColor = hasTeamColor ? formData.color_home_1 : 'var(--color-brand)';
 
   // Фоновый запрос полных параметров команды из БД при открытии шторки
   useEffect(() => {
@@ -137,8 +140,10 @@ export function TeamProfileEditSheet({ isOpen, onClose, selectedTeam, user, onTe
 
         <form onSubmit={handleSaveProfile} className="flex flex-col gap-3 max-h-[74vh] overflow-y-auto scrollbar-hide px-0.5 pb-3">
           
-          {/* ВЕРХНИЙ БЛОК */}
+          {/* ВЕРХНИЙ БЛОК: ЛОГОТИП + ТЕКСТОВЫЙ БЛОК НАЗВАНИЙ И ГОРОДА */}
           <div className="grid grid-cols-[90px_1fr] gap-3 items-center w-full">
+            
+            {/* Аскетичный квадрат логотипа */}
             <ImageUploaderLP 
               currentImageUrl={deleteLogo ? null : formData.logo_url} 
               onChange={(file) => { setLogoFile(file); setDeleteLogo(false); }} 
@@ -146,50 +151,52 @@ export function TeamProfileEditSheet({ isOpen, onClose, selectedTeam, user, onTe
               sizeClass="w-[84px] h-[84px]"
             />
 
+            {/* ИСПРАВЛЕНО: Текстовые поля переведены на уменьшенные инпуты size="sm" */}
             <div className="flex flex-col gap-2 w-full">
-              <input 
-                type="text" 
-                required
+              <TextInputLP 
                 placeholder="Название команды"
                 value={formData.name}
-                onChange={e => setFormData(prev => ({ ...prev, name: e.target.value }))}
-                style={activeColor ? { '--tw-placeholder-opacity': 0.6 } : {}}
-                className="w-full h-10 bg-surface-level2 border border-surface-border rounded-xl px-3 text-xs font-bold text-content-main focus:outline-none transition-colors"
+                onChange={val => setFormData(prev => ({ ...prev, name: val }))}
+                activeColor={hasTeamColor ? activeBrandColor : null}
+                size="lg"
               />
 
-              <div className="grid grid-cols-[64px_1fr] gap-2">
-                <input 
-                  type="text" 
+              {/* Аббревиатура (макс 4 знака) + Поле города */}
+              <div className="grid grid-cols-[80px_1fr] gap-2">
+                <TextInputLP 
                   maxLength={4}
-                  required
                   placeholder="АББР"
                   value={formData.short_name}
-                  style={activeColor ? { color: activeColor } : {}}
-                  onChange={e => setFormData(prev => ({ ...prev, short_name: e.target.value.toUpperCase() }))}
-                  className="w-full h-10 bg-surface-level2 border border-surface-border rounded-xl px-1 text-xs font-black text-brand text-center focus:outline-none transition-colors uppercase tracking-wider"
+                  onChange={val => setFormData(prev => ({ ...prev, short_name: val.toUpperCase() }))}
+                  activeColor={hasTeamColor ? activeBrandColor : null}
+                  size="sm"
                 />
-                <input 
-                  type="text" 
-                  required
+                <TextInputLP 
                   placeholder="Город"
                   value={formData.city}
-                  onChange={e => setFormData(prev => ({ ...prev, city: e.target.value }))}
-                  className="w-full h-10 bg-surface-level2 border border-surface-border rounded-xl px-3 text-xs font-bold text-content-main focus:outline-none transition-colors"
+                  onChange={val => setFormData(prev => ({ ...prev, city: val }))}
+                  activeColor={hasTeamColor ? activeBrandColor : null}
+                  size="sm"
                 />
               </div>
             </div>
           </div>
 
-          <textarea 
+          {/* ИСПРАВЛЕНО: Поле описания преобразовано в текстовую область типа textarea на 4 строчки */}
+          <TextInputLP 
+            type="textarea"
             rows={3}
+            placeholder="О команде (фарм-клуб организации, основан в 2020 году)..."
             value={formData.description}
-            onChange={e => setFormData(prev => ({ ...prev, description: e.target.value }))}
-            className="w-full bg-surface-level2 border border-surface-border rounded-xl px-3 py-2.5 text-xs font-bold text-content-main focus:outline-none transition-colors resize-none leading-normal min-h-[74px]"
-            placeholder="О команде (например: фарм-клуб организации, основан в 2020 году)..."
+            onChange={val => setFormData(prev => ({ ...prev, description: val }))}
+            activeColor={hasTeamColor ? activeBrandColor : null}
+            size="sm"
           />
 
+          {/* ОБЪЕДИНЕННЫЙ В ОДНУ СТРОКУ БЛОК С ФОРМОЙ И ВЫБОРОМ ЦВЕТА */}
           <div className="grid grid-cols-2 gap-2 w-full">
-            {/* ДОМАШНИЙ КОМПЛЕКТ */}
+            
+            {/* ЛЕВАЯ ПОЛОВИНА: ДОМАШНИЙ КОМПЛЕКТ */}
             <div className="flex flex-col p-2.5 bg-surface-level2 border border-surface-border rounded-xl justify-between min-h-[96px]">
               <span className="text-[10px] font-black text-content-muted uppercase tracking-widest block px-0.5 mb-4 select-none">
                 Домашняя
@@ -201,6 +208,8 @@ export function TeamProfileEditSheet({ isOpen, onClose, selectedTeam, user, onTe
                   onDelete={() => { setJerseyDarkFile(null); setDeleteJerseyDark(true); }}
                   sizeClass="w-20 h-20"
                 />
+                
+                {/* Вертикальный стек из двух кругов цвета хозяев */}
                 <div className="flex flex-col gap-1 shrink-0 justify-center">
                   <input 
                     type="color" 
@@ -218,7 +227,7 @@ export function TeamProfileEditSheet({ isOpen, onClose, selectedTeam, user, onTe
               </div>
             </div>
 
-            {/* ГОСТЕВОЙ КОМПЛЕКТ */}
+            {/* ПРАВАЯ ПОЛОВИНА: ГОСТЕВОЙ КОМПЛЕКТ */}
             <div className="flex flex-col p-2.5 bg-surface-level2 border border-surface-border rounded-xl justify-between min-h-[96px]">
               <span className="text-[10px] font-black text-content-muted uppercase tracking-widest block px-0.5 mb-4 select-none">
                 Гостевая
@@ -230,6 +239,8 @@ export function TeamProfileEditSheet({ isOpen, onClose, selectedTeam, user, onTe
                   onDelete={() => { setJerseyLightFile(null); setDeleteJerseyLight(true); }}
                   sizeClass="w-20 h-20"
                 />
+                
+                {/* Вертикальный стек из двух кругов цвета гостей */}
                 <div className="flex flex-col gap-1 shrink-0 justify-center">
                   <input 
                     type="color" 
@@ -251,8 +262,12 @@ export function TeamProfileEditSheet({ isOpen, onClose, selectedTeam, user, onTe
 
           {/* ФИНАЛЬНАЯ КНОПКА ОТПРАВКИ */}
           <div className="py-3 w-full">
-            {/* ИСПРАВЛЕНО: Кнопка сохранения параметров принимает activeColor */}
-            <ButtonLP type="submit" isLoading={isSaving} className="!h-12 !text-xs" activeColor={activeColor}>
+            <ButtonLP 
+              type="submit" 
+              isLoading={isSaving} 
+              className="!h-12 !text-xs"
+              activeColor={hasTeamColor ? activeBrandColor : null}
+            >
               Сохранить изменения
             </ButtonLP>
           </div>

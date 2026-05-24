@@ -30,7 +30,7 @@ const getSafeUserFromToken = () => {
   }
 };
 
-export const MatchAttendance = ({ event, initialAttendees = [], initialTeamRoster = [], initialStaffMembers = [], refreshData }) => {
+export const MatchAttendance = ({ event, initialAttendees = [], initialTeamRoster = [], initialStaffMembers = [], initialDraftLines = [], refreshData }) => {
   const [attendees, setAttendees] = useState(initialAttendees);
   const [teamRoster, setTeamRoster] = useState(initialTeamRoster);
   const [hasManageAccess, setHasManageAccess] = useState(false);
@@ -86,6 +86,12 @@ export const MatchAttendance = ({ event, initialAttendees = [], initialTeamRoste
     setHasManageAccess(access);
   }, [user, tokenUser, selectedTeam, initialStaffMembers, activeUserId, checkAccess]);
 
+  // Проверка: находится ли удаляемый пользователь в текущей формации пятерок
+  const isPlayerInLines = useMemo(() => {
+    if (!userToRemove) return false;
+    return initialDraftLines.some(l => String(l.player_id) === String(userToRemove.id));
+  }, [userToRemove, initialDraftLines]);
+
   const goalies = useMemo(() => {
     return attendees.filter(a => a.position === 'goalie' || a.position === 'G');
   }, [attendees]);
@@ -123,7 +129,7 @@ export const MatchAttendance = ({ event, initialAttendees = [], initialTeamRoste
           targetUserId: playerObj.user_id
         })
       });
-      refreshData(); // Синхронизируем родительский стейт
+      refreshData(); 
     } catch (err) {
       console.error('Ошибка при отметке игрока:', err);
       refreshData(); 
@@ -183,9 +189,12 @@ export const MatchAttendance = ({ event, initialAttendees = [], initialTeamRoste
 
       try {
         const apiUrl = import.meta.env.VITE_API_URL || '';
+        const headers = getAuthHeaders();
+
+        // 1. Удаляем отметку о присутствии
         await fetch(`${apiUrl}/api/events/${event.event_id}/attendance`, {
           method: 'POST',
-          headers: { ...getAuthHeaders(), 'Content-Type': 'application/json' },
+          headers: { ...headers, 'Content-Type': 'application/json' },
           body: JSON.stringify({
             isAttending: false,
             eventType: event.event_type,
@@ -193,9 +202,39 @@ export const MatchAttendance = ({ event, initialAttendees = [], initialTeamRoste
             targetUserId: targetUserId
           })
         });
+
+        // 2. Если игрок был установлен в формацию звеньев — вычищаем его оттуда на сервере
+        if (isPlayerInLines) {
+          const updatedLines = initialDraftLines.filter(l => String(l.player_id) !== String(targetUserId));
+          
+          const positionMap = {
+            'ЛН': 'LW', 'ЦН': 'C', 'ПН': 'RW',
+            'ЛЗ': 'LD', 'ПЗ': 'RD', 'ВР': 'G',
+            'НАП': 'LW', 'ЗАЩ': 'LD',
+            'Ц': 'C', 'Л': 'LW', 'П': 'RW', 'В': 'G',
+            'ОСН': 'G', 'ЗАП': 'G', 'РЕЗ': 'G'
+          };
+
+          await fetch(`${apiUrl}/api/events/${event.event_id}/lines`, {
+            method: 'POST',
+            headers: { ...headers, 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              teamId: event.my_team_id,
+              lines: updatedLines.map(l => {
+                const upperPos = String(l.position_in_line).toUpperCase();
+                return {
+                  player_id: l.player_id,
+                  line_number: l.line_number,
+                  position_in_line: positionMap[upperPos] || upperPos
+                };
+              })
+            })
+          });
+        }
+
         refreshData(); 
       } catch (err) {
-        console.error('Ошибка при удалении игрока:', err);
+        console.error('Ошибка при удалении игрока и обновлении звеньев:', err);
         refreshData(); 
       }
     }, 200);
@@ -235,7 +274,6 @@ export const MatchAttendance = ({ event, initialAttendees = [], initialTeamRoste
     
     const jiggleClass = isEditMode && canRemove && !isRemoving ? `animate-jiggle jiggle-delay-${index % 3}` : '';
 
-    // Применение сплошных HEX-смешиваний без использования косой черты /
     const payTagStyle = attendeeUser.has_pay_tag && hasTeamColor 
       ? { 
           backgroundColor: activeBrandColor, 
@@ -453,7 +491,6 @@ export const MatchAttendance = ({ event, initialAttendees = [], initialTeamRoste
                           Дисквал.
                         </span>
                       ) : (
-                        // ИСПРАВЛЕНО: Чистая передача activeColor вместо хардкодных инлайновых стилей style={{...}}
                         <ButtonLP
                           onClick={() => handleMarkUser(player)}
                           variant="primary"
@@ -480,7 +517,7 @@ export const MatchAttendance = ({ event, initialAttendees = [], initialTeamRoste
         {/* ШТОРКА ПОДТВЕРЖДЕНИЯ УДАЛЕНИЯ */}
         <BottomSheet isOpen={!!userToRemove} onClose={() => setUserToRemove(null)}>
           <div className="flex flex-col items-center text-center gap-4 py-2">
-            <div className="w-16 h-16 bg-red-500/10 text-red-500 rounded-full flex items-center justify-center mb-2">
+            <div className="w-16 h-16 bg-danger-muted text-danger rounded-full flex items-center justify-center mb-2">
               <svg className="w-8 h-8" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                 <path strokeLinecap="round" strokeLinejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
               </svg>
@@ -488,14 +525,21 @@ export const MatchAttendance = ({ event, initialAttendees = [], initialTeamRoste
             <h3 className="text-lg font-black text-content-main leading-tight">
               Удалить отметку?
             </h3>
-            <p className="text-[13px] text-content-muted max-w-[250px]">
-              Вы уверены, что хотите удалить игрока <span className="font-bold text-content-main">{userToRemove?.last_name}</span> из списка отметившихся?
-            </p>
+            <div className="text-[13px] text-content-muted max-w-[280px] flex flex-col gap-4">
+              {isPlayerInLines && (
+                <span className="text-danger font-semibold bg-danger-muted rounded-xl p-4 text-left block text-md leading-normal">
+                  Внимание! При удалении игрок исчезнет из формации звена на матч.
+                </span>
+              )}
+              <p>
+                Вы уверены, что хотите удалить игрока <span className="font-bold text-content-main">{userToRemove?.last_name}</span> из списка отметившихся?
+              </p>
+            </div>
             <div className="flex gap-3 w-full mt-4">
               <ButtonLP variant="outline" onClick={() => setUserToRemove(null)} className="flex-1">
                 Отмена
               </ButtonLP>
-              <ButtonLP variant="primary" className="flex-1 !bg-red-500 hover:!bg-red-600 !border-red-500 !text-white" onClick={confirmRemoveUser}>
+              <ButtonLP variant="primary" className="flex-1 bg-red-500" activeColor={hasTeamColor ? event.team_color : null} onClick={confirmRemoveUser}>
                 Да, удалить
               </ButtonLP>
             </div>

@@ -1,4 +1,4 @@
-import React, { Suspense, lazy } from 'react';
+import React, { Suspense, lazy, useState, useEffect } from 'react';
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { useRegisterSW } from 'virtual:pwa-register/react';
 import { TeamLayout } from './TeamLayout';
@@ -20,6 +20,22 @@ const PageLoader = () => (
 );
 
 export default function App() {
+  // Единый глобальный статус сети для плавающего баннера
+  const [isOnline, setIsOnline] = useState(() => navigator.onLine);
+
+  useEffect(() => {
+    const handleOnline = () => setIsOnline(true);
+    const handleOffline = () => setIsOnline(false);
+
+    window.addEventListener('online', handleOnline);
+    window.addEventListener('offline', handleOffline);
+
+    return () => {
+      window.removeEventListener('online', handleOnline);
+      window.removeEventListener('offline', handleOffline);
+    };
+  }, []);
+
   // Инициализируем менеджер жизненного цикла Service Worker
   const {
     needRefresh: [needRefresh, setNeedRefresh],
@@ -60,6 +76,18 @@ export default function App() {
           </Suspense>
         </BrowserRouter>
       </div>
+
+      {/* ФИКСИРОВАННЫЙ ТОП-ЦЕНТР БАННЕР ОФФЛАЙНА НАД ВСЕМИ СЛОЯМИ */}
+      {!isOnline && (
+        <div className="fixed top-[calc(env(safe-area-inset-top,0px)+12px)] left-1/2 -translate-x-1/2 z-[250] pointer-events-none animate-fade-in">
+          <div className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-[#1a080a]/90 backdrop-blur-md border border-red-500/20 shadow-xl shadow-black/50">
+            <span className="w-1.5 h-1.5 rounded-full bg-red-500 animate-pulse shrink-0" />
+            <span className="text-[10px] font-black text-red-400 uppercase tracking-widest select-none whitespace-nowrap">
+              Нет сети
+            </span>
+          </div>
+        </div>
+      )}
 
       {/* ГЛОБАЛЬНЫЙ ИНТЕРАКТИВНЫЙ ОБНОВЛЯТОР КОДА PWA С СПИСКОМ ИЗМЕНЕНИЙ */}
       <UpdatePromptModal 

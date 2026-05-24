@@ -16,7 +16,7 @@ const MatchLines = lazy(() => import('./MatchLines').then(module => ({ default: 
 const MatchProtocol = lazy(() => import('./MatchProtocol').then(module => ({ default: module.MatchProtocol })));
 const MatchStats = lazy(() => import('./MatchStats').then(module => ({ default: module.MatchStats })));
 
-// Конфигурация табов
+// Конфигурация тагов
 const MATCH_TABS = [
   { id: 'info', label: 'Инфо' },
   { id: 'attendance', label: 'Отметки' },
@@ -193,7 +193,6 @@ export const EventDetailsMatch = ({ event }) => {
         matchStatusColor = 'text-danger'; 
       } else { 
         matchStatusText = 'НИЧЬЯ'; 
-        // ИСПРАВЛЕНО: Текст статуса ничьей подстраивается под цвета хоккейной команды
         matchStatusStyle = { color: activeBrandColor };
       }
 
@@ -332,7 +331,6 @@ export const EventDetailsMatch = ({ event }) => {
         data-stuck="false"
         className="snap-start sticky top-0 z-40 shrink-0 transition-all duration-300 ease-in-out border-b border-surface-level2"
       >
-        {/* ИСПРАВЛЕНО: В Чип-Табы проброшен активный командный цвет для плавного перекрашивания плашек */}
         <ChipTabs 
           tabs={MATCH_TABS} 
           activeTab={activeTab} 
@@ -373,6 +371,7 @@ export const EventDetailsMatch = ({ event }) => {
                       initialAttendees={matchData.attendees}
                       initialTeamRoster={matchData.teamRoster}
                       initialStaffMembers={matchData.staffMembers}
+                      initialDraftLines={matchData.draftLines}
                       refreshData={fetchAllMatchData}
                     />
                   </FadeIn>

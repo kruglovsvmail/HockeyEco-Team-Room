@@ -3,14 +3,16 @@ import { Avatar } from '../../ui/Avatar';
 import { getContrastTextColor } from '../../utils/helpers';
 
 // Оборачиваем в React.memo, чтобы компонент перерисовывался только при реальном изменении пропсов
-export const PersonGridCard = React.memo(({ person, onClick, showBadges = false, activeColor }) => {
+export const PersonGridCard = React.memo(({ person, onClick, showBadges = false, activeBrandColor }) => {
+  // Определяем цвет фона для плашек нашивок (капитан/ассистент)
+  const badgeBgColor = activeBrandColor || 'var(--color-brand)';
   
-  // Вычисляем контрастный цвет текста для капитанской нашивки
-  const contrastBadgeText = activeColor && getContrastTextColor(activeColor) === 'text-white' ? '#ffffff' : '#111827';
+  // Вычисляем контрастный класс текста (text-white или text-content-dark) на основе цвета плашки
+  const badgeTextColorClass = getContrastTextColor(activeBrandColor);
 
   return (
     <div 
-      onClick={() => onClick && onClick(person)}
+      onClick={() => onClick(person)}
       className="flex flex-col items-center gap-1.5 select-none w-full cursor-pointer active:scale-[0.98] transition-transform"
     >
       <div className="relative">
@@ -22,9 +24,10 @@ export const PersonGridCard = React.memo(({ person, onClick, showBadges = false,
         />
 
         {showBadges && (person.is_captain || person.is_assistant) && (
+          /* ИСПРАВЛЕНО: Заменен bg-brand и text-content-dark на динамический цвет команды и умный контраст текста */
           <div 
-            style={activeColor ? { backgroundColor: activeColor, color: contrastBadgeText } : {}}
-            className="absolute -top-1 -right-2 w-[20px] h-[20px] rounded-full bg-brand shadow-sm flex items-center justify-center text-[9px] font-black text-content-dark z-20"
+            style={{ backgroundColor: badgeBgColor }}
+            className={`absolute -top-1 -right-2 w-[20px] h-[20px] rounded-full shadow-sm flex items-center justify-center text-[9px] font-black z-20 ${badgeTextColorClass}`}
           >
             {person.is_captain ? 'К' : 'А'}
           </div>

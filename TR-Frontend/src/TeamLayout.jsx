@@ -35,9 +35,6 @@ function TeamLayoutContent() {
   const [selectedTeam, setSelectedTeam] = useState(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
-  
-  // Отслеживание физического статуса сети
-  const [isOnline, setIsOnline] = useState(() => navigator.onLine);
 
   const [rightPanel, setRightPanel] = useState({ isOpen: false, type: null, data: null, title: '' });
   const [fullPagePanel, setFullPagePanel] = useState({ isOpen: false, type: null, data: null, title: '' });
@@ -65,19 +62,12 @@ function TeamLayoutContent() {
       }
     };
 
-    const handleOnline = () => setIsOnline(true);
-    const handleOffline = () => setIsOnline(false);
-
     window.addEventListener('focus', handleGlobalRefresh);
     document.addEventListener('visibilitychange', handleGlobalRefresh);
-    window.addEventListener('online', handleOnline);
-    window.addEventListener('offline', handleOffline);
 
     return () => {
       window.removeEventListener('focus', handleGlobalRefresh);
       document.removeEventListener('visibilitychange', handleGlobalRefresh);
-      window.removeEventListener('online', handleOnline);
-      window.removeEventListener('offline', handleOffline);
     };
   }, []);
 
@@ -295,13 +285,11 @@ function TeamLayoutContent() {
         {isSidebarOpen && <div className="absolute inset-0 z-50 md:hidden bg-transparent" onClick={() => setIsSidebarOpen(false)} />}
         {rightPanel.isOpen && <div className="absolute inset-0 z-50 bg-transparent cursor-pointer md:hidden" onClick={closeRightPanel} />}
 
-        {/* Динамический сдвиг контента с учетом высоты хедера и системного статус-бара устройства */}
+        {/* Статичный и стабильный верхний отступ с учетом высоты хедера */}
         <main 
           className="flex-1 overflow-y-auto overflow-x-hidden relative overscroll-none transition-all duration-300 ease-[cubic-bezier(0.32,0.72,0,1)]"
           style={{
-            paddingTop: isOnline 
-              ? 'calc(60px + env(safe-area-inset-top, 0px))' 
-              : 'calc(92px + env(safe-area-inset-top, 0px))'
+            paddingTop: 'calc(60px + env(safe-area-inset-top, 0px))'
           }}
         >
           <Outlet context={{ user, teams, selectedTeam, handleTeamChange, openRightPanel, openFullPage }} />
@@ -328,7 +316,7 @@ function TeamLayoutContent() {
             <>
               <div className="flex items-center justify-between shadow-md p-4 h-[60px] shrink-0 z-[90]">
                 <button onClick={closeRightPanel} className="p-1 ml-1 bg-white/40 rounded-full text-content-muted hover:text-brand transition-colors outline-none cursor-pointer active:scale-95 flex items-center">
-                  <Icon name="chevron_left" className="w-7 h-7  text-content-main" />
+                  <Icon name="chevron_left" className="w-7 h-7 text-content-main" />
                 </button>
                 <h3 className="text-sm font-bold text-content-main uppercase tracking-wider text-right truncate pl-4">
                   {rightPanel.title}

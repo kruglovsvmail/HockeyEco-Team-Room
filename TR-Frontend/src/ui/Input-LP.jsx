@@ -24,7 +24,6 @@ export function PhoneInputLP({ value, onChange, disabled, error, className, labe
     onChange(formatted);
   };
 
-  // Динамические стили рамки и лейбла при фокусе в цвет команды
   const wrapperStyle = isFocused && activeColor ? { borderColor: activeColor } : {};
   const labelStyle = isFocused && activeColor ? { color: activeColor } : {};
 
@@ -163,7 +162,7 @@ export function EmailInputLP({ value, onChange, disabled, error, className, labe
   );
 }
 
-export function TextInputLP({ value, onChange, disabled, error, className, label, placeholder, type = "text" , activeColor }) {
+export function TextInputLP({ value, onChange, disabled, error, className, label, placeholder, type = "text", activeColor, size = "md", rows = 4, maxLength }) {
   const [currentType, setCurrentType] = useState(type === 'date' && !value ? 'text' : type);
   const [isFocused, setIsFocused] = useState(false);
 
@@ -186,6 +185,9 @@ export function TextInputLP({ value, onChange, disabled, error, className, label
   const wrapperStyle = isFocused && activeColor ? { borderColor: activeColor } : {};
   const labelStyle = isFocused && activeColor ? { color: activeColor } : {};
 
+  // Флаг компактного отображения элементов формы
+  const isSm = size === "sm";
+
   return (
     <div 
       style={wrapperStyle}
@@ -194,26 +196,53 @@ export function TextInputLP({ value, onChange, disabled, error, className, label
       {label && (
         <label 
           style={labelStyle}
-          className={twMerge(baseLabelStyles, error && "text-danger group-focus-within:text-danger")}
+          className={twMerge(
+            baseLabelStyles, 
+            isSm && "text-[9px] mb-0.5", 
+            error && "text-danger group-focus-within:text-danger"
+          )}
         >
           {label}
         </label>
       )}
       <div className="relative">
-        <input
-          type={currentType}
-          value={value}
-          onChange={(e) => onChange(e.target.value)}
-          onFocus={handleFocus}
-          onBlur={handleBlur}
-          disabled={disabled}
-          placeholder={placeholder}
-          autoComplete="nope"
-          className={twMerge(
-            baseInputStyles,
-            type === 'date' && "h-11 py-0"
-          )}
-        />
+        {type === 'textarea' ? (
+          /* МОДИФИКАЦИЯ: Если передан тип textarea, отрисовываем многострочный блок ввода с rows={4} */
+          <textarea
+            value={value}
+            onChange={(e) => onChange(e.target.value)}
+            onFocus={handleFocus}
+            onBlur={handleBlur}
+            disabled={disabled}
+            placeholder={placeholder}
+            maxLength={maxLength}
+            rows={rows}
+            autoComplete="nope"
+            className={twMerge(
+              baseInputStyles,
+              "resize-none leading-normal py-1",
+              isSm ? "text-xs placeholder:text-[11px]" : "text-sm"
+            )}
+          />
+        ) : (
+          /* ИСПРАВЛЕНО: Добавлен динамический расчет размера шрифта и высоты при size="sm" */
+          <input
+            type={currentType}
+            value={value}
+            onChange={(e) => onChange(e.target.value)}
+            onFocus={handleFocus}
+            onBlur={handleBlur}
+            disabled={disabled}
+            placeholder={placeholder}
+            maxLength={maxLength}
+            autoComplete="nope"
+            className={twMerge(
+              baseInputStyles,
+              isSm ? "text-xs py-1 placeholder:text-[11px]" : "text-lg",
+              type === 'date' && (isSm ? "h-8 py-0" : "h-11 py-0")
+            )}
+          />
+        )}
       </div>
       {typeof error === 'string' && error !== '' && (
         <span className="absolute top-full left-0 mt-1 text-[10px] text-danger font-bold uppercase tracking-widest pointer-events-none transition-opacity duration-300">

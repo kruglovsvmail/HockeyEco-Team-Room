@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import dayjs from 'dayjs';
-import { getImageUrl, getAuthHeaders } from '../../utils/helpers';
+import { getImageUrl, getAuthHeaders, getContrastTextColor } from '../../utils/helpers';
 import { Avatar } from '../../ui/Avatar';
 import { PageLoader } from '../../ui/Loader';
 import { FadeIn } from '../../ui/FadeIn';
@@ -19,38 +19,47 @@ const formatPhoneNumber = (phoneStr) => {
   return phoneStr;
 };
 
-// Унифицированная строка вывода информации (Текст подстраивается под бренд команды)
-const InfoRow = ({ label, value, highlight = false, activeColor }) => (
+// Унифицированная строка вывода информации с динамической подкраской бренда хоккейной команды
+const InfoRow = ({ label, value, highlight = false, activeBrandColor }) => (
   <div className="flex items-center justify-between py-2.5 border-b border-surface-border last:border-0">
     <span className="text-[11px] font-bold text-content-muted uppercase tracking-wider">{label}</span>
     <span 
-      style={highlight && activeColor ? { color: activeColor } : {}}
-      className={`text-xs font-black ${highlight && !activeColor ? 'text-brand' : 'text-content-main'}`}
+      className={`text-xs font-black ${highlight ? '' : 'text-content-main'}`}
+      style={highlight ? { color: activeBrandColor || 'var(--color-brand)' } : {}}
     >
       {value || '—'}
     </span>
   </div>
 );
 
-// Кастомный матовый блок карточки (Иконка и текст шапки перенимают бренд)
-const CustomBlock = ({ title, icon, isEditing, isManager, onAction, children, activeColor }) => (
-  <div className="flex flex-col p-4 bg-surface-level1 border border-surface-border rounded-2xl shadow-sm mb-3">
-    <div className="flex items-center justify-between mb-2 border-b border-surface-border pb-1.5">
-      <div className="flex items-center gap-2">
-        {icon && <Icon name={icon} className="w-3.5 h-3.5" style={{ color: activeColor || 'var(--color-brand)' }} />}
-        <span className="text-[10px] font-black uppercase tracking-widest" style={{ color: activeColor || 'var(--color-brand)' }}>
-          {title}
-        </span>
+// Кастомный матовый блок карточки с адаптивным брендированием элементов заголовка
+const CustomBlock = ({ title, icon, isEditing, isManager, onAction, activeBrandColor, children }) => {
+  const accentColor = activeBrandColor || 'var(--color-brand)';
+  
+  
+  return (
+    <div className="flex flex-col p-4 bg-surface-level1 border border-surface-border rounded-2xl shadow-sm mb-3">
+      <div className="flex items-center justify-between mb-2 border-b border-surface-border pb-1.5">
+        <div className="flex items-center gap-2">
+          {icon && <Icon name={icon} className="w-3.5 h-3.5" style={{ color: accentColor }} />}
+          <span className="text-[10px] font-black uppercase text-content-main tracking-widest">
+            {title}
+          </span>
+        </div>
+        {isManager && onAction && (
+          <button 
+            onClick={onAction} 
+            className="transition-colors p-0.5 hover:opacity-80 outline-none"
+            style={{ color: accentColor }}
+          >
+            <Icon name={isEditing ? "close" : "edit"} className="w-4 h-4" />
+          </button>
+        )}
       </div>
-      {isManager && onAction && (
-        <button onClick={onAction} className="text-content-subtle hover:text-brand transition-colors p-0.5">
-          <Icon name={isEditing ? "close" : "edit"} className="w-4 h-4" />
-        </button>
-      )}
+      <div className="flex flex-col text-left">{children}</div>
     </div>
-    <div className="flex flex-col text-left">{children}</div>
-  </div>
-);
+  );
+};
 
 export const UserDetails = ({ data }) => {
   const [profile, setProfile] = useState(null);
@@ -79,10 +88,9 @@ export const UserDetails = ({ data }) => {
   const teamId = data?.team_id;
   const userId = data?.user_id;
   const currentRoster = data?.currentRoster || [];
-
-  // ИСПРАВЛЕНО: Считываем проброшенный HEX-цвет команды из настроек
-  const isColorsEnabled = localStorage.getItem('tr_use_team_colors') !== 'false';
-  const activeColor = isColorsEnabled ? data?.teamColor : null;
+  
+  // Извлекаем переданный командный цвет хоккейного клуба из локального хранилища MyTeamPage
+  const activeBrandColor = data?.activeBrandColor;
 
   const AVAILABLE_ROLES = [
     { id: 'team_manager', label: 'Руководитель' },
@@ -110,7 +118,7 @@ export const UserDetails = ({ data }) => {
           setIsOwnProfile(!!resData.isOwnProfile); 
           setFormData({
             roles: resData.member.roles || '',
-            jersey_number: resData.member.jersey_number || '',
+            jersey_number: resData.member.jersey_number ?? '',
             position: resData.member.position || '',
             is_captain: !!resData.member.is_captain,
             is_assistant: !!resData.member.is_assistant
@@ -135,7 +143,9 @@ export const UserDetails = ({ data }) => {
   }, [formData.jersey_number, currentRoster, userId]);
 
   const saveFieldToDB = async (updatedFields) => {
-    if (updatedFields.jerseyNumber && jerseyError) return;
+    const safeJerseyNumber = updatedFields.jerseyNumber !== undefined
+      ? (updatedFields.jerseyNumber === '' ? null : parseInt(updatedFields.jerseyNumber, 10))
+      : undefined;
 
     try {
       const res = await fetch(`${import.meta.env.VITE_API_URL}/api/teams/${teamId}/members/${profile.member_id}/details`, {
@@ -143,7 +153,7 @@ export const UserDetails = ({ data }) => {
         headers: { ...getAuthHeaders(), 'Content-Type': 'application/json' },
         body: JSON.stringify({
           roles: updatedFields.roles !== undefined ? updatedFields.roles : undefined,
-          jerseyNumber: updatedFields.jerseyNumber !== undefined ? updatedFields.jerseyNumber : undefined,
+          jerseyNumber: safeJerseyNumber,
           position: updatedFields.position !== undefined ? updatedFields.position : undefined,
           isCaptain: updatedFields.isCaptain !== undefined ? updatedFields.isCaptain : undefined,
           isAssistant: updatedFields.isAssistant !== undefined ? updatedFields.isAssistant : undefined,
@@ -261,9 +271,14 @@ export const UserDetails = ({ data }) => {
     saveFieldToDB({ position: posId });
   };
 
-  const handleJerseyBlur = () => {
-    if (!jerseyError) {
-      saveFieldToDB({ jerseyNumber: formData.jersey_number });
+  const handleToggleEditGame = () => {
+    if (isEditGame) {
+      if (!jerseyError) {
+        saveFieldToDB({ jerseyNumber: formData.jersey_number });
+      }
+      setIsEditingGame(false);
+    } else {
+      setIsEditingGame(true);
     }
   };
 
@@ -272,16 +287,26 @@ export const UserDetails = ({ data }) => {
 
   const age = profile.birth_date ? dayjs().diff(dayjs(profile.birth_date), 'year') : null;
 
+  const roleDict = {
+    'team_manager': 'Руководитель',
+    'team_admin': 'Администратор',
+    'coach': 'Тренер',
+    'head_coach': 'Главный тренер'
+  };
+
+  const brandColor = activeBrandColor || 'var(--color-brand)';
+
   return (
     <FadeIn className="h-full w-full">
       <div className="h-full w-full flex flex-col bg-surface-level2 overflow-y-auto scrollbar-hide p-4 pb-10">
         
-        {/* КАРТОЧКА ШАПКИ */}
+        {/* КАРТОЧКА ШАПКИ ИГРОКА */}
         <div className="flex flex-col p-4 mb-3 bg-surface-level1 border border-surface-border rounded-2xl shadow-sm relative">
           {isManager && (
             <button 
               onClick={() => setIsEditingHeader(!isEditHeader)} 
-              className="absolute top-4 right-4 text-content-subtle hover:text-brand transition-colors p-0.5 z-20"
+              className="absolute top-4 right-4 text-content-subtle hover:text-brand transition-colors p-0.5 z-20 outline-none"
+              style={activeBrandColor ? { color: activeBrandColor } : {}}
             >
               <Icon name={isEditHeader ? "close" : "edit"} className="w-4 h-4" />
             </button>
@@ -292,18 +317,17 @@ export const UserDetails = ({ data }) => {
               <Avatar photoUrl={profile.avatar_url} firstName={profile.first_name} lastName={profile.last_name} className="w-full h-full rounded-3xl" />
               
               {isEditHeader && (
-                <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 p-1 bg-black/60 rounded-[20px] transition-all">
+                <div className="absolute inset-0 flex flex-col items-center justify-center p-1 bg-black/60 rounded-[20px] transition-all">
                   <button 
                     onClick={() => document.getElementById('member-photo-file-input').click()}
-                    style={activeColor ? { backgroundColor: activeColor } : {}}
-                    className="text-[9px] font-black text-white bg-brand px-1.5 py-3 rounded-xl uppercase tracking-wider w-full text-center"
+                    className="text-[9px] bg-success font-black text-white px-1.5 py-3.5  uppercase tracking-wider w-[200px] text-center outline-none"
                   >
                     Заменить
                   </button>
                   {profile.team_photo_url && (
                     <button 
                       onClick={handlePhotoDelete}
-                      className="text-[9px] font-black text-white bg-danger px-1.5 py-3 rounded-xl uppercase tracking-wider w-full text-center"
+                      className="text-[9px] font-black text-white bg-danger px-1.5 py-3.5 uppercase tracking-wider w-[200px] text-center outline-none"
                     >
                       Удалить
                     </button>
@@ -314,7 +338,10 @@ export const UserDetails = ({ data }) => {
             </div>
 
             <div className="flex flex-col text-left flex-1 min-w-0">
-              <span className={`text-[8px] font-black uppercase tracking-widest mb-1 block ${profile.roster_id ? 'text-success' : 'text-content-subtle'}`}>
+              <span 
+                className="text-[8px] font-black uppercase tracking-widest mb-1 block"
+                style={{ color: profile.roster_id ? 'var(--color-success)' : 'var(--color-content-subtle)' }}
+              >
                 {profile.roster_id ? 'В ростере' : 'Не в ростере'}
               </span>
               
@@ -324,8 +351,8 @@ export const UserDetails = ({ data }) => {
               
               {!isEditHeader && (profile.is_captain || profile.is_assistant) && (
                 <div 
-                  style={activeColor ? { backgroundColor: activeColor } : {}}
-                  className="mt-2 self-start px-2 py-0.5 bg-brand text-white text-[9px] font-black uppercase rounded-md shadow-sm"
+                  className={`mt-2 self-start px-2 py-0.5 text-[9px] font-black uppercase rounded-md shadow-sm ${getContrastTextColor(brandColor)}`}
+                  style={{ backgroundColor: brandColor }}
                 >
                   {profile.is_captain ? 'Капитан (C)' : 'Ассистент (A)'}
                 </div>
@@ -338,8 +365,9 @@ export const UserDetails = ({ data }) => {
               {profile.roster_id ? (
                 <>
                   <span className="text-[10px] font-black text-content-muted uppercase tracking-wider mb-0.5">Спортивный статус:</span>
-                  <CheckboxLP checked={formData.is_captain} onChange={handleToggleCaptainCheckbox} label="Капитан команды (C)" className="py-0.5" activeColor={activeColor} />
-                  <CheckboxLP checked={formData.is_assistant} onChange={handleToggleAssistantCheckbox} label="Ассистент капитана (A)" className="py-0.5" activeColor={activeColor} />
+                  {/* ИСПРАВЛЕНО: Проброшен явный activeColor для изменения цвета рамки и галочки чекбокса */}
+                  <CheckboxLP checked={formData.is_captain} onChange={handleToggleCaptainCheckbox} label="Капитан команды (C)" className="py-0.5" activeColor={activeBrandColor} />
+                  <CheckboxLP checked={formData.is_assistant} onChange={handleToggleAssistantCheckbox} label="Ассистент капитана (A)" className="py-0.5" activeColor={activeBrandColor} />
                   {assistantError && <span className="text-[10px] text-danger font-bold mt-1 animate-pulse">{assistantError}</span>}
                 </>
               ) : (
@@ -349,14 +377,14 @@ export const UserDetails = ({ data }) => {
           )}
         </div>
 
-        {/* БЛОК 1: АДМИНИСТРАТИВНЫЙ СТАТУС */}
+        {/* БЛОК 1: АДМИНИСТРАТИВНЫЙ СТАТУС РОЛЕЙ */}
         <CustomBlock 
           title="Роли в команде" 
           icon="gear"
           isEditing={isEditRoles}
           isManager={isManager}
           onAction={() => setIsEditingRoles(!isEditRoles)}
-          activeColor={activeColor}
+          activeBrandColor={activeBrandColor}
         >
           {isEditRoles ? (
             <div className="flex flex-col gap-2.5 pt-1">
@@ -364,13 +392,14 @@ export const UserDetails = ({ data }) => {
                 const isChecked = formData.roles.split(',').map(r => r.trim()).includes(role.id);
                 const isSelfManagerLock = role.id === 'team_manager' && isOwnProfile;
                 return (
+                  /* ИСПРАВЛЕНО: Проброшен activeColor для чекбоксов административных ролей руководства */
                   <CheckboxLP 
                     key={role.id} 
                     checked={isChecked} 
                     onChange={() => !isSelfManagerLock && handleToggleRoleCheckbox(role.id)} 
                     label={role.label + (isSelfManagerLock ? ' (Вы — нельзя снять)' : '')} 
-                    className={`py-0.5 ${isSelfManagerLock ? 'opacity-60 cursor-not-allowed text-brand' : ''}`} 
-                    activeColor={activeColor}
+                    className={`py-0.5 ${isSelfManagerLock ? 'opacity-60 cursor-not-allowed' : ''}`} 
+                    activeColor={activeBrandColor}
                   />
                 );
               })}
@@ -386,40 +415,41 @@ export const UserDetails = ({ data }) => {
           )}
         </CustomBlock>
 
-        {/* БЛОК 2: ИГРОВОЙ ПРОФИЛЬ */}
+        {/* БЛОК 2: ИГРОВОЙ ПРОФИЛЬ (НОМЕР + АМПЛУА) */}
         {profile.roster_id && (
           <CustomBlock 
             title="Игровой профиль" 
             icon="jersey"
             isEditing={isEditGame}
             isManager={isManager}
-            onAction={() => setIsEditingGame(!isEditGame)}
-            activeColor={activeColor}
+            onAction={handleToggleEditGame}
+            activeBrandColor={activeBrandColor}
           >
             {isEditGame ? (
               <div className="flex flex-col gap-3 pt-1">
+                {/* ИСПРАВЛЕНО: Проброшен activeColor для изменения цвета нижней рамки и лейбла инпута при фокусе */}
                 <TextInputLP 
                   label="Игровой номер" 
                   value={formData.jersey_number} 
                   error={jerseyError}
                   maxLength={2}
-                  onBlur={handleJerseyBlur}
                   onChange={(val) => setFormData(p => ({...p, jersey_number: val.replace(/\D/g, '')}))}
-                  activeColor={activeColor}
+                  activeColor={activeBrandColor}
                 />
                 <div className="flex flex-col gap-2.5 mt-1 border-t border-surface-border pt-2">
-                  <span className="text-[10px] font-black text-content-muted uppercase tracking-wider mb-1">Игровое амплуа:</span>
+                  <span className="text-[10px] font-black text-content-muted uppercase  tracking-wider mb-1" >Игровое амплуа:</span>
                   {AVAILABLE_POSITIONS.map(pos => {
                     const isSelected = formData.position === pos.id;
                     return (
-                      <CheckboxLP key={pos.id} checked={isSelected} onChange={() => handleSelectPositionCheckbox(pos.id)} label={pos.label} className="py-0.5" activeColor={activeColor} />
+                      /* ИСПРАВЛЕНО: Проброшен activeColor для чекбоксов выбора игрового амплуа хоккеиста */
+                      <CheckboxLP key={pos.id} checked={isSelected} onChange={() => handleSelectPositionCheckbox(pos.id)} label={pos.label} className="py-0.5" activeColor={activeBrandColor} />
                     );
                   })}
                 </div>
               </div>
             ) : (
               <div className="flex flex-col">
-                <InfoRow label="Игровой номер" value={profile.jersey_number ? `# ${profile.jersey_number}` : null} highlight activeColor={activeColor} />
+                <InfoRow label="Игровой номер" value={profile.jersey_number ? `# ${profile.jersey_number}` : null} highlight activeBrandColor={activeBrandColor} />
                 <InfoRow label="Игровое амплуа" value={
                   profile.position === 'goalie' ? 'Вратарь' : 
                   profile.position === 'defense' ? 'Защитник' : 
@@ -431,26 +461,29 @@ export const UserDetails = ({ data }) => {
         )}
 
         {/* БЛОК 3: ФИЗИЧЕСКИЕ ДАННЫЕ */}
-        <CustomBlock title="Физические данные" icon="player" isEditing={false} isManager={isManager} onAction={null} activeColor={activeColor}>
+        <CustomBlock title="Физические данные" icon="player" isEditing={false} isManager={isManager} onAction={null} activeBrandColor={activeBrandColor}>
           <InfoRow label="Рост" value={profile.height ? `${profile.height} см` : null} />
           <InfoRow label="Вес" value={profile.weight ? `${profile.weight} кг` : null} />
           <InfoRow label="Хват клюшки" value={profile.grip === 'left' ? 'Левый (L)' : profile.grip === 'right' ? 'Правый (R)' : null} />
         </CustomBlock>
 
         {/* БЛОК 4: ЛИЧНАЯ ИНФОРМАЦИЯ */}
-        <CustomBlock title="Личная информация" icon="calendar" isEditing={false} isManager={isManager} onAction={null} activeColor={activeColor}>
+        <CustomBlock title="Личная информация" icon="calendar" isEditing={false} isManager={isManager} onAction={null} activeBrandColor={activeBrandColor}>
           <InfoRow label="Номер тел." value={formatPhoneNumber(profile.phone)} />
           <InfoRow label="Дата рожд." value={profile.birth_date ? dayjs(profile.birth_date).format('DD.MM.YYYY') : null} />
           <InfoRow label="Возраст" value={age ? `${age} лет` : null} />
         </CustomBlock>
 
-        {/* ВИРТУАЛЬНЫЙ КОД РУКОВОДИТЕЛЯ */}
+        {/* ЗЕЛЕНЫЙ БЛОК ВИРТУАЛЬНОГО ПРОФИЛЯ РУКОВОДИТЕЛЯ */}
         {profile.virtual_code && (
-          <div className="p-4 bg-surface-level1 border border-success rounded-2xl shadow-sm animate-fade-in mt-1">
+          <div className="p-4 bg-surface-level1 border-2 rounded-2xl shadow-sm animate-fade-in mt-1"
+          style={{ borderColor: activeBrandColor || 'var(--color-success)' }}>
             <div className="flex items-center justify-between">
               <div className="flex flex-col text-left flex-1 min-w-0">
-                <span className="text-[10px] font-black text-success uppercase tracking-widest">Виртуальный профиль</span>
-                <span className="text-[11px] font-medium text-content-muted mt-0.5">Доступно только руководителю</span>
+                <span className="text-[10px] font-black uppercase tracking-widest"
+                style={{ color: activeBrandColor || 'var(--color-success)' }}
+                >Виртуальный профиль</span>
+                <span className="text-[11px] font-medium text-content-muted mt-0.5">Для присвоение аккаунта</span>
               </div>
               <span className="font-mono text-xs font-black bg-surface-level2 px-2.5 py-1.5 rounded-xl border border-surface-border text-content-main shadow-inner select-all">
                 {profile.virtual_code}

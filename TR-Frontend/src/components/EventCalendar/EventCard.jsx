@@ -83,7 +83,7 @@ const EventCard = ({ event, onToggleAttendance, onClick }) => {
         matchStatusColor = 'text-danger'; 
       } else { 
         matchStatusText = 'НИЧЬЯ'; 
-        matchStatusStyle = { color: activeBrandColor };
+        matchStatusStyle = 'text-brand';
       }
       
       if (event.end_type === 'ot') matchEndTypeText = 'В ОВЕРТАЙМЕ';
@@ -237,11 +237,11 @@ const EventCard = ({ event, onToggleAttendance, onClick }) => {
         ) : (
           <>
             {/* Форма */}
-            <div className="flex items-center gap-1.5 w-1/3">
+            <div className="flex items-center gap-1.5 w-1/3 text-content-muted">
               {isMatch && (
                 <>
-                  <Icon name="jersey" className="w-5 h-5 shrink-0" style={{ color: activeBrandColor }} />
-                  <span className="text-sm font-bold text-content-muted">{jerseyText}</span>
+                  <Icon name="jersey" className="w-5 h-5 shrink-0 " style={{ color: activeBrandColor }} />
+                  <span className="text-sm font-bold">{jerseyText}</span>
                 </>
               )}
             </div>

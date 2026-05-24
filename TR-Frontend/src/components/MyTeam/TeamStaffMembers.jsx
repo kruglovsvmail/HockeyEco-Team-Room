@@ -6,12 +6,12 @@ import { Avatar } from '../../ui/Avatar';
 // Импортируем наш новый унифицированный компонент производительности
 import { FadeIn } from '../../ui/FadeIn';
 
-export const TeamStaffMembers = ({ staff = [], onPersonClick, activeColor }) => {
+export const TeamStaffMembers = ({ staff = [], onPersonClick, activeBrandColor }) => {
   const roleDict = {
     'team_manager': 'Руководитель',
     'team_admin': 'Администратор',
     'coach': 'Тренер',
-    'head_coach': 'Гл. тренер'
+    'head_coach': 'Главный тренер'
   };
 
   const staffColumns = useMemo(() => [
@@ -51,11 +51,11 @@ export const TeamStaffMembers = ({ staff = [], onPersonClick, activeColor }) => 
         return (
           <div className="flex flex-col gap-1 items-end justify-center pointer-events-none">
             {rolesArray.map((r, i) => (
-              // ИСПРАВЛЕНО: Текст роли руководства перенимает HEX-оттенок бренда
+              /* ИСПРАВЛЕНО: Заменен текстовый класс бренда на динамический инлайн-цвет команды */
               <span 
                 key={i} 
-                style={activeColor ? { color: activeColor } : {}}
-                className="text-[10px] font-black text-brand uppercase tracking-widest text-right"
+                className="text-[10px] font-black uppercase tracking-widest text-right"
+                style={{ color: activeBrandColor || 'var(--color-brand)' }}
               >
                 {roleDict[r] || r}
               </span>
@@ -64,7 +64,8 @@ export const TeamStaffMembers = ({ staff = [], onPersonClick, activeColor }) => 
         );
       }
     }
-  ], [activeColor]);
+    /* Добавлена реактивная зависимость useMemo от цвета для мгновенной перерисовки */
+  ], [activeBrandColor]);
 
   return (
     <FadeIn>
