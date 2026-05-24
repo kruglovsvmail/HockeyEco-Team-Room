@@ -81,6 +81,11 @@ export const MyTeamPage = () => {
   const scrollContainerRef = useRef(null);
   const stickyHeaderRef = useRef(null);
 
+  // Динамическое определение флага включения цветов из localStorage (по дефолту true)
+  const isColorsEnabled = localStorage.getItem('tr_use_team_colors') !== 'false';
+  const hasTeamColor = isColorsEnabled && !!selectedTeam?.color_home_1;
+  const activeColor = hasTeamColor ? selectedTeam.color_home_1 : null;
+
   // Активация легкого отложенного рендеринга страницы при её монтировании
   useEffect(() => {
     const timer = setTimeout(() => {
@@ -105,7 +110,6 @@ export const MyTeamPage = () => {
   const fetchTeamData = useCallback(async () => {
     if (!selectedTeamId) return;
     
-    // Включаем спиннер только если ОЗУ и кэш этой команды полностью пусты
     if (teamData.members.length === 0 && teamData.roster.length === 0) {
       setIsLoading(true);
     }
@@ -117,8 +121,6 @@ export const MyTeamPage = () => {
       if (res.ok) {
         const data = await res.json();
         setTeamData(data);
-        
-        // Перезаписываем кэш этой команды
         localStorage.setItem(cacheKey, JSON.stringify(data));
       }
     } catch (err) { 
@@ -132,7 +134,6 @@ export const MyTeamPage = () => {
     fetchTeamData();
   }, [fetchTeamData]);
 
-  // Фоновое обновление состава при возвращении пользователя в PWA
   useFocusRevalidate(fetchTeamData);
 
   useEffect(() => {
@@ -207,7 +208,6 @@ export const MyTeamPage = () => {
               };
             }
             
-            // Синхронизируем локальный кэш сразу после успешного удаления игрока
             localStorage.setItem(cacheKey, JSON.stringify(updated));
             return updated;
           });
@@ -297,15 +297,16 @@ export const MyTeamPage = () => {
     });
   };
 
-  // ИСПРАВЛЕНО: Добавлен проп onRefresh для сквозной синхронизации стейтов списков и панели деталей
+  // ИСПРАВЛЕНО: Прокидываем переменную `teamColor: activeColor` для шторки UserDetails
   const handlePersonClick = useCallback((person) => {
     openRightPanel('userDetails', { 
       ...person, 
       team_id: selectedTeamId,
       currentRoster: teamData.roster,
-      onRefresh: fetchTeamData
+      onRefresh: fetchTeamData,
+      teamColor: activeColor 
     }, 'Профиль');
-  }, [openRightPanel, selectedTeamId, teamData.roster, fetchTeamData]);
+  }, [openRightPanel, selectedTeamId, teamData.roster, fetchTeamData, activeColor]);
 
   const handleExcludeClick = useCallback((member) => setMemberToRemove(member), []);
   const handleContainerClick = () => { if (isEditMode) setIsEditMode(false); };
@@ -316,6 +317,9 @@ export const MyTeamPage = () => {
   if (!isPageReady) {
     return <PageLoader />;
   }
+
+  // Текстура легкого прозрачного тонирования без использования слэшей /
+  const brandSubBg = activeColor ? `${activeColor}1a` : 'var(--color-brand-opacity)';
 
   return (
     <FadeIn className="h-full">
@@ -337,17 +341,21 @@ export const MyTeamPage = () => {
 
         {/* Шапка профиля команды */}
         <div className="bg-surface-base pt-4 px-5 pb-4 mb-2 mx-4 rounded-3xl flex items-center gap-4 shadow-lg shrink-0 border-b border-surface-level2 snap-start">
-          <div className="w-16 h-16 rounded-2xl flex items-center justify-center overflow-hidden drop-shadow-sm shrink-0 ml-4">
+          <div className="w-16 h-16 rounded-2xl flex items-center justify-center overflow-hidden drop-shadow-md shrink-0 ml-4">
             <img src={getImageUrl(selectedTeam?.logo_url)} alt={selectedTeam?.name} className="w-full h-full object-contain p-1" />
           </div>
           <div className="flex flex-col min-w-0">
             <h2 className="text-[14px] font-black uppercase tracking-widest text-content-main leading-tight truncate">{selectedTeam?.name}</h2>
-            <span className="text-[10px] font-black text-brand uppercase tracking-[0.2em] mt-1">Состав команды</span>
+            {/* ИСПРАВЛЕНО: Индикатор текста окрашивается в клубные цвета */}
+            <span className="text-[10px] font-black uppercase tracking-[0.2em] mt-1" style={{ color: activeColor || 'var(--color-brand)' }}>
+              Состав команды
+            </span>
           </div>
         </div>
 
         <div ref={stickyHeaderRef} data-stuck="false" className="snap-start sticky top-0 z-40 shrink-0 transition-all duration-300 ease-in-out border-b border-surface-level2 bg-transparent">
-          <ChipTabs tabs={TEAM_TABS} activeTab={activeTab} onChange={setActiveTab} className="!px-0" />
+          {/* ИСПРАВЛЕНО: Чип-Табы перенимают бренд команды */}
+          <ChipTabs tabs={TEAM_TABS} activeTab={activeTab} onChange={setActiveTab} className="!px-0" activeColor={activeColor} />
         </div>
 
         <div className="w-full overflow-hidden pt-4 min-h-screen pb-[30vh]">
@@ -361,6 +369,7 @@ export const MyTeamPage = () => {
                     <TeamAllMembers 
                       members={teamData.members || []} onPersonClick={handlePersonClick} isEditMode={isEditMode}
                       setIsEditMode={setIsEditMode} hasManageAccess={hasManageAccess} onExcludeClick={handleExcludeClick} animatingOutId={animatingOutId}
+                      activeColor={activeColor}
                       onAddClick={() => {
                         setSearchPhone('');
                         setSearchResult(null);
@@ -377,6 +386,7 @@ export const MyTeamPage = () => {
                     <TeamRosterPlayers 
                       roster={teamData.roster || []} onPersonClick={handlePersonClick} isEditMode={isEditMode}
                       setIsEditMode={setIsEditMode} hasManageAccess={hasManageAccess} onExcludeClick={handleExcludeClick} animatingOutId={animatingOutId}
+                      activeColor={activeColor}
                       onAddClick={handleOpenRosterSheet}
                     />
                   )}
@@ -385,7 +395,7 @@ export const MyTeamPage = () => {
 
               <div className="w-1/3 shrink-0 transition-opacity duration-500" style={{ opacity: activeTab === 'staff' ? 1 : 0.3 }}>
                 <Suspense fallback={<PageLoader />}>
-                  {activeTab === 'staff' && <TeamStaffMembers staff={teamData.staff || []} onPersonClick={handlePersonClick} />}
+                  {activeTab === 'staff' && <TeamStaffMembers staff={teamData.staff || []} onPersonClick={handlePersonClick} activeColor={activeColor} />}
                 </Suspense>
               </div>
             </div>
@@ -399,10 +409,11 @@ export const MyTeamPage = () => {
             <PhoneInputLP 
               label="Номер телефона пользователя" value={searchPhone} 
               onChange={setSearchPhone} placeholder="900 000 00 00" 
+              activeColor={activeColor}
             />
 
             {isSearching && (
-              <div className="text-xs font-black uppercase tracking-widest text-brand animate-pulse py-4 text-center">Поиск в базе...</div>
+              <div className="text-xs font-black uppercase tracking-widest animate-pulse py-4 text-center" style={{ color: activeColor || 'var(--color-brand)' }}>Поиск в базе...</div>
             )}
 
             {searchResult && !searchResult.success && (
@@ -436,7 +447,10 @@ export const MyTeamPage = () => {
                 </div>
 
                 {searchResult.user.is_already_in_team && (
-                  <div className="p-4 bg-brand/10 border border-brand/20 text-brand rounded-2xl text-xs font-black uppercase tracking-wider text-center mt-4">
+                  <div 
+                    style={activeColor ? { backgroundColor: brandSubBg, color: activeColor, borderColor: `${activeColor}33` } : {}}
+                    className="p-4 bg-brand/10 border border-brand/20 text-brand rounded-2xl text-xs font-black uppercase tracking-wider text-center mt-4"
+                  >
                     Этот пользователь уже состоит в вашей команде
                   </div>
                 )}
@@ -445,6 +459,7 @@ export const MyTeamPage = () => {
                   variant="primary" className="mt-6" isLoading={isSubmittingMember}
                   disabled={searchResult.user.status === 'banned' || searchResult.user.is_already_in_team} 
                   onClick={handleAddMemberSubmit}
+                  activeColor={activeColor}
                 >
                   {searchResult.user.is_already_in_team 
                     ? 'Уже в команде' 
@@ -467,6 +482,7 @@ export const MyTeamPage = () => {
                   {membersAvailableForRoster.map(player => (
                     <div 
                       key={player.member_id} onClick={() => { setSelectedMemberForRoster(player); setRosterStep('form'); }}
+                      style={activeColor ? { '--hover-border': activeColor } : {}}
                       className="flex items-center justify-between p-3 bg-surface-level2 rounded-xl border border-transparent active:border-brand/30 transition-all cursor-pointer"
                     >
                       <div className="flex items-center gap-3">
@@ -487,7 +503,11 @@ export const MyTeamPage = () => {
           ) : (
             <div className="flex flex-col gap-5 animate-fade-in text-left">
               <div className="flex items-center gap-3 border-b border-surface-level2 pb-3">
-                <button onClick={() => setRosterStep('list')} className="p-1 -ml-1 text-brand hover:text-brand-dark">
+                <button 
+                  onClick={() => setRosterStep('list')} 
+                  style={activeColor ? { color: activeColor } : {}}
+                  className="p-1 -ml-1 text-brand hover:text-brand-dark"
+                >
                   <Icon name="chevron_left" className="w-5 h-5" />
                 </button>
                 <h3 className="text-lg font-black text-content-main">Параметры ростера</h3>
@@ -503,11 +523,13 @@ export const MyTeamPage = () => {
               <TextInputLP 
                 placeholder="Игровой номер" value={rosterJerseyNumber}
                 onChange={(val) => setRosterJerseyNumber(val.replace(/\D/g, ''))} error={jerseyNumberError}
+                activeColor={activeColor}
               />
 
               <ButtonLP 
                 variant="primary" className="mt-6" isLoading={isSubmittingRoster}
                 disabled={!rosterJerseyNumber || !!jerseyNumberError} onClick={handleAddRosterSubmit}
+                activeColor={activeColor}
               >
                 Добавить в ростер
               </ButtonLP>

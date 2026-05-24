@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, Suspense, lazy, useCallback } from 'react';
-import { getImageUrl, getAuthHeaders } from '../../../utils/helpers';
+import { getImageUrl, getAuthHeaders, getContrastTextColor } from '../../../utils/helpers';
 import { Icon } from '../../../ui/Icon';
 import { ChipTabs } from '../../../ui/ChipTabs';
 import { useFocusRevalidate } from '../../../hooks/useFocusRevalidate';
@@ -46,6 +46,11 @@ export const EventDetailsMatch = ({ event }) => {
   const matchupHeaderRef = useRef(null);
   const stickyTabsRef = useRef(null);
   const rafRef = useRef(null);
+
+  // Динамическое определение флага включения цветов из localStorage (по дефолту true)
+  const isColorsEnabled = localStorage.getItem('tr_use_team_colors') !== 'false';
+  const hasTeamColor = isColorsEnabled && !!event?.team_color;
+  const activeBrandColor = hasTeamColor ? event.team_color : 'var(--color-brand)';
 
   // КРИТИЧЕСКАЯ РЕАКТИВНАЯ СИНХРОНИЗАЦИЯ КЭША
   // Срабатывает мгновенно при смене event_id, вычищая старый матч и загружая актуальный кэш!
@@ -138,6 +143,7 @@ export const EventDetailsMatch = ({ event }) => {
 
   let matchStatusText = '';
   let matchStatusColor = '';
+  let matchStatusStyle = {};
   let matchScoreText = '-- : --';
   let matchEndTypeText = '';
 
@@ -187,7 +193,8 @@ export const EventDetailsMatch = ({ event }) => {
         matchStatusColor = 'text-danger'; 
       } else { 
         matchStatusText = 'НИЧЬЯ'; 
-        matchStatusColor = 'text-brand';
+        // ИСПРАВЛЕНО: Текст статуса ничьей подстраивается под цвета хоккейной команды
+        matchStatusStyle = { color: activeBrandColor };
       }
 
       if (event.end_type === 'ot') matchEndTypeText = 'ОТ';
@@ -278,7 +285,10 @@ export const EventDetailsMatch = ({ event }) => {
             ) : isFinished ? (
               <div className="flex flex-col items-center">
                 {matchStatusText && (
-                  <span className={`text-[12px] font-black uppercase tracking-widest mb-2 ${matchStatusColor}`}>
+                  <span 
+                    className={`text-[12px] font-black uppercase tracking-widest mb-2 ${matchStatusColor}`}
+                    style={matchStatusStyle}
+                  >
                     {matchStatusText}
                   </span>
                 )}
@@ -322,11 +332,13 @@ export const EventDetailsMatch = ({ event }) => {
         data-stuck="false"
         className="snap-start sticky top-0 z-40 shrink-0 transition-all duration-300 ease-in-out border-b border-surface-level2"
       >
+        {/* ИСПРАВЛЕНО: В Чип-Табы проброшен активный командный цвет для плавного перекрашивания плашек */}
         <ChipTabs 
           tabs={MATCH_TABS} 
           activeTab={activeTab} 
           onChange={setActiveTab} 
           className="!px-0"
+          activeColor={hasTeamColor ? event.team_color : null}
         />
       </div>
 

@@ -5,25 +5,12 @@ import utc from 'dayjs/plugin/utc';
 import timezone from 'dayjs/plugin/timezone';
 import Toggle from '../../ui/Toggle';
 import { Icon } from '../../ui/Icon';
-import { getImageUrl } from '../../utils/helpers';
+import { getImageUrl, getContrastTextColor } from '../../utils/helpers';
 import { HintPopover } from '../../ui/HintPopover';
 
 dayjs.extend(utc);
 dayjs.extend(timezone);
 dayjs.locale('ru');
-
-// Математический расчет контраста YIQ (W3C Стандарт) для предотвращения слияния белого текста со светлыми джерси
-const getContrastTextColor = (hexColor) => {
-  if (!hexColor) return 'text-white'; // Дефолт для серого цвета клуба
-  
-  const cleanHex = hexColor.replace('#', '');
-  const r = parseInt(cleanHex.substring(0, 2), 16);
-  const g = parseInt(cleanHex.substring(2, 4), 16);
-  const b = parseInt(cleanHex.substring(4, 6), 16);
-  
-  const yiq = (r * 299 + g * 587 + b * 114) / 1000;
-  return yiq >= 128 ? 'text-content-main' : 'text-white';
-};
 
 const EventCard = ({ event, onToggleAttendance, onClick }) => {
   const eventDate = dayjs.utc(event.event_date).tz(event.arena_timezone || 'UTC');
@@ -42,8 +29,18 @@ const EventCard = ({ event, onToggleAttendance, onClick }) => {
   else if (event.event_type.includes('training')) eventTitle = 'ТРЕНИРОВКА';
   else if (event.event_type.includes('meeting')) eventTitle = 'СОБРАНИЕ';
 
+  // Динамическое определение флага включения цветов из localStorage (по дефолту true)
+  const isColorsEnabled = localStorage.getItem('tr_use_team_colors') !== 'false';
+  const hasTeamColor = isColorsEnabled && !!event.team_color;
+
+  // Конфигурация динамической палитры бренда для карточки
+  const badgeColor = hasTeamColor ? event.team_color : 'var(--color-content-subtle)';
+  const activeBrandColor = hasTeamColor ? event.team_color : 'var(--color-brand)';
+  const contrastTextColor = getContrastTextColor(hasTeamColor ? event.team_color : null);
+
   let matchStatusText = '';
   let matchStatusColor = '';
+  let matchStatusStyle = {};
   let matchScoreText = '';
   let matchEndTypeText = '';
 
@@ -86,7 +83,7 @@ const EventCard = ({ event, onToggleAttendance, onClick }) => {
         matchStatusColor = 'text-danger'; 
       } else { 
         matchStatusText = 'НИЧЬЯ'; 
-        matchStatusColor = 'text-brand'; 
+        matchStatusStyle = { color: activeBrandColor };
       }
       
       if (event.end_type === 'ot') matchEndTypeText = 'В ОВЕРТАЙМЕ';
@@ -115,10 +112,6 @@ const EventCard = ({ event, onToggleAttendance, onClick }) => {
 
   const shouldRenderTeamsBlock = event.show_team_context || isMatch;
 
-  // ИСПРАВЛЕНО: Вычисляем динамический HEX-цвет челки и класс контрастности текста
-  const badgeColor = event.team_color ? event.team_color : 'var(--color-content-subtle)';
-  const contrastTextColor = getContrastTextColor(event.team_color);
-
   return (
     <div 
       onClick={() => onClick && onClick(event)}
@@ -130,7 +123,7 @@ const EventCard = ({ event, onToggleAttendance, onClick }) => {
         
         {/* Локация */}
         <div className="flex items-center gap-1 pl-4 flex-1 overflow-hidden">
-          <Icon name="location_pin" className="w-3 h-3 text-brand shrink-0" />
+          <Icon name="location_pin" className="w-3 h-3 shrink-0" style={{ color: activeBrandColor }} />
           <span className="text-[11px] font-bold text-content-muted uppercase tracking-widest truncate">
             {event.arena_name || 'Арена не указана'}
           </span>
@@ -138,7 +131,6 @@ const EventCard = ({ event, onToggleAttendance, onClick }) => {
 
         {/* Дата */}
         <div className="relative w-[50%] shrink-0 flex items-center justify-center pl-3">
-          {/* ИСПРАВЛЕНО: Динамический цвет заливки SVG через инлайн-стили */}
           <svg 
             className="absolute inset-0 w-full h-full" 
             viewBox="0 0 140 38" 
@@ -148,7 +140,6 @@ const EventCard = ({ event, onToggleAttendance, onClick }) => {
           >
             <path d="M0 0 H140 V38 H24 Q16 38 13.5 32 L0 0 Z" />
           </svg>
-          {/* ИСПРАВЛЕНО: Применение contrastTextColor для защиты от слепоты на ярких фонах */}
           <span className={`relative z-10 text-[11px] font-black uppercase tracking-widest ${contrastTextColor}`}>
             {displayDateStr}
           </span>
@@ -163,7 +154,7 @@ const EventCard = ({ event, onToggleAttendance, onClick }) => {
           </h2>
           {renderMatchIcon()}
         </div>
-        <div className="text-[28px] font-black tracking-tight text-brand leading-none">
+        <div className="text-[28px] font-black tracking-tight leading-none" style={{ color: activeBrandColor }}>
           {eventDate.format('HH:mm')}
         </div>
       </div>
@@ -230,7 +221,10 @@ const EventCard = ({ event, onToggleAttendance, onClick }) => {
         
         {isMatch && isFinished ? (
           <div className="w-full flex justify-between items-center">
-            <span className={`text-sm font-black uppercase tracking-widest ${matchStatusColor}`}>
+            <span 
+              className={`text-sm font-black uppercase tracking-widest ${matchStatusColor}`}
+              style={matchStatusStyle}
+            >
               {matchStatusText}
             </span>
             <span className="text-xl font-black text-content-main tracking-widest">
@@ -246,7 +240,7 @@ const EventCard = ({ event, onToggleAttendance, onClick }) => {
             <div className="flex items-center gap-1.5 w-1/3">
               {isMatch && (
                 <>
-                  <Icon name="jersey" className="w-5 h-5 text-brand" />
+                  <Icon name="jersey" className="w-5 h-5 shrink-0" style={{ color: activeBrandColor }} />
                   <span className="text-sm font-bold text-content-muted">{jerseyText}</span>
                 </>
               )}
@@ -255,7 +249,7 @@ const EventCard = ({ event, onToggleAttendance, onClick }) => {
             {/* Стоимость */}
             <div className="w-1/3 text-center">
               {Number(event.my_fee) > 0 && (
-                <span className="text-sm font-bold text-brand">
+                <span className="text-sm font-bold leading-none" style={{ color: activeBrandColor }}>
                   {event.my_fee} руб.
                 </span>
               )}
@@ -267,9 +261,11 @@ const EventCard = ({ event, onToggleAttendance, onClick }) => {
               onClick={(e) => e.stopPropagation()} 
             >
               {event.toggle_status === 'allowed' ? (
+                // ИСПРАВЛЕНО: В компонент тумблера прокинут цвет команды для заливки активного состояния
                 <Toggle 
                   checked={event.is_attending} 
                   disabled={isFinished}
+                  activeColor={activeBrandColor}
                   onChange={(val) => onToggleAttendance(event.event_id, event.event_type, val, event.my_team_id)} 
                 />
               ) : (

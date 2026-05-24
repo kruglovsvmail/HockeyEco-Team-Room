@@ -19,21 +19,28 @@ const formatPhoneNumber = (phoneStr) => {
   return phoneStr;
 };
 
-// Унифицированная строка вывода информации
-const InfoRow = ({ label, value, highlight = false }) => (
+// Унифицированная строка вывода информации (Текст подстраивается под бренд команды)
+const InfoRow = ({ label, value, highlight = false, activeColor }) => (
   <div className="flex items-center justify-between py-2.5 border-b border-surface-border last:border-0">
     <span className="text-[11px] font-bold text-content-muted uppercase tracking-wider">{label}</span>
-    <span className={`text-xs font-black ${highlight ? 'text-brand' : 'text-content-main'}`}>{value || '—'}</span>
+    <span 
+      style={highlight && activeColor ? { color: activeColor } : {}}
+      className={`text-xs font-black ${highlight && !activeColor ? 'text-brand' : 'text-content-main'}`}
+    >
+      {value || '—'}
+    </span>
   </div>
 );
 
-// Кастомный матовый блок карточки
-const CustomBlock = ({ title, icon, isEditing, isManager, onAction, children }) => (
+// Кастомный матовый блок карточки (Иконка и текст шапки перенимают бренд)
+const CustomBlock = ({ title, icon, isEditing, isManager, onAction, children, activeColor }) => (
   <div className="flex flex-col p-4 bg-surface-level1 border border-surface-border rounded-2xl shadow-sm mb-3">
     <div className="flex items-center justify-between mb-2 border-b border-surface-border pb-1.5">
       <div className="flex items-center gap-2">
-        {icon && <Icon name={icon} className="w-3.5 h-3.5 text-brand" />}
-        <span className="text-[10px] font-black text-brand uppercase tracking-widest">{title}</span>
+        {icon && <Icon name={icon} className="w-3.5 h-3.5" style={{ color: activeColor || 'var(--color-brand)' }} />}
+        <span className="text-[10px] font-black uppercase tracking-widest" style={{ color: activeColor || 'var(--color-brand)' }}>
+          {title}
+        </span>
       </div>
       {isManager && onAction && (
         <button onClick={onAction} className="text-content-subtle hover:text-brand transition-colors p-0.5">
@@ -51,7 +58,6 @@ export const UserDetails = ({ data }) => {
   const [error, setError] = useState(null);
   
   const [isManager, setIsManager] = useState(false);
-  // ДОБАВЛЕНО: Стейт проверки «своего» профиля для защиты от дурака
   const [isOwnProfile, setIsOwnProfile] = useState(false);
 
   // Режимы редактирования блоков
@@ -73,6 +79,10 @@ export const UserDetails = ({ data }) => {
   const teamId = data?.team_id;
   const userId = data?.user_id;
   const currentRoster = data?.currentRoster || [];
+
+  // ИСПРАВЛЕНО: Считываем проброшенный HEX-цвет команды из настроек
+  const isColorsEnabled = localStorage.getItem('tr_use_team_colors') !== 'false';
+  const activeColor = isColorsEnabled ? data?.teamColor : null;
 
   const AVAILABLE_ROLES = [
     { id: 'team_manager', label: 'Руководитель' },
@@ -97,7 +107,7 @@ export const UserDetails = ({ data }) => {
         if (resData.success) {
           setProfile(resData.member);
           setIsManager(!!resData.isManager);
-          setIsOwnProfile(!!resData.isOwnProfile); // Считываем фоновый маркер сессии
+          setIsOwnProfile(!!resData.isOwnProfile); 
           setFormData({
             roles: resData.member.roles || '',
             jersey_number: resData.member.jersey_number || '',
@@ -233,7 +243,6 @@ export const UserDetails = ({ data }) => {
   };
 
   const handleToggleRoleCheckbox = (roleId) => {
-    // ЗАЩИТА ОТ ДУРАКА НА ФРОНТЕНДЕ: Если роль Руководитель и это свой профиль, прерываем выполнение
     if (roleId === 'team_manager' && isOwnProfile) return;
 
     let currentRolesArray = formData.roles ? formData.roles.split(',').map(r => r.trim()).filter(Boolean) : [];
@@ -263,13 +272,6 @@ export const UserDetails = ({ data }) => {
 
   const age = profile.birth_date ? dayjs().diff(dayjs(profile.birth_date), 'year') : null;
 
-  const roleDict = {
-    'team_manager': 'Руководитель',
-    'team_admin': 'Администратор',
-    'coach': 'Тренер',
-    'head_coach': 'Главный тренер'
-  };
-
   return (
     <FadeIn className="h-full w-full">
       <div className="h-full w-full flex flex-col bg-surface-level2 overflow-y-auto scrollbar-hide p-4 pb-10">
@@ -293,6 +295,7 @@ export const UserDetails = ({ data }) => {
                 <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 p-1 bg-black/60 rounded-[20px] transition-all">
                   <button 
                     onClick={() => document.getElementById('member-photo-file-input').click()}
+                    style={activeColor ? { backgroundColor: activeColor } : {}}
                     className="text-[9px] font-black text-white bg-brand px-1.5 py-3 rounded-xl uppercase tracking-wider w-full text-center"
                   >
                     Заменить
@@ -320,7 +323,10 @@ export const UserDetails = ({ data }) => {
               {profile.middle_name && <h4 className="text-[11px] font-medium text-content-muted truncate opacity-60">{profile.middle_name}</h4>}
               
               {!isEditHeader && (profile.is_captain || profile.is_assistant) && (
-                <div className="mt-2 self-start px-2 py-0.5 bg-brand text-white text-[9px] font-black uppercase rounded-md shadow-sm">
+                <div 
+                  style={activeColor ? { backgroundColor: activeColor } : {}}
+                  className="mt-2 self-start px-2 py-0.5 bg-brand text-white text-[9px] font-black uppercase rounded-md shadow-sm"
+                >
                   {profile.is_captain ? 'Капитан (C)' : 'Ассистент (A)'}
                 </div>
               )}
@@ -332,8 +338,8 @@ export const UserDetails = ({ data }) => {
               {profile.roster_id ? (
                 <>
                   <span className="text-[10px] font-black text-content-muted uppercase tracking-wider mb-0.5">Спортивный статус:</span>
-                  <CheckboxLP checked={formData.is_captain} onChange={handleToggleCaptainCheckbox} label="Капитан команды (C)" className="py-0.5" />
-                  <CheckboxLP checked={formData.is_assistant} onChange={handleToggleAssistantCheckbox} label="Ассистент капитана (A)" className="py-0.5" />
+                  <CheckboxLP checked={formData.is_captain} onChange={handleToggleCaptainCheckbox} label="Капитан команды (C)" className="py-0.5" activeColor={activeColor} />
+                  <CheckboxLP checked={formData.is_assistant} onChange={handleToggleAssistantCheckbox} label="Ассистент капитана (A)" className="py-0.5" activeColor={activeColor} />
                   {assistantError && <span className="text-[10px] text-danger font-bold mt-1 animate-pulse">{assistantError}</span>}
                 </>
               ) : (
@@ -343,19 +349,19 @@ export const UserDetails = ({ data }) => {
           )}
         </div>
 
-        {/* БЛОК 1: АДМИНИСТРАТИВНЫЙ СТАТУС (Интерактивная защита) */}
+        {/* БЛОК 1: АДМИНИСТРАТИВНЫЙ СТАТУС */}
         <CustomBlock 
           title="Роли в команде" 
           icon="gear"
           isEditing={isEditRoles}
           isManager={isManager}
           onAction={() => setIsEditingRoles(!isEditRoles)}
+          activeColor={activeColor}
         >
           {isEditRoles ? (
             <div className="flex flex-col gap-2.5 pt-1">
               {AVAILABLE_ROLES.map(role => {
                 const isChecked = formData.roles.split(',').map(r => r.trim()).includes(role.id);
-                // Если чекбокс принадлежит роли руководителя и это профиль текущего менеджера — включаем блокировку
                 const isSelfManagerLock = role.id === 'team_manager' && isOwnProfile;
                 return (
                   <CheckboxLP 
@@ -364,6 +370,7 @@ export const UserDetails = ({ data }) => {
                     onChange={() => !isSelfManagerLock && handleToggleRoleCheckbox(role.id)} 
                     label={role.label + (isSelfManagerLock ? ' (Вы — нельзя снять)' : '')} 
                     className={`py-0.5 ${isSelfManagerLock ? 'opacity-60 cursor-not-allowed text-brand' : ''}`} 
+                    activeColor={activeColor}
                   />
                 );
               })}
@@ -387,6 +394,7 @@ export const UserDetails = ({ data }) => {
             isEditing={isEditGame}
             isManager={isManager}
             onAction={() => setIsEditingGame(!isEditGame)}
+            activeColor={activeColor}
           >
             {isEditGame ? (
               <div className="flex flex-col gap-3 pt-1">
@@ -397,20 +405,21 @@ export const UserDetails = ({ data }) => {
                   maxLength={2}
                   onBlur={handleJerseyBlur}
                   onChange={(val) => setFormData(p => ({...p, jersey_number: val.replace(/\D/g, '')}))}
+                  activeColor={activeColor}
                 />
                 <div className="flex flex-col gap-2.5 mt-1 border-t border-surface-border pt-2">
                   <span className="text-[10px] font-black text-content-muted uppercase tracking-wider mb-1">Игровое амплуа:</span>
                   {AVAILABLE_POSITIONS.map(pos => {
                     const isSelected = formData.position === pos.id;
                     return (
-                      <CheckboxLP key={pos.id} checked={isSelected} onChange={() => handleSelectPositionCheckbox(pos.id)} label={pos.label} className="py-0.5" />
+                      <CheckboxLP key={pos.id} checked={isSelected} onChange={() => handleSelectPositionCheckbox(pos.id)} label={pos.label} className="py-0.5" activeColor={activeColor} />
                     );
                   })}
                 </div>
               </div>
             ) : (
               <div className="flex flex-col">
-                <InfoRow label="Игровой номер" value={profile.jersey_number ? `# ${profile.jersey_number}` : null} highlight />
+                <InfoRow label="Игровой номер" value={profile.jersey_number ? `# ${profile.jersey_number}` : null} highlight activeColor={activeColor} />
                 <InfoRow label="Игровое амплуа" value={
                   profile.position === 'goalie' ? 'Вратарь' : 
                   profile.position === 'defense' ? 'Защитник' : 
@@ -422,20 +431,20 @@ export const UserDetails = ({ data }) => {
         )}
 
         {/* БЛОК 3: ФИЗИЧЕСКИЕ ДАННЫЕ */}
-        <CustomBlock title="Физические данные" icon="player" isEditing={false} isManager={isManager} onAction={null}>
+        <CustomBlock title="Физические данные" icon="player" isEditing={false} isManager={isManager} onAction={null} activeColor={activeColor}>
           <InfoRow label="Рост" value={profile.height ? `${profile.height} см` : null} />
           <InfoRow label="Вес" value={profile.weight ? `${profile.weight} кг` : null} />
           <InfoRow label="Хват клюшки" value={profile.grip === 'left' ? 'Левый (L)' : profile.grip === 'right' ? 'Правый (R)' : null} />
         </CustomBlock>
 
         {/* БЛОК 4: ЛИЧНАЯ ИНФОРМАЦИЯ */}
-        <CustomBlock title="Личная информация" icon="calendar" isEditing={false} isManager={isManager} onAction={null}>
+        <CustomBlock title="Личная информация" icon="calendar" isEditing={false} isManager={isManager} onAction={null} activeColor={activeColor}>
           <InfoRow label="Номер тел." value={formatPhoneNumber(profile.phone)} />
           <InfoRow label="Дата рожд." value={profile.birth_date ? dayjs(profile.birth_date).format('DD.MM.YYYY') : null} />
           <InfoRow label="Возраст" value={age ? `${age} лет` : null} />
         </CustomBlock>
 
-        {/* ЗЕЛЕНЫЙ БЛОК ДЛЯ РУКОВОДИТЕЛЯ */}
+        {/* ВИРТУАЛЬНЫЙ КОД РУКОВОДИТЕЛЯ */}
         {profile.virtual_code && (
           <div className="p-4 bg-surface-level1 border border-success rounded-2xl shadow-sm animate-fade-in mt-1">
             <div className="flex items-center justify-between">

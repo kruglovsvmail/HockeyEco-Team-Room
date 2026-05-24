@@ -1,11 +1,16 @@
 import React from 'react';
 import { Avatar } from '../../ui/Avatar';
+import { getContrastTextColor } from '../../utils/helpers';
 
 // Оборачиваем в React.memo, чтобы компонент перерисовывался только при реальном изменении пропсов
-export const PersonGridCard = React.memo(({ person, onClick, showBadges = false }) => {
+export const PersonGridCard = React.memo(({ person, onClick, showBadges = false, activeColor }) => {
+  
+  // Вычисляем контрастный цвет текста для капитанской нашивки
+  const contrastBadgeText = activeColor && getContrastTextColor(activeColor) === 'text-white' ? '#ffffff' : '#111827';
+
   return (
     <div 
-      onClick={() => onClick(person)}
+      onClick={() => onClick && onClick(person)}
       className="flex flex-col items-center gap-1.5 select-none w-full cursor-pointer active:scale-[0.98] transition-transform"
     >
       <div className="relative">
@@ -17,7 +22,10 @@ export const PersonGridCard = React.memo(({ person, onClick, showBadges = false 
         />
 
         {showBadges && (person.is_captain || person.is_assistant) && (
-          <div className="absolute -top-1 -right-2 w-[20px] h-[20px] rounded-full bg-brand shadow-sm flex items-center justify-center text-[9px] font-black text-content-dark z-20">
+          <div 
+            style={activeColor ? { backgroundColor: activeColor, color: contrastBadgeText } : {}}
+            className="absolute -top-1 -right-2 w-[20px] h-[20px] rounded-full bg-brand shadow-sm flex items-center justify-center text-[9px] font-black text-content-dark z-20"
+          >
             {person.is_captain ? 'К' : 'А'}
           </div>
         )}

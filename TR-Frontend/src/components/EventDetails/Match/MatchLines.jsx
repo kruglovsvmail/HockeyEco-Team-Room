@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
-import { getImageUrl, getAuthHeaders } from '../../../utils/helpers';
+import { getImageUrl, getAuthHeaders, getContrastTextColor } from '../../../utils/helpers';
 import { BottomSheet } from '../../../ui/BottomSheet';
 import { ButtonLP } from '../../../ui/Button-LP';
 import { SectionHeader } from '../../../ui/SectionHeader';
@@ -95,6 +95,12 @@ export const MatchLines = ({ event, initialAttendees = [], initialDraftLines = [
     return String(user?.global_role || user?.globalRole || tokenUser?.global_role || tokenUser?.globalRole || '').toLowerCase();
   }, [user, tokenUser]);
 
+  // Динамическое определение флага включения цветов из localStorage (по дефолту true)
+  const isColorsEnabled = localStorage.getItem('tr_use_team_colors') !== 'false';
+  const hasTeamColor = isColorsEnabled && !!event?.team_color;
+  const activeBrandColor = hasTeamColor ? event.team_color : 'var(--color-brand)';
+  const contrastBadgeText = getContrastTextColor(hasTeamColor ? event.team_color : null) === 'text-white' ? '#ffffff' : '#111827';
+
   // Высокопроизводительная синхронизация с централизованным реактивным хранилищем родительского контейнера матча
   useEffect(() => { setAttendees(initialAttendees); }, [initialAttendees]);
   useEffect(() => { setIsPublished(initialIsPublished); }, [initialIsPublished]);
@@ -170,14 +176,6 @@ export const MatchLines = ({ event, initialAttendees = [], initialDraftLines = [
   }, [event?.event_date, event?.game_date]);
 
   useEffect(() => {
-    return () => {
-      if (tooltipTimer.current) clearTimeout(tooltipTimer.current);
-      if (submitTooltipTimer.current) clearTimeout(submitTooltipTimer.current);
-      if (playerEditTooltipTimer.current) clearTimeout(playerEditTooltipTimer.current);
-    };
-  }, []);
-
-  useEffect(() => {
     const el = chipsScrollRef.current;
     if (!el) return;
     const handleWheel = (e) => {
@@ -216,7 +214,7 @@ export const MatchLines = ({ event, initialAttendees = [], initialDraftLines = [
         setIsEditMode(false);
         setIsDeleteMode(false);
         setActiveSelection(null);
-        refreshData(); // Триггерим централизованное обновление родителя
+        refreshData(); 
       }
     } catch (err) {
       console.error(err);
@@ -250,7 +248,7 @@ export const MatchLines = ({ event, initialAttendees = [], initialDraftLines = [
       if (data.success) {
         setIsPublished(true);
         alert('Официальная заявка успешно отправлена в лигу!');
-        refreshData(); // Триггерим централизованное обновление родителя
+        refreshData(); 
       } else {
         alert(data.error || 'Ошибка отправки заявки');
       }
@@ -264,7 +262,7 @@ export const MatchLines = ({ event, initialAttendees = [], initialDraftLines = [
       setIsEditMode(false);
       setIsDeleteMode(false);
       setActiveSelection(null);
-      refreshData(); // Сбрасываем изменения воркспейса до актуального состояния базы данных
+      refreshData(); 
     } else {
       if (timeToMatch <= DEADLINES.LINES_EDIT_MINUTES) {
         if (e && e.currentTarget) {
@@ -475,9 +473,9 @@ export const MatchLines = ({ event, initialAttendees = [], initialDraftLines = [
       if (data.success) {
         setIsRosterSheetOpen(false);
         setIsPublished(false); 
-        refreshData(); // Обновляем состояние на верхнем уровне
+        refreshData(); 
       } else {
-        setSheetError(data.error || 'Ошибка保存');
+        setSheetError(data.error || 'Ошибка сохранения');
       }
     } catch (err) {
       setSheetError('Ошибка соединения с сервером');
@@ -526,11 +524,14 @@ export const MatchLines = ({ event, initialAttendees = [], initialDraftLines = [
           jiggleClass
         )}
       >
-        <div className={clsx(
-          "w-16 h-16 rounded-2xl bg-brand-glow flex items-center justify-center relative transition-all duration-200 shrink-0 box-border z-0 origin-center",
-          isSelected ? "ring-2 ring-brand scale-110" : "",
-          player && "shadow-lg border border-surface-border bg-surface-level3"
-        )}>
+        <div 
+          style={isSelected ? { borderColor: activeBrandColor, boxShadow: `0 0 0 2px ${activeBrandColor}` } : {}}
+          className={clsx(
+            "w-16 h-16 rounded-2xl bg-surface-level2 flex items-center justify-center relative transition-all duration-200 shrink-0 box-border z-0 origin-center",
+            isSelected && !hasTeamColor ? "ring-2 ring-brand scale-110" : isSelected ? "scale-110 border" : "",
+            player && "shadow-lg border border-surface-border bg-surface-level3"
+          )}
+        >
           {player ? (
             <>
               <Avatar 
@@ -545,7 +546,10 @@ export const MatchLines = ({ event, initialAttendees = [], initialDraftLines = [
               />
               
               {!isEditMode && (player.is_captain || player.is_assistant) && (
-                <div className="absolute -top-1 -right-2 w-[20px] h-[20px] rounded-full bg-brand shadow-sm flex items-center justify-center text-[9px] font-black text-content-dark z-20">
+                <div 
+                  style={{ backgroundColor: activeBrandColor, color: contrastBadgeText }}
+                  className="absolute -top-1 -right-2 w-[20px] h-[20px] rounded-full shadow-sm flex items-center justify-center text-[9px] font-black z-20"
+                >
                   {player.is_captain ? 'К' : 'А'}
                 </div>
               )}
@@ -616,6 +620,8 @@ export const MatchLines = ({ event, initialAttendees = [], initialDraftLines = [
 
   const renderChipButton = (p) => {
     const isSelected = activeSelection?.type === 'chip' && activeSelection?.id === p.id;
+    const contrastChipText = getContrastTextColor(hasTeamColor ? event.team_color : null) === 'text-white' ? 'text-white' : 'text-content-dark';
+
     return (
       <button
         key={p.id}
@@ -623,10 +629,11 @@ export const MatchLines = ({ event, initialAttendees = [], initialDraftLines = [
           if (isDeleteMode) { setIsDeleteMode(false); return; }
           handleChipClick(p.id);
         }}
+        style={isSelected ? { backgroundColor: activeBrandColor, borderColor: activeBrandColor } : {}}
         className={clsx(
           "px-3 py-1.5 rounded-xl text-[12px] font-semibold transition-colors border border-solid shrink-0 w-auto",
           isSelected 
-            ? "bg-brand text-content-dark border-brand" 
+            ? (hasTeamColor ? contrastChipText : "bg-brand text-content-dark border-brand") 
             : "bg-surface-level2 text-content-main border-surface-border hover:bg-surface-border"
         )}
       >
@@ -655,7 +662,6 @@ export const MatchLines = ({ event, initialAttendees = [], initialDraftLines = [
         `}
       </style>
       
-      {/* ИНТЕГРАЦИЯ ДИНАМИЧЕСКИХ ТУЛТИПОВ С АВТОПРИЦЕЛИВАНИЕМ ПО ОСЯМ X И Y */}
       <TooltipLP 
         isOpen={showSubmitTooltip} 
         coords={submitTooltipCoords}
@@ -684,7 +690,6 @@ export const MatchLines = ({ event, initialAttendees = [], initialDraftLines = [
         />
       </div>
 
-      {/* БЛОК ДОСТУПНЫХ ИГРОКОВ (ЧИПСЫ) */}
       <div className="-mx-0">
         <div className={clsx("grid-expand-transition", isEditMode && "expanded")}>
           <div className="grid-expand-inner pb-2">
@@ -726,7 +731,6 @@ export const MatchLines = ({ event, initialAttendees = [], initialDraftLines = [
       <div className="flex justify-center items-center gap-8 py-3 my-1 w-full bg-transparent">
         {isEditMode ? (
           <>
-            {/* Кнопка Отмена */}
             <button
               onClick={(e) => handleHeaderActionClick(e)}
               disabled={isPublishing}
@@ -740,13 +744,15 @@ export const MatchLines = ({ event, initialAttendees = [], initialDraftLines = [
               </span>
             </button>
 
-            {/* Кнопка Сохранить */}
             <button
               onClick={handlePublish}
               disabled={isPublishing}
               className="flex flex-col items-center justify-center transition-all active:scale-90 relative outline-none min-w-[72px] hover:scale-105"
             >
-              <div className="w-11 h-11 rounded-full bg-brand flex items-center justify-center text-white shadow-md">
+              <div 
+                style={{ backgroundColor: activeBrandColor }}
+                className="w-11 h-11 rounded-full flex items-center justify-center text-white shadow-md"
+              >
                 {isPublishing ? (
                   <div className="w-4 h-4 rounded-full border-2 border-white border-t-transparent animate-spin" />
                 ) : (
@@ -760,7 +766,6 @@ export const MatchLines = ({ event, initialAttendees = [], initialDraftLines = [
           </>
         ) : (
           <>
-            {/* Кнопка В лигу (Отправить) */}
             {hasAdminAccess && (
               <button
                 onClick={(e) => handleSubmitOfficialRoster(e)}
@@ -783,16 +788,15 @@ export const MatchLines = ({ event, initialAttendees = [], initialDraftLines = [
               </button>
             )}
 
-            {/* Кнопка Изменить (Состав) */}
             {hasCoachAccess && !isPublished && (
               <button
                 onClick={(e) => handleHeaderActionClick(e)}
                 className="flex flex-col items-center justify-center transition-all active:scale-90 relative outline-none min-w-[72px] hover:scale-105"
               >
-                <div className={clsx(
-                  "w-11 h-11 rounded-full bg-surface-level2 border border-surface-border flex items-center justify-center text-brand shadow-sm",
-                  timeToMatch <= DEADLINES.LINES_EDIT_MINUTES && "opacity-40"
-                )}>
+                <div 
+                  style={{ color: activeBrandColor }}
+                  className="w-11 h-11 rounded-full bg-surface-level2 border border-surface-border flex items-center justify-center text-brand shadow-sm"
+                >
                   <Icon name="edit" className="w-4 h-4" />
                 </div>
                 <span className="text-[9px] font-black uppercase tracking-widest text-content-main block text-center select-none mt-1">
@@ -804,7 +808,6 @@ export const MatchLines = ({ event, initialAttendees = [], initialDraftLines = [
         )}
       </div>
 
-      {/* ОРИГИНАЛЬНЫЙ СЛАЙДЕР-КАРУСЕЛЬ ПЯТЕРОК */}
       {isEditMode ? (
         <div className="relative w-full">
           <div ref={carouselRef} onScroll={handleCarouselScroll} className="flex overflow-x-auto flex-nowrap snap-x snap-mandatory scrollbar-hide pt-2 w-full">
@@ -894,10 +897,12 @@ export const MatchLines = ({ event, initialAttendees = [], initialDraftLines = [
               />
             </div>
 
+            {/* ИСПРАВЛЕНО: Чекбоксы анкеты автоматически красятся в HEX-код хоккейного клуба через проп activeColor */}
             <div className="flex flex-col gap-3 border border-surface-border rounded-2xl p-4">
               <CheckboxLP 
                 label="Капитан команды (C)" 
                 checked={editCaptain} 
+                activeColor={hasTeamColor ? event.team_color : null}
                 onChange={(val) => {
                   setEditCaptain(val);
                   if (val) setEditAssistant(false);
@@ -907,6 +912,7 @@ export const MatchLines = ({ event, initialAttendees = [], initialDraftLines = [
               <CheckboxLP 
                 label="Ассистент капитана (A)" 
                 checked={editAssistant} 
+                activeColor={hasTeamColor ? event.team_color : null}
                 onChange={(val) => {
                   setEditAssistant(val);
                   if (val) setEditCaptain(false);
@@ -914,8 +920,13 @@ export const MatchLines = ({ event, initialAttendees = [], initialDraftLines = [
               />
             </div>
 
+            {/* ИСПРАВЛЕНО: Кнопка сохранения параметров принимает activeColor и генерирует идеальный контраст и тени */}
             <div className="pt-4">
-              <ButtonLP onClick={handleSavePlayerParams} isLoading={isSheetSaving}>
+              <ButtonLP 
+                onClick={handleSavePlayerParams} 
+                isLoading={isSheetSaving}
+                activeColor={hasTeamColor ? event.team_color : null}
+              >
                 Сохранить параметры
               </ButtonLP>
             </div>
@@ -923,7 +934,6 @@ export const MatchLines = ({ event, initialAttendees = [], initialDraftLines = [
         )}
       </BottomSheet>
 
-
-  </FadeIn>
-);
+    </FadeIn>
+  );
 };

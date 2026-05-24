@@ -15,7 +15,8 @@ export const TeamRosterPlayers = ({
   hasManageAccess, 
   onExcludeClick, 
   animatingOutId,
-  onAddClick 
+  onAddClick,
+  activeColor // Добавлен проп цвета бренда команды
 }) => {
   const pressTimer = useRef(null);
 
@@ -52,13 +53,14 @@ export const TeamRosterPlayers = ({
       {groups.map(group => {
         const players = groupedPlayers[group.id] || [];
         
-        // Генерируем плюс со строгим контекстом текущего амплуа
+        // Генерируем плюс со строгим контекстом текущего амплуа (Иконка адаптируется под клубный цвет)
         const addButton = hasManageAccess && !isEditMode && (
           <button
             onClick={(e) => {
               e.stopPropagation();
               onAddClick(group.id);
             }}
+            style={activeColor ? { color: activeColor } : {}}
             className="text-content-muted transition-colors active:scale-90 outline-none flex items-center justify-center"
           >
             <Icon name="user_plus" className="w-5 h-5" />
@@ -101,6 +103,7 @@ export const TeamRosterPlayers = ({
                           person={p} 
                           onClick={isEditMode ? undefined : onPersonClick} 
                           showBadges={true} 
+                          activeColor={activeColor}
                         />
 
                         {isEditMode && hasManageAccess && !isRemoving && (

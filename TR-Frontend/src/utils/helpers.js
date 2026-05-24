@@ -1,5 +1,3 @@
-/********** ФАЙЛ: TR-Frontend\src\utils\helpers.js **********/
-
 export const getToken = () => localStorage.getItem('teampwa_token') || sessionStorage.getItem('teampwa_token');
 
 export const removeToken = () => {
@@ -30,4 +28,20 @@ export const getImageUrl = (path) => {
   
   // Конструкция URL для Timeweb S3: https://[bucket].[endpoint]/[path]
   return `https://${S3_BUCKET}.${S3_ENDPOINT}/${cleanPath}`;
+};
+
+/**
+ * Математический расчет контраста YIQ (W3C Стандарт).
+ * Определяет, какой текст лучше читать на переданном HEX-фоне — белый или темный.
+ */
+export const getContrastTextColor = (hexColor) => {
+  if (!hexColor) return 'text-white'; // Дефолт для серого цвета клуба
+  
+  const cleanHex = hexColor.replace('#', '');
+  const r = parseInt(cleanHex.substring(0, 2), 16);
+  const g = parseInt(cleanHex.substring(2, 4), 16);
+  const b = parseInt(cleanHex.substring(4, 6), 16);
+  
+  const yiq = (r * 299 + g * 587 + b * 114) / 1000;
+  return yiq >= 128 ? 'text-content-main' : 'text-white';
 };

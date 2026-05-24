@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { getImageUrl, getAuthHeaders } from '../../../utils/helpers';
 import { BottomSheet } from '../../../ui/BottomSheet';
 import { ButtonLP } from '../../../ui/Button-LP';
@@ -50,6 +50,11 @@ export const MatchAttendance = ({ event, initialAttendees = [], initialTeamRoste
 
   const tokenUser = getSafeUserFromToken();
   const activeUserId = user?.id || tokenUser?.id || tokenUser?.userId;
+
+  // Динамическое определение флага включения цветов из localStorage (по дефолту true)
+  const isColorsEnabled = localStorage.getItem('tr_use_team_colors') !== 'false';
+  const hasTeamColor = isColorsEnabled && !!event?.team_color;
+  const activeBrandColor = hasTeamColor ? event.team_color : 'var(--color-brand)';
 
   // Реактивная синхронизация локального стейта с централизованным хранилищем родителя матча
   useEffect(() => {
@@ -230,6 +235,15 @@ export const MatchAttendance = ({ event, initialAttendees = [], initialTeamRoste
     
     const jiggleClass = isEditMode && canRemove && !isRemoving ? `animate-jiggle jiggle-delay-${index % 3}` : '';
 
+    // Применение сплошных HEX-смешиваний без использования косой черты /
+    const payTagStyle = attendeeUser.has_pay_tag && hasTeamColor 
+      ? { 
+          backgroundColor: activeBrandColor, 
+          borderColor: activeBrandColor, 
+          color: 'var(--color-content-dark)'
+        } 
+      : {};
+
     return (
       <div 
         key={attendeeUser.id} 
@@ -268,18 +282,24 @@ export const MatchAttendance = ({ event, initialAttendees = [], initialTeamRoste
           {(isEditMode && hasManageAccess) ? (
             <button
               onClick={(e) => handleTogglePayTag(e, attendeeUser)}
+              style={payTagStyle}
               className={clsx(
                 "absolute -bottom-1.5 -left-1.5 w-[22px] h-[22px] rounded-full flex items-center justify-center text-[11px] font-black shadow-md z-10 transition-all transform hover:scale-110 active:scale-90",
-                attendeeUser.has_pay_tag 
-                  ? "bg-brand text-white border border-brand" 
-                  : "bg-surface-level3 text-content-muted border border-surface-border"
+                attendeeUser.has_pay_tag && !hasTeamColor && "bg-brand text-white border border-brand",
+                !attendeeUser.has_pay_tag && "bg-surface-level3 text-content-muted border border-surface-border"
               )}
             >
               ₽
             </button>
           ) : (
             attendeeUser.has_pay_tag && (
-              <div className="absolute -bottom-1.5 -left-1.5 w-[22px] h-[22px] rounded-full bg-brand text-white flex items-center justify-center text-[11px] font-black shadow-sm border border-surface-level1 pointer-events-none">
+              <div 
+                style={payTagStyle}
+                className={clsx(
+                  "absolute -bottom-1.5 -left-1.5 w-[22px] h-[22px] rounded-full flex items-center justify-center text-[11px] font-black shadow-sm border border-surface-level1 pointer-events-none",
+                  !hasTeamColor && "bg-brand text-white"
+                )}
+              >
                 ₽
               </div>
             )
@@ -298,7 +318,6 @@ export const MatchAttendance = ({ event, initialAttendees = [], initialTeamRoste
     );
   };
 
-  // Контекстные кнопки "+" для шапок контейнеров
   const goalieAddButton = hasManageAccess && !isEditMode && (
     <button
       onClick={(e) => {
@@ -306,7 +325,8 @@ export const MatchAttendance = ({ event, initialAttendees = [], initialTeamRoste
         setSheetFilterType('goalie');
         setIsSheetOpen(true);
       }}
-      className="text-content-muted transition-colors active:scale-90 outline-none flex items-center justify-center"
+      style={{ color: activeBrandColor }}
+      className="transition-colors active:scale-90 outline-none flex items-center justify-center hover:opacity-80"
     >
       <Icon name="user_plus" className="w-5 h-5" />
     </button>
@@ -319,7 +339,8 @@ export const MatchAttendance = ({ event, initialAttendees = [], initialTeamRoste
         setSheetFilterType('skater');
         setIsSheetOpen(true);
       }}
-      className="text-content-muted transition-colors active:scale-90 outline-none flex items-center justify-center"
+      style={{ color: activeBrandColor }}
+      className="transition-colors active:scale-90 outline-none flex items-center justify-center hover:opacity-80"
     >
       <Icon name="user_plus" className="w-5 h-5" />
     </button>
@@ -432,10 +453,12 @@ export const MatchAttendance = ({ event, initialAttendees = [], initialTeamRoste
                           Дисквал.
                         </span>
                       ) : (
+                        // ИСПРАВЛЕНО: Чистая передача activeColor вместо хардкодных инлайновых стилей style={{...}}
                         <ButtonLP
                           onClick={() => handleMarkUser(player)}
                           variant="primary"
                           className="!w-auto !py-1.5 !px-3 !text-[10px] ml-2 shrink-0"
+                          activeColor={hasTeamColor ? event.team_color : null}
                         >
                           Добавить
                         </ButtonLP>

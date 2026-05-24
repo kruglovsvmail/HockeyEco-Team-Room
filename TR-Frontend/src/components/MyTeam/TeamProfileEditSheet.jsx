@@ -24,6 +24,10 @@ export function TeamProfileEditSheet({ isOpen, onClose, selectedTeam, user, onTe
   const [isSaving, setIsSaving] = useState(false);
   const [errorMessage, setErrorMessage] = useState('');
 
+  // Динамическое определение флага включения цветов из localStorage (по дефолту true)
+  const isColorsEnabled = localStorage.getItem('tr_use_team_colors') !== 'false';
+  const activeColor = isColorsEnabled && selectedTeam?.color_home_1 ? selectedTeam.color_home_1 : null;
+
   // Фоновый запрос полных параметров команды из БД при открытии шторки
   useEffect(() => {
     if (selectedTeam?.id && isOpen) {
@@ -133,10 +137,8 @@ export function TeamProfileEditSheet({ isOpen, onClose, selectedTeam, user, onTe
 
         <form onSubmit={handleSaveProfile} className="flex flex-col gap-3 max-h-[74vh] overflow-y-auto scrollbar-hide px-0.5 pb-3">
           
-          {/* ВЕРХНИЙ БЛОК: ЛОГОТИП + ТЕКСТОВЫЙ БЛОК НАЗВАНИЙ И ГОРОДА (БЕЗ ВНЕШНИХ ЛЕЙБЛОВ) */}
+          {/* ВЕРХНИЙ БЛОК */}
           <div className="grid grid-cols-[90px_1fr] gap-3 items-center w-full">
-            
-            {/* Чистый аскетичный квадрат логотипа */}
             <ImageUploaderLP 
               currentImageUrl={deleteLogo ? null : formData.logo_url} 
               onChange={(file) => { setLogoFile(file); setDeleteLogo(false); }} 
@@ -144,7 +146,6 @@ export function TeamProfileEditSheet({ isOpen, onClose, selectedTeam, user, onTe
               sizeClass="w-[84px] h-[84px]"
             />
 
-            {/* Текстовые поля с правого бока через плейсхолдеры */}
             <div className="flex flex-col gap-2 w-full">
               <input 
                 type="text" 
@@ -152,10 +153,10 @@ export function TeamProfileEditSheet({ isOpen, onClose, selectedTeam, user, onTe
                 placeholder="Название команды"
                 value={formData.name}
                 onChange={e => setFormData(prev => ({ ...prev, name: e.target.value }))}
-                className="w-full h-10 bg-surface-level2 border border-surface-border rounded-xl px-3 text-xs font-bold text-content-main focus:border-brand focus:outline-none transition-colors"
+                style={activeColor ? { '--tw-placeholder-opacity': 0.6 } : {}}
+                className="w-full h-10 bg-surface-level2 border border-surface-border rounded-xl px-3 text-xs font-bold text-content-main focus:outline-none transition-colors"
               />
 
-              {/* Узкая заглавная аббревиатура (макс 4 знака) + Расширенное поле города */}
               <div className="grid grid-cols-[64px_1fr] gap-2">
                 <input 
                   type="text" 
@@ -163,8 +164,9 @@ export function TeamProfileEditSheet({ isOpen, onClose, selectedTeam, user, onTe
                   required
                   placeholder="АББР"
                   value={formData.short_name}
+                  style={activeColor ? { color: activeColor } : {}}
                   onChange={e => setFormData(prev => ({ ...prev, short_name: e.target.value.toUpperCase() }))}
-                  className="w-full h-10 bg-surface-level2 border border-surface-border rounded-xl px-1 text-xs font-black text-brand text-center focus:border-brand focus:outline-none transition-colors uppercase tracking-wider"
+                  className="w-full h-10 bg-surface-level2 border border-surface-border rounded-xl px-1 text-xs font-black text-brand text-center focus:outline-none transition-colors uppercase tracking-wider"
                 />
                 <input 
                   type="text" 
@@ -172,25 +174,22 @@ export function TeamProfileEditSheet({ isOpen, onClose, selectedTeam, user, onTe
                   placeholder="Город"
                   value={formData.city}
                   onChange={e => setFormData(prev => ({ ...prev, city: e.target.value }))}
-                  className="w-full h-10 bg-surface-level2 border border-surface-border rounded-xl px-3 text-xs font-bold text-content-main focus:border-brand focus:outline-none transition-colors"
+                  className="w-full h-10 bg-surface-level2 border border-surface-border rounded-xl px-3 text-xs font-bold text-content-main focus:outline-none transition-colors"
                 />
               </div>
             </div>
           </div>
 
-          {/* ПОЛНОШИРИННОЕ ТЕКСТОВОЕ ПОЛЕ ОПИСАНИЯ НА 3 СТРОКИ */}
           <textarea 
             rows={3}
             value={formData.description}
             onChange={e => setFormData(prev => ({ ...prev, description: e.target.value }))}
-            className="w-full bg-surface-level2 border border-surface-border rounded-xl px-3 py-2.5 text-xs font-bold text-content-main focus:border-brand focus:outline-none transition-colors resize-none leading-normal min-h-[74px]"
+            className="w-full bg-surface-level2 border border-surface-border rounded-xl px-3 py-2.5 text-xs font-bold text-content-main focus:outline-none transition-colors resize-none leading-normal min-h-[74px]"
             placeholder="О команде (например: фарм-клуб организации, основан в 2020 году)..."
           />
 
-          {/* ОБЪЕДИНЕННЫЙ В ОДНУ СТРОКУ БЛОК ФОРМЫ С СОХРАНЕННЫМИ СИСТЕМНЫМИ ЛЕЙБЛАМИ */}
           <div className="grid grid-cols-2 gap-2 w-full">
-            
-            {/* ЛЕВАЯ ПОЛОВИНА: ДОМАШНИЙ КОМПЛЕКТ С ЛЕЙБЛОМ */}
+            {/* ДОМАШНИЙ КОМПЛЕКТ */}
             <div className="flex flex-col p-2.5 bg-surface-level2 border border-surface-border rounded-xl justify-between min-h-[96px]">
               <span className="text-[10px] font-black text-content-muted uppercase tracking-widest block px-0.5 mb-4 select-none">
                 Домашняя
@@ -202,8 +201,6 @@ export function TeamProfileEditSheet({ isOpen, onClose, selectedTeam, user, onTe
                   onDelete={() => { setJerseyDarkFile(null); setDeleteJerseyDark(true); }}
                   sizeClass="w-20 h-20"
                 />
-                
-                {/* Вертикальный стек из двух кругов цвета хозяев */}
                 <div className="flex flex-col gap-1 shrink-0 justify-center">
                   <input 
                     type="color" 
@@ -221,7 +218,7 @@ export function TeamProfileEditSheet({ isOpen, onClose, selectedTeam, user, onTe
               </div>
             </div>
 
-            {/* ПРАВАЯ ПОЛОВИНА: ГОСТЕВОЙ КОМПЛЕКТ С ЛЕЙБЛОМ */}
+            {/* ГОСТЕВОЙ КОМПЛЕКТ */}
             <div className="flex flex-col p-2.5 bg-surface-level2 border border-surface-border rounded-xl justify-between min-h-[96px]">
               <span className="text-[10px] font-black text-content-muted uppercase tracking-widest block px-0.5 mb-4 select-none">
                 Гостевая
@@ -233,8 +230,6 @@ export function TeamProfileEditSheet({ isOpen, onClose, selectedTeam, user, onTe
                   onDelete={() => { setJerseyLightFile(null); setDeleteJerseyLight(true); }}
                   sizeClass="w-20 h-20"
                 />
-                
-                {/* Вертикальный стек из двух кругов цвета гостей */}
                 <div className="flex flex-col gap-1 shrink-0 justify-center">
                   <input 
                     type="color" 
@@ -255,8 +250,9 @@ export function TeamProfileEditSheet({ isOpen, onClose, selectedTeam, user, onTe
           </div>
 
           {/* ФИНАЛЬНАЯ КНОПКА ОТПРАВКИ */}
-          <div className="py-3   w-full">
-            <ButtonLP type="submit" isLoading={isSaving} className="!h-12 !text-xs">
+          <div className="py-3 w-full">
+            {/* ИСПРАВЛЕНО: Кнопка сохранения параметров принимает activeColor */}
+            <ButtonLP type="submit" isLoading={isSaving} className="!h-12 !text-xs" activeColor={activeColor}>
               Сохранить изменения
             </ButtonLP>
           </div>

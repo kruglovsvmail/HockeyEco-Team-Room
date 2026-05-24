@@ -7,7 +7,9 @@ const baseWrapperStyles = "border-b border-surface-border focus-within:border-br
 const baseLabelStyles = "text-[10px] text-content-muted uppercase tracking-widest font-bold block mb-1 group-focus-within:text-brand transition-colors";
 const baseInputStyles = "w-full py-2 bg-transparent outline-none text-content-main placeholder-content-subtle text-lg transition-all";
 
-export function PhoneInputLP({ value, onChange, disabled, error, className, label = "", placeholder = "000 000 00 00" }) {
+export function PhoneInputLP({ value, onChange, disabled, error, className, label = "", placeholder = "000 000 00 00", activeColor }) {
+  const [isFocused, setIsFocused] = useState(false);
+
   const handlePhoneChange = (e) => {
     let input = e.target.value.replace(/\D/g, '');
     if (input.startsWith('7') || input.startsWith('8')) input = input.substring(1);
@@ -22,10 +24,20 @@ export function PhoneInputLP({ value, onChange, disabled, error, className, labe
     onChange(formatted);
   };
 
+  // Динамические стили рамки и лейбла при фокусе в цвет команды
+  const wrapperStyle = isFocused && activeColor ? { borderColor: activeColor } : {};
+  const labelStyle = isFocused && activeColor ? { color: activeColor } : {};
+
   return (
-    <div className={twMerge(baseWrapperStyles, error && "border-danger focus-within:border-danger", className)}>
+    <div 
+      style={wrapperStyle}
+      className={twMerge(baseWrapperStyles, error && "border-danger focus-within:border-danger", className)}
+    >
       {label && (
-        <label className={twMerge(baseLabelStyles, error && "text-danger group-focus-within:text-danger")}>
+        <label 
+          style={labelStyle}
+          className={twMerge(baseLabelStyles, error && "text-danger group-focus-within:text-danger")}
+        >
           {label}
         </label>
       )}
@@ -35,6 +47,8 @@ export function PhoneInputLP({ value, onChange, disabled, error, className, labe
           type="tel"
           value={value}
           onChange={handlePhoneChange}
+          onFocus={() => setIsFocused(true)}
+          onBlur={() => setIsFocused(false)}
           disabled={disabled}
           placeholder={placeholder}
           autoComplete="nope"
@@ -50,13 +64,25 @@ export function PhoneInputLP({ value, onChange, disabled, error, className, labe
   );
 }
 
-export function PasswordInputLP({ value, onChange, disabled, error, className, label = "Пароль", placeholder = "••••••••" }) {
+export function PasswordInputLP({ value, onChange, disabled, error, className, label = "Пароль", placeholder = "••••••••", activeColor }) {
   const [showPassword, setShowPassword] = useState(false);
+  const [isFocused, setIsFocused] = useState(false);
+  const [isEyeHovered, setIsEyeHovered] = useState(false);
+
+  const wrapperStyle = isFocused && activeColor ? { borderColor: activeColor } : {};
+  const labelStyle = isFocused && activeColor ? { color: activeColor } : {};
+  const eyeIconStyle = (isEyeHovered || isFocused) && activeColor ? { color: activeColor } : {};
 
   return (
-    <div className={twMerge(baseWrapperStyles, error && "border-danger focus-within:border-danger", className)}>
+    <div 
+      style={wrapperStyle}
+      className={twMerge(baseWrapperStyles, error && "border-danger focus-within:border-danger", className)}
+    >
       {label && (
-        <label className={twMerge(baseLabelStyles, error && "text-danger group-focus-within:text-danger")}>
+        <label 
+          style={labelStyle}
+          className={twMerge(baseLabelStyles, error && "text-danger group-focus-within:text-danger")}
+        >
           {label}
         </label>
       )}
@@ -65,6 +91,8 @@ export function PasswordInputLP({ value, onChange, disabled, error, className, l
           type={showPassword ? 'text' : 'password'}
           value={value}
           onChange={(e) => onChange(e.target.value)}
+          onFocus={() => setIsFocused(true)}
+          onBlur={() => setIsFocused(false)}
           disabled={disabled}
           placeholder={placeholder}
           autoComplete="new-password"
@@ -73,7 +101,10 @@ export function PasswordInputLP({ value, onChange, disabled, error, className, l
         <button
           type="button"
           onClick={() => setShowPassword(!showPassword)}
+          onMouseEnter={() => setIsEyeHovered(true)}
+          onMouseLeave={() => setIsEyeHovered(false)}
           disabled={disabled}
+          style={eyeIconStyle}
           className="absolute right-0 top-1/2 -translate-y-1/2 text-content-subtle hover:text-brand transition-colors p-2 outline-none"
         >
           <Icon 
@@ -91,11 +122,22 @@ export function PasswordInputLP({ value, onChange, disabled, error, className, l
   );
 }
 
-export function EmailInputLP({ value, onChange, disabled, error, className, label = "Email", placeholder = "mail@example.com" }) {
+export function EmailInputLP({ value, onChange, disabled, error, className, label = "Email", placeholder = "mail@example.com", activeColor }) {
+  const [isFocused, setIsFocused] = useState(false);
+
+  const wrapperStyle = isFocused && activeColor ? { borderColor: activeColor } : {};
+  const labelStyle = isFocused && activeColor ? { color: activeColor } : {};
+
   return (
-    <div className={twMerge(baseWrapperStyles, error && "border-danger focus-within:border-danger", className)}>
+    <div 
+      style={wrapperStyle}
+      className={twMerge(baseWrapperStyles, error && "border-danger focus-within:border-danger", className)}
+    >
       {label && (
-        <label className={twMerge(baseLabelStyles, error && "text-danger group-focus-within:text-danger")}>
+        <label 
+          style={labelStyle}
+          className={twMerge(baseLabelStyles, error && "text-danger group-focus-within:text-danger")}
+        >
           {label}
         </label>
       )}
@@ -104,6 +146,8 @@ export function EmailInputLP({ value, onChange, disabled, error, className, labe
           type="email"
           value={value}
           onChange={(e) => onChange(e.target.value)}
+          onFocus={() => setIsFocused(true)}
+          onBlur={() => setIsFocused(false)}
           disabled={disabled}
           placeholder={placeholder}
           autoComplete="nope"
@@ -119,8 +163,9 @@ export function EmailInputLP({ value, onChange, disabled, error, className, labe
   );
 }
 
-export function TextInputLP({ value, onChange, disabled, error, className, label, placeholder, type = "text" }) {
+export function TextInputLP({ value, onChange, disabled, error, className, label, placeholder, type = "text" , activeColor }) {
   const [currentType, setCurrentType] = useState(type === 'date' && !value ? 'text' : type);
+  const [isFocused, setIsFocused] = useState(false);
 
   useEffect(() => {
     if (type === 'date') {
@@ -129,17 +174,28 @@ export function TextInputLP({ value, onChange, disabled, error, className, label
   }, [value, type]);
 
   const handleFocus = () => {
+    setIsFocused(true);
     if (type === 'date') setCurrentType('date');
   };
 
   const handleBlur = () => {
+    setIsFocused(false);
     if (type === 'date' && !value) setCurrentType('text');
   };
 
+  const wrapperStyle = isFocused && activeColor ? { borderColor: activeColor } : {};
+  const labelStyle = isFocused && activeColor ? { color: activeColor } : {};
+
   return (
-    <div className={twMerge(baseWrapperStyles, error && "border-danger focus-within:border-danger", className)}>
+    <div 
+      style={wrapperStyle}
+      className={twMerge(baseWrapperStyles, error && "border-danger focus-within:border-danger", className)}
+    >
       {label && (
-        <label className={twMerge(baseLabelStyles, error && "text-danger group-focus-within:text-danger")}>
+        <label 
+          style={labelStyle}
+          className={twMerge(baseLabelStyles, error && "text-danger group-focus-within:text-danger")}
+        >
           {label}
         </label>
       )}
@@ -168,11 +224,22 @@ export function TextInputLP({ value, onChange, disabled, error, className, label
   );
 }
 
-export function DateMaskInputLP({ value, onChange, disabled, error, className, label, placeholder = "дд.мм.гггг" }) {
+export function DateMaskInputLP({ value, onChange, disabled, error, className, label, placeholder = "дд.мм.гггг", activeColor }) {
+  const [isFocused, setIsFocused] = useState(false);
+
+  const wrapperStyle = isFocused && activeColor ? { borderColor: activeColor } : {};
+  const labelStyle = isFocused && activeColor ? { color: activeColor } : {};
+
   return (
-    <div className={twMerge(baseWrapperStyles, error && "border-danger focus-within:border-danger", className)}>
+    <div 
+      style={wrapperStyle}
+      className={twMerge(baseWrapperStyles, error && "border-danger focus-within:border-danger", className)}
+    >
       {label && (
-        <label className={twMerge(baseLabelStyles, error && "text-danger group-focus-within:text-danger")}>
+        <label 
+          style={labelStyle}
+          className={twMerge(baseLabelStyles, error && "text-danger group-focus-within:text-danger")}
+        >
           {label}
         </label>
       )}
@@ -188,6 +255,8 @@ export function DateMaskInputLP({ value, onChange, disabled, error, className, l
           value={value}
           unmask={false} 
           onAccept={(val) => onChange(val)}
+          onFocus={() => setIsFocused(true)}
+          onBlur={() => setIsFocused(false)}
           disabled={disabled}
           inputMode="numeric" 
           placeholder={placeholder}

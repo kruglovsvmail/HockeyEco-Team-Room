@@ -6,12 +6,12 @@ import { Avatar } from '../../ui/Avatar';
 // Импортируем наш новый унифицированный компонент производительности
 import { FadeIn } from '../../ui/FadeIn';
 
-export const TeamStaffMembers = ({ staff = [], onPersonClick }) => {
+export const TeamStaffMembers = ({ staff = [], onPersonClick, activeColor }) => {
   const roleDict = {
     'team_manager': 'Руководитель',
     'team_admin': 'Администратор',
     'coach': 'Тренер',
-    'head_coach': 'Гл. trainer'
+    'head_coach': 'Гл. тренер'
   };
 
   const staffColumns = useMemo(() => [
@@ -51,7 +51,12 @@ export const TeamStaffMembers = ({ staff = [], onPersonClick }) => {
         return (
           <div className="flex flex-col gap-1 items-end justify-center pointer-events-none">
             {rolesArray.map((r, i) => (
-              <span key={i} className="text-[10px] font-black text-brand uppercase tracking-widest text-right">
+              // ИСПРАВЛЕНО: Текст роли руководства перенимает HEX-оттенок бренда
+              <span 
+                key={i} 
+                style={activeColor ? { color: activeColor } : {}}
+                className="text-[10px] font-black text-brand uppercase tracking-widest text-right"
+              >
                 {roleDict[r] || r}
               </span>
             ))}
@@ -59,7 +64,7 @@ export const TeamStaffMembers = ({ staff = [], onPersonClick }) => {
         );
       }
     }
-  ], []);
+  ], [activeColor]);
 
   return (
     <FadeIn>
