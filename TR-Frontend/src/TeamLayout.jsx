@@ -140,6 +140,27 @@ function TeamLayoutContent() {
         return navigate('/login');
       }
 
+      // МГНОВЕННЫЙ ОФФЛАЙН-СТАРТ (Stale-While-Revalidate)
+      // Сразу выводим закэшированный профиль на экран без задержек и белых экранов
+      const cachedUserData = localStorage.getItem('teampwa_cached_user');
+      if (cachedUserData) {
+        const parsedUser = JSON.parse(cachedUserData);
+        setUser(parsedUser);
+        
+        const userTeams = parsedUser.teams || [];
+        setTeams(userTeams);
+        
+        const savedTeamId = localStorage.getItem('teampwa_selected_team');
+        let currentTeam = userTeams.find(t => t.id == savedTeamId) || userTeams[0];
+        setSelectedTeam(currentTeam);
+        setIsLoading(false); // Выключаем лоадер моментально!
+      }
+
+      // Если сети нет, фоновые попытки fetch даже не инициируем
+      if (!navigator.onLine) {
+        return;
+      }
+
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), 3000);
 
@@ -171,25 +192,11 @@ function TeamLayoutContent() {
         setSelectedTeam(currentTeam);
       } catch (err) {
         clearTimeout(timeoutId);
-
-        if (!navigator.onLine || err.name === 'AbortError' || err.message.includes('Failed to fetch') || err.name === 'TypeError') {
-          const cachedUserData = localStorage.getItem('teampwa_cached_user');
-          if (cachedUserData) {
-            const parsedUser = JSON.parse(cachedUserData);
-            setUser(parsedUser);
-            
-            const userTeams = parsedUser.teams || [];
-            setTeams(userTeams);
-            
-            const savedTeamId = localStorage.getItem('teampwa_selected_team');
-            let currentTeam = userTeams.find(t => t.id == savedTeamId) || userTeams[0];
-            setSelectedTeam(currentTeam);
-            return; 
-          }
+        // Если кэша не было вообще и сеть упала — только тогда разлогиниваем
+        if (!localStorage.getItem('teampwa_cached_user')) {
+          removeToken();
+          navigate('/login');
         }
-
-        removeToken();
-        navigate('/login');
       } finally {
         setIsLoading(false);
       }
@@ -223,7 +230,6 @@ function TeamLayoutContent() {
     return () => window.removeEventListener('popstate', handlePopState);
   }, [fullPagePanel.isOpen]);
 
-  // Вызов нашего унифицированного легковесного лоадера при инициализации
   if (isLoading) {
     return <PageLoader />;
   }

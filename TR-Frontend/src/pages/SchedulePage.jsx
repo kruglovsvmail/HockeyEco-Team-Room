@@ -26,7 +26,8 @@ dayjs.extend(isSameOrAfter);
 dayjs.locale('ru');
 
 export function SchedulePage() {
-  const { openRightPanel, openFullPage } = useOutletContext();
+  // Извлекаем выбранную команду из контекста лейаута для изоляции кэша
+  const { selectedTeam, openRightPanel, openFullPage } = useOutletContext();
 
   const [currentDate, setCurrentDate] = useState(dayjs());
   const [isExpanded, setIsExpanded] = useState(false);
@@ -34,16 +35,19 @@ export function SchedulePage() {
   // Состояние готовности анимации перехода страницы (предотвращает лаги Main Thread)
   const [isPageReady, setIsPageReady] = useState(false);
 
-  // МГНОВЕННЫЙ СТАРТ: Инициализируем массив сразу из кэша (0 миллисекунд ожидания)
+  const currentMonthKey = currentDate.format('YYYY-MM');
+  const teamId = selectedTeam?.id || 'no_team';
+  
+  // УМНЫЙ СОСТАВНОЙ КЛЮЧ: Разделяет кэш по командам и месяцам календаря
+  const cacheKey = `tr_cached_events_team_${teamId}_month_${currentMonthKey}`;
+
+  // Инициализируем массив сразу из изолированного кэша
   const [events, setEvents] = useState(() => {
-    const cached = localStorage.getItem('tr_cached_events');
+    const cached = localStorage.getItem(`tr_cached_events_team_${selectedTeam?.id || 'no_team'}_month_${dayjs().format('YYYY-MM')}`);
     return cached ? JSON.parse(cached) : [];
   });
   
-  // Если у нас уже есть данные в локальной памяти, лоадер не показываем вообще
-  const [isLoading, setIsLoading] = useState(() => {
-    return !localStorage.getItem('tr_cached_events');
-  });
+  const [isLoading, setIsLoading] = useState(true);
   
   const touchStartX = useRef(null);
   const touchStartY = useRef(null);
@@ -56,19 +60,51 @@ export function SchedulePage() {
   const [isAnimating, setIsAnimating] = useState(false);
   const animationTimer = useRef(null);
 
-  const currentMonthKey = currentDate.format('YYYY-MM');
+  // Динамическая реактивная подгрузка локального кэша при смене месяца или команды
+  useEffect(() => {
+    const cached = localStorage.getItem(cacheKey);
+    if (cached) {
+      setEvents(JSON.parse(cached));
+      setIsLoading(false);
+    } else {
+      setEvents([]);
+      setIsLoading(true);
+    }
+  }, [cacheKey]);
 
   // Активация легкого отложенного рендеринга страницы при её монтировании
   useEffect(() => {
     const timer = setTimeout(() => {
       setIsPageReady(true);
-    }, 150); // Даем браузеру завершить системный переход между страницами
+    }, 150);
     return () => clearTimeout(timer);
   }, []);
 
+  // ВЫСОКОПРОИЗВОДИТЕЛЬНАЯ МЕМОИЗАЦИЯ ДАТ (Спаситель FPS)
+  // Выполняем тяжелый dayjs().tz() ровно ОДИН раз при изменении массива событий.
+  // Это полностью освобождает анимацию свайпа и рендер карточек от математических лагов!
+  const processedEvents = useMemo(() => {
+    return events.map(event => {
+      if (!event.event_date) return { ...event, _weekYearKey: null, _formattedDateStr: null };
+      
+      const eventDate = dayjs.utc(event.event_date).tz(event.arena_timezone || 'UTC');
+      return {
+        ...event,
+        // Формируем уникальный строковый указатель ISO-недели года, например: "2026-21"
+        _weekYearKey: `${eventDate.isoWeekYear()}-${eventDate.isoWeek()}`,
+        _formattedDateStr: eventDate.format('YYYY-MM-DD')
+      };
+    });
+  }, [events]);
+
   // Выносим загрузку событий в useCallback для поддержки фонового обновления
   const fetchEvents = useCallback(async () => {
-    // Включаем спиннер только если ОЗУ и кэш абсолютно пусты
+    // Если устройство в оффлайне — мгновенно выходим, исключая задержки и зависания сетевого стека
+    if (!navigator.onLine) {
+      setIsLoading(false);
+      return;
+    }
+
     if (events.length === 0) setIsLoading(true);
     
     try {
@@ -85,17 +121,17 @@ export function SchedulePage() {
         const fetchedCards = data.cards || [];
         setEvents(fetchedCards);
         
-        // Перезаписываем единый кэш (старый JSON стабильно обновляется)
-        localStorage.setItem('tr_cached_events', JSON.stringify(fetchedCards));
+        // Записываем данные строго в изолированную ячейку текущей команды и месяца
+        localStorage.setItem(cacheKey, JSON.stringify(fetchedCards));
       } else {
         console.error('Ошибка загрузки событий:', data.error);
       }
     } catch (err) {
-      console.error('Ошибка сети при загрузке событий (работаем в офлайне):', err);
+      console.error('Ошибка сети при загрузке событий:', err);
     } finally {
       setIsLoading(false);
     }
-  }, [currentMonthKey, events.length]);
+  }, [currentMonthKey, events.length, cacheKey]);
 
   useEffect(() => {
     fetchEvents();
@@ -111,11 +147,14 @@ export function SchedulePage() {
   }, [currentDate]);
 
   const handleToggleAttendance = async (eventId, eventType, newValue, teamId) => {
-    setEvents(prev => prev.map(event => 
+    const updatedEvents = events.map(event => 
       (event.event_id === eventId && event.event_type === eventType && event.my_team_id === teamId) 
         ? { ...event, is_attending: newValue } 
         : event
-    ));
+    );
+    
+    setEvents(updatedEvents);
+    localStorage.setItem(cacheKey, JSON.stringify(updatedEvents));
 
     try {
       const response = await fetch(`${import.meta.env.VITE_API_URL}/api/events/${eventId}/attendance`, {
@@ -129,33 +168,29 @@ export function SchedulePage() {
 
       const data = await response.json();
       if (!response.ok || !data.success) {
-        throw new Error(data.error || 'Ошибка保存ения');
+        throw new Error(data.error || 'Ошибка сохранения');
       }
-      
-      // Обновляем кэш после успешной мутации, чтобы состояние не откатилось в офлайне
-      localStorage.setItem('tr_cached_events', JSON.stringify(
-        events.map(event => (event.event_id === eventId && event.event_type === eventType && event.my_team_id === teamId) ? { ...event, is_attending: newValue } : event)
-      ));
     } catch (err) {
       console.error('Ошибка переключения тумблера:', err);
-      setEvents(prev => prev.map(event => 
+      const rolledBackEvents = events.map(event => 
         (event.event_id === eventId && event.event_type === eventType && event.my_team_id === teamId) 
           ? { ...event, is_attending: !newValue } 
           : event
-      ));
+      );
+      setEvents(rolledBackEvents);
+      localStorage.setItem(cacheKey, JSON.stringify(rolledBackEvents));
     }
   };
 
   const eventDatesSet = useMemo(() => {
     const dates = new Set();
-    events.forEach(event => {
-      if (event.event_date) {
-        const eventDate = dayjs(event.event_date).tz(event.arena_timezone || 'UTC');
-        dates.add(eventDate.format('YYYY-MM-DD'));
+    processedEvents.forEach(event => {
+      if (event._formattedDateStr) {
+        dates.add(event._formattedDateStr);
       }
     });
     return dates;
-  }, [events]);
+  }, [processedEvents]);
 
   const slideTo = useCallback((direction) => {
     if (isAnimating) return;
@@ -238,7 +273,6 @@ export function SchedulePage() {
     isHorizontalSwipe.current = false;
   };
 
-  // Сначала загружаем пустую страницу с легковесным лоадером
   if (!isPageReady) {
     return <PageLoader />;
   }
@@ -282,15 +316,13 @@ export function SchedulePage() {
           >
             {[-1, 0, 1].map((offset, idx) => {
               const slideDate = currentDate.add(offset, 'week');
-              
-              // ИСПРАВЛЕНО: Уникальный ключ на основе даты начала недели предотвращает мигание FadeIn при перелистывании пустых недель
               const slideWeekKey = slideDate.startOf('isoWeek').format('YYYY-MM-DD');
+              
+              // Создаем целевой строковый указатель для моментального сопоставления сuseMemo
+              const targetWeekYearKey = `${slideDate.isoWeekYear()}-${slideDate.isoWeek()}`;
 
-              const slideEvents = events.filter(event => {
-                if (!event.event_date) return false;
-                const eventDate = dayjs(event.event_date).tz(event.arena_timezone || 'UTC');
-                return eventDate.isSame(slideDate, 'isoWeek');
-              });
+              // Высокоскоростная фильтрация по текстовому ключу вместо разбора объектов дат
+              const slideEvents = processedEvents.filter(event => event._weekYearKey === targetWeekYearKey);
 
               return (
                 <div 

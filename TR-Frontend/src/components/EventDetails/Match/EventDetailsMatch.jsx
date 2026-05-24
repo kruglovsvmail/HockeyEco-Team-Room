@@ -28,8 +28,8 @@ const MATCH_TABS = [
 export const EventDetailsMatch = ({ event }) => {
   const [activeTab, setActiveTab] = useState('info');
 
-  // Динамический ключ кэша конкретной игры
-  const cacheKey = `tr_cached_match_${event?.event_id}`;
+  // УМНЫЙ СОСТАВНОЙ КЛЮЧ: Привязываем кэш игры к конкретному ID матча И к ID просматривающей команды
+  const cacheKey = `tr_cached_match_${event?.event_id}_team_${event?.my_team_id || 'no_team'}`;
 
   // Централизованное хранилище состояний данных для всех вкладок матча
   const [matchData, setMatchData] = useState({
@@ -52,17 +52,15 @@ export const EventDetailsMatch = ({ event }) => {
   const hasTeamColor = isColorsEnabled && !!event?.team_color;
   const activeBrandColor = hasTeamColor ? event.team_color : 'var(--color-brand)';
 
-  // КРИТИЧЕСКАЯ РЕАКТИВНАЯ СИНХРОНИЗАЦИЯ КЭША
-  // Срабатывает мгновенно при смене event_id, вычищая старый матч и загружая актуальный кэш!
+  // КРИТИЧЕСКАЯ РЕАКТИВНАЯ СИНХРОНИЗАЦИЯ КЭША ГЕЙМ-ЦЕНТРА
   useEffect(() => {
     if (!event?.event_id) return;
     
     const cached = localStorage.getItem(cacheKey);
     if (cached) {
       setMatchData(JSON.parse(cached));
-      setLoading(false); // Если кэш этой игры есть, убираем лоадер экрана
+      setLoading(false); 
     } else {
-      // Если кэша нет, сбрасываем структуру в дефолт и включаем лоадер
       setMatchData({
         attendees: [],
         draftLines: [],
@@ -77,6 +75,13 @@ export const EventDetailsMatch = ({ event }) => {
   // Параллельный атомарный сбор данных со всех эндпоинтов матча за один проход
   const fetchAllMatchData = useCallback(async () => {
     if (!event?.event_id) return;
+
+    // ПРЕВЕНТИВНЫЙ ОФФЛАЙН-ВЫХОД: Если сети нет — мгновенно прекращаем запрос, убирая микро-фризы
+    if (!navigator.onLine) {
+      setLoading(false);
+      return;
+    }
+
     try {
       const apiUrl = import.meta.env.VITE_API_URL || '';
       const headers = getAuthHeaders();
@@ -101,10 +106,10 @@ export const EventDetailsMatch = ({ event }) => {
 
       setMatchData(freshData);
       
-      // Перезаписываем кэш строго по ID этого матча
+      // Перезаписываем изолированный кэш строго по связке ID матча и ID команды
       localStorage.setItem(cacheKey, JSON.stringify(freshData));
     } catch (err) {
-      console.error('Ошибка централизованной загрузки данных матча (работаем на кэше):', err);
+      console.error('Ошибка централизованной загрузки данных матча:', err);
     } finally {
       setLoading(false);
     }
