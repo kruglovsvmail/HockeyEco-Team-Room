@@ -7,7 +7,13 @@ import 'dotenv/config';
 import pool from './config/db.js';
 import authRoutes from './routes/authRoutes.js';
 import EventRoutes from './routes/EventRoutes.js'; 
-import teamRoutes from './routes/teamRoutes.js'; // НОВЫЙ ИМПОРТ
+import teamRoutes from './routes/teamRoutes.js';
+
+// Импорт новых роутов управления командой
+import mgrEventRoutes from './routes/manager/mgrEventRoutes.js';
+import mgrSeasonRoutes from './routes/manager/mgrSeasonRoutes.js';
+import mgrFinanceRoutes from './routes/manager/mgrFinanceRoutes.js';
+import mgrHandbookRoutes from './routes/manager/mgrHandbookRoutes.js';
 
 const app = express();
 const PORT = process.env.PORT || 3002;
@@ -34,10 +40,16 @@ app.use(cors({
 
 app.use(express.json());
 
-// Роуты
+// Базовые системные роуты
 app.use('/api/auth', authRoutes);
 app.use('/api/events', EventRoutes); 
-app.use('/api/teams', teamRoutes); // НОВЫЙ РОУТ
+app.use('/api/teams', teamRoutes);
+
+// Новые эндпоинты раздела Руководства
+app.use('/api/manager/events', mgrEventRoutes);
+app.use('/api/manager/seasons', mgrSeasonRoutes);
+app.use('/api/manager/finances', mgrFinanceRoutes);
+app.use('/api/manager/handbooks', mgrHandbookRoutes);
 
 const startServer = async () => {
   try {

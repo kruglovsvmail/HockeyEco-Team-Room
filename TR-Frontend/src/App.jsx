@@ -4,11 +4,18 @@ import { useRegisterSW } from 'virtual:pwa-register/react';
 import { TeamLayout } from './TeamLayout';
 import { UpdatePromptModal } from './components/UpdatePromptModal';
 
-// Разделяем код страниц на независимые чанки
+// Разделяем код стандартных страниц на независимые чанки
 const LoginPage = lazy(() => import('./pages/LoginPage'));
 const SchedulePage = lazy(() => import('./pages/SchedulePage').then(module => ({ default: module.SchedulePage })));
 const MyTeamPage = lazy(() => import('./pages/MyTeamPage').then(module => ({ default: module.MyTeamPage })));
 const ProfilePage = lazy(() => import('./pages/ProfilePage').then(module => ({ default: module.ProfilePage })));
+const SettingsPage = lazy(() => import('./pages/SettingsPage').then(module => ({ default: module.SettingsPage })));
+
+// Чанки страниц раздела Руководства — ИСПРАВЛЕНЫ пути импорта для сборщика Vite
+const CreateEventPage = lazy(() => import('./pages/manager/CreateEventPage').then(m => ({ default: m.CreateEventPage })));
+const SeasonRostersPage = lazy(() => import('./pages/manager/SeasonRostersPage').then(m => ({ default: m.SeasonRostersPage })));
+const FinancesPage = lazy(() => import('./pages/manager/FinancesPage').then(m => ({ default: m.FinancesPage })));
+const HandbooksPage = lazy(() => import('./pages/manager/HandbooksPage').then(m => ({ default: m.HandbooksPage })));
 
 // Минималистичный индикатор загрузки для плавного перехода между экранами
 const PageLoader = () => (
@@ -79,6 +86,13 @@ export default function App() {
                 <Route path="/" element={<SchedulePage />} />
                 <Route path="/my-team" element={<MyTeamPage />} />
                 <Route path="/profile" element={<ProfilePage />} />
+                <Route path="/settings" element={<SettingsPage />} />
+                
+                {/* Новые защищенные роуты Руководства */}
+                <Route path="/manager/create-event" element={<CreateEventPage />} />
+                <Route path="/manager/season-rosters" element={<SeasonRostersPage />} />
+                <Route path="/manager/finances" element={<FinancesPage />} />
+                <Route path="/manager/handbooks" element={<HandbooksPage />} />
               </Route>
 
               {/* Автоматический редирект для любых неописанных путей */}
