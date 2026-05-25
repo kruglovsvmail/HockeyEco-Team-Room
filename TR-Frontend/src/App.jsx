@@ -58,7 +58,8 @@ export default function App() {
       <div className="absolute top-1/4 right-[-20%] w-80 h-80 bg-brand-glow saturate-[40%] blur-ambient rounded-full pointer-events-none z-0 opacity-100"></div>
       <div className="absolute inset-0 w-full h-full bg-noise mix-blend-overlay z-0"></div>
 
-      <div className="relative z-10 w-full h-full flex flex-col overflow-hidden overflow-x-hidden scrollbar-hide pt-[env(safe-area-inset-top)] pb-[env(safe-area-inset-bottom)]">
+      {/* Очищено от pt и pb для предотвращения эффекта двойных отступов на iOS */}
+      <div className="relative z-10 w-full h-full flex flex-col overflow-hidden overflow-x-hidden scrollbar-hide">
         <BrowserRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
           <Suspense fallback={<PageLoader />}>
             <Routes>

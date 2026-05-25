@@ -23,12 +23,12 @@ export function Header({ isSidebarOpen, onToggleSidebar, user, selectedTeam, onT
 
   return (
     <>
-      {/* Чистая фиксированная высота шапки без динамических сдвигов под баннеры */}
+      {/* Стабильный расчет высоты: базовые 60px плюс системная высота статус-бара iOS */}
       <header 
         className="absolute top-0 left-0 right-0 flex flex-col z-40 transition-all duration-300 ease-[cubic-bezier(0.32,0.72,0,1)] overflow-hidden"
         style={{
           height: 'calc(60px + env(safe-area-inset-top, 0px))',
-          paddingTop: 'env(safe-area-inset-top, 0px)' // Сдвигаем контент ниже системного статус-бара устройства
+          paddingTop: 'env(safe-area-inset-top, 0px)' 
         }}
       >
         

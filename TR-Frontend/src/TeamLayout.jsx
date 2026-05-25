@@ -291,11 +291,12 @@ function TeamLayoutContent() {
         {isSidebarOpen && <div className="absolute inset-0 z-50 md:hidden bg-transparent" onClick={() => setIsSidebarOpen(false)} />}
         {rightPanel.isOpen && <div className="absolute inset-0 z-50 bg-transparent cursor-pointer md:hidden" onClick={closeRightPanel} />}
 
-        {/* Статичный и стабильный верхний отступ с учетом высоты хедера */}
+        {/* Сбалансированный верхний и нижний безопасный отступ без двойного наложения */}
         <main 
           className="flex-1 overflow-y-auto overflow-x-hidden relative overscroll-none transition-all duration-300 ease-[cubic-bezier(0.32,0.72,0,1)]"
           style={{
-            paddingTop: 'calc(60px + env(safe-area-inset-top, 0px))'
+            paddingTop: 'calc(60px + env(safe-area-inset-top, 0px))',
+            paddingBottom: 'calc(32px + env(safe-area-inset-bottom, 0px))'
           }}
         >
           <Outlet context={{ user, teams, selectedTeam, handleTeamChange, openRightPanel, openFullPage }} />
