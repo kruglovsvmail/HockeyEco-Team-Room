@@ -36,6 +36,16 @@ export default function App() {
     };
   }, []);
 
+  // Инициализируем тему на этапе старта приложения
+  useEffect(() => {
+    const isDark = localStorage.getItem('tr_theme') === 'dark';
+    document.documentElement.classList.toggle('dark', isDark);
+    const metaTheme = document.querySelector('meta[name="theme-color"]');
+    if (metaTheme) {
+      metaTheme.setAttribute('content', isDark ? '#0f172a' : '#d1d5db');
+    }
+  }, []);
+
   // Инициализируем менеджер жизненного цикла Service Worker
   const {
     needRefresh: [needRefresh, setNeedRefresh],
@@ -52,7 +62,7 @@ export default function App() {
   });
 
   return (
-    <div className="fixed inset-0 w-full h-[100dvh] flex flex-col bg-surface-border text-content font-sans overflow-hidden overscroll-none">
+    <div className="fixed inset-0 w-full h-[100dvh] flex flex-col bg-surface-border text-content font-sans overflow-hidden overscroll-none transition-colors duration-300">
       
       {/* Фоновые decorative элементы */}
       <div className="absolute top-1/4 right-[-20%] w-80 h-80 bg-brand-glow saturate-[40%] blur-ambient rounded-full pointer-events-none z-0 opacity-100"></div>

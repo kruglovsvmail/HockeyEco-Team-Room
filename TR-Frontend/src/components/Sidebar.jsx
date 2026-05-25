@@ -119,7 +119,7 @@ export function Sidebar({ user, teams = [], selectedTeam, onTeamChange, onClose 
                               : "text-content-muted hover:text-content-main hover:bg-surface-level2"
                           )}
                         >
-                          <div className="w-6 h-6 rounded-md bg-surface-level1 p-0.5 flex items-center justify-center shrink-0 border border-surface-border/50">
+                          <div className="w-6 h-6 rounded-md bg-surface-level1 p-0.5 flex items-center justify-center shrink-0 ">
                             <img 
                               src={getImageUrl(team.logo_url)} 
                               alt={team.name} 

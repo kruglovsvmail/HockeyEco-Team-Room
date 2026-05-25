@@ -11,14 +11,28 @@
     <meta name="apple-mobile-web-app-status-bar-style" content="default" />
     <meta name="apple-mobile-web-app-title" content="HockeyEco" />
     
-    <meta name="theme-color" content="#d1d5db" />
+    <meta id="theme-meta" name="theme-color" content="#d1d5db" />
 
     <title>HockeyEco | Кабинет команды</title>
 
+    <script>
+      /* 🚀 ЗАЩИТА ОТ ВСПОЛОХА БЕЛОГО ЭКРАHА ПРИ ХОЛОДHОМ СТАРТЕ PWA */
+      (function () {
+        const savedTheme = localStorage.getItem('tr_theme');
+        if (savedTheme === 'dark') {
+          document.documentElement.classList.add('dark');
+          document.querySelector('#theme-meta')?.setAttribute('content', '#0f172a');
+        } else {
+          document.documentElement.classList.remove('dark');
+          document.querySelector('#theme-meta')?.setAttribute('content', '#d1d5db');
+        }
+      })();
+    </script>
+
     <style>
-      /* 🎨 ФОН СТРАНИЦЫ ВО ВРЕМЯ ВРАЩЕНИЯ ЛОУДЕРА И ХОЛОДНОГО СТАРТА */
+      /* 🎨 ФОH СТРАHИЦЫ ВО ВРЕМЯ ВРАЩЕHИЯ ЛОУДЕРА И ХОЛОДHОГО СТАРТА */
       html, body {
-        background-color: #d1d5db; /* Замените на нужный цвет фона загрузки */
+        background-color: var(--color-surface-base, #d1d5db);
         margin: 0;
         padding: 0;
         width: 100%;
