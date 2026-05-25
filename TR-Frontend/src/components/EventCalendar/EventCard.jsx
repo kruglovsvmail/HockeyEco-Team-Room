@@ -115,11 +115,11 @@ const EventCard = ({ event, onToggleAttendance, onClick }) => {
   return (
     <div 
       onClick={() => onClick && onClick(event)}
-      className={`bg-surface-level1 rounded-3xl shadow-sm mb-4 w-full select-none flex flex-col overflow-hidden cursor-pointer active:scale-[0.98] ${cardOpacityClass}`}
+      className={`bg-surface-level1 rounded-3xl shadow-lg mb-4 w-full select-none flex flex-col overflow-hidden cursor-pointer active:scale-[0.98] ${cardOpacityClass}`}
     >
       
       {/* 1. ШАПКА: Локация и Челка Даты */}
-      <div className="flex justify-between items-stretch w-full h-[32px]">
+      <div className="flex justify-between items-stretch w-full h-[32px] ">
         
         {/* Локация */}
         <div className="flex items-center gap-1 pl-4 flex-1 overflow-hidden">
@@ -129,8 +129,8 @@ const EventCard = ({ event, onToggleAttendance, onClick }) => {
           </span>
         </div>
 
-        {/* Дата */}
-        <div className="relative w-[50%] shrink-0 flex items-center justify-center pl-3">
+{/* Дата */}
+        <div className="relative w-[50%] shrink-0 flex items-center drop-shadow-md justify-center pl-3">
           <svg 
             className="absolute inset-0 w-full h-full" 
             viewBox="0 0 140 38" 
@@ -138,9 +138,22 @@ const EventCard = ({ event, onToggleAttendance, onClick }) => {
             fill="currentColor"
             preserveAspectRatio="none"
           >
+            <defs>
+              {/* Градиент глянца: сверху белый (25% непрозрачности), снизу полностью прозрачный */}
+              <linearGradient id="glowingVolume" x1="0" y1="0" x2="0" y2="1">
+                <stop offset="40%" stopColor="#ffffffff" stopOpacity="0.25" />
+                <stop offset="70%" stopColor="#ffffffff" stopOpacity="0" />
+              </linearGradient>
+            </defs>
+            
+            {/* Основной фон челки */}
             <path d="M0 0 H140 V38 H24 Q16 38 13.5 32 L0 0 Z" />
+            
+            {/* Наложение градиента объема, который повторяет форму плашки */}
+            <path d="M0 0 H140 V38 H24 Q16 38 13.5 32 L0 0 Z" fill="url(#glowingVolume)" />
           </svg>
-          <span className={`relative z-10 text-[11px] font-black uppercase tracking-widest ${contrastTextColor}`}>
+          {/* Добавлен drop-shadow-sm для текста, чтобы он лучше читался на объемном фоне, как на кнопке */}
+          <span className={`relative z-10 text-[11px] font-black uppercase tracking-widest drop-shadow-sm ${contrastTextColor}`}>
             {displayDateStr}
           </span>
         </div>
@@ -167,7 +180,7 @@ const EventCard = ({ event, onToggleAttendance, onClick }) => {
             <>
               {/* Моя команда */}
               <div className="w-[50%] flex items-center gap-2.5">
-                <div className="w-9 h-9 shrink-0 overflow-hidden flex items-center justify-center">
+                <div className="w-12 h-12 shrink-0 overflow-hidden drop-shadow-lg flex items-center justify-center">
                   {event.my_team_logo_url ? (
                     <img src={getImageUrl(event.my_team_logo_url)} alt="Лого" className="w-full h-full object-cover" />
                   ) : (

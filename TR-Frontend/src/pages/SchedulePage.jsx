@@ -81,8 +81,6 @@ export function SchedulePage() {
   }, []);
 
   // ВЫСОКОПРОИЗВОДИТЕЛЬНАЯ МЕМОИЗАЦИЯ ДАТ (Спаситель FPS)
-  // Выполняем тяжелый dayjs().tz() ровно ОДИН раз при изменении массива событий.
-  // Это полностью освобождает анимацию свайпа и рендер карточек от математических лагов!
   const processedEvents = useMemo(() => {
     return events.map(event => {
       if (!event.event_date) return { ...event, _weekYearKey: null, _formattedDateStr: null };
@@ -90,7 +88,6 @@ export function SchedulePage() {
       const eventDate = dayjs.utc(event.event_date).tz(event.arena_timezone || 'UTC');
       return {
         ...event,
-        // Формируем уникальный строковый указатель ISO-недели года, например: "2026-21"
         _weekYearKey: `${eventDate.isoWeekYear()}-${eventDate.isoWeek()}`,
         _formattedDateStr: eventDate.format('YYYY-MM-DD')
       };
@@ -99,7 +96,6 @@ export function SchedulePage() {
 
   // Выносим загрузку событий в useCallback для поддержки фонового обновления
   const fetchEvents = useCallback(async () => {
-    // Если устройство в оффлайне — мгновенно выходим, исключая задержки и зависания сетевого стека
     if (!navigator.onLine) {
       setIsLoading(false);
       return;
@@ -120,8 +116,6 @@ export function SchedulePage() {
       if (response.ok && data.success) {
         const fetchedCards = data.cards || [];
         setEvents(fetchedCards);
-        
-        // Записываем данные строго в изолированную ячейку текущей команды и месяца
         localStorage.setItem(cacheKey, JSON.stringify(fetchedCards));
       } else {
         console.error('Ошибка загрузки событий:', data.error);
@@ -283,22 +277,32 @@ export function SchedulePage() {
         className="flex flex-col w-full h-full overflow-hidden relative bg-surface-border"
         style={{ touchAction: 'pan-y' }}
       >
-        {/* ШАПКА */}
-        <div className="absolute top-0 left-0 right-0 z-40 px-4 pt-2 pb-4 bg-surface-border border-b border-surface-level3 shadow-md">
-          <CompactWeek 
-            date={currentDate} 
-            offsetIndex={offsetIndex}
-            isAnimating={isAnimating}
-            onChangeDate={(newDate) => {
-              if (newDate.isBefore(currentDate, 'day')) slideTo('prev');
-              else if (newDate.isAfter(currentDate, 'day')) slideTo('next');
-              else setCurrentDate(newDate);
-            }}
-            onToggleExpand={() => setIsExpanded(true)} 
-          />
+        {/* ШАПКА: Контейнер плашки календаря и градиентного шлейфа */}
+        <div className="absolute top-0 left-0 right-0 z-40 bg-transparent pointer-events-none flex flex-col">
+          
+          {/* ИСПРАВЛЕНО: Подробная настройка градиента. 
+            from-50% означает, что до 50% высоты шлейф будет полностью залит цветом фона (непрозрачный),
+            и только с 50% до конца (to-transparent) начнется плавное растворение в прозрачность.
+          */}
+          <div className="absolute top-0 left-0 right-0 h-24 bg-gradient-to-b from-surface-border from-50% to-transparent z-10" />
+
+          {/* Интерактивная зона календаря. У неё z-20, она перекрывает верхнюю часть градиента */}
+          <div className="px-4 pt-2 pb-1 pointer-events-auto relative z-20">
+            <CompactWeek 
+              date={currentDate} 
+              offsetIndex={offsetIndex}
+              isAnimating={isAnimating}
+              onChangeDate={(newDate) => {
+                if (newDate.isBefore(currentDate, 'day')) slideTo('prev');
+                else if (newDate.isAfter(currentDate, 'day')) slideTo('next');
+                else setCurrentDate(newDate);
+              }}
+              onToggleExpand={() => setIsExpanded(true)} 
+            />
+          </div>
         </div>
 
-        {/* Контейнер карточек занимает 100% высоты, уходя под шапку */}
+        {/* Контейнер карточек занимает 100% высоты */}
         <div 
           className="w-full h-full relative overflow-hidden"
           onTouchStart={handleTouchStart}
@@ -325,8 +329,8 @@ export function SchedulePage() {
                 <div 
                   key={slideWeekKey} 
                   ref={el => scrollRefs.current[idx] = el}
-                  /* pb-8 заменен на классический pb-4, так как нижний обрез списка больше не перекрывается полоской */
-                  className="w-1/3 shrink-0 flex flex-col px-4 h-full overflow-y-auto scrollbar-hide pt-[88px] pb-4"
+                  /* ИСПРАВЛЕНО: pt-[96px] уменьшен до pt-[68px], чтобы поднять карточки выше к CompactWeek и убрать зазор */
+                  className="w-1/3 shrink-0 flex flex-col px-4 h-full overflow-y-auto scrollbar-hide pt-[80px] pb-4"
                 >
                   <div>
                     {isLoading && offset === 0 ? (

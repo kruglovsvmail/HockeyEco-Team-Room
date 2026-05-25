@@ -831,7 +831,7 @@ export const MatchLines = ({ event, initialAttendees = [], initialDraftLines = [
         <div className="relative w-full">
           <div ref={carouselRef} onScroll={handleCarouselScroll} className="flex overflow-x-auto flex-nowrap snap-x snap-mandatory scrollbar-hide pt-2 w-full">
             {[1, 2, 3, 4].map(lineNum => (
-               <div key={`slide-${lineNum}`} className="min-w-full snap-center snap-always shrink-0 box-border">
+               <div key={`slide-${lineNum}`} className="min-w-full snap-center snap-always shrink-0  box-border">
                   <ContainerContent title={`Звено #${lineNum}`}>
                     {renderLineBlock(lineNum)}
                   </ContainerContent>

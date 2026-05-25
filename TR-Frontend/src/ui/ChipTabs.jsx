@@ -11,10 +11,11 @@ export const ChipTabs = ({ tabs, activeTab, onChange, className = '', activeColo
       {tabs.map((tab) => {
         const isActive = activeTab === tab.id;
         
-        // ИСПРАВЛЕНО: Динамический расчет цвета фона и контраста текста при активном командном цвете
+        // ИСПРАВЛЕНО: Добавлен эффект объема (глянца) через линейный градиент с твоими настройками offset (40% и 70%)
         const dynamicStyle = isActive && activeColor 
           ? { 
               backgroundColor: activeColor, 
+              backgroundImage: 'linear-gradient(to bottom, rgba(255, 255, 255, 0.25) 40%, rgba(255, 255, 255, 0) 70%)',
               color: getContrastTextColor(activeColor) === 'text-white' ? '#ffffff' : '#1f2937' 
             } 
           : {};
@@ -25,12 +26,18 @@ export const ChipTabs = ({ tabs, activeTab, onChange, className = '', activeColo
             onClick={() => onChange(tab.id)}
             style={dynamicStyle}
             className={clsx(
-              "whitespace-nowrap px-4 py-2 shadow-sm rounded-full text-[12px] font-bold uppercase tracking-widest outline-none shrink-0 transition-all duration-200",
-              isActive && !activeColor && "bg-brand text-surface-level1",
+              "relative overflow-hidden whitespace-nowrap px-4 py-2 shadow-sm rounded-full text-[12px] font-bold uppercase tracking-widest outline-none shrink-0 transition-all duration-200 active:scale-[0.98]",
+              
+              // Для дефолтного бренда добавляем глянец через before-элемент с твоими оффсетами
+              isActive && !activeColor && "bg-brand text-surface-level1 before:absolute before:inset-0 before:bg-gradient-to-b before:from-white/25 before:to-transparent before:via-white/25 before:from-[40%] before:to-[70%]",
+              
               !isActive && "bg-surface-level2 text-content-muted hover:text-content-main"
             )}
           >
-            {tab.label}
+            {/* Оборачиваем текст в span с относительным z-index и тенью, чтобы он не перекрывался глянцем и лучше читался */}
+            <span className={clsx("relative z-10", isActive && "drop-shadow-sm")}>
+              {tab.label}
+            </span>
           </button>
         );
       })}

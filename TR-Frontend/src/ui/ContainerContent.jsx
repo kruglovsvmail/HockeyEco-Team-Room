@@ -18,7 +18,7 @@ export function ContainerContent({
   return (
     <div
       className={clsx(
-        "bg-brand-glow rounded-2xl p-3 flex flex-col gap-4 relative z-0 overflow-hidden mx-4",
+        "bg-brand-glow rounded-2xl p-3 flex flex-col gap-4 relative z-0 shadow-md overflow-hidden mx-4",
         className
       )}
       {...props}

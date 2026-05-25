@@ -34,7 +34,7 @@ export const CompactWeek = React.memo(function CompactWeek({
 
   return (
     <div 
-      className="flex items-center justify-between bg-surface-level1 rounded-3xl shadow-md px-4 py-2.5 cursor-pointer select-none transition-colors"
+      className="flex items-center justify-between bg-surface-level1 shadow-lg rounded-3xl px-4 py-2.5 cursor-pointer select-none transition-colors"
       onClick={onToggleExpand}
     >
       {/* Левая стрелочка остается статичной */}
