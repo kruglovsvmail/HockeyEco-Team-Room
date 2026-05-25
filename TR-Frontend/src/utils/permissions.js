@@ -93,21 +93,21 @@ export const PERMISSIONS = {
   
   // 1. Доступ к странице создания событий (матчи, тренировки, собрания)
   MGR_CREATE_EVENT: [
-    ROLES.CLUB_TOP_MANAGER, ROLES.TEAM_MANAGER
+    ROLES.CLUB_TOP_MANAGER, ROLES.TEAM_MANAGER, ROLES.TEAM_ADMIN
   ],
 
   // 2. Доступ к странице заявочных кампаний (заявки на сезон, дозаявки)
   MGR_SEASON_ROSTERS: [
-    ROLES.CLUB_TOP_MANAGER, ROLES.TEAM_MANAGER
+    ROLES.CLUB_TOP_MANAGER, ROLES.TEAM_MANAGER, ROLES.TEAM_ADMIN
   ],
 
   // 3. Доступ к странице финансового контроля (оргвзносы, абонементы)
   MGR_FINANCES: [
-    ROLES.CLUB_TOP_MANAGER, ROLES.TEAM_MANAGER
+    ROLES.CLUB_TOP_MANAGER, ROLES.TEAM_MANAGER, ROLES.TEAM_ADMIN
   ],
 
   // 4. Доступ к странице справочников (инвентарь, настройки звеньев, базы арен)
   MGR_HANDBOOKS: [
-    ROLES.CLUB_TOP_MANAGER, ROLES.TEAM_MANAGER
+    ROLES.CLUB_TOP_MANAGER, ROLES.TEAM_MANAGER, ROLES.TEAM_ADMIN
   ]
 };

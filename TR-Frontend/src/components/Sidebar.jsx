@@ -31,10 +31,10 @@ export function Sidebar({ user, teams = [], selectedTeam, onTeamChange, onClose 
 
   // Конфигурация 4-х менеджерских пунктов меню со своими гранулярными правами [cite: 14]
   const managerSectionsConfig = [
-    { id: 'MGR_CREATE_EVENT', path: '/manager/create-event', label: 'Создание события', icon: 'plus' },
-    { id: 'MGR_SEASON_ROSTERS', path: '/manager/season-rosters', label: 'Заявки на сезон', icon: 'roster' },
-    { id: 'MGR_FINANCES', path: '/manager/finances', label: 'Управление финансами', icon: 'registry' },
-    { id: 'MGR_HANDBOOKS', path: '/manager/handbooks', label: 'Справочники команды', icon: 'handbook' },
+    { id: 'MGR_CREATE_EVENT', path: '/manager/create-event', label: 'Добавить событие', icon: 'plus' },
+    { id: 'MGR_SEASON_ROSTERS', path: '/manager/season-rosters', label: 'Заявки', icon: 'roster' },
+    { id: 'MGR_FINANCES', path: '/manager/finances', label: 'Финансы', icon: 'registry' },
+    { id: 'MGR_HANDBOOKS', path: '/manager/handbooks', label: 'Справочники', icon: 'handbook' },
   ];
 
   // Переключатель раскрытия аккордеона для менеджерских пунктов
@@ -96,7 +96,7 @@ export function Sidebar({ user, teams = [], selectedTeam, onTeamChange, onClose 
             `}
           >
             <Icon name="calendar" className="w-4 h-4" />
-            <span className="text-sm tracking-wider">Расписание</span>
+            <span className="text-lg tracking-wider">Расписание</span>
           </NavLink>
 
           {/* Пункт 2: Умное управление командами */}
@@ -113,7 +113,7 @@ export function Sidebar({ user, teams = [], selectedTeam, onTeamChange, onClose 
               `}
             >
               <Icon name="users" className="w-4 h-4" />
-              <span className="text-sm tracking-wider">Моя команда</span>
+              <span className="text-md tracking-wider">Моя команда</span>
             </NavLink>
           ) : (
             <div className="flex flex-col w-full">
@@ -126,7 +126,7 @@ export function Sidebar({ user, teams = [], selectedTeam, onTeamChange, onClose 
               >
                 <div className="flex items-center gap-4">
                   <Icon name="users" className="w-4 h-4" />
-                  <span className="text-sm tracking-wider">Мои команды</span>
+                  <span className="text-lg tracking-wider">Мои команды</span>
                 </div>
                 <div className={clsx("transition-transform duration-200", isTeamsExpanded && "rotate-180")}>
                   <Icon name="chevron" className="w-4 h-4" />
@@ -136,7 +136,7 @@ export function Sidebar({ user, teams = [], selectedTeam, onTeamChange, onClose 
               {/* Раскрывающийся список логотипов и названий команд */}
               <div className={clsx("grid-expand-transition", isTeamsExpanded && "expanded")}>
                 <div className="grid-expand-inner">
-                  <div className="flex flex-col gap-1 pl-3 pr-1 py-1 mt-1 border-l-2 border-surface-border/40 ml-6">
+                  <div className="flex flex-col gap-1 pl-3 pr-1 py-1 mt-1 border-l-2 border-surface-border ml-6">
                     {teams.map((team) => {
                       const isSelected = selectedTeam?.id === team.id;
                       return (
@@ -226,7 +226,7 @@ export function Sidebar({ user, teams = [], selectedTeam, onTeamChange, onClose 
                 >
                   <div className="flex items-center gap-4">
                     <Icon name={section.icon} className="w-4 h-4 shrink-0" />
-                    <span className="text-sm tracking-wider">{section.label}</span>
+                    <span className="text-lg tracking-wider">{section.label}</span>
                   </div>
                   <div className={clsx("transition-transform duration-200", isMenuOpen && "rotate-180")}>
                     <Icon name="chevron" className="w-4 h-4" />
@@ -285,7 +285,7 @@ export function Sidebar({ user, teams = [], selectedTeam, onTeamChange, onClose 
             `}
           >
             <Icon name="settings" className="w-4 h-4" />
-            <span className="text-sm tracking-wider">Настройки</span>
+            <span className="text-lg tracking-wider">Настройки</span>
           </NavLink>
 
         </nav>
