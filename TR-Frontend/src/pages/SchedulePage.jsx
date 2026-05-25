@@ -318,17 +318,15 @@ export function SchedulePage() {
               const slideDate = currentDate.add(offset, 'week');
               const slideWeekKey = slideDate.startOf('isoWeek').format('YYYY-MM-DD');
               
-              // Создаем целевой строковый указатель для моментального сопоставления сuseMemo
               const targetWeekYearKey = `${slideDate.isoWeekYear()}-${slideDate.isoWeek()}`;
-
-              // Высокоскоростная фильтрация по текстовому ключу вместо разбора объектов дат
               const slideEvents = processedEvents.filter(event => event._weekYearKey === targetWeekYearKey);
 
               return (
                 <div 
                   key={slideWeekKey} 
                   ref={el => scrollRefs.current[idx] = el}
-                  className="w-1/3 shrink-0 flex flex-col px-4 h-full overflow-y-auto scrollbar-hide pt-[88px] pb-8"
+                  /* pb-8 заменен на классический pb-4, так как нижний обрез списка больше не перекрывается полоской */
+                  className="w-1/3 shrink-0 flex flex-col px-4 h-full overflow-y-auto scrollbar-hide pt-[88px] pb-4"
                 >
                   <div>
                     {isLoading && offset === 0 ? (

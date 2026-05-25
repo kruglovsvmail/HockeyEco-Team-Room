@@ -43,7 +43,8 @@ export const EventDashboard = ({ isOpen, onClose, data, type, title, user, selec
   return (
     <div 
       className={clsx(
-        "fixed inset-0 z-[100] bg-surface-border flex flex-col transition-transform duration-500 ease-[cubic-bezier(0.32,0.72,0,1)] pt-[env(safe-area-inset-top)] pb-[env(safe-area-inset-bottom)]",
+        /* Полностью удалены pt-[env(safe-area-inset-top)] и pb-[env(safe-area-inset-bottom)] */
+        "fixed inset-0 z-[100] bg-surface-border flex flex-col transition-transform duration-500 ease-[cubic-bezier(0.32,0.72,0,1)]",
         isOpen ? "translate-x-0" : "translate-x-full"
       )}
     >
@@ -57,11 +58,12 @@ export const EventDashboard = ({ isOpen, onClose, data, type, title, user, selec
         hideActions={true}
       />
 
-      {/* КОНТЕНТНАЯ ЗОНА С СТАТИЧНЫМ СДВИГОМ ПОД ВЫСОТУ ШАПКИ И СТАТУС-БАРА */}
+      {/* КОНТЕНТНАЯ ЗОНА С СТАТИЧНЫМ СДВИГОМ ПОД ВЫСОТУ ШАПКИ */}
       <div 
         className="flex-1 overflow-hidden relative transition-all duration-300 ease-[cubic-bezier(0.32,0.72,0,1)]"
         style={{
-          paddingTop: 'calc(60px + env(safe-area-inset-top, 0px))'
+          /* Заменено с динамического calc на фиксированные 60px хедера */
+          paddingTop: '60px'
         }}
       >
         {!isPanelReady ? (
