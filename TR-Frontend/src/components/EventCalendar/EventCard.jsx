@@ -115,11 +115,12 @@ const EventCard = ({ event, onToggleAttendance, onClick }) => {
   return (
     <div 
       onClick={() => onClick && onClick(event)}
-      className={`bg-surface-level1 rounded-3xl shadow-lg mb-4 w-full select-none flex flex-col overflow-hidden cursor-pointer active:scale-[0.98] ${cardOpacityClass}`}
+      /* ИСПРАВЛЕНО: Добавлен класс isolate для принудительного создания stacking context в WebKit */
+      className={`bg-surface-level1 rounded-3xl shadow-lg mb-4 w-full select-none flex flex-col overflow-hidden isolate cursor-pointer active:scale-[0.98] ${cardOpacityClass}`}
     >
       
       {/* 1. ШАПКА: Локация и Челка Даты */}
-      <div className="flex justify-between items-stretch w-full h-[32px] ">
+      <div className="flex justify-between items-stretch w-full h-[32px]">
         
         {/* Локация */}
         <div className="flex items-center gap-1 pl-4 flex-1 overflow-hidden">
@@ -129,8 +130,9 @@ const EventCard = ({ event, onToggleAttendance, onClick }) => {
           </span>
         </div>
 
-{/* Дата */}
-        <div className="relative w-[50%] shrink-0 flex items-center drop-shadow-md justify-center pl-3">
+        {/* Дата */}
+        {/* ИСПРАВЛЕНО: Добавлены классы rounded-tr-3xl и overflow-hidden, чтобы закругление дублировалось на сам контейнер челки */}
+        <div className="relative w-[50%] shrink-0 flex items-center drop-shadow-md justify-center pl-3 rounded-tr-3xl overflow-hidden">
           <svg 
             className="absolute inset-0 w-full h-full" 
             viewBox="0 0 140 38" 
@@ -262,7 +264,6 @@ const EventCard = ({ event, onToggleAttendance, onClick }) => {
               onClick={(e) => e.stopPropagation()} 
             >
               {event.toggle_status === 'allowed' ? (
-                // ИСПРАВЛЕНО: В компонент тумблера прокинут цвет команды для заливки активного состояния
                 <Toggle 
                   checked={event.is_attending} 
                   disabled={isFinished}
