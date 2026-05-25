@@ -23,25 +23,8 @@ dayjs.locale('ru');
 
 export const EventDashboard = ({ isOpen, onClose, data, type, title, user, selectedTeam, onTeamUpdated }) => {
   
-  // Локальный статус сети для синхронизации верхнего отступа контента с высотой шапки Header
-  const [isOnline, setIsOnline] = useState(() => navigator.onLine);
-
   // Локальное состояние готовности контента панели (устраняет выполнение тяжелого JS во время анимации)
   const [isPanelReady, setIsPanelReady] = useState(false);
-
-  // Реактивный слушатель системного интернета на смартфоне
-  useEffect(() => {
-    const handleOnline = () => setIsOnline(true);
-    const handleOffline = () => setIsOnline(false);
-
-    window.addEventListener('online', handleOnline);
-    window.addEventListener('offline', handleOffline);
-
-    return () => {
-      window.removeEventListener('online', handleOnline);
-      window.removeEventListener('offline', handleOffline);
-    };
-  }, []);
 
   // Синхронизация жизненного цикла анимации скольжения шторки на мобильных устройствах
   useEffect(() => {
@@ -65,7 +48,6 @@ export const EventDashboard = ({ isOpen, onClose, data, type, title, user, selec
       )}
     >
       {/* ИМПОРТИРОВАННАЯ СИСТЕМНАЯ ШАПКА ПРИЛОЖЕНИЯ */}
-      {/* Передаем флаг hideActions={true} для жесткого скрытия кнопок фильтра и календаря */}
       <Header 
         isSidebarOpen={true} 
         onToggleSidebar={onClose} 
@@ -75,13 +57,11 @@ export const EventDashboard = ({ isOpen, onClose, data, type, title, user, selec
         hideActions={true}
       />
 
-      {/* КОНТЕНТНАЯ ЗОНА С ДИНАМИЧЕСКИМ СДВИГОМ ПОД ВЫСОТУ ШАПКИ И СТАТУС-БАРА */}
+      {/* КОНТЕНТНАЯ ЗОНА С СТАТИЧНЫМ СДВИГОМ ПОД ВЫСОТУ ШАПКИ И СТАТУС-БАРА */}
       <div 
         className="flex-1 overflow-hidden relative transition-all duration-300 ease-[cubic-bezier(0.32,0.72,0,1)]"
         style={{
-          paddingTop: isOnline 
-            ? 'calc(60px + env(safe-area-inset-top, 0px))' 
-            : 'calc(92px + env(safe-area-inset-top, 0px))'
+          paddingTop: 'calc(60px + env(safe-area-inset-top, 0px))'
         }}
       >
         {!isPanelReady ? (
