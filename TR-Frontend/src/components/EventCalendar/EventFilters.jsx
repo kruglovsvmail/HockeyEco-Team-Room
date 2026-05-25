@@ -3,7 +3,7 @@ import { Icon } from '../../ui/Icon';
 import { CheckboxLP } from '../../ui/Checkbox-LP';
 import { getImageUrl } from '../../utils/helpers';
 
-export function EventFilters({ user, teams, onClose }) {
+export function EventFilters({ user, teams = [], onClose }) {
   // Локальное состояние фильтров
   const [filters, setFilters] = useState({
     teams: {}, // { teamId: boolean }
@@ -14,7 +14,7 @@ export function EventFilters({ user, teams, onClose }) {
 
   // Инициализация дефолтных значений, если в localStorage ничего нет
   const initializeDefaultFilters = useCallback(() => {
-    if (!teams) return;
+    if (!teams || teams.length === 0) return;
     const defaultTeams = {};
     teams.forEach(t => {
       defaultTeams[t.id] = true;
@@ -27,25 +27,42 @@ export function EventFilters({ user, teams, onClose }) {
 
   // Чтение фильтров из localStorage при монтировании компонента
   useEffect(() => {
-    if (!localStorageKey || !teams) return;
+    if (!localStorageKey || !teams || teams.length === 0) return;
 
     const saved = localStorage.getItem(localStorageKey);
     if (saved) {
       try {
         const parsed = JSON.parse(saved);
-        const updatedTeams = { ...parsed.teams };
+        const updatedTeams = {};
+        let hasChanges = false;
         
-        // Проверяем, если появились новые команды, которых еще нет в localStorage, включаем их по умолчанию
+        // СТРОГАЯ САНИТАРИЯ: Переносим только ТЕ команды, которые сейчас реально активны
         teams.forEach(t => {
-          if (updatedTeams[t.id] === undefined) {
-            updatedTeams[t.id] = true;
+          if (parsed.teams && parsed.teams[t.id] !== undefined) {
+            updatedTeams[t.id] = parsed.teams[t.id];
+          } else {
+            updatedTeams[t.id] = true; // Новая команда по умолчанию включена
+            hasChanges = true;
           }
         });
 
-        setFilters({
+        // Проверяем, не остались ли в parsed.teams лишние (архивные) ID
+        if (parsed.teams && Object.keys(parsed.teams).length !== teams.length) {
+          hasChanges = true;
+        }
+
+        const newFilters = {
           teams: updatedTeams,
           showClub: parsed.showClub !== undefined ? parsed.showClub : true
-        });
+        };
+
+        setFilters(newFilters);
+        
+        // Перезаписываем localStorage только если состав команд РЕАЛЬНО изменился,
+        // это полностью предотвращает бесконечный цикл рендеринга!
+        if (hasChanges) {
+          localStorage.setItem(localStorageKey, JSON.stringify(newFilters));
+        }
       } catch (e) {
         console.error('Ошибка чтения фильтров из localStorage:', e);
         initializeDefaultFilters();
@@ -53,7 +70,8 @@ export function EventFilters({ user, teams, onClose }) {
     } else {
       initializeDefaultFilters();
     }
-  }, [localStorageKey, teams, initializeDefaultFilters]);
+    // Используем строку из ID команд в качестве зависимости, чтобы не триггериться на смену ссылок массивов
+  }, [localStorageKey, JSON.stringify(teams.map(t => t.id)), initializeDefaultFilters]);
 
   // Обработчик клика по чекбоксу команды
   const handleTeamCheckboxChange = (teamId, checked) => {
@@ -86,15 +104,14 @@ export function EventFilters({ user, teams, onClose }) {
 
   return (
     <div className="p-4 text-left">
-          <h2 className="text-lg font-black text-content-main">Фильтр событий</h2>
+      <h2 className="text-lg font-black text-content-main">Фильтр событий</h2>
 
       <div className="space-y-4 my-4">
         {/* Клубные события: кликабельный контейнер */}
         <div 
           onClick={() => handleClubCheckboxChange(!filters.showClub)}
-          className="flex flex-col p-3 rounded-xl bg-surface-base cursor-pointer  active:scale-[0.99] transition-all"
+          className="flex flex-col p-3 rounded-xl bg-surface-base cursor-pointer active:scale-[0.99] transition-all"
         >
-          {/* Предотвращаем двойной клик при попадании прямо на чекбокс */}
           <div onClick={(e) => e.stopPropagation()}>
             <CheckboxLP 
               checked={filters.showClub}
@@ -123,7 +140,7 @@ export function EventFilters({ user, teams, onClose }) {
                     onClick={() => handleTeamCheckboxChange(team.id, !isChecked)}
                     className="flex items-center gap-3 p-3 rounded-xl bg-surface-base cursor-pointer active:scale-[0.99] transition-all select-none"
                   >
-                    {/* 1. Логотип команды (или фолбек с коротким названием) */}
+                    {/* 1. Логотип команды */}
                     {team.logo_url ? (
                       <img 
                         src={getImageUrl(team.logo_url)} 
@@ -136,14 +153,14 @@ export function EventFilters({ user, teams, onClose }) {
                       </div>
                     )}
 
-                    {/* 2. Название команды с цветом text-content-main */}
+                    {/* 2. Название команды */}
                     <div className="flex-1 min-w-0">
                       <span className="text-sm font-semibold text-content-main block truncate">
                         {team.name}
                       </span>
                     </div>
 
-                    {/* 3. Чекбокс (отключаем у него pointer-events, чтобы клик шел через плашку) */}
+                    {/* 3. Чекбокс */}
                     <div className="shrink-0 flex items-center pointer-events-none">
                       <CheckboxLP 
                         checked={isChecked}
@@ -163,7 +180,6 @@ export function EventFilters({ user, teams, onClose }) {
           </p>
         )}
       </div>
-
     </div>
   );
 }

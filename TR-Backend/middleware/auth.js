@@ -22,17 +22,14 @@ export const verifyToken = (req, res, next) => {
 };
 
 const getTeamIdFromContext = async (req) => {
-  // Использование опциональной цепочки (?.) предотвращает крах, если req.body или req.params равны undefined
   if (req.params?.teamId) return req.params.teamId;
   if (req.body?.teamId) return req.body.teamId;
 
-  // Адаптивный перехват для роутов управления командой (например: /api/teams/9/profile), где ID команды передан как :id
   const isTeamRoute = req.baseUrl?.includes('/api/teams') || req.originalUrl?.includes('/api/teams');
   if (req.params?.id && isTeamRoute) {
     return req.params.id;
   }
 
-  // Определение контекста через идентификаторы матчей
   if (req.params?.gameId || req.body?.gameId) {
     const gameId = req.params?.gameId || req.body?.gameId;
     const res = await pool.query(
@@ -44,7 +41,6 @@ const getTeamIdFromContext = async (req) => {
     }
   }
 
-  // Определение контекста через идентификаторы тренировок/событий
   if (req.params?.eventId || req.body?.eventId) {
     const eventId = req.params?.eventId || req.body?.eventId;
     const res = await pool.query(
@@ -86,23 +82,24 @@ export const requireTeamPermission = (permissionKey) => async (req, res, next) =
     let userRoles = [];
 
     for (const tId of teamIds) {
-      // Роли в команде (здесь колонка left_at существует)
+      // 1. Роли в команде (учитываем, что и членство, и роль должны быть активны)
       const trRes = await pool.query(`
-        SELECT role FROM team_roles tr 
+        SELECT tr.role FROM team_roles tr 
         JOIN team_members tm ON tr.member_id = tm.id 
-        WHERE tm.user_id = $1 AND tm.team_id = $2 AND tr.left_at IS NULL
+        WHERE tm.user_id = $1 AND tm.team_id = $2 AND tr.left_at IS NULL AND tm.left_at IS NULL
       `, [userId, tId]);
       userRoles.push(...trRes.rows.map(r => r.role));
 
-      // Роли в клубе (ошибочное условие cr.left_at удалено согласно схеме БД)
+      // 2. Роли в клубе (добавлена жесткая проверка cr.left_at IS NULL и cm.left_at IS NULL)
       const crRes = await pool.query(`
         SELECT cr.role FROM club_roles cr
         JOIN teams t ON t.club_id = cr.club_id
-        WHERE cr.user_id = $1 AND t.id = $2
+        JOIN club_members cm ON cm.club_id = cr.club_id AND cm.user_id = cr.user_id
+        WHERE cr.user_id = $1 AND t.id = $2 AND cr.left_at IS NULL AND cm.left_at IS NULL
       `, [userId, tId]);
       userRoles.push(...crRes.rows.map(r => r.role));
 
-      // Проверка на игрока
+      // 3. Проверка на активного игрока
       const memberRes = await pool.query(`
         SELECT id FROM team_members 
         WHERE user_id = $1 AND team_id = $2 AND left_at IS NULL

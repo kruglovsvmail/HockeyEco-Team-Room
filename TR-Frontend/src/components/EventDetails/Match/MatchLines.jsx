@@ -12,8 +12,6 @@ import { ContainerContent } from '../../../ui/ContainerContent';
 import { TooltipLP } from '../../../ui/TooltipLP';
 import { Toast } from '../../../ui/Toast';
 import clsx from 'clsx';
-
-// Импортируем наши новые унифицированные компоненты производительности
 import { PageLoader } from '../../../ui/Loader';
 import { FadeIn } from '../../../ui/FadeIn';
 
@@ -151,7 +149,7 @@ export const MatchLines = ({ event, initialAttendees = [], initialDraftLines = [
   }, [userRoles]);
 
   const unassignedPlayers = useMemo(() => {
-    return attendees.filter(a => !draftLines.some(l => String(l.player_id) === String(a.id)));
+    return attendees.filter(a => !draftLines.some(l => String(l.player_id) === String(a.id || a.user_id)));
   }, [attendees, draftLines]);
 
   const { row1, row2, row3 } = useMemo(() => {
@@ -193,7 +191,6 @@ export const MatchLines = ({ event, initialAttendees = [], initialDraftLines = [
   }, [isEditMode, attendees]);
 
   const handlePublish = async () => {
-    // Проверка лимитов времени через корректное системное свойство
     if (timeToMatch < DEADLINES.MIDDLE_EDIT_MINUTES) {
       return;
     }
@@ -201,13 +198,14 @@ export const MatchLines = ({ event, initialAttendees = [], initialDraftLines = [
     try {
       const apiUrl = import.meta.env.VITE_API_URL || '';
       const headers = getAuthHeaders();
+      // ИСПРАВЛЕНО: Нормализация нормального сопоставления полей player_id || id
       const res = await fetch(`${apiUrl}/api/events/${event.event_id}/lines`, {
         method: 'POST',
         headers: { ...headers, 'Content-Type': 'application/json' },
         body: JSON.stringify({
           teamId: event.my_team_id,
           lines: draftLines.map(l => ({ 
-            player_id: l.player_id, 
+            player_id: l.player_id || l.id, 
             line_number: l.line_number, 
             position_in_line: sanitizePosition(l.position_in_line) 
           }))
@@ -282,7 +280,6 @@ export const MatchLines = ({ event, initialAttendees = [], initialDraftLines = [
       setActiveSelection(null);
       refreshData(); 
     } else {
-      // Исправлена системная константа ограничений времени
       if (timeToMatch <= DEADLINES.MIDDLE_EDIT_MINUTES) {
         if (e && e.currentTarget) {
           const rect = e.currentTarget.getBoundingClientRect();
@@ -457,10 +454,10 @@ export const MatchLines = ({ event, initialAttendees = [], initialDraftLines = [
     setSheetError('');
     
     if (editJersey !== '') {
-      const num = parseInt(editJersey);
+      const num = parseInt(editJersey, 10);
       const duplicate = draftLines.find(p => String(p.player_id) !== String(selectedPlayer.player_id) && p.jersey_number === num);
       if (duplicate) {
-        setSheetError(`Номер ${num} уже занят игроком ${duplicate.last_name}`);
+        setSheetError(`Номер ${num} уже занят игроком ${duplicate.last_name || duplicate.lastName || ''}`);
         return;
       }
     }
@@ -483,7 +480,7 @@ export const MatchLines = ({ event, initialAttendees = [], initialDraftLines = [
         body: JSON.stringify({
           teamId: event.my_team_id,
           playerId: selectedPlayer.player_id,
-          jerseyNumber: editJersey === '' ? null : parseInt(editJersey),
+          jerseyNumber: editJersey === '' ? null : parseInt(editJersey, 10),
           isCaptain: editCaptain,
           isAssistant: editAssistant
         })
@@ -831,7 +828,7 @@ export const MatchLines = ({ event, initialAttendees = [], initialDraftLines = [
         <div className="relative w-full">
           <div ref={carouselRef} onScroll={handleCarouselScroll} className="flex overflow-x-auto flex-nowrap snap-x snap-mandatory scrollbar-hide pt-2 w-full">
             {[1, 2, 3, 4].map(lineNum => (
-               <div key={`slide-${lineNum}`} className="min-w-full snap-center snap-always shrink-0  box-border">
+               <div key={`slide-${lineNum}`} className="min-w-full snap-center snap-always shrink-0 box-border">
                   <ContainerContent title={`Звено #${lineNum}`}>
                     {renderLineBlock(lineNum)}
                   </ContainerContent>
@@ -839,7 +836,7 @@ export const MatchLines = ({ event, initialAttendees = [], initialDraftLines = [
             ))}
             <div className="min-w-full snap-center snap-always shrink-0 box-border">
                <ContainerContent title="Вратари">
-                  {renderGoaliesBlock()}
+                 {renderGoaliesBlock()}
                </ContainerContent>
             </div>
           </div>
@@ -951,7 +948,6 @@ export const MatchLines = ({ event, initialAttendees = [], initialDraftLines = [
         )}
       </BottomSheet>
 
-      {/* ИНТЕГРАЦИЯ КАСТОВНОГО ТОСТА ВМЕСТО ALERT */}
       <Toast 
         isOpen={toast.isOpen}
         message={toast.message}

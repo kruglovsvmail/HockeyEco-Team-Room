@@ -36,7 +36,6 @@ const InfoRow = ({ label, value, highlight = false, activeBrandColor }) => (
 const CustomBlock = ({ title, icon, isEditing, isManager, onAction, activeBrandColor, children }) => {
   const accentColor = activeBrandColor || 'var(--color-brand)';
   
-  
   return (
     <div className="flex flex-col p-4 bg-surface-level1 border border-surface-border rounded-2xl shadow-sm mb-3">
       <div className="flex items-center justify-between mb-2 border-b border-surface-border pb-1.5">
@@ -139,10 +138,11 @@ export const UserDetails = ({ data }) => {
     const exists = currentRoster.find(
       p => String(p.jersey_number) === String(formData.jersey_number) && p.user_id !== userId
     );
-    return exists ? `Номер уже занят: ${exists.last_name}` : '';
+    return exists ? `Номер уже занят: ${exists.last_name || exists.lastName || ''}` : '';
   }, [formData.jersey_number, currentRoster, userId]);
 
   const saveFieldToDB = async (updatedFields) => {
+    // Приведение к camelCase согласно требованиям деструктуризации в TeamController.js
     const safeJerseyNumber = updatedFields.jerseyNumber !== undefined
       ? (updatedFields.jerseyNumber === '' ? null : parseInt(updatedFields.jerseyNumber, 10))
       : undefined;
@@ -181,6 +181,9 @@ export const UserDetails = ({ data }) => {
             setIsOwnProfile(!!d.isOwnProfile);
             setFormData(prev => ({
               ...prev,
+              roles: d.member.roles || '',
+              jersey_number: d.member.jersey_number ?? '',
+              position: d.member.position || '',
               is_captain: !!d.member.is_captain,
               is_assistant: !!d.member.is_assistant
             }));
@@ -320,7 +323,7 @@ export const UserDetails = ({ data }) => {
                 <div className="absolute inset-0 flex flex-col items-center justify-center p-1 bg-black/60 rounded-[20px] transition-all">
                   <button 
                     onClick={() => document.getElementById('member-photo-file-input').click()}
-                    className="text-[9px] bg-success font-black text-white px-1.5 py-3.5  uppercase tracking-wider w-[200px] text-center outline-none"
+                    className="text-[9px] bg-success font-black text-white px-1.5 py-3.5 uppercase tracking-wider w-[200px] text-center outline-none"
                   >
                     Заменить
                   </button>
@@ -365,7 +368,6 @@ export const UserDetails = ({ data }) => {
               {profile.roster_id ? (
                 <>
                   <span className="text-[10px] font-black text-content-muted uppercase tracking-wider mb-0.5">Спортивный статус:</span>
-                  {/* ИСПРАВЛЕНО: Проброшен явный activeColor для изменения цвета рамки и галочки чекбокса */}
                   <CheckboxLP checked={formData.is_captain} onChange={handleToggleCaptainCheckbox} label="Капитан команды (C)" className="py-0.5" activeColor={activeBrandColor} />
                   <CheckboxLP checked={formData.is_assistant} onChange={handleToggleAssistantCheckbox} label="Ассистент капитана (A)" className="py-0.5" activeColor={activeBrandColor} />
                   {assistantError && <span className="text-[10px] text-danger font-bold mt-1 animate-pulse">{assistantError}</span>}
@@ -392,7 +394,6 @@ export const UserDetails = ({ data }) => {
                 const isChecked = formData.roles.split(',').map(r => r.trim()).includes(role.id);
                 const isSelfManagerLock = role.id === 'team_manager' && isOwnProfile;
                 return (
-                  /* ИСПРАВЛЕНО: Проброшен activeColor для чекбоксов административных ролей руководства */
                   <CheckboxLP 
                     key={role.id} 
                     checked={isChecked} 
@@ -416,49 +417,45 @@ export const UserDetails = ({ data }) => {
         </CustomBlock>
 
         {/* БЛОК 2: ИГРОВОЙ ПРОФИЛЬ (НОМЕР + АМПЛУА) */}
-        {profile.roster_id && (
-          <CustomBlock 
-            title="Игровой профиль" 
-            icon="jersey"
-            isEditing={isEditGame}
-            isManager={isManager}
-            onAction={handleToggleEditGame}
-            activeBrandColor={activeBrandColor}
-          >
-            {isEditGame ? (
-              <div className="flex flex-col gap-3 pt-1">
-                {/* ИСПРАВЛЕНО: Проброшен activeColor для изменения цвета нижней рамки и лейбла инпута при фокусе */}
-                <TextInputLP 
-                  label="Игровой номер" 
-                  value={formData.jersey_number} 
-                  error={jerseyError}
-                  maxLength={2}
-                  onChange={(val) => setFormData(p => ({...p, jersey_number: val.replace(/\D/g, '')}))}
-                  activeColor={activeBrandColor}
-                />
-                <div className="flex flex-col gap-2.5 mt-1 border-t border-surface-border pt-2">
-                  <span className="text-[10px] font-black text-content-muted uppercase  tracking-wider mb-1" >Игровое амплуа:</span>
-                  {AVAILABLE_POSITIONS.map(pos => {
-                    const isSelected = formData.position === pos.id;
-                    return (
-                      /* ИСПРАВЛЕНО: Проброшен activeColor для чекбоксов выбора игрового амплуа хоккеиста */
-                      <CheckboxLP key={pos.id} checked={isSelected} onChange={() => handleSelectPositionCheckbox(pos.id)} label={pos.label} className="py-0.5" activeColor={activeBrandColor} />
-                    );
-                  })}
-                </div>
+        <CustomBlock 
+          title="Игровой профиль" 
+          icon="jersey"
+          isEditing={isEditGame}
+          isManager={isManager}
+          onAction={handleToggleEditGame}
+          activeBrandColor={activeBrandColor}
+        >
+          {isEditGame ? (
+            <div className="flex flex-col gap-3 pt-1">
+              <TextInputLP 
+                label="Игровой номер" 
+                value={formData.jersey_number} 
+                error={jerseyError}
+                maxLength={2}
+                onChange={(val) => setFormData(p => ({...p, jersey_number: val.replace(/\D/g, '')}))}
+                activeColor={activeBrandColor}
+              />
+              <div className="flex flex-col gap-2.5 mt-1 border-t border-surface-border pt-2">
+                <span className="text-[10px] font-black text-content-muted uppercase tracking-wider mb-1">Игровое амплуа:</span>
+                {AVAILABLE_POSITIONS.map(pos => {
+                  const isSelected = formData.position === pos.id;
+                  return (
+                    <CheckboxLP key={pos.id} checked={isSelected} onChange={() => handleSelectPositionCheckbox(pos.id)} label={pos.label} className="py-0.5" activeColor={activeBrandColor} />
+                  );
+                })}
               </div>
-            ) : (
-              <div className="flex flex-col">
-                <InfoRow label="Игровой номер" value={profile.jersey_number ? `# ${profile.jersey_number}` : null} highlight activeBrandColor={activeBrandColor} />
-                <InfoRow label="Игровое амплуа" value={
-                  profile.position === 'goalie' ? 'Вратарь' : 
-                  profile.position === 'defense' ? 'Защитник' : 
-                  profile.position === 'forward' ? 'Нападающий' : null
-                } />
-              </div>
-            )}
-          </CustomBlock>
-        )}
+            </div>
+          ) : (
+            <div className="flex flex-col">
+              <InfoRow label="Игровой номер" value={profile.jersey_number ? `# ${profile.jersey_number}` : null} highlight activeBrandColor={activeBrandColor} />
+              <InfoRow label="Игровое амплуа" value={
+                profile.position === 'goalie' ? 'Вратарь' : 
+                profile.position === 'defense' ? 'Защитник' : 
+                profile.position === 'forward' ? 'Нападающий' : null
+              } />
+            </div>
+          )}
+        </CustomBlock>
 
         {/* БЛОК 3: ФИЗИЧЕСКИЕ ДАННЫЕ */}
         <CustomBlock title="Физические данные" icon="player" isEditing={false} isManager={isManager} onAction={null} activeBrandColor={activeBrandColor}>
@@ -483,7 +480,7 @@ export const UserDetails = ({ data }) => {
                 <span className="text-[10px] font-black uppercase tracking-widest"
                 style={{ color: activeBrandColor || 'var(--color-success)' }}
                 >Виртуальный профиль</span>
-                <span className="text-[11px] font-medium text-content-muted mt-0.5">Для присвоение аккаунта</span>
+                <span className="text-[11px] font-medium text-content-muted mt-0.5">Для присвоения аккаунта</span>
               </div>
               <span className="font-mono text-xs font-black bg-surface-level2 px-2.5 py-1.5 rounded-xl border border-surface-border text-content-main shadow-inner select-all">
                 {profile.virtual_code}

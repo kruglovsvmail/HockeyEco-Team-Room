@@ -45,7 +45,6 @@ export const getEvents = async (req, res) => {
           my_team.name::varchar AS my_team_name,
           my_team.logo_url::varchar AS my_team_logo_url,
           
-          -- ДОБАВЛЕНО: Запрос основного цвета домашней формы команды для челки
           my_team.color_home_1::varchar AS team_color,
           
           (CASE WHEN g.home_team_id = ut.team_id THEN g.away_team_id ELSE g.home_team_id END)::int AS opponent_team_id,
@@ -90,17 +89,24 @@ export const getEvents = async (req, res) => {
               COALESCE(
                 (SELECT CASE WHEN tr.left_at IS NOT NULL THEN 'unregistered' ELSE 'allowed' END
                  FROM team_rosters tr JOIN team_members tm ON tr.member_id = tm.id
-                 WHERE tm.user_id = $1 AND tm.team_id = ut.team_id ORDER BY tr.left_at NULLS FIRST LIMIT 1),
+                 WHERE tm.user_id = $1 AND tm.team_id = ut.team_id AND tm.left_at IS NULL ORDER BY tr.left_at NULLS FIRST LIMIT 1),
                 'not_in_team'
               )
             ELSE
               CASE 
+                -- 1. Проверка на исключение из базового состава команды (team_members.left_at)
+                WHEN NOT EXISTS (
+                  SELECT 1 FROM team_members WHERE user_id = $1 AND team_id = ut.team_id AND left_at IS NULL
+                ) THEN 'not_in_team'
+                
+                -- 2. Проверка активных дисквалификаций по турнирному ростеру
                 WHEN EXISTS (
                   SELECT 1 FROM disqualifications dq 
                   JOIN tournament_rosters tr_dq ON dq.tournament_roster_id = tr_dq.id
                   JOIN tournament_teams tt_dq ON tr_dq.tournament_team_id = tt_dq.id
-                  WHERE tr_dq.player_id = $1 AND tt_dq.division_id = g.division_id AND dq.status = 'active'
+                  WHERE tr_dq.player_id = $1 AND tt_dq.division_id = g.division_id AND dq.status = 'active' AND tr_dq.period_end IS NULL
                 ) THEN 'disqualified'
+                
                 ELSE COALESCE(
                   (SELECT CASE 
                             WHEN tr.period_end IS NOT NULL THEN 'unregistered'
@@ -109,7 +115,7 @@ export const getEvents = async (req, res) => {
                           END
                    FROM tournament_rosters tr
                    JOIN tournament_teams tt ON tr.tournament_team_id = tt.id
-                   WHERE tt.division_id = g.division_id AND tt.team_id = ut.team_id AND tr.player_id = $1
+                   WHERE tt.division_id = g.division_id AND tt.team_id = ut.team_id AND tr.player_id = $1 AND tr.period_end IS NULL
                    ORDER BY tr.period_end NULLS FIRST LIMIT 1),
                   'not_in_tournament'
                 )
@@ -147,7 +153,6 @@ export const getEvents = async (req, res) => {
           my_team.name::varchar AS my_team_name,
           my_team.logo_url::varchar AS my_team_logo_url,
           
-          -- ДОБАВЛЕНО: Цвет команды для челки тренировок
           my_team.color_home_1::varchar AS team_color,
           
           NULL::int AS opponent_team_id, 
@@ -186,7 +191,7 @@ export const getEvents = async (req, res) => {
           (COALESCE(
             (SELECT CASE WHEN tr.left_at IS NOT NULL THEN 'unregistered' ELSE 'allowed' END
              FROM team_rosters tr JOIN team_members tm ON tr.member_id = tm.id
-             WHERE tm.user_id = $1 AND tm.team_id = ut.team_id ORDER BY tr.left_at NULLS FIRST LIMIT 1),
+             WHERE tm.user_id = $1 AND tm.team_id = ut.team_id AND tm.left_at IS NULL ORDER BY tr.left_at NULLS FIRST LIMIT 1),
             'not_in_team'
           ))::varchar AS toggle_status
 
@@ -214,7 +219,6 @@ export const getEvents = async (req, res) => {
           my_team.name::varchar AS my_team_name,
           my_team.logo_url::varchar AS my_team_logo_url,
           
-          -- ДОБАВЛЕНО: Цвет команды для челки собраний
           my_team.color_home_1::varchar AS team_color,
           
           NULL::int AS opponent_team_id, 
@@ -274,7 +278,6 @@ export const getEvents = async (req, res) => {
           c.name::varchar AS my_team_name,
           c.logo_url::varchar AS my_team_logo_url,
           
-          -- ДОБАВЛЕНО: Клубные события принудительно отдают NULL, чтобы челка оставалась серой
           NULL::varchar AS team_color,
           
           NULL::int AS opponent_team_id, 
@@ -334,7 +337,6 @@ export const getEvents = async (req, res) => {
           c.name::varchar AS my_team_name,
           c.logo_url::varchar AS my_team_logo_url,
           
-          -- ДОБАВЛЕНО: Клубные события принудительно отдают NULL
           NULL::varchar AS team_color,
           
           NULL::int AS opponent_team_id, 

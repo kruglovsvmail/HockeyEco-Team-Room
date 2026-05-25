@@ -22,12 +22,20 @@ export function useAccess(customUser = null, customTeam = null) {
     const allowedRoles = PERMISSIONS[action];
     if (!allowedRoles || allowedRoles.length === 0) return false;
 
-    // В PWA мы берем роли из выбранной команды
-    const userRolesStr = selectedTeam?.user_role || ROLES.PLAYER; 
+    // В PWA мы берем роли из выбранной команды. 
+    // Если бэкенд отфильтровал left_at и прислал пустую строку или null, 
+    // пользователь больше не имеет административных прав в этой команде.
+    const userRolesStr = selectedTeam?.user_role || ''; 
     let currentUserRoles = userRolesStr.split(',').map(r => r.trim()).filter(Boolean);
 
+    // Если человек числится в массиве команд (значит, прошел бэкенд-фильтр tm.left_at IS NULL),
+    // но административных ролей у него нет, по умолчанию даем базовую роль игрока.
+    if (currentUserRoles.length === 0 && selectedTeam) {
+      currentUserRoles.push(ROLES.PLAYER);
+    }
+
     return currentUserRoles.some(role => allowedRoles.includes(role));
-  }, [user, selectedTeam]); // Добавили зависимости для безопасности
+  }, [user, selectedTeam]);
 
   return { user, selectedTeam, checkAccess };
 }

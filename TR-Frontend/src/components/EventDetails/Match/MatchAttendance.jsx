@@ -9,8 +9,6 @@ import { Avatar } from '../../../ui/Avatar';
 import { Icon } from '../../../ui/Icon';
 import { ContainerContent } from '../../../ui/ContainerContent';
 import clsx from 'clsx';
-
-// Импортируем наши новые унифицированные компоненты производительности
 import { PageLoader } from '../../../ui/Loader';
 import { FadeIn } from '../../../ui/FadeIn';
 
@@ -215,6 +213,7 @@ export const MatchAttendance = ({ event, initialAttendees = [], initialTeamRoste
             'ОСН': 'G', 'ЗАП': 'G', 'РЕЗ': 'G'
           };
 
+          // Передаем параметры в camelCase: { teamId, lines } согласно контроллеру
           await fetch(`${apiUrl}/api/events/${event.event_id}/lines`, {
             method: 'POST',
             headers: { ...headers, 'Content-Type': 'application/json' },
@@ -539,7 +538,7 @@ export const MatchAttendance = ({ event, initialAttendees = [], initialTeamRoste
               <ButtonLP variant="outline" onClick={() => setUserToRemove(null)} className="flex-1">
                 Отмена
               </ButtonLP>
-              <ButtonLP variant="primary" className="flex-1 bg-red-500" activeColor={hasTeamColor ? event.team_color : null} onClick={confirmRemoveUser}>
+              <ButtonLP variant="primary" className="flex-1 !bg-red-500 hover:!bg-red-600 !border-red-500 !text-white" activeColor={hasTeamColor ? event.team_color : null} onClick={confirmRemoveUser}>
                 Да, удалить
               </ButtonLP>
             </div>
