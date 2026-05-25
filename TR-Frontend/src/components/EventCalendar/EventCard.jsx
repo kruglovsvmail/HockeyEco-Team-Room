@@ -138,21 +138,9 @@ const EventCard = ({ event, onToggleAttendance, onClick }) => {
             fill="currentColor"
             preserveAspectRatio="none"
           >
-            <defs>
-              {/* Градиент глянца: сверху белый (25% непрозрачности), снизу полностью прозрачный */}
-              <linearGradient id="glowingVolume" x1="0" y1="0" x2="0" y2="1">
-                <stop offset="40%" stopColor="#ffffffff" stopOpacity="0.25" />
-                <stop offset="70%" stopColor="#ffffffff" stopOpacity="0" />
-              </linearGradient>
-            </defs>
-            
-            {/* Основной фон челки */}
+            {/* Основной фон челки (без градиента объема) */}
             <path d="M0 0 H140 V38 H24 Q16 38 13.5 32 L0 0 Z" />
-            
-            {/* Наложение градиента объема, который повторяет форму плашки */}
-            <path d="M0 0 H140 V38 H24 Q16 38 13.5 32 L0 0 Z" fill="url(#glowingVolume)" />
           </svg>
-          {/* Добавлен drop-shadow-sm для текста, чтобы он лучше читался на объемном фоне, как на кнопке */}
           <span className={`relative z-10 text-[11px] font-black uppercase tracking-widest drop-shadow-sm ${contrastTextColor}`}>
             {displayDateStr}
           </span>
