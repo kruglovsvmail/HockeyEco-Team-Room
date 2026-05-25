@@ -5,8 +5,9 @@ import { TopSheet } from '../ui/TopSheet';
 import { useLocation } from 'react-router-dom';
 import { useAccess } from '../hooks/useAccess';
 import { TeamProfileEditSheet } from './MyTeam/TeamProfileEditSheet';
+import { EventFilters } from './EventCalendar/EventFilters';
 
-export function Header({ isSidebarOpen, onToggleSidebar, user, selectedTeam, onTeamUpdated, hideActions = false }) {
+export function Header({ isSidebarOpen, onToggleSidebar, user, teams, selectedTeam, onTeamUpdated, hideActions = false }) {
   const [isFilterOpen, setIsFilterOpen] = useState(false);
   const [isEditOpen, setIsEditOpen] = useState(false);
 
@@ -77,17 +78,13 @@ export function Header({ isSidebarOpen, onToggleSidebar, user, selectedTeam, onT
         </div>
       </header>
 
-      {/* Шторка Фильтра календаря */}
+      {/* Шторка Фильтра календаря с новым изолированным компонентом */}
       <TopSheet isOpen={isFilterOpen} onClose={() => setIsFilterOpen(false)}>
-        <div className="p-4 text-center">
-          <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-full bg-surface-level2 text-brand shadow-sm">
-            <Icon name="filter" className="w-7 h-7" />
-          </div>
-          <h2 className="text-xl font-bold text-content-main mb-2">Фильтры</h2>
-          <p className="text-sm text-content-muted leading-relaxed pb-6">
-            Фильтрация по командам и событиям находится в разработке.
-          </p>
-        </div>
+        <EventFilters 
+          user={user}
+          teams={teams}
+          onClose={() => setIsFilterOpen(false)}
+        />
       </TopSheet>
 
       {/* Выделенная изолированная шторка редактирования профиля команды */}

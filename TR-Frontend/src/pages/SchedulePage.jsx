@@ -35,6 +35,49 @@ export function SchedulePage() {
   // Состояние готовности анимации перехода страницы (предотвращает лаги Main Thread)
   const [isPageReady, setIsPageReady] = useState(false);
 
+  // Состояние активных фильтров для клиентской фильтрации
+  const [activeFilters, setActiveFilters] = useState({
+    teams: {},
+    showClub: true
+  });
+
+  // Получаем доступ к текущему пользователю для сборки правильного ключа localStorage
+  const { user } = useAccess();
+  const filterStorageKey = user?.id ? `tr_filter_${user.id}` : null;
+
+  // Функция для синхронного считывания фильтра из хранилища текущего пользователя
+  const loadFiltersFromStorage = useCallback(() => {
+    if (!filterStorageKey) return;
+    const saved = localStorage.getItem(filterStorageKey);
+    if (saved) {
+      try {
+        setActiveFilters(JSON.parse(saved));
+      } catch (e) {
+        console.error('Ошибка чтения фильтров на SchedulePage:', e);
+      }
+    } else {
+      // Если записи нет, по умолчанию показываем всё
+      setActiveFilters({
+        teams: {},
+        showClub: true
+      });
+    }
+  }, [filterStorageKey]);
+
+  // Подписка на событие изменения фильтров из хедера
+  useEffect(() => {
+    loadFiltersFromStorage();
+
+    const handleFilterChange = () => {
+      loadFiltersFromStorage();
+    };
+
+    window.addEventListener('tr-filter-changed', handleFilterChange);
+    return () => {
+      window.removeEventListener('tr-filter-changed', handleFilterChange);
+    };
+  }, [loadFiltersFromStorage]);
+
   const currentMonthKey = currentDate.format('YYYY-MM');
   const teamId = selectedTeam?.id || 'no_team';
   
@@ -80,19 +123,34 @@ export function SchedulePage() {
     return () => clearTimeout(timer);
   }, []);
 
-  // ВЫСОКОПРОИЗВОДИТЕЛЬНАЯ МЕМОИЗАЦИЯ ДАТ (Спаситель FPS)
+  // ВЫСОКОПРОИЗВОДИТЕЛЬНАЯ МЕМОИЗАЦИЯ ДАТ + КЛИЕНТСКАЯ ФИЛЬТРАЦИЯ (Спаситель FPS)
   const processedEvents = useMemo(() => {
-    return events.map(event => {
-      if (!event.event_date) return { ...event, _weekYearKey: null, _formattedDateStr: null };
-      
-      const eventDate = dayjs.utc(event.event_date).tz(event.arena_timezone || 'UTC');
-      return {
-        ...event,
-        _weekYearKey: `${eventDate.isoWeekYear()}-${eventDate.isoWeek()}`,
-        _formattedDateStr: eventDate.format('YYYY-MM-DD')
-      };
-    });
-  }, [events]);
+    return events
+      .filter(event => {
+        if (event.my_team_id) {
+          // Если у события есть ID команды, и этот ID явно выключен в фильтрах — скрываем его
+          if (activeFilters.teams[event.my_team_id] === false) {
+            return false;
+          }
+        } else {
+          // Клубное собынение (my_team_id === null) — проверяем общую клубную галочку
+          if (!activeFilters.showClub) {
+            return false;
+          }
+        }
+        return true;
+      })
+      .map(event => {
+        if (!event.event_date) return { ...event, _weekYearKey: null, _formattedDateStr: null };
+        
+        const eventDate = dayjs.utc(event.event_date).tz(event.arena_timezone || 'UTC');
+        return {
+          ...event,
+          _weekYearKey: `${eventDate.isoWeekYear()}-${eventDate.isoWeek()}`,
+          _formattedDateStr: eventDate.format('YYYY-MM-DD')
+        };
+      });
+  }, [events, activeFilters]);
 
   // Выносим загрузку событий в useCallback для поддержки фонового обновления
   const fetchEvents = useCallback(async () => {
@@ -224,6 +282,8 @@ export function SchedulePage() {
     touchStartX.current = x;
     touchStartY.current = e.touches[0].clientY;
     isHorizontalSwipe.current = false;
+    
+    // ИСПРАВЛЕНО: Запись значения выполняется в поле .current рефа, предотвращая падение рантайма
     isSwipeLocked.current = false;
   };
 
@@ -329,7 +389,7 @@ export function SchedulePage() {
                 <div 
                   key={slideWeekKey} 
                   ref={el => scrollRefs.current[idx] = el}
-                  /* ИСПРАВЛЕНО: pt-[96px] уменьшен до pt-[68px], чтобы поднять карточки выше к CompactWeek и убрать зазор */
+                  /* pt-[96px] уменьшен до pt-[68px], чтобы поднять карточки выше к CompactWeek и убрать зазор */
                   className="w-1/3 shrink-0 flex flex-col px-4 h-full overflow-y-auto scrollbar-hide pt-[80px] pb-4"
                 >
                   <div>
@@ -373,17 +433,25 @@ export function SchedulePage() {
           </div>
         </div>
 
-        <TopSheet isOpen={isExpanded} onClose={() => setIsExpanded(false)}>
-          <div className="pb-2">
-            <ExpandedGrid 
-              date={currentDate} 
-              onChangeDate={(newDate) => {
-                setCurrentDate(newDate);
-              }} 
-              matchDatesSet={eventDatesSet} 
-            />
-          </div>
-        </TopSheet>
+        {/* ИСПРАВЛЕНО: Для предотвращения блокировки тапов при инерционном свайпе вверх,
+            на шторку навешиваются явные обработчики остановки событий жестов. */}
+        <div 
+          onTouchStart={(e) => e.stopPropagation()}
+          onTouchMove={(e) => e.stopPropagation()}
+          onTouchEnd={(e) => e.stopPropagation()}
+        >
+          <TopSheet isOpen={isExpanded} onClose={() => setIsExpanded(false)}>
+            <div className="pb-2">
+              <ExpandedGrid 
+                date={currentDate} 
+                onChangeDate={(newDate) => {
+                  setCurrentDate(newDate);
+                }} 
+                matchDatesSet={eventDatesSet} 
+              />
+            </div>
+          </TopSheet>
+        </div>
 
       </div>
     </FadeIn>

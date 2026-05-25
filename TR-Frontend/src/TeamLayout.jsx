@@ -281,6 +281,7 @@ function TeamLayoutContent() {
           isSidebarOpen={isSidebarOpen} 
           onToggleSidebar={() => setIsSidebarOpen(!isSidebarOpen)} 
           user={user}
+          teams={teams} // <--- ВОТ ЗДЕСЬ ДОБАВИЛИ ПРОП ТЕПЕРЬ СПИСОК БУДЕТ ЗАПОЛНЕН
           selectedTeam={selectedTeam}
           onTeamUpdated={(updatedTeam) => {
             setSelectedTeam(prev => ({ ...prev, ...updatedTeam }));
