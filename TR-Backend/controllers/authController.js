@@ -41,13 +41,26 @@ const fetchPwaUserProfile = async (userId) => {
     SELECT t.id, t.name, t.short_name, t.logo_url,
       (
         SELECT string_agg(DISTINCT role, ',') FROM (
-          SELECT cr.role FROM club_roles cr WHERE cr.club_id = t.club_id AND cr.user_id = $1
+          SELECT cr.role FROM club_roles cr 
+          JOIN club_members cm ON cm.club_id = cr.club_id AND cm.user_id = cr.user_id
+          WHERE cr.club_id = t.club_id AND cr.user_id = $1 AND cr.left_at IS NULL AND cm.left_at IS NULL
+          
           UNION
-          SELECT tr.role FROM team_roles tr JOIN team_members tm ON tr.member_id = tm.id WHERE tm.team_id = t.id AND tm.user_id = $1 AND tr.left_at IS NULL
+          
+          SELECT tr.role FROM team_roles tr 
+          JOIN team_members tm ON tr.member_id = tm.id 
+          WHERE tm.team_id = t.id AND tm.user_id = $1 AND tr.left_at IS NULL AND tm.left_at IS NULL
+          
           UNION
-          SELECT ttr.tournament_role as role FROM tournament_team_roles ttr JOIN tournament_teams tt ON ttr.tournament_team_id = tt.id WHERE tt.team_id = t.id AND ttr.user_id = $1 AND ttr.left_at IS NULL
+          
+          SELECT ttr.tournament_role as role FROM tournament_team_roles ttr 
+          JOIN tournament_teams tt ON ttr.tournament_team_id = tt.id 
+          WHERE tt.team_id = t.id AND ttr.user_id = $1 AND ttr.left_at IS NULL
+          
           UNION
-          SELECT 'player' as role FROM team_members tm WHERE tm.team_id = t.id AND tm.user_id = $1 AND tm.left_at IS NULL
+          
+          SELECT 'player' as role FROM team_members tm 
+          WHERE tm.team_id = t.id AND tm.user_id = $1 AND tm.left_at IS NULL
         ) AS roles
       ) as user_role
     FROM teams t
@@ -55,10 +68,14 @@ const fetchPwaUserProfile = async (userId) => {
       SELECT 1 FROM team_members tm WHERE tm.team_id = t.id AND tm.user_id = $1 AND tm.left_at IS NULL
     )
     OR EXISTS (
-      SELECT 1 FROM club_roles cr WHERE cr.club_id = t.club_id AND cr.user_id = $1
+      SELECT 1 FROM club_roles cr 
+      JOIN club_members cm ON cm.club_id = cr.club_id AND cm.user_id = cr.user_id
+      WHERE cr.club_id = t.club_id AND cr.user_id = $1 AND cr.left_at IS NULL AND cm.left_at IS NULL
     )
     OR EXISTS (
-      SELECT 1 FROM tournament_team_roles ttr JOIN tournament_teams tt ON ttr.tournament_team_id = tt.id WHERE tt.team_id = t.id AND ttr.user_id = $1 AND ttr.left_at IS NULL
+      SELECT 1 FROM tournament_team_roles ttr 
+      JOIN tournament_teams tt ON ttr.tournament_team_id = tt.id 
+      WHERE tt.team_id = t.id AND ttr.user_id = $1 AND ttr.left_at IS NULL
     )
   `, [user.id]);
 
@@ -118,7 +135,7 @@ export const login = async (req, res) => {
         EXISTS (SELECT 1 FROM team_members tm WHERE tm.user_id = u.id AND tm.left_at IS NULL)
         OR EXISTS (SELECT 1 FROM club_members cm WHERE cm.user_id = u.id AND cm.left_at IS NULL)
         OR EXISTS (SELECT 1 FROM tournament_team_roles ttr WHERE ttr.user_id = u.id AND ttr.left_at IS NULL)
-        OR EXISTS (SELECT 1 FROM club_roles cr WHERE cr.user_id = u.id)
+        OR EXISTS (SELECT 1 FROM club_roles cr JOIN club_members cm ON cm.club_id = cr.club_id AND cm.user_id = cr.user_id WHERE cr.user_id = u.id AND cr.left_at IS NULL AND cm.left_at IS NULL)
       ) as has_membership
       FROM users u
       WHERE u.phone = $1 AND u.status = 'active'
@@ -142,7 +159,7 @@ export const login = async (req, res) => {
     if (!user.has_membership) {
       return res.status(403).json({ 
         success: false, 
-        error: 'Доступ запрещен. Вы не явлеетесь членом, хотя бы одной команды или клуба. Если вы уверены в обратном, то обратитесь пожалуйста к руководителю команды или клуба, для уточнения информации.' 
+        error: 'Доступ запрещен. Вы не являетесь членом хотя бы одной активной команды или клуба. Если вы уверены в обратном, то обратитесь пожалуйста к руководителю команды или клуба для уточнения информации.' 
       });
     }
 

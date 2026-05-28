@@ -109,12 +109,12 @@ export const toggleEventAttendance = async (req, res) => {
       const roleCheckQuery = `
         SELECT 1 FROM team_members tm
         JOIN team_roles tr ON tr.member_id = tm.id
-        WHERE tm.user_id = $1 AND tm.team_id = $2 AND tr.left_at IS NULL
-        AND tr.role IN ('team_manager', 'team_admin', 'head_coach')
+        WHERE tm.user_id = $1 AND tm.team_id = $2 AND tr.left_at IS NULL AND tm.left_at IS NULL
         UNION
         SELECT 1 FROM club_roles cr
         JOIN teams t ON t.club_id = cr.club_id
-        WHERE cr.user_id = $1 AND t.id = $2 AND cr.role IN ('top_manager', 'club_admin')
+        JOIN club_members cm ON cm.club_id = cr.club_id AND cm.user_id = cr.user_id
+        WHERE cr.user_id = $1 AND t.id = $2 AND cr.left_at IS NULL AND cm.left_at IS NULL AND cr.role IN ('top_manager', 'club_admin')
         UNION
         SELECT 1 FROM users WHERE id = $1 AND global_role = 'admin'
       `;
@@ -302,18 +302,18 @@ export const toggleEventAttendanceTag = async (req, res) => {
     const { eventType, teamId, targetUserId, hasPayTag } = req.body;
 
     if (!eventType || !targetUserId) {
-      return res.status(400).json({ success: false, error: 'eventType и targetUserId обязательны' });
+      return res.status(400).json({ success: false, error: 'eventType и targetUserId обязателен' });
     }
 
     const roleCheckQuery = `
       SELECT 1 FROM team_members tm
       JOIN team_roles tr ON tr.member_id = tm.id
-      WHERE tm.user_id = $1 AND tm.team_id = $2 AND tr.left_at IS NULL
-      AND tr.role IN ('team_manager', 'team_admin', 'head_coach')
+      WHERE tm.user_id = $1 AND tm.team_id = $2 AND tr.left_at IS NULL AND tm.left_at IS NULL
       UNION
       SELECT 1 FROM club_roles cr
       JOIN teams t ON t.club_id = cr.club_id
-      WHERE cr.user_id = $1 AND t.id = $2 AND cr.role IN ('top_manager', 'club_admin')
+      JOIN club_members cm ON cm.club_id = cr.club_id AND cm.user_id = cr.user_id
+      WHERE cr.user_id = $1 AND t.id = $2 AND cr.left_at IS NULL AND cm.left_at IS NULL AND cr.role IN ('top_manager', 'club_admin')
       UNION
       SELECT 1 FROM users WHERE id = $1 AND global_role = 'admin'
     `;

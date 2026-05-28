@@ -14,8 +14,6 @@ import { TopSheet } from '../ui/TopSheet';
 import EventCard from '../components/EventCalendar/EventCard';
 import { getAuthHeaders } from '../utils/helpers';
 import { useFocusRevalidate } from '../hooks/useFocusRevalidate';
-
-// Импортируем наши новые унифицированные компоненты производительности
 import { PageLoader } from '../ui/Loader';
 import { FadeIn } from '../ui/FadeIn';
 
@@ -26,13 +24,10 @@ dayjs.extend(isSameOrAfter);
 dayjs.locale('ru');
 
 export function SchedulePage() {
-  // Извлекаем выбранную команду из контекста лейаута для изоляции кэша
   const { selectedTeam, openRightPanel, openFullPage } = useOutletContext();
 
   const [currentDate, setCurrentDate] = useState(dayjs());
   const [isExpanded, setIsExpanded] = useState(false);
-  
-  // Состояние готовности анимации перехода страницы (предотвращает лаги Main Thread)
   const [isPageReady, setIsPageReady] = useState(false);
 
   // Состояние активных фильтров для клиентской фильтрации
@@ -41,11 +36,9 @@ export function SchedulePage() {
     showClub: true
   });
 
-  // Получаем доступ к текущему пользователю для сборки правильного ключа localStorage
   const { user } = useAccess();
   const filterStorageKey = user?.id ? `tr_filter_${user.id}` : null;
 
-  // Функция для синхронного считывания фильтра из хранилища текущего пользователя
   const loadFiltersFromStorage = useCallback(() => {
     if (!filterStorageKey) return;
     const saved = localStorage.getItem(filterStorageKey);
@@ -56,7 +49,6 @@ export function SchedulePage() {
         console.error('Ошибка чтения фильтров на SchedulePage:', e);
       }
     } else {
-      // Если записи нет, по умолчанию показываем всё
       setActiveFilters({
         teams: {},
         showClub: true
@@ -64,7 +56,6 @@ export function SchedulePage() {
     }
   }, [filterStorageKey]);
 
-  // Подписка на событие изменения фильтров из хедера
   useEffect(() => {
     loadFiltersFromStorage();
 
@@ -80,11 +71,8 @@ export function SchedulePage() {
 
   const currentMonthKey = currentDate.format('YYYY-MM');
   const teamId = selectedTeam?.id || 'no_team';
-  
-  // УМНЫЙ СОСТАВНОЙ КЛЮЧ: Разделяет кэш по командам и месяцам календаря
   const cacheKey = `tr_cached_events_team_${teamId}_month_${currentMonthKey}`;
 
-  // Инициализируем массив сразу из изолированного кэша
   const [events, setEvents] = useState(() => {
     const cached = localStorage.getItem(`tr_cached_events_team_${selectedTeam?.id || 'no_team'}_month_${dayjs().format('YYYY-MM')}`);
     return cached ? JSON.parse(cached) : [];
@@ -103,7 +91,6 @@ export function SchedulePage() {
   const [isAnimating, setIsAnimating] = useState(false);
   const animationTimer = useRef(null);
 
-  // Динамическая реактивная подгрузка локального кэша при смене месяца или команды
   useEffect(() => {
     const cached = localStorage.getItem(cacheKey);
     if (cached) {
@@ -115,7 +102,6 @@ export function SchedulePage() {
     }
   }, [cacheKey]);
 
-  // Активация легкого отложенного рендеринга страницы при её монтировании
   useEffect(() => {
     const timer = setTimeout(() => {
       setIsPageReady(true);
@@ -123,7 +109,7 @@ export function SchedulePage() {
     return () => clearTimeout(timer);
   }, []);
 
-  // ВЫСОКОПРОИЗВОДИТЕЛЬНАЯ МЕМОИЗАЦИЯ ДАТ + КЛИЕНТСКАЯ ФИЛЬТРАЦИЯ (Спаситель FPS)
+  // КЛИЕНТСКАЯ ФИЛЬТРАЦИЯ С УЧЕТОМ АКТИВНЫХ КОМАНД
   const processedEvents = useMemo(() => {
     return events
       .filter(event => {
@@ -133,7 +119,7 @@ export function SchedulePage() {
             return false;
           }
         } else {
-          // Клубное собынение (my_team_id === null) — проверяем общую клубную галочку
+          // Клубное событие — проверяем общую клубную галочку
           if (!activeFilters.showClub) {
             return false;
           }
@@ -152,7 +138,6 @@ export function SchedulePage() {
       });
   }, [events, activeFilters]);
 
-  // Выносим загрузку событий в useCallback для поддержки фонового обновления
   const fetchEvents = useCallback(async () => {
     if (!navigator.onLine) {
       setIsLoading(false);
@@ -189,7 +174,6 @@ export function SchedulePage() {
     fetchEvents();
   }, [fetchEvents]);
 
-  // Интеграция паттерна Focus Revalidation для авто-обновления календаря
   useFocusRevalidate(fetchEvents);
 
   useLayoutEffect(() => {
@@ -282,8 +266,6 @@ export function SchedulePage() {
     touchStartX.current = x;
     touchStartY.current = e.touches[0].clientY;
     isHorizontalSwipe.current = false;
-    
-    // ИСПРАВЛЕНО: Запись значения выполняется в поле .current рефа, предотвращая падение рантайма
     isSwipeLocked.current = false;
   };
 
@@ -339,14 +321,8 @@ export function SchedulePage() {
       >
         {/* ШАПКА: Контейнер плашки календаря и градиентного шлейфа */}
         <div className="absolute top-0 left-0 right-0 z-40 bg-transparent pointer-events-none flex flex-col">
-          
-          {/* ИСПРАВЛЕНО: Подробная настройка градиента. 
-            from-50% означает, что до 50% высоты шлейф будет полностью залит цветом фона (непрозрачный),
-            и только с 50% до конца (to-transparent) начнется плавное растворение в прозрачность.
-          */}
           <div className="absolute top-0 left-0 right-0 h-24 bg-gradient-to-b from-surface-border from-50% to-transparent z-10" />
 
-          {/* Интерактивная зона календаря. У неё z-20, она перекрывает верхнюю часть градиента */}
           <div className="px-4 pt-2 pb-1 pointer-events-auto relative z-20">
             <CompactWeek 
               date={currentDate} 
@@ -389,7 +365,6 @@ export function SchedulePage() {
                 <div 
                   key={slideWeekKey} 
                   ref={el => scrollRefs.current[idx] = el}
-                  /* pt-[96px] уменьшен до pt-[68px], чтобы поднять карточки выше к CompactWeek и убрать зазор */
                   className="w-1/3 shrink-0 flex flex-col px-4 h-full overflow-y-auto scrollbar-hide pt-[80px] pb-4"
                 >
                   <div>
@@ -433,8 +408,6 @@ export function SchedulePage() {
           </div>
         </div>
 
-        {/* ИСПРАВЛЕНО: Для предотвращения блокировки тапов при инерционном свайпе вверх,
-            на шторку навешиваются явные обработчики остановки событий жестов. */}
         <div 
           onTouchStart={(e) => e.stopPropagation()}
           onTouchMove={(e) => e.stopPropagation()}
@@ -452,7 +425,6 @@ export function SchedulePage() {
             </div>
           </TopSheet>
         </div>
-
       </div>
     </FadeIn>
   );

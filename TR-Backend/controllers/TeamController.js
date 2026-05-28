@@ -105,13 +105,18 @@ export const getTeamMemberDetails = async (req, res) => {
       UNION
       SELECT tr.role FROM team_roles tr
       JOIN team_members tm ON tr.member_id = tm.id
-      WHERE tm.user_id = $1 AND tm.team_id = $2 AND tr.left_at IS NULL
+      WHERE tm.user_id = $1 AND tm.team_id = $2 AND tr.left_at IS NULL AND tm.left_at IS NULL
+      UNION
+      SELECT cr.role FROM club_roles cr
+      JOIN teams t ON t.club_id = cr.club_id
+      JOIN club_members cm ON cm.club_id = cr.club_id AND cm.user_id = cr.user_id
+      WHERE cr.user_id = $1 AND t.id = $2 AND cr.left_at IS NULL AND cm.left_at IS NULL
     `, [reqUserId, teamId]);
 
     const reqUserRoles = reqUserRolesRes.rows.map(r => r.role);
     const hasGlobalAdmin = reqUserRoles.includes('admin');
-    const isTeamManager = reqUserRoles.includes('team_manager');
-    const isTeamAdmin = reqUserRoles.includes('team_admin');
+    const isTeamManager = reqUserRoles.includes('team_manager') || reqUserRoles.includes('top_manager');
+    const isTeamAdmin = reqUserRoles.includes('team_admin') || reqUserRoles.includes('club_admin');
 
     const query = `
       SELECT 
@@ -139,7 +144,7 @@ export const getTeamMemberDetails = async (req, res) => {
 
     const memberData = rows[0];
 
-    // Только руководитель команды видит виртуальный код (VIEW_VIRTUAL_CODE)
+    // Только руководитель команды или клуба видит виртуальный код (VIEW_VIRTUAL_CODE)
     if (!isTeamManager && !hasGlobalAdmin) {
       delete memberData.virtual_code;
     }
@@ -175,13 +180,18 @@ export const updateMemberDetails = async (req, res) => {
       UNION
       SELECT tr.role FROM team_roles tr
       JOIN team_members tm ON tr.member_id = tm.id
-      WHERE tm.user_id = $1 AND tm.team_id = $2 AND tr.left_at IS NULL
+      WHERE tm.user_id = $1 AND tm.team_id = $2 AND tr.left_at IS NULL AND tm.left_at IS NULL
+      UNION
+      SELECT cr.role FROM club_roles cr
+      JOIN teams t ON t.club_id = cr.club_id
+      JOIN club_members cm ON cm.club_id = cr.club_id AND cm.user_id = cr.user_id
+      WHERE cr.user_id = $1 AND t.id = $2 AND cr.left_at IS NULL AND cm.left_at IS NULL
     `, [reqUserId, teamId]);
 
     const reqUserRoles = reqUserRolesRes.rows.map(r => r.role);
     const hasGlobalAdmin = reqUserRoles.includes('admin');
-    const isTeamManager = reqUserRoles.includes('team_manager');
-    const isTeamAdmin = reqUserRoles.includes('team_admin');
+    const isTeamManager = reqUserRoles.includes('team_manager') || reqUserRoles.includes('top_manager');
+    const isTeamAdmin = reqUserRoles.includes('team_admin') || reqUserRoles.includes('club_admin');
 
     await pool.query('BEGIN');
 
@@ -344,11 +354,11 @@ export const updateMemberPhoto = async (req, res) => {
 
   try {
     const memberRes = await pool.query(
-      `SELECT user_id FROM team_members WHERE id = $1 AND team_id = $2`,
+      `SELECT user_id FROM team_members WHERE id = $1 AND team_id = $2 AND left_at IS NULL`,
       [memberId, teamId]
     );
     if (memberRes.rows.length === 0) {
-      return res.status(404).json({ error: 'Участник состава не найден' });
+      return res.status(404).json({ error: 'Участник состава не найден или заархивирован' });
     }
     const userId = memberRes.rows[0].user_id;
 
@@ -375,7 +385,7 @@ export const deleteMemberPhoto = async (req, res) => {
   const { teamId, memberId } = req.params;
   try {
     await pool.query(
-      `UPDATE team_members SET photo_url = NULL WHERE id = $1 AND team_id = $2`,
+      `UPDATE team_members SET photo_url = NULL WHERE id = $1 AND team_id = $2 AND left_at IS NULL`,
       [memberId, teamId]
     );
     res.json({ success: true, message: 'Фотография успешно удалена' });

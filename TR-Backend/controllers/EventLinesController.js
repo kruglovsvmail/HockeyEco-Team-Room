@@ -96,12 +96,13 @@ export const saveMatchLines = async (req, res) => {
     const roleCheckQuery = `
       SELECT 1 FROM team_members tm
       JOIN team_roles tr ON tr.member_id = tm.id
-      WHERE tm.user_id = $1 AND tm.team_id = $2 AND tr.left_at IS NULL
+      WHERE tm.user_id = $1 AND tm.team_id = $2 AND tr.left_at IS NULL AND tm.left_at IS NULL
       AND tr.role IN ('team_manager', 'team_admin', 'head_coach', 'coach')
       UNION
       SELECT 1 FROM club_roles cr
       JOIN teams t ON t.club_id = cr.club_id
-      WHERE cr.user_id = $1 AND t.id = $2 AND cr.role IN ('top_manager', 'club_admin')
+      JOIN club_members cm ON cm.club_id = cr.club_id AND cm.user_id = cr.user_id
+      WHERE cr.user_id = $1 AND t.id = $2 AND cr.left_at IS NULL AND cm.left_at IS NULL AND cr.role IN ('top_manager', 'club_admin')
       UNION
       SELECT 1 FROM users WHERE id = $1 AND global_role = 'admin'
     `;
@@ -117,8 +118,8 @@ export const saveMatchLines = async (req, res) => {
     const { game_date, stage_type, division_id } = gameQuery.rows[0];
     const diffMinutes = (new Date(game_date) - new Date()) / 1000 / 60;
 
-    if (diffMinutes < DEADLINES.LINES_EDIT_MINUTES) {
-      return res.status(403).json({ success: false, error: `Время изменения расстановки вышло (менее ${DEADLINES.LINES_EDIT_MINUTES} минут до старта)` });
+    if (diffMinutes < DEADLINES.MIDDLE_EDIT_MINUTES) {
+      return res.status(403).json({ success: false, error: `Время изменения расстановки вышло (менее ${DEADLINES.MIDDLE_EDIT_MINUTES} минут до старта)` });
     }
 
     await client.query('BEGIN');
@@ -137,7 +138,7 @@ export const saveMatchLines = async (req, res) => {
             const defRes = await client.query(`
               SELECT tr.jersey_number, tr.is_captain, tr.is_assistant FROM team_members tm
               JOIN team_rosters tr ON tr.member_id = tm.id
-              WHERE tm.user_id = $1 AND tm.team_id = $2 AND tr.left_at IS NULL
+              WHERE tm.user_id = $1 AND tm.team_id = $2 AND tr.left_at IS NULL AND tm.left_at IS NULL
             `, [player.player_id, teamId]);
             if (defRes.rowCount > 0) {
               defaultJersey = defRes.rows[0].jersey_number;
@@ -201,12 +202,13 @@ export const updateLinePlayer = async (req, res) => {
     const roleCheckQuery = `
       SELECT 1 FROM team_members tm
       JOIN team_roles tr ON tr.member_id = tm.id
-      WHERE tm.user_id = $1 AND tm.team_id = $2 AND tr.left_at IS NULL
+      WHERE tm.user_id = $1 AND tm.team_id = $2 AND tr.left_at IS NULL AND tm.left_at IS NULL
       AND tr.role IN ('team_manager', 'team_admin')
       UNION
       SELECT 1 FROM club_roles cr
       JOIN teams t ON t.club_id = cr.club_id
-      WHERE cr.user_id = $1 AND t.id = $2 AND cr.role IN ('top_manager', 'club_admin')
+      JOIN club_members cm ON cm.club_id = cr.club_id AND cm.user_id = cr.user_id
+      WHERE cr.user_id = $1 AND t.id = $2 AND cr.left_at IS NULL AND cm.left_at IS NULL AND cr.role IN ('top_manager', 'club_admin')
       UNION
       SELECT 1 FROM users WHERE id = $1 AND global_role = 'admin'
     `;
@@ -215,7 +217,6 @@ export const updateLinePlayer = async (req, res) => {
       return res.status(403).json({ success: false, error: 'Недостаточно прав доступа' });
     }
 
-    // ИСПРАВЛЕНО: Безопасная сквозная проверка по событиям матча с JOIN для таблицы game_plus_minus
     const eventsCheck = await client.query(`
       SELECT 1 FROM game_events WHERE game_id = $1
       UNION
@@ -300,12 +301,13 @@ export const submitMatchRoster = async (req, res) => {
     const roleCheckQuery = `
       SELECT 1 FROM team_members tm
       JOIN team_roles tr ON tr.member_id = tm.id
-      WHERE tm.user_id = $1 AND tm.team_id = $2 AND tr.left_at IS NULL
+      WHERE tm.user_id = $1 AND tm.team_id = $2 AND tr.left_at IS NULL AND tm.left_at IS NULL
       AND tr.role IN ('team_manager', 'team_admin')
       UNION
       SELECT 1 FROM club_roles cr
       JOIN teams t ON t.club_id = cr.club_id
-      WHERE cr.user_id = $1 AND t.id = $2 AND cr.role IN ('top_manager', 'club_admin')
+      JOIN club_members cm ON cm.club_id = cr.club_id AND cm.user_id = cr.user_id
+      WHERE cr.user_id = $1 AND t.id = $2 AND cr.left_at IS NULL AND cm.left_at IS NULL AND cr.role IN ('top_manager', 'club_admin')
       UNION
       SELECT 1 FROM users WHERE id = $1 AND global_role = 'admin'
     `;
@@ -325,7 +327,6 @@ export const submitMatchRoster = async (req, res) => {
       return res.status(403).json({ success: false, error: `Время подачи заявки вышло (менее ${DEADLINES.ROSTER_SUBMIT_MINUTES} минут до старта)` });
     }
 
-    // ИСПРАВЛЕНО: Безопасная сквозная проверка по событиям матча с JOIN для таблицы game_plus_minus
     const eventsCheck = await client.query(`
       SELECT 1 FROM game_events WHERE game_id = $1
       UNION

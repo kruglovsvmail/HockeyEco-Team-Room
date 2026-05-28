@@ -10,8 +10,6 @@ import { PhoneInputLP, TextInputLP } from '../ui/Input-LP';
 import { Avatar } from '../ui/Avatar';
 import { Icon } from '../ui/Icon';
 import { useFocusRevalidate } from '../hooks/useFocusRevalidate';
-
-// Импортируем наши новые унифицированные компоненты производительности
 import { PageLoader } from '../ui/Loader';
 import { FadeIn } from '../ui/FadeIn';
 
@@ -35,7 +33,7 @@ export const MyTeamPage = () => {
   // Состояние готовности анимации перехода страницы (предотвращает лаги Main Thread)
   const [isPageReady, setIsPageReady] = useState(false);
 
-  // МГНОВЕННЫЙ СТАРТ: Подтягиваем слепок игроков выбранной команды из памяти телефона за 0 миллисекунд
+  // Подтягиваем слепок игроков выбранной команды из памяти телефона за 0 миллисекунд
   const [teamData, setTeamData] = useState(() => {
     if (selectedTeamId) {
       const cached = localStorage.getItem(cacheKey);
@@ -44,7 +42,7 @@ export const MyTeamPage = () => {
     return { members: [], roster: [], staff: [] };
   });
 
-  // ПОДСТРАХОВКА ЦВЕТОВ: Извлекаем полные параметры команды из сохраненного локального кэша для мгновенной отрисовки
+  // Извлекаем полные параметры команды из сохраненного локального кэша для мгновенной отрисовки
   const [activeTeamDetails, setActiveTeamDetails] = useState(() => {
     if (selectedTeamId) {
       const cached = localStorage.getItem(cacheKey);
@@ -236,16 +234,17 @@ export const MyTeamPage = () => {
                 fullDetails: activeTeamDetails
               };
             } else {
+              // ИСПРАВЛЕНО: Вместо грубого фильтра выставляем left_at, чтобы переместить игрока в «Архив состава»
               updated = {
                 ...prev,
-                members: prev.members.filter(m => m.member_id !== targetMemberId),
+                members: prev.members.map(m => m.member_id === targetMemberId ? { ...m, left_at: new Date().toISOString() } : m),
                 roster: prev.roster.filter(p => p.member_id !== targetMemberId),
                 staff: prev.staff.filter(s => s.member_id !== targetMemberId),
                 fullDetails: activeTeamDetails
               };
             }
             
-            // Синхронизируем локальный кэш сразу после успешного удаления игрока
+            // Синхронизируем локальный кэш сразу после успешного изменения статуса игрока
             localStorage.setItem(cacheKey, JSON.stringify(updated));
             return updated;
           });
@@ -288,7 +287,7 @@ export const MyTeamPage = () => {
         body: JSON.stringify({
           memberId: selectedMemberForRoster.member_id,
           position: rosterPosition,
-          jerseyNumber: parseInt(rosterJerseyNumber)
+          jerseyNumber: parseInt(rosterJerseyNumber, 10)
         })
       });
       if (res.ok) {
@@ -311,10 +310,11 @@ export const MyTeamPage = () => {
   };
 
   const playerWithSameNumber = teamData.roster?.find(p => String(p.jersey_number) === String(rosterJerseyNumber));
-  const jerseyNumberError = playerWithSameNumber ? `Этот номер уже занят игроком ${playerWithSameNumber.last_name}` : '';
+  const jerseyNumberError = playerWithSameNumber ? `Этот номер уже занят игроком ${playerWithSameNumber.last_name || playerWithSameNumber.lastName || ''}` : '';
 
+  // ИСПРАВЛЕНО: В ростер можно добавлять только тех игроков, у которых нет даты ухода (left_at IS NULL)
   const membersAvailableForRoster = teamData.members?.filter(
-    m => !teamData.roster?.some(r => r.member_id === m.member_id)
+    m => !m.left_at && !teamData.roster?.some(r => r.member_id === m.member_id)
   ) || [];
 
   const handleScroll = (e) => {
@@ -323,7 +323,7 @@ export const MyTeamPage = () => {
     rafRef.current = requestAnimationFrame(() => {
       if (stickyHeaderRef.current) {
         const isStuck = currentScroll > 84;
-        stickyHeaderRef.current.dataset.stuck = isStuck;
+        stickyHeaderRef.current.createdAt = isStuck; // сохраняем метаданные
         if (isStuck) {
           stickyHeaderRef.current.classList.add('shadow-md', 'bg-surface-border');
           stickyHeaderRef.current.classList.remove('bg-transparent');
@@ -335,7 +335,6 @@ export const MyTeamPage = () => {
     });
   };
 
-  // В панель деталей UserDetails теперь пробрасывается верифицированный локальный activeBrandColor
   const handlePersonClick = useCallback((person) => {
     openRightPanel('userDetails', { 
       ...person, 
@@ -387,7 +386,7 @@ export const MyTeamPage = () => {
           </div>
         </div>
 
-        <div ref={stickyHeaderRef} data-stuck="false" className="snap-start sticky top-0 z-40 shrink-0 transition-all duration-300 ease-in-out border-b border-surface-level2 bg-transparent">
+        <div ref={stickyHeaderRef} className="snap-start sticky top-0 z-40 shrink-0 transition-all duration-300 ease-in-out border-b border-surface-level2 bg-transparent">
           <ChipTabs tabs={TEAM_TABS} activeTab={activeTab} onChange={setActiveTab} className="!px-0" activeColor={hasTeamColor ? activeBrandColor : null} />
         </div>
 
@@ -446,7 +445,6 @@ export const MyTeamPage = () => {
           <div className="flex min-h-[200px] flex-col gap-4">
             <h3 className="text-lg font-black text-content-main">Добавить в команду</h3>
             
-            {/* ИСПРАВЛЕНО: Добавлен activeColor для PhoneInputLP */}
             <PhoneInputLP 
               label="Номер телефона пользователя" value={searchPhone} 
               onChange={setSearchPhone} placeholder="900 000 00 00" 
@@ -469,12 +467,12 @@ export const MyTeamPage = () => {
               <div className="flex flex-col w-full mt-2 animate-fade-in">
                 <div className="flex items-center justify-between p-4 bg-surface-level2 rounded-2xl border border-surface-border w-full">
                   <div className="flex flex-col text-left">
-                    <span className="text-base font-black text-content-main leading-tight">{searchResult.user.last_name}</span>
-                    <span className="text-xs text-content-muted mt-1 font-bold">{searchResult.user.first_name}</span>
+                    <span className="text-base font-black text-content-main leading-tight">{searchResult.user.last_name || searchResult.user.lastName}</span>
+                    <span className="text-xs text-content-muted mt-1 font-bold">{searchResult.user.first_name || searchResult.user.firstName}</span>
                   </div>
                   <Avatar 
-                    photoUrl={searchResult.user.avatar_url} firstName={searchResult.user.first_name} 
-                    lastName={searchResult.user.last_name} className="w-12 h-12 rounded-xl" 
+                    photoUrl={searchResult.user.avatar_url || searchResult.user.avatarUrl} firstName={searchResult.user.first_name || searchResult.user.firstName} 
+                    lastName={searchResult.user.last_name || searchResult.user.lastName} className="w-12 h-12 rounded-xl" 
                   />
                 </div>
 
@@ -561,7 +559,6 @@ export const MyTeamPage = () => {
                 </div>
               </div>
 
-              {/* ИСПРАВЛЕНО: Добавлен activeColor и заголовок-лейбл для TextInputLP */}
               <TextInputLP 
                 label="Игровой номер"
                 placeholder="Например: 17" 
@@ -594,8 +591,8 @@ export const MyTeamPage = () => {
             </h3>
             <p className="text-[13px] text-content-muted max-w-[270px]">
               {activeTab === 'roster' 
-                ? `Вы уверены, что хотите исключить игрока ${memberToRemove?.last_name} ${memberToRemove?.first_name} из ростера? Он потеряет номер и позицию на этот турнир, но останется в общем списке команды.`
-                : `Вы уверены, что хотите полностью исключить игрока ${memberToRemove?.last_name} ${memberToRemove?.first_name} из состава? Он будет полностью удален из членства команды и ростера.`}
+                ? `Вы уверены, что хотите исключить игрока ${memberToRemove?.last_name || memberToRemove?.lastName || ''} ${memberToRemove?.first_name || memberToRemove?.firstName || ''} из ростера? Он потеряет номер и позицию на этот турнир, но останется в общем списке команды.`
+                : `Вы уверены, что хотите полностью исключить игрока ${memberToRemove?.last_name || memberToRemove?.lastName || ''} ${memberToRemove?.first_name || memberToRemove?.firstName || ''} из состава? Он будет переведен в архив.`}
             </p>
             <div className="flex gap-3 w-full mt-4">
               <ButtonLP variant="outline" onClick={() => setMemberToRemove(null)} className="flex-1">Отмена</ButtonLP>

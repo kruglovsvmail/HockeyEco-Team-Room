@@ -115,13 +115,11 @@ const EventCard = ({ event, onToggleAttendance, onClick }) => {
   return (
     <div 
       onClick={() => onClick && onClick(event)}
-      /* ИСПРАВЛЕНО: Добавлен класс isolate для принудительного создания stacking context в WebKit */
       className={`bg-surface-level1 rounded-3xl shadow-lg mb-4 w-full select-none flex flex-col overflow-hidden isolate cursor-pointer active:scale-[0.98] ${cardOpacityClass}`}
     >
       
       {/* 1. ШАПКА: Локация и Челка Даты */}
       <div className="flex justify-between items-stretch w-full h-[32px]">
-        
         {/* Локация */}
         <div className="flex items-center gap-1 pl-4 flex-1 overflow-hidden">
           <Icon name="location_pin" className="w-3 h-3 shrink-0" style={{ color: activeBrandColor }} />
@@ -131,7 +129,6 @@ const EventCard = ({ event, onToggleAttendance, onClick }) => {
         </div>
 
         {/* Дата */}
-        {/* ИСПРАВЛЕНО: Добавлены классы rounded-tr-3xl и overflow-hidden, чтобы закругление дублировалось на сам контейнер челки */}
         <div className="relative w-[50%] shrink-0 flex items-center drop-shadow-md justify-center pl-3 rounded-tr-3xl overflow-hidden">
           <svg 
             className="absolute inset-0 w-full h-full" 
@@ -140,7 +137,6 @@ const EventCard = ({ event, onToggleAttendance, onClick }) => {
             fill="currentColor"
             preserveAspectRatio="none"
           >
-            {/* Основной фон челки (без градиента объема) */}
             <path d="M0 0 H140 V38 H24 Q16 38 13.5 32 L0 0 Z" />
           </svg>
           <span className={`relative z-10 text-[11px] font-black uppercase tracking-widest drop-shadow-sm ${contrastTextColor}`}>
@@ -165,7 +161,6 @@ const EventCard = ({ event, onToggleAttendance, onClick }) => {
       {/* 3. КОМАНДЫ: Логотип и Соперник */}
       {shouldRenderTeamsBlock && (
         <div className="flex w-full px-5 mb-4 min-h-[60px] items-end">
-          
           {event.show_team_context ? (
             <>
               {/* Моя команда */}
@@ -212,7 +207,6 @@ const EventCard = ({ event, onToggleAttendance, onClick }) => {
               )}
             </div>
           )}
-
         </div>
       )}
 
@@ -221,7 +215,6 @@ const EventCard = ({ event, onToggleAttendance, onClick }) => {
 
       {/* 4. ПОДВАЛ */}
       <div className="px-5 py-3 flex justify-between items-center bg-surface-level1 min-h-[56px]">
-        
         {isMatch && isFinished ? (
           <div className="w-full flex justify-between items-center">
             <span 
@@ -243,7 +236,7 @@ const EventCard = ({ event, onToggleAttendance, onClick }) => {
             <div className="flex items-center gap-1.5 w-1/3 text-content-muted">
               {isMatch && (
                 <>
-                  <Icon name="jersey" className="w-5 h-5 shrink-0 " style={{ color: activeBrandColor }} />
+                  <Icon name="jersey" className="w-5 h-5 shrink-0" style={{ color: activeBrandColor }} />
                   <span className="text-sm font-bold">{jerseyText}</span>
                 </>
               )}
