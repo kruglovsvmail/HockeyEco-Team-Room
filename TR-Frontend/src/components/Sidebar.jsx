@@ -105,25 +105,29 @@ export function Sidebar({ user, teams = [], selectedTeam, onTeamChange, onClose 
             )}
           >
             <Icon name="calendar" className="w-4 h-4" />
-            <span className="text-lg tracking-wider">Расписание</span>
-          </NavLink>
+            <span className="text-sm tracking-wider">Расписание</span>
+          </button>
 
           {/* Пункт 2: Умное управление командами */}
           {teams.length <= 1 ? (
-            <NavLink 
-              to="/my-team" 
-              onClick={onClose}
-              className={({ isActive }) => `
-                flex items-center gap-4 px-4 py-3 rounded-xl transition-all outline-none
-                ${isActive 
-                  ? 'bg-brand-opacity text-brand font-bold' 
-                  : 'text-content-main hover:text-brand font-semibold'
-                }
-              `}
-            >
-              <Icon name="users" className="w-4 h-4" />
-              <span className="text-md tracking-wider">Моя команда</span>
-            </NavLink>
+            teams.length === 1 ? (
+              <button 
+                onClick={() => handleSafeNavigate('/my-team', () => {
+                  if (selectedTeam?.id !== teams[0].id) {
+                    onTeamChange(teams[0]);
+                  }
+                })}
+                className={clsx(
+                  "flex items-center gap-4 px-4 py-3 rounded-xl transition-all outline-none text-left w-full font-semibold",
+                  location.pathname === '/my-team' 
+                    ? 'bg-brand-opacity text-brand font-bold' 
+                    : 'text-content-main hover:text-brand'
+                )}
+              >
+                <Icon name="users" className="w-4 h-4" />
+                <span className="text-sm tracking-wider">Моя команда</span>
+              </button>
+            ) : null
           ) : (
             <div className="flex flex-col w-full">
               <button 
@@ -180,7 +184,6 @@ export function Sidebar({ user, teams = [], selectedTeam, onTeamChange, onClose 
 
           {/* ДИНАМИЧЕСКИЕ ПУНКТЫ УПРАВЛЕНИЯ КОМАНДАМИ */}
           {managerSectionsConfig.map((section) => {
-            // Для каждого пункта индивидуально фильтруем список доступных команд на основе разрешенных ролей [cite: 14]
             const allowedRoles = PERMISSIONS[section.id] || [];
             
             const filteringTeams = teams.filter(team => {
@@ -283,8 +286,8 @@ export function Sidebar({ user, teams = [], selectedTeam, onTeamChange, onClose 
             )}
           >
             <Icon name="settings" className="w-4 h-4" />
-            <span className="text-lg tracking-wider">Настройки</span>
-          </NavLink>
+            <span className="text-sm tracking-wider">Настройки</span>
+          </button>
 
         </nav>
       </div>
