@@ -10,8 +10,6 @@ import { getToken, removeToken, getAuthHeaders } from './utils/helpers';
 import { Sidebar } from './components/Sidebar';
 import { Header } from './components/Header';
 import { Icon } from './ui/Icon';
-
-// Импортируем наши новые унифицированные компоненты производительности
 import { PageLoader } from './ui/Loader';
 import { FadeIn } from './ui/FadeIn';
 
@@ -75,7 +73,6 @@ function TeamLayoutContent() {
   useEffect(() => {
     if (rightPanel.isOpen || fullPagePanel.isOpen) {
       setIsPanelReady(false);
-      // Задержка в 400мс идеально координирует завершение движения шторки на 500мс
       const timer = setTimeout(() => {
         setIsPanelReady(true);
       }, 400);
@@ -140,8 +137,6 @@ function TeamLayoutContent() {
         return navigate('/login');
       }
 
-      // МГНОВЕННЫЙ ОФФЛАЙН-СТАРТ (Stale-While-Revalidate)
-      // Сразу выводим закэшированный профиль на экран без задержек и белых экранов
       const cachedUserData = localStorage.getItem('teampwa_cached_user');
       if (cachedUserData) {
         const parsedUser = JSON.parse(cachedUserData);
@@ -153,10 +148,9 @@ function TeamLayoutContent() {
         const savedTeamId = localStorage.getItem('teampwa_selected_team');
         let currentTeam = userTeams.find(t => t.id == savedTeamId) || userTeams[0];
         setSelectedTeam(currentTeam);
-        setIsLoading(false); // Выключаем лоадер моментально!
+        setIsLoading(false);
       }
 
-      // Если сети нет, фоновые попытки fetch даже не инициируем
       if (!navigator.onLine) {
         return;
       }
@@ -192,7 +186,6 @@ function TeamLayoutContent() {
         setSelectedTeam(currentTeam);
       } catch (err) {
         clearTimeout(timeoutId);
-        // Если кэша не было вообще и сеть упала — только тогда разлогиниваем
         if (!localStorage.getItem('teampwa_cached_user')) {
           removeToken();
           navigate('/login');
@@ -248,16 +241,16 @@ function TeamLayoutContent() {
 
   return (
     <div 
-      className="flex w-full h-full overflow-hidden relative "
+      className="flex w-full h-full overflow-hidden relative"
       style={{ '--sidebar-w': `${sidebarWidth}%`, '--right-w': `${rightPanelWidth}%` }}
     >
       
-      {/* 1. ЛЕВОЕ МЕНЮ (Сайдбар) */}
+      {/* 1. ЛЕВОЕ МЕНЮ (Сайдбар) — Добавлена аппаратная композиция слоев */}
       <aside className={clsx(
-        "fixed inset-y-0 left-0 z-40 h-full bg-surface-level1 transition-transform duration-500 ease-[cubic-bezier(0.32,0.72,0,1)] flex-shrink-0",
-        "w-[80%] md:w-[var(--sidebar-w)] md:static md:translate-x-0 md:shadow-xl",
+        "fixed inset-y-0 left-0 z-40 h-full bg-surface-level1 transition-transform duration-300 ease-[cubic-bezier(0.32,0.72,0,1)] flex-shrink-0",
+        "w-[80%] md:w-[var(--sidebar-w)] md:static md:translate-x-0 md:shadow-xl style-change-hardware",
         isSidebarOpen ? "translate-x-0" : "-translate-x-full"
-      )}>
+      )} style={{ willChange: 'transform', transform: isSidebarOpen ? 'translateX(0) translateZ(0)' : 'translateX(-100%) translateZ(0)' }}>
         <Sidebar user={user} teams={teams} selectedTeam={selectedTeam} onTeamChange={handleTeamChange} onClose={() => setIsSidebarOpen(false)} />
       </aside>
 
@@ -272,7 +265,7 @@ function TeamLayoutContent() {
 
       {/* 2. ЦЕНТРАЛЬНЫЙ КОНТЕЙНЕР КОНТЕНТА */}
       <div className={clsx(
-        "flex flex-col flex-1 w-full h-full min-w-0 transition-transform duration-500 ease-[cubic-bezier(0.32,0.72,0,1)] z-30 relative",
+        "flex flex-col flex-1 w-full h-full min-w-0 transition-transform duration-300 ease-[cubic-bezier(0.32,0.72,0,1)] z-30 relative",
         isSidebarOpen ? "translate-x-[80%] shadow-2xl md:translate-x-0 md:shadow-none" : "",
         rightPanel.isOpen ? "-translate-x-[80%] md:translate-x-0" : "",
         fullPagePanel.isOpen ? "-translate-x-[30%] opacity-50 md:translate-x-0 md:opacity-100" : ""
@@ -281,7 +274,7 @@ function TeamLayoutContent() {
           isSidebarOpen={isSidebarOpen} 
           onToggleSidebar={() => setIsSidebarOpen(!isSidebarOpen)} 
           user={user}
-          teams={teams} // <--- ВОТ ЗДЕСЬ ДОБАВИЛИ ПРОП ТЕПЕРЬ СПИСОК БУДЕТ ЗАПОЛНЕН
+          teams={teams}
           selectedTeam={selectedTeam}
           onTeamUpdated={(updatedTeam) => {
             setSelectedTeam(prev => ({ ...prev, ...updatedTeam }));
@@ -292,7 +285,6 @@ function TeamLayoutContent() {
         {isSidebarOpen && <div className="absolute inset-0 z-50 md:hidden bg-transparent" onClick={() => setIsSidebarOpen(false)} />}
         {rightPanel.isOpen && <div className="absolute inset-0 z-50 bg-transparent cursor-pointer md:hidden" onClick={closeRightPanel} />}
 
-        {/* Статичный верхний отступ заменен на строгие 60px хедера без safe-area хаков */}
         <main 
           className="flex-1 overflow-y-auto overflow-x-hidden relative overscroll-none transition-all duration-300 ease-[cubic-bezier(0.32,0.72,0,1)]"
           style={{
@@ -314,7 +306,7 @@ function TeamLayoutContent() {
 
       {/* 3. ПРАВАЯ ПАНЕЛЬ ДЕТАЛЕЙ */}
       <div className={clsx(
-        "fixed top-0 right-0 w-[80%] h-full z-[40] bg-surface-level2 shadow-[-15px_0_30px_rgba(0,0,0,0.1)] flex flex-col overflow-hidden transition-all duration-500 ease-[cubic-bezier(0.32,0.72,0,1)] flex-shrink-0",
+        "fixed top-0 right-0 w-[80%] h-full z-[40] bg-surface-level2 shadow-[-15px_0_30px_rgba(0,0,0,0.1)] flex flex-col overflow-hidden transition-all duration-300 ease-[cubic-bezier(0.32,0.72,0,1)] flex-shrink-0",
         "md:static md:w-[var(--right-w)] md:translate-x-0 md:shadow-3xl",
         (rightPanel.isOpen || fullPagePanel.isOpen) ? "translate-x-0" : "translate-x-full"
       )}>

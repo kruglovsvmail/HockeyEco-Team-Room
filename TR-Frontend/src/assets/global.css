@@ -75,7 +75,7 @@
     --fs-4xl: 2.25rem; --lh-4xl: 2.5rem;
   }
 
-  /* --- ТЕМHАЯ ТЕМА (МАТОВАЯ ПАЛИТРА ДЛЯ ХОККЕЙHОГО КАБИHЕТА) --- */
+  /* --- ТЕМHАЯ ТЕМА --- */
   html.dark {
     --color-brand: #38bdf8;
     --color-brand-hover: #0284c7;
@@ -134,6 +134,12 @@ html, body {
 input, textarea, [contenteditable="true"] {
   -webkit-user-select: auto;
   user-select: auto;
+}
+
+/* Аппаратная оптимизация слоев PWA шторок */
+.will-change-sheet {
+  will-change: transform, opacity;
+  transform: translateZ(0);
 }
 
 .scrollbar-hide::-webkit-scrollbar {

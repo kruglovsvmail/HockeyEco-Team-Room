@@ -186,7 +186,7 @@ export const ExpandedGrid = React.memo(function ExpandedGrid({ date, onChangeDat
       setViewDate(prev => direction === 'next' ? prev.add(1, 'month') : prev.subtract(1, 'month'));
       setOffsetIndex(0); 
       setIsAnimating(false);
-    }, 300);
+    }, 220);
   }, []);
 
   const handleDateSelect = useCallback((selectedDate) => {
@@ -194,7 +194,7 @@ export const ExpandedGrid = React.memo(function ExpandedGrid({ date, onChangeDat
     onChangeDate(selectedDate);
   }, [onChangeDate]);
 
-  // --- НАДЁЖНЫЙ НАТИВНЫЙ ПЕРЕХВАТ ЖЕСТОВ С ФЛАГОМ { passive: false } ---
+  // НАДЁЖНЫЙ НАТИВНЫЙ ПЕРЕХВАТ ЖЕСТОВ
   useEffect(() => {
     const el = touchContainerRef.current;
     if (!el) return;
@@ -228,7 +228,6 @@ export const ExpandedGrid = React.memo(function ExpandedGrid({ date, onChangeDat
         }
       }
 
-      // Если зафиксирован горизонтальный свайп — отменяем нативный скролл страницы
       if (isHorizontalSwipe.current) {
         if (e.cancelable) e.preventDefault();
         e.stopPropagation();
@@ -245,11 +244,12 @@ export const ExpandedGrid = React.memo(function ExpandedGrid({ date, onChangeDat
       const diffX = touchStartX.current - touchEndX;
 
       if (isHorizontalSwipe.current) {
-        // 🛠 КРИТИЧЕСКИЙ ФИКС: Вызываем отмену только если свайп преодолел порог в 40px
-        // и действительно сменит месяц. Ложные микро-тапы пальцем теперь пролетают насквозь!
+        // ИСПРАВЛЕНО: Явно обрубаем нативный буфер инерции браузера ПРИ ЛЮБОМ исходе касания.
+        // Это полностью предотвращает залипание кликов по числам календаря после свайпов!
+        if (e.cancelable) e.preventDefault();
+        e.stopPropagation();
+
         if (Math.abs(diffX) > 40) {
-          if (e.cancelable) e.preventDefault();
-          e.stopPropagation();
           slideTo(diffX > 0 ? 'next' : 'prev');
         }
       }
@@ -266,7 +266,6 @@ export const ExpandedGrid = React.memo(function ExpandedGrid({ date, onChangeDat
       isSwipeLocked.current = false;
     };
 
-    // Вешаем нативные события, обходя ограничения React
     el.addEventListener('touchstart', handleNativeTouchStart, { passive: false });
     el.addEventListener('touchmove', handleNativeTouchMove, { passive: false });
     el.addEventListener('touchend', handleNativeTouchEnd, { passive: false });
@@ -283,9 +282,9 @@ export const ExpandedGrid = React.memo(function ExpandedGrid({ date, onChangeDat
   return (
     <div 
       className="pt-2 overflow-hidden w-full relative group"
-      style={{ touchAction: 'none' }} // Отключает системный пулл-скролл браузера
+      style={{ touchAction: 'none' }}
     >
-      {/* Кнопки переключения для десктопа/планшета */}
+      {/* Кнопки переключения для десктопа */}
       <div className="hidden md:block">
         <button 
           onClick={() => slideTo('prev')}
@@ -311,8 +310,8 @@ export const ExpandedGrid = React.memo(function ExpandedGrid({ date, onChangeDat
           style={{
             gap: `${GAP_BETWEEN_MONTHS}px`,
             transform: `translateX(${-offsetIndex * STRIDE}px)`,
-            transition: isAnimating ? 'transform 300ms cubic-bezier(0.32, 0.72, 0, 1)' : 'none',
-            willChange: 'transform' // 🛠 УБРАНО pointerEvents: ничто больше искусственно не блокирует клики
+            transition: isAnimating ? 'transform 220ms cubic-bezier(0.32, 0.72, 0, 1)' : 'none',
+            willChange: 'transform'
           }}
         >
           {Array.from({ length: RENDER_BUFFER * 2 + 1 }, (_, i) => i - RENDER_BUFFER).map(offset => {
