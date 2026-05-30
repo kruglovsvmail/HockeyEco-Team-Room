@@ -1,18 +1,23 @@
 import React from 'react';
-import { useOutletContext } from 'react-router-dom';
+import { useOutletContext, useNavigate } from 'react-router-dom';
 import { useAccess } from '../../hooks/useAccess';
+import { SubscriptionStub } from '../../ui/SubscriptionStub';
 
 export function HandbooksPage() {
   const { selectedTeam, user } = useOutletContext();
   const { checkAccess } = useAccess(user, selectedTeam);
+  const navigate = useNavigate();
 
   const hasAccess = checkAccess('MGR_HANDBOOKS');
 
   if (!hasAccess) {
     return (
-      <div className="p-6 text-center text-danger font-bold uppercase tracking-widest text-xs">
-        Доступ закрыт. У вашей роли недостаточно полномочий для изменения справочников.
-      </div>
+      <SubscriptionStub 
+        isOpen={true} 
+        onClose={() => navigate(-1)} 
+        title="Справочники недоступны"
+        description="Для конфигурации внутрикомандных реестров инвентаря, настройки стандартных сочетаний звеньев и управления базой ледовых арен необходимо активировать подписку."
+      />
     );
   }
 
@@ -35,7 +40,7 @@ export function HandbooksPage() {
             Реестры и конфигурация
           </span>
           <p className="text-sm font-medium text-content-main leading-relaxed">
-            Модуль в разработке. Будет включать справочники инвентаря, настройки стандартных игровых сочетаний и локальные контакты представителей клубов.
+            Модуль в разработке. Будет включать справочники инвентаря, настройки стандартных игровых сочетаний и локальные контакты representantes клубов.
           </p>
         </div>
       </div>

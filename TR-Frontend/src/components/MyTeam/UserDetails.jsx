@@ -7,6 +7,8 @@ import { FadeIn } from '../../ui/FadeIn';
 import { TextInputLP } from '../../ui/Input-LP';
 import { CheckboxLP } from '../../ui/Checkbox-LP';
 import { Icon } from '../../ui/Icon';
+import { useAccess } from '../../hooks/useAccess';
+import { HintPopover } from '../../ui/HintPopover';
 
 // Форматирование телефонных номеров по маске +7 (000) 000-00-00
 const formatPhoneNumber = (phoneStr) => {
@@ -32,8 +34,8 @@ const InfoRow = ({ label, value, highlight = false, activeBrandColor }) => (
   </div>
 );
 
-// Кастомный матовый блок карточки с адаптивным брендированием элементов заголовка
-const CustomBlock = ({ title, icon, isEditing, isManager, onAction, activeBrandColor, children }) => {
+// Кастомный матовый блок карточки с адаптивным брендированием и сквозной Portal-проверкой подписок
+const CustomBlock = ({ title, icon, isEditing, isManager, hasAccess = true, onAction, activeBrandColor, children }) => {
   const accentColor = activeBrandColor || 'var(--color-brand)';
   
   return (
@@ -46,13 +48,23 @@ const CustomBlock = ({ title, icon, isEditing, isManager, onAction, activeBrandC
           </span>
         </div>
         {isManager && onAction && (
-          <button 
-            onClick={onAction} 
-            className="transition-colors p-0.5 hover:opacity-80 outline-none"
-            style={{ color: accentColor }}
-          >
-            <Icon name={isEditing ? "close" : "edit"} className="w-4 h-4" />
-          </button>
+          hasAccess ? (
+            /* Есть подписка: кнопка переключения режима редактирования */
+            <button 
+              onClick={onAction} 
+              className="transition-colors p-0.5 hover:opacity-80 outline-none cursor-pointer flex items-center justify-center"
+              style={{ color: accentColor }}
+            >
+              <Icon name={isEditing ? "close" : "edit"} className="w-4 h-4" />
+            </button>
+          ) : (
+            /* Нет подписки: кнопка «потухла» и вызывает плавающий адаптивный поповер */
+            <HintPopover status="no_subscription">
+              <div className="transition-colors p-0.5 opacity-30 flex items-center justify-center" style={{ color: accentColor }}>
+                <Icon name="edit" className="w-4 h-4" />
+              </div>
+            </HintPopover>
+          )
         )}
       </div>
       <div className="flex flex-col text-left">{children}</div>
@@ -87,9 +99,30 @@ export const UserDetails = ({ data }) => {
   const teamId = data?.team_id;
   const userId = data?.user_id;
   const currentRoster = data?.currentRoster || [];
-  
-  // Извлекаем переданный командный цвет хоккейного клуба из локального хранилища MyTeamPage
   const activeBrandColor = data?.activeBrandColor;
+
+  // Извлекаем переданные из MyTeamPage объекты авторизации (так как панель живет вне Outlet дерева)
+  const currentUser = data?.user;
+  const currentTeam = data?.selectedTeam;
+
+  // Подключаем наш хук доступов к операционной In-Memory матрице прав
+  const { checkAccess } = useAccess(currentUser, currentTeam);
+  
+  // КЛИЕНТСКИЙ ГАРАНТ: Рассчитываем полный статус руководителя на клиенте для защиты от багов роли в БД
+  const frontendIsManager = useMemo(() => {
+    if (!currentUser || !currentTeam) return false;
+    const isTeamOwner = String(currentTeam.owner_id) === String(currentUser.id);
+    const teamRoles = currentTeam.user_role?.split(',').map(r => r.trim()) || [];
+    return isTeamOwner || teamRoles.some(r => ['team_manager', 'team_admin', 'head_coach', 'coach'].includes(r));
+  }, [currentUser, currentTeam]);
+
+  // Объединяем оба источника: если хоть один подтверждает, что юзер админ — выкатываем карандаши
+  const showAdminControls = isManager || frontendIsManager;
+
+  // Рассчитываем гранулярные права на редактирование разделов по подписке
+  const hasHeaderBlockAccess = checkAccess('EDIT_USER_BLOCK_BASE', teamId);
+  const hasRolesBlockAccess = checkAccess('TEAM_MANAGE_TAB_ALL', teamId);
+  const hasGameBlockAccess = checkAccess('TEAM_MANAGE_TAB_ROSTER', teamId);
 
   const AVAILABLE_ROLES = [
     { id: 'team_manager', label: 'Руководитель' },
@@ -142,7 +175,6 @@ export const UserDetails = ({ data }) => {
   }, [formData.jersey_number, currentRoster, userId]);
 
   const saveFieldToDB = async (updatedFields) => {
-    // Приведение к camelCase согласно требованиям деструктуризации в TeamController.js
     const safeJerseyNumber = updatedFields.jerseyNumber !== undefined
       ? (updatedFields.jerseyNumber === '' ? null : parseInt(updatedFields.jerseyNumber, 10))
       : undefined;
@@ -305,32 +337,42 @@ export const UserDetails = ({ data }) => {
         
         {/* КАРТОЧКА ШАПКИ ИГРОКА */}
         <div className="flex flex-col p-4 mb-3 bg-surface-level1 border border-surface-border rounded-2xl shadow-sm relative">
-          {isManager && (
-            <button 
-              onClick={() => setIsEditingHeader(!isEditHeader)} 
-              className="absolute top-4 right-4 text-content-subtle hover:text-brand transition-colors p-0.5 z-20 outline-none"
-              style={activeBrandColor ? { color: activeBrandColor } : {}}
-            >
-              <Icon name={isEditHeader ? "close" : "edit"} className="w-4 h-4" />
-            </button>
+          {showAdminControls && (
+            hasHeaderBlockAccess ? (
+              <button 
+                onClick={() => setIsEditingHeader(!isEditHeader)} 
+                className="absolute top-4 right-4 text-content-subtle hover:text-brand transition-colors p-0.5 z-20 outline-none cursor-pointer flex items-center justify-center"
+                style={activeBrandColor ? { color: activeBrandColor } : {}}
+              >
+                <Icon name={isEditHeader ? "close" : "edit"} className="w-4 h-4" />
+              </button>
+            ) : (
+              <div className="absolute top-4 right-4 z-20 flex items-center justify-center">
+                <HintPopover status="no_subscription">
+                  <div className="text-content-subtle opacity-30 p-0.5" style={activeBrandColor ? { color: activeBrandColor } : {}}>
+                    <Icon name="edit" className="w-4 h-4" />
+                  </div>
+                </HintPopover>
+              </div>
+            )
           )}
 
           <div className="flex items-center gap-4 w-full pr-1">
             <div className="w-20 h-20 rounded-3xl bg-surface-base border border-surface-border p-0.5 shadow-sm flex items-center justify-center overflow-hidden shrink-0 relative">
               <Avatar photoUrl={profile.avatar_url} firstName={profile.first_name} lastName={profile.last_name} className="w-full h-full rounded-3xl" />
               
-              {isEditHeader && (
+              {isEditHeader && hasHeaderBlockAccess && (
                 <div className="absolute inset-0 flex flex-col items-center justify-center p-1 bg-black/60 rounded-[20px] transition-all">
                   <button 
                     onClick={() => document.getElementById('member-photo-file-input').click()}
-                    className="text-[9px] bg-success font-black text-white px-1.5 py-3.5 uppercase tracking-wider w-[200px] text-center outline-none"
+                    className="text-[9px] bg-success font-black text-white px-1.5 py-3.5 uppercase tracking-wider w-[200px] text-center outline-none cursor-pointer"
                   >
                     Заменить
                   </button>
                   {profile.team_photo_url && (
                     <button 
                       onClick={handlePhotoDelete}
-                      className="text-[9px] font-black text-white bg-danger px-1.5 py-3.5 uppercase tracking-wider w-[200px] text-center outline-none"
+                      className="text-[9px] font-black text-white bg-danger px-1.5 py-3.5 uppercase tracking-wider w-[200px] text-center outline-none cursor-pointer"
                     >
                       Удалить
                     </button>
@@ -363,7 +405,7 @@ export const UserDetails = ({ data }) => {
             </div>
           </div>
 
-          {isEditHeader && (
+          {isEditHeader && hasHeaderBlockAccess && (
             <div className="flex flex-col gap-2.5 mt-4 pt-3 border-t border-surface-border animate-fade-in">
               {profile.roster_id ? (
                 <>
@@ -384,11 +426,12 @@ export const UserDetails = ({ data }) => {
           title="Роли в команде" 
           icon="gear"
           isEditing={isEditRoles}
-          isManager={isManager}
+          isManager={showAdminControls}
+          hasAccess={hasRolesBlockAccess}
           onAction={() => setIsEditingRoles(!isEditRoles)}
           activeBrandColor={activeBrandColor}
         >
-          {isEditRoles ? (
+          {isEditRoles && hasRolesBlockAccess ? (
             <div className="flex flex-col gap-2.5 pt-1">
               {AVAILABLE_ROLES.map(role => {
                 const isChecked = formData.roles.split(',').map(r => r.trim()).includes(role.id);
@@ -421,11 +464,12 @@ export const UserDetails = ({ data }) => {
           title="Игровой профиль" 
           icon="jersey"
           isEditing={isEditGame}
-          isManager={isManager}
+          isManager={showAdminControls}
+          hasAccess={hasGameBlockAccess}
           onAction={handleToggleEditGame}
           activeBrandColor={activeBrandColor}
         >
-          {isEditGame ? (
+          {isEditGame && hasGameBlockAccess ? (
             <div className="flex flex-col gap-3 pt-1">
               <TextInputLP 
                 label="Игровой номер" 
@@ -458,14 +502,14 @@ export const UserDetails = ({ data }) => {
         </CustomBlock>
 
         {/* БЛОК 3: ФИЗИЧЕСКИЕ ДАННЫЕ */}
-        <CustomBlock title="Физические данные" icon="player" isEditing={false} isManager={isManager} onAction={null} activeBrandColor={activeBrandColor}>
+        <CustomBlock title="Физические данные" icon="player" isEditing={false} isManager={showAdminControls} onAction={null} activeBrandColor={activeBrandColor}>
           <InfoRow label="Рост" value={profile.height ? `${profile.height} см` : null} />
           <InfoRow label="Вес" value={profile.weight ? `${profile.weight} кг` : null} />
           <InfoRow label="Хват клюшки" value={profile.grip === 'left' ? 'Левый (L)' : profile.grip === 'right' ? 'Правый (R)' : null} />
         </CustomBlock>
 
         {/* БЛОК 4: ЛИЧНАЯ ИНФОРМАЦИЯ */}
-        <CustomBlock title="Личная информация" icon="calendar" isEditing={false} isManager={isManager} onAction={null} activeBrandColor={activeBrandColor}>
+        <CustomBlock title="Личная информация" icon="calendar" isEditing={false} isManager={showAdminControls} onAction={null} activeBrandColor={activeBrandColor}>
           <InfoRow label="Номер тел." value={formatPhoneNumber(profile.phone)} />
           <InfoRow label="Дата рожд." value={profile.birth_date ? dayjs(profile.birth_date).format('DD.MM.YYYY') : null} />
           <InfoRow label="Возраст" value={age ? `${age} лет` : null} />

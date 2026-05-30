@@ -13,7 +13,8 @@ export const getEvents = async (req, res) => {
       WITH user_context AS (
         SELECT 
           (SELECT count(*) FROM team_members WHERE user_id = $1 AND left_at IS NULL) as active_teams,
-          (SELECT count(*) FROM club_members WHERE user_id = $1 AND left_at IS NULL) as active_clubs
+          (SELECT count(*) FROM club_members WHERE user_id = $1 AND left_at IS NULL) as active_clubs,
+          (SELECT (subscription_expires_at IS NOT NULL AND subscription_expires_at > NOW()) FROM users WHERE id = $1) as has_subscription
       ),
       user_teams AS (
         SELECT team_id FROM team_members WHERE user_id = $1 AND left_at IS NULL
@@ -87,7 +88,11 @@ export const getEvents = async (req, res) => {
           (CASE 
             WHEN g.stage_type = 'friendly' THEN
               COALESCE(
-                (SELECT CASE WHEN tr.left_at IS NOT NULL THEN 'unregistered' ELSE 'allowed' END
+                (SELECT CASE 
+                          WHEN tr.left_at IS NOT NULL THEN 'unregistered' 
+                          WHEN NOT (SELECT has_subscription FROM user_context) THEN 'no_subscription'
+                          ELSE 'allowed' 
+                        END
                  FROM team_rosters tr JOIN team_members tm ON tr.member_id = tm.id
                  WHERE tm.user_id = $1 AND tm.team_id = ut.team_id AND tm.left_at IS NULL ORDER BY tr.left_at NULLS FIRST LIMIT 1),
                 'not_in_team'
@@ -111,6 +116,7 @@ export const getEvents = async (req, res) => {
                   (SELECT CASE 
                             WHEN tr.period_end IS NOT NULL THEN 'unregistered'
                             WHEN tr.application_status != 'approved' THEN 'not_approved'
+                            WHEN NOT (SELECT has_subscription FROM user_context) THEN 'no_subscription'
                             ELSE 'allowed'
                           END
                    FROM tournament_rosters tr
@@ -189,7 +195,11 @@ export const getEvents = async (req, res) => {
           (EXISTS (SELECT 1 FROM team_training_attendance tta WHERE tta.team_training_id = tt.id AND tta.user_id = $1))::boolean AS is_attending,
           
           (COALESCE(
-            (SELECT CASE WHEN tr.left_at IS NOT NULL THEN 'unregistered' ELSE 'allowed' END
+            (SELECT CASE 
+                      WHEN tr.left_at IS NOT NULL THEN 'unregistered' 
+                      WHEN NOT (SELECT has_subscription FROM user_context) THEN 'no_subscription'
+                      ELSE 'allowed' 
+                    END
              FROM team_rosters tr JOIN team_members tm ON tr.member_id = tm.id
              WHERE tm.user_id = $1 AND tm.team_id = ut.team_id AND tm.left_at IS NULL ORDER BY tr.left_at NULLS FIRST LIMIT 1),
             'not_in_team'
@@ -252,7 +262,7 @@ export const getEvents = async (req, res) => {
 
           (CASE WHEN (SELECT active_clubs FROM user_context) = 0 AND (SELECT active_teams FROM user_context) = 1 THEN false ELSE true END)::boolean AS show_team_context,
           (EXISTS (SELECT 1 FROM team_meeting_attendance tma WHERE tma.team_meeting_id = tm.id AND tma.user_id = $1))::boolean AS is_attending,
-          'allowed'::varchar AS toggle_status 
+          (CASE WHEN NOT (SELECT has_subscription FROM user_context) THEN 'no_subscription' ELSE 'allowed' END)::varchar AS toggle_status 
 
         FROM user_teams ut
         JOIN team_meeting tm ON tm.team_id = ut.team_id
@@ -311,7 +321,7 @@ export const getEvents = async (req, res) => {
 
           false::boolean AS show_team_context, 
           (EXISTS (SELECT 1 FROM club_training_attendance cta WHERE cta.club_training_id = ct.id AND cta.user_id = $1))::boolean AS is_attending,
-          'allowed'::varchar AS toggle_status
+          (CASE WHEN NOT (SELECT has_subscription FROM user_context) THEN 'no_subscription' ELSE 'allowed' END)::varchar AS toggle_status
 
         FROM user_clubs uc
         JOIN club_training ct ON ct.club_id = uc.club_id
@@ -370,7 +380,7 @@ export const getEvents = async (req, res) => {
 
           false::boolean AS show_team_context,
           (EXISTS (SELECT 1 FROM club_meeting_attendance cma WHERE cma.club_meeting_id = cm.id AND cma.user_id = $1))::boolean AS is_attending,
-          'allowed'::varchar AS toggle_status
+          (CASE WHEN NOT (SELECT has_subscription FROM user_context) THEN 'no_subscription' ELSE 'allowed' END)::varchar AS toggle_status
 
         FROM user_clubs uc
         JOIN club_meeting cm ON cm.club_id = uc.club_id

@@ -1,6 +1,73 @@
 import pool from '../config/db.js';
 import s3 from '../config/s3.js';
 import path from 'path';
+import { PERMISSIONS } from '../utils/permissions.js';
+
+/**
+ * Внутренняя функция для проверки гранулярных прав доступа и подписки
+ */
+async function checkPermissionInternal(userId, teamId, permissionKey, client = pool) {
+  if (!userId) return false;
+
+  const userRes = await client.query(
+    'SELECT global_role, subscription_expires_at FROM users WHERE id = $1',
+    [userId]
+  );
+  if (userRes.rows.length === 0) return false;
+  const { global_role, subscription_expires_at } = userRes.rows[0];
+
+  if (global_role === 'admin') return true;
+
+  const permission = PERMISSIONS[permissionKey];
+  if (!permission) return false;
+
+  const hasSubscription = subscription_expires_at && new Date(subscription_expires_at) > new Date();
+  let userRoles = [];
+
+  if (teamId) {
+    const teamOwnerRes = await client.query('SELECT owner_id FROM teams WHERE id = $1', [teamId]);
+    if (teamOwnerRes.rows.length > 0 && teamOwnerRes.rows[0].owner_id === userId) {
+      userRoles.push('owner');
+    }
+
+    const trRes = await client.query(`
+      SELECT tr.role FROM team_roles tr 
+      JOIN team_members tm ON tr.member_id = tm.id 
+      WHERE tm.user_id = $1 AND tm.team_id = $2 AND tr.left_at IS NULL AND tm.left_at IS NULL
+    `, [userId, teamId]);
+    userRoles.push(...trRes.rows.map(r => r.role));
+
+    const crRes = await client.query(`
+      SELECT cr.role FROM club_roles cr
+      JOIN teams t ON t.club_id = cr.club_id
+      JOIN club_members cm ON cm.club_id = cr.club_id AND cm.user_id = cr.user_id
+      WHERE cr.user_id = $1 AND t.id = $2 AND cr.left_at IS NULL AND cm.left_at IS NULL
+    `, [userId, teamId]);
+    userRoles.push(...crRes.rows.map(r => r.role));
+
+    const memberRes = await client.query(`
+      SELECT id FROM team_members 
+      WHERE user_id = $1 AND team_id = $2 AND left_at IS NULL
+    `, [userId, teamId]);
+    if (memberRes.rows.length > 0) {
+      userRoles.push('player');
+    }
+  }
+
+  return userRoles.some(role => {
+    if (!permission.allowedRoles.includes(role)) return false;
+
+    let roleRequiresSub = false;
+    if (permission.requiresSubscription === true) {
+      roleRequiresSub = true;
+    } else if (Array.isArray(permission.requiresSubscription)) {
+      roleRequiresSub = permission.requiresSubscription.includes(role);
+    }
+
+    if (roleRequiresSub && !hasSubscription) return false;
+    return true;
+  });
+}
 
 // Получение всех команд текущего пользователя
 export const getMyTeams = async (req, res) => {
@@ -13,7 +80,7 @@ export const getMyTeams = async (req, res) => {
             FROM teams t
             LEFT JOIN team_members tm ON tm.team_id = t.id AND tm.left_at IS NULL
             LEFT JOIN club_members cm ON cm.club_id = t.club_id AND cm.left_at IS NULL
-            WHERE (tm.user_id = $1 OR cm.user_id = $1)
+            WHERE (tm.user_id = $1 OR cm.user_id = $1 OR t.owner_id = $1)
             ORDER BY t.name
         `;
         const { rows } = await pool.query(query, [userId]);
@@ -99,24 +166,11 @@ export const getTeamMemberDetails = async (req, res) => {
       return res.status(401).json({ error: 'Пользователь не идентифицирован' });
     }
 
-    // Собираем все активные роли запрашивающего сотрудника в этой команде
-    const reqUserRolesRes = await pool.query(`
-      SELECT 'admin' as role FROM users WHERE id = $1 AND global_role = 'admin'
-      UNION
-      SELECT tr.role FROM team_roles tr
-      JOIN team_members tm ON tr.member_id = tm.id
-      WHERE tm.user_id = $1 AND tm.team_id = $2 AND tr.left_at IS NULL AND tm.left_at IS NULL
-      UNION
-      SELECT cr.role FROM club_roles cr
-      JOIN teams t ON t.club_id = cr.club_id
-      JOIN club_members cm ON cm.club_id = cr.club_id AND cm.user_id = cr.user_id
-      WHERE cr.user_id = $1 AND t.id = $2 AND cr.left_at IS NULL AND cm.left_at IS NULL
-    `, [reqUserId, teamId]);
-
-    const reqUserRoles = reqUserRolesRes.rows.map(r => r.role);
-    const hasGlobalAdmin = reqUserRoles.includes('admin');
-    const isTeamManager = reqUserRoles.includes('team_manager') || reqUserRoles.includes('top_manager');
-    const isTeamAdmin = reqUserRoles.includes('team_admin') || reqUserRoles.includes('club_admin');
+    // Вычисляем динамические права на основе эталонной матрицы permissions.js
+    const canEditRoles = await checkPermissionInternal(reqUserId, teamId, 'EDIT_USER_BLOCK_ROLES');
+    const canEditGameProfile = await checkPermissionInternal(reqUserId, teamId, 'EDIT_USER_BLOCK_HOCKEY');
+    const canEditHeader = await checkPermissionInternal(reqUserId, teamId, 'EDIT_USER_BLOCK_BASE');
+    const canViewVirtualCode = await checkPermissionInternal(reqUserId, teamId, 'VIEW_VIRTUAL_CODE');
 
     const query = `
       SELECT 
@@ -144,21 +198,20 @@ export const getTeamMemberDetails = async (req, res) => {
 
     const memberData = rows[0];
 
-    // Только руководитель команды или клуба видит виртуальный код (VIEW_VIRTUAL_CODE)
-    if (!isTeamManager && !hasGlobalAdmin) {
+    // Если у пользователя нет прав (или нет подписки) — скрываем виртуальный код
+    if (!canViewVirtualCode) {
       delete memberData.virtual_code;
     }
 
-    // Возвращаем строго вычисленные флаги доступов согласно разрешенным правилам
     res.json({ 
       success: true, 
       member: memberData, 
-      isManager: isTeamManager,
+      isManager: canViewVirtualCode,
       isOwnProfile: reqUserId === memberData.user_id,
       permissions: {
-        canEditRoles: isTeamManager || hasGlobalAdmin,
-        canEditGameProfile: isTeamManager || isTeamAdmin || hasGlobalAdmin,
-        canEditHeader: isTeamManager || isTeamAdmin || hasGlobalAdmin
+        canEditRoles,
+        canEditGameProfile,
+        canEditHeader
       }
     });
   } catch (error) {
@@ -174,31 +227,13 @@ export const updateMemberDetails = async (req, res) => {
   const reqUserId = req.user?.id;
 
   try {
-    // Вычисляем роли запрашивающего пользователя перед выполнением транзакции
-    const reqUserRolesRes = await pool.query(`
-      SELECT 'admin' as role FROM users WHERE id = $1 AND global_role = 'admin'
-      UNION
-      SELECT tr.role FROM team_roles tr
-      JOIN team_members tm ON tr.member_id = tm.id
-      WHERE tm.user_id = $1 AND tm.team_id = $2 AND tr.left_at IS NULL AND tm.left_at IS NULL
-      UNION
-      SELECT cr.role FROM club_roles cr
-      JOIN teams t ON t.club_id = cr.club_id
-      JOIN club_members cm ON cm.club_id = cr.club_id AND cm.user_id = cr.user_id
-      WHERE cr.user_id = $1 AND t.id = $2 AND cr.left_at IS NULL AND cm.left_at IS NULL
-    `, [reqUserId, teamId]);
-
-    const reqUserRoles = reqUserRolesRes.rows.map(r => r.role);
-    const hasGlobalAdmin = reqUserRoles.includes('admin');
-    const isTeamManager = reqUserRoles.includes('team_manager') || reqUserRoles.includes('top_manager');
-    const isTeamAdmin = reqUserRoles.includes('team_admin') || reqUserRoles.includes('club_admin');
-
     await pool.query('BEGIN');
 
-    // 1. ПРОВЕРКА ПРАВ ДЛЯ ИГРОВОГО ПРОФИЛЬНОГО БЛОКА (Менеджер и Админ)
+    // 1. ПРОВЕРКА ПРАВ ДЛЯ ИГРОВОГО ПРОФИЛЬНОГО БЛОКА
     if (position !== undefined || jerseyNumber !== undefined) {
-      if (!isTeamManager && !isTeamAdmin && !hasGlobalAdmin) {
-        return res.status(403).json({ error: 'Недостаточно прав для изменения игрового профиля' });
+      const hasAccess = await checkPermissionInternal(reqUserId, teamId, 'EDIT_USER_BLOCK_HOCKEY');
+      if (!hasAccess) {
+        return res.status(403).json({ error: 'Недостаточно прав или требуется продлить подписку для изменения игрового профиля' });
       }
 
       if (jerseyNumber) {
@@ -221,10 +256,11 @@ export const updateMemberDetails = async (req, res) => {
       );
     }
 
-    // 2. ПРОВЕРКА ПРАВ ДЛЯ БЛОКА ШАПКИ/КАПИТАНСТВА (Менеджер и Админ)
+    // 2. ПРОВЕРКА ПРАВ ДЛЯ БЛОКА ШАПКИ/КАПИТАНСТВА
     if (isCaptain !== undefined || isAssistant !== undefined) {
-      if (!isTeamManager && !isTeamAdmin && !hasGlobalAdmin) {
-        return res.status(403).json({ error: 'Недостаточно прав для изменения капитанских статусов' });
+      const hasAccess = await checkPermissionInternal(reqUserId, teamId, 'EDIT_USER_BLOCK_BASE');
+      if (!hasAccess) {
+        return res.status(403).json({ error: 'Недостаточно прав или требуется продлить подписку для изменения капитанских статусов' });
       }
 
       if (isCaptain !== undefined) {
@@ -268,10 +304,11 @@ export const updateMemberDetails = async (req, res) => {
       }
     }
 
-    // 3. ПРОВЕРКА ПРАВ ДЛЯ АДМИНИСТРАТИВНЫХ СТАТУСОВ (Только руководитель)
+    // 3. ПРОВЕРКА ПРАВ ДЛЯ АДМИНИСТРАТИВНЫХ СТАТУСОВ (Управление ролями)
     if (roles !== undefined) {
-      if (!isTeamManager && !hasGlobalAdmin) {
-        return res.status(403).json({ error: 'Недостаточно прав для изменения административного статуса' });
+      const hasAccess = await checkPermissionInternal(reqUserId, teamId, 'EDIT_USER_BLOCK_ROLES');
+      if (!hasAccess) {
+        return res.status(403).json({ error: 'Недостаточно прав или требуется продлить подписку для изменения административного статуса' });
       }
 
       const memberUserRes = await pool.query(
@@ -345,7 +382,7 @@ const uploadBufferToS3 = async (file, bucketKey) => {
   throw new Error('S3 Client не настроен на сервере');
 };
 
-// ВОЗВРАЩЕНО: Метод загрузки/замены кастомной аватарки игрока в S3
+// Метод загрузки/замены кастомной аватарки игрока в S3
 export const updateMemberPhoto = async (req, res) => {
   const { teamId, memberId } = req.params;
   if (!req.file) {
@@ -380,7 +417,7 @@ export const updateMemberPhoto = async (req, res) => {
   }
 };
 
-// ВОЗВРАЩЕНО: Метод удаления кастомного фото участника
+// Метод удаления кастомного фото участника
 export const deleteMemberPhoto = async (req, res) => {
   const { teamId, memberId } = req.params;
   try {

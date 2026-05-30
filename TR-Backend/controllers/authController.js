@@ -30,15 +30,19 @@ export const verifyToken = (req, res, next) => {
  */
 const fetchPwaUserProfile = async (userId) => {
   const userResult = await pool.query(
-    `SELECT id, first_name, last_name, middle_name, email, phone, avatar_url, birth_date, sign_pin_hash 
+    `SELECT id, first_name, last_name, middle_name, email, phone, avatar_url, birth_date, sign_pin_hash, subscription_expires_at 
      FROM users WHERE id = $1 AND status = 'active'`,
     [userId]
   );
   if (userResult.rows.length === 0) return null;
   const user = userResult.rows[0];
 
+  // Рассчитываем глобальный статус подписки пользователя
+  const hasSubscription = user.subscription_expires_at && new Date(user.subscription_expires_at) > new Date();
+
+  // Извлекаем все команды, к которым пользователь имеет прямое или косвенное отношение
   const teamsResult = await pool.query(`
-    SELECT t.id, t.name, t.short_name, t.logo_url,
+    SELECT t.id, t.name, t.short_name, t.logo_url, t.owner_id,
       (
         SELECT string_agg(DISTINCT role, ',') FROM (
           SELECT cr.role FROM club_roles cr 
@@ -61,10 +65,15 @@ const fetchPwaUserProfile = async (userId) => {
           
           SELECT 'player' as role FROM team_members tm 
           WHERE tm.team_id = t.id AND tm.user_id = $1 AND tm.left_at IS NULL
+
+          UNION
+
+          SELECT 'owner' as role FROM teams WHERE id = t.id AND owner_id = $1
         ) AS roles
       ) as user_role
     FROM teams t
-    WHERE EXISTS (
+    WHERE t.owner_id = $1
+    OR EXISTS (
       SELECT 1 FROM team_members tm WHERE tm.team_id = t.id AND tm.user_id = $1 AND tm.left_at IS NULL
     )
     OR EXISTS (
@@ -79,6 +88,23 @@ const fetchPwaUserProfile = async (userId) => {
     )
   `, [user.id]);
 
+  // Сборка оперативной In-Memory матрицы доступов для фронтенда
+  const accessMatrix = {};
+  teamsResult.rows.forEach(row => {
+    const roles = row.user_role ? row.user_role.split(',') : [];
+    const isOwner = row.owner_id === user.id;
+    
+    if (isOwner && !roles.includes('owner')) {
+      roles.push('owner');
+    }
+
+    accessMatrix[row.id] = {
+      is_owner: isOwner,
+      has_subscription: hasSubscription,
+      roles: roles
+    };
+  });
+
   return {
     id: user.id,
     firstName: user.first_name,
@@ -89,7 +115,10 @@ const fetchPwaUserProfile = async (userId) => {
     avatarUrl: user.avatar_url,
     birthDate: user.birth_date,
     hasSignPin: !!user.sign_pin_hash,
-    teams: teamsResult.rows
+    subscriptionExpiresAt: user.subscription_expires_at,
+    hasSubscription: hasSubscription,
+    teams: teamsResult.rows,
+    accessMatrix: accessMatrix
   };
 };
 
@@ -136,6 +165,7 @@ export const login = async (req, res) => {
         OR EXISTS (SELECT 1 FROM club_members cm WHERE cm.user_id = u.id AND cm.left_at IS NULL)
         OR EXISTS (SELECT 1 FROM tournament_team_roles ttr WHERE ttr.user_id = u.id AND ttr.left_at IS NULL)
         OR EXISTS (SELECT 1 FROM club_roles cr JOIN club_members cm ON cm.club_id = cr.club_id AND cm.user_id = cr.user_id WHERE cr.user_id = u.id AND cr.left_at IS NULL AND cm.left_at IS NULL)
+        OR EXISTS (SELECT 1 FROM teams t WHERE t.owner_id = u.id)
       ) as has_membership
       FROM users u
       WHERE u.phone = $1 AND u.status = 'active'
@@ -152,7 +182,7 @@ export const login = async (req, res) => {
       return res.status(403).json({ 
         success: false, 
         error: 'ACCOUNT_RESET',
-        message: 'Ваш аккаунт был создан как виртуальный или был переведен в виртуальный. Для разблокировки перейдите в «Создать аккаунт» и возьмите у руководителя команды или клуба актуальный секретный код от этого аккаунта.' 
+        message: 'Ваш аккаунт был создан как виртуальный или был переведен в виртуальный. Для разблокировки перейдите in «Создать аккаунт» и возьмите у руководителя команды или клуба актуальный секретный код от этого аккаунта.' 
       });
     }
 

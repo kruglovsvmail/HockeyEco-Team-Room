@@ -45,16 +45,16 @@ router.put(
 router.put(
   '/:teamId/members/:memberId/photo',
   verifyToken,
-  requireTeamPermission('EDIT_MEMBER_HEADER'),
+  requireTeamPermission('EDIT_USER_BLOCK_BASE'),
   upload.single('photo'),
   updateMemberPhoto
 );
 
-// Удаление переопределенной фотографии участника из состава команды
+// 删除 переопределенной фотографии участника из состава команды
 router.delete(
   '/:teamId/members/:memberId/photo',
   verifyToken,
-  requireTeamPermission('EDIT_MEMBER_HEADER'),
+  requireTeamPermission('EDIT_USER_BLOCK_BASE'),
   deleteMemberPhoto
 );
 
@@ -71,19 +71,19 @@ router.put(
   updateTeamProfile
 );
 
-// Исключение игрока из активного игрового ростера на турнир
+// Исключение игрока из активного игрового ростера на турнир (Вкладка "Ростер")
 router.post(
   '/:teamId/roster/:memberId/exclude',
   verifyToken,
-  requireTeamPermission('ROSTER_MANAGE'),
+  requireTeamPermission('TEAM_MANAGE_TAB_ROSTER'),
   excludeFromRoster
 );
 
-// Полное удаление пользователя из членства команды и ростера
+// Полное удаление пользователя из членства команды и ростера (Вкладка "Состав")
 router.post(
   '/:teamId/members/:memberId/exclude',
   verifyToken,
-  requireTeamPermission('ROSTER_MANAGE'),
+  requireTeamPermission('TEAM_MANAGE_TAB_ALL'),
   excludeFromMembership
 );
 
@@ -91,7 +91,7 @@ router.post(
 router.get(
   '/:teamId/users/search',
   verifyToken,
-  requireTeamPermission('ROSTER_MANAGE'),
+  requireTeamPermission('TEAM_MANAGE_TAB_ALL'),
   searchUserByPhone
 );
 
@@ -99,7 +99,7 @@ router.get(
 router.post(
   '/:teamId/members',
   verifyToken,
-  requireTeamPermission('ROSTER_MANAGE'),
+  requireTeamPermission('TEAM_MANAGE_TAB_ALL'),
   addOrRestoreTeamMember
 );
 
@@ -107,7 +107,7 @@ router.post(
 router.post(
   '/:teamId/roster',
   verifyToken,
-  requireTeamPermission('ROSTER_MANAGE'),
+  requireTeamPermission('TEAM_MANAGE_TAB_ROSTER'),
   addTeamMemberToRoster
 );
 

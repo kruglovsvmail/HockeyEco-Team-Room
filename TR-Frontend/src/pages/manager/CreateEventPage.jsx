@@ -1,18 +1,23 @@
 import React from 'react';
-import { useOutletContext } from 'react-router-dom';
+import { useOutletContext, useNavigate } from 'react-router-dom';
 import { useAccess } from '../../hooks/useAccess';
+import { SubscriptionStub } from '../../ui/SubscriptionStub';
 
 export function CreateEventPage() {
   const { selectedTeam, user } = useOutletContext();
   const { checkAccess } = useAccess(user, selectedTeam);
+  const navigate = useNavigate();
 
   const hasAccess = checkAccess('MGR_CREATE_EVENT');
 
   if (!hasAccess) {
     return (
-      <div className="p-6 text-center text-danger font-bold uppercase tracking-widest text-xs">
-        Доступ закрыт. У вашей роли недостаточно полномочий для планирования событий.
-      </div>
+      <SubscriptionStub 
+        isOpen={true} 
+        onClose={() => navigate(-1)} 
+        title="Планирование ограничено"
+        description="Для создания новых матчей, генерации расписания тренировок и собраний этой команды необходимо продлить действие личной подписки руководителя."
+      />
     );
   }
 

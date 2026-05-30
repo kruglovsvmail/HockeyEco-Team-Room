@@ -24,6 +24,7 @@ export const verifyToken = (req, res, next) => {
 const getTeamIdFromContext = async (req) => {
   if (req.params?.teamId) return req.params.teamId;
   if (req.body?.teamId) return req.body.teamId;
+  if (req.query?.teamId) return req.query.teamId;
 
   const isTeamRoute = req.baseUrl?.includes('/api/teams') || req.originalUrl?.includes('/api/teams');
   if (req.params?.id && isTeamRoute) {
@@ -62,15 +63,26 @@ export const requireTeamPermission = (permissionKey) => async (req, res, next) =
       return res.status(401).json({ message: 'Пользователь не идентифицирован' });
     }
 
-    // Глобальный админ
-    const userRes = await pool.query('SELECT global_role FROM users WHERE id = $1', [userId]);
-    if (userRes.rows[0]?.global_role === ROLES.GLOBAL_ADMIN) {
+    // Извлекаем глобальную роль и дату окончания подписки пользователя
+    const userRes = await pool.query(
+      'SELECT global_role, subscription_expires_at FROM users WHERE id = $1', 
+      [userId]
+    );
+    
+    if (userRes.rows.length === 0) {
+      return res.status(404).json({ message: 'Пользователь не найден' });
+    }
+
+    const { global_role, subscription_expires_at } = userRes.rows[0];
+
+    // Глобальный суперадмин системы проходит всегда беспрепятственно
+    if (global_role === ROLES.GLOBAL_ADMIN) {
       return next();
     }
 
-    const allowedRoles = PERMISSIONS[permissionKey];
-    if (!allowedRoles || allowedRoles.length === 0) {
-      return res.status(403).json({ message: 'Доступ закрыт' });
+    const permission = PERMISSIONS[permissionKey];
+    if (!permission) {
+      return res.status(403).json({ message: 'Доступ закрыт (Неизвестное правило прав)' });
     }
 
     let teamIds = await getTeamIdFromContext(req);
@@ -79,10 +91,25 @@ export const requireTeamPermission = (permissionKey) => async (req, res, next) =
     }
     if (!Array.isArray(teamIds)) teamIds = [teamIds];
 
-    let userRoles = [];
+    // Вычисляем статус личной подписки пользователя на текущий момент времени
+    const hasSubscription = subscription_expires_at && new Date(subscription_expires_at) > new Date();
 
+    let hasAccess = false;
+
+    // Проверяем доступ изолированно по каждой команде из контекста запроса
     for (const tId of teamIds) {
-      // 1. Роли в команде (учитываем, что и членство, и роль должны быть активны)
+      let userRoles = [];
+
+      // 1. Динамическая проверка на Владельца команды (owner_id)
+      const teamOwnerRes = await pool.query(
+        'SELECT owner_id FROM teams WHERE id = $1',
+        [tId]
+      );
+      if (teamOwnerRes.rows.length > 0 && teamOwnerRes.rows[0].owner_id === userId) {
+        userRoles.push(ROLES.OWNER);
+      }
+
+      // 2. Роли внутри команды (активное членство и активная роль)
       const trRes = await pool.query(`
         SELECT tr.role FROM team_roles tr 
         JOIN team_members tm ON tr.member_id = tm.id 
@@ -90,7 +117,7 @@ export const requireTeamPermission = (permissionKey) => async (req, res, next) =
       `, [userId, tId]);
       userRoles.push(...trRes.rows.map(r => r.role));
 
-      // 2. Роли в клубе (добавлена жесткая проверка cr.left_at IS NULL и cm.left_at IS NULL)
+      // 3. Роли внутри клуба (активное членство и активная роль)
       const crRes = await pool.query(`
         SELECT cr.role FROM club_roles cr
         JOIN teams t ON t.club_id = cr.club_id
@@ -99,7 +126,7 @@ export const requireTeamPermission = (permissionKey) => async (req, res, next) =
       `, [userId, tId]);
       userRoles.push(...crRes.rows.map(r => r.role));
 
-      // 3. Проверка на активного игрока
+      // 4. Проверка на статус активного игрока состава
       const memberRes = await pool.query(`
         SELECT id FROM team_members 
         WHERE user_id = $1 AND team_id = $2 AND left_at IS NULL
@@ -107,12 +134,37 @@ export const requireTeamPermission = (permissionKey) => async (req, res, next) =
       if (memberRes.rows.length > 0) {
         userRoles.push(ROLES.PLAYER);
       }
+
+      // Атомарный анализ пересечения ролей для данной конкретной команды
+      const teamHasAccess = userRoles.some(role => {
+        // Если роль вообще не входит в список разрешенных для этого действия — пропускаем её
+        if (!permission.allowedRoles.includes(role)) return false;
+
+        // Выясняем, требует ли конкретно эта роль наличие подписки
+        let roleRequiresSub = false;
+        if (permission.requiresSubscription === true) {
+          roleRequiresSub = true;
+        } else if (Array.isArray(permission.requiresSubscription)) {
+          roleRequiresSub = permission.requiresSubscription.includes(role);
+        }
+
+        // Если подписка для роли нужна, но у пользователя её нет — эта роль блокируется
+        if (roleRequiresSub && !hasSubscription) {
+          return false;
+        }
+
+        // Если роль подошла и прошла фильтр подписки — доступ открыт
+        return true;
+      });
+
+      if (teamHasAccess) {
+        hasAccess = true;
+        break; // Достаточно подтверждения прав хотя бы по одной из контекстных команд
+      }
     }
 
-    const hasAccess = userRoles.some(role => allowedRoles.includes(role));
-
     if (!hasAccess) {
-      return res.status(403).json({ message: 'Недостаточно прав доступа' });
+      return res.status(403).json({ message: 'Недостаточно прав доступа или требуется продление подписки' });
     }
 
     next();

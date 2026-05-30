@@ -92,12 +92,10 @@ const EventCard = ({ event, onToggleAttendance, onClick }) => {
     }
   }
 
+  const jerseyType = isMatch ? (isHome ? event.home_jersey : event.away_jersey) : null;
   let jerseyText = 'Не определено';
-  if (isMatch) {
-    const jerseyType = isHome ? event.home_jersey : event.away_jersey;
-    if (jerseyType === 'light') jerseyText = 'Светлая';
-    else if (jerseyType === 'dark') jerseyText = 'Тёмная';
-  }
+  if (jerseyType === 'light') jerseyText = 'Светлая';
+  else if (jerseyType === 'dark') jerseyText = 'Тёмная';
 
   const renderMatchIcon = () => {
     if (!isMatch) return null;

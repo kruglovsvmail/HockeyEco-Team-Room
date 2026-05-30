@@ -24,7 +24,7 @@ const TEAM_TABS = [
 ];
 
 export const MyTeamPage = () => {
-  const { openRightPanel, selectedTeam } = useOutletContext();
+  const { openRightPanel, selectedTeam, user } = useOutletContext();
   const selectedTeamId = selectedTeam?.id;
 
   // Ключ кэша для разграничения разных хоккейных команд
@@ -90,8 +90,17 @@ export const MyTeamPage = () => {
   const [rosterJerseyNumber, setRosterJerseyNumber] = useState('');
   const [isSubmittingRoster, setIsSubmittingRoster] = useState(false);
 
-  const { checkAccess } = useAccess();
-  const hasManageAccess = checkAccess('ROSTER_MANAGE');
+  // Сквозной расчет гранулярных прав в связке с In-Memory матрицей
+  const { checkAccess } = useAccess(user, selectedTeam);
+  
+  // Вычисляем базовый статус: имеет ли текущий юзер вообще менеджерские роли в этой команде
+  const teamRoles = selectedTeam?.user_role?.split(',').map(r => r.trim()) || [];
+  const isTeamOwner = selectedTeam?.owner_id === user?.id;
+  const isManagerOrCoach = isTeamOwner || teamRoles.some(r => ['team_manager', 'team_admin', 'head_coach', 'coach'].includes(r));
+
+  // Гранулярный допуск по подписке для каждой вкладки отдельно
+  const hasAllTabManageAccess = checkAccess('TEAM_MANAGE_TAB_ALL');
+  const hasRosterTabManageAccess = checkAccess('TEAM_MANAGE_TAB_ROSTER');
   
   const rafRef = useRef(null);
   const scrollContainerRef = useRef(null);
@@ -101,7 +110,7 @@ export const MyTeamPage = () => {
   useEffect(() => {
     const timer = setTimeout(() => {
       setIsPageReady(true);
-    }, 150); // Даем браузеру плавно завершить системный переход роута
+    }, 150);
     return () => clearTimeout(timer);
   }, []);
 
@@ -124,7 +133,6 @@ export const MyTeamPage = () => {
   const fetchTeamData = useCallback(async () => {
     if (!selectedTeamId) return;
     
-    // Включаем спиннер только если ОЗУ и кэш этой команды полностью пусты
     if (teamData.members.length === 0 && teamData.roster.length === 0) {
       setIsLoading(true);
     }
@@ -141,7 +149,6 @@ export const MyTeamPage = () => {
         const detailsData = await detailsRes.json();
         const myTeamsData = await myTeamsRes.json();
         
-        // Находим текущую выбранную команду в полном массиве, пришедшем из базы данных
         const currentFullTeamRow = myTeamsData.teams?.find(t => t.id === selectedTeamId);
         if (currentFullTeamRow) {
           setActiveTeamDetails(currentFullTeamRow);
@@ -149,7 +156,6 @@ export const MyTeamPage = () => {
         
         setTeamData(detailsData);
         
-        // Перезаписываем кэш этой команды, склеивая списки игроков с полной цветовой схемой профиля
         localStorage.setItem(cacheKey, JSON.stringify({
           ...detailsData,
           fullDetails: currentFullTeamRow
@@ -166,7 +172,6 @@ export const MyTeamPage = () => {
     fetchTeamData();
   }, [fetchTeamData]);
 
-  // Фоновое обновление состава при возвращении пользователя в PWA
   useFocusRevalidate(fetchTeamData);
 
   useEffect(() => {
@@ -179,7 +184,6 @@ export const MyTeamPage = () => {
     setIsEditMode(false);
   }, [activeTab]);
 
-  // Эффект автоматического поиска по 10 цифрам
   useEffect(() => {
     const clean = searchPhone.replace(/\D/g, '');
     if (clean.length === 10) {
@@ -234,7 +238,6 @@ export const MyTeamPage = () => {
                 fullDetails: activeTeamDetails
               };
             } else {
-              // ИСПРАВЛЕНО: Вместо грубого фильтра выставляем left_at, чтобы переместить игрока в «Архив состава»
               updated = {
                 ...prev,
                 members: prev.members.map(m => m.member_id === targetMemberId ? { ...m, left_at: new Date().toISOString() } : m),
@@ -244,7 +247,6 @@ export const MyTeamPage = () => {
               };
             }
             
-            // Синхронизируем локальный кэш сразу после успешного изменения статуса игрока
             localStorage.setItem(cacheKey, JSON.stringify(updated));
             return updated;
           });
@@ -312,7 +314,6 @@ export const MyTeamPage = () => {
   const playerWithSameNumber = teamData.roster?.find(p => String(p.jersey_number) === String(rosterJerseyNumber));
   const jerseyNumberError = playerWithSameNumber ? `Этот номер уже занят игроком ${playerWithSameNumber.last_name || playerWithSameNumber.lastName || ''}` : '';
 
-  // ИСПРАВЛЕНО: В ростер можно добавлять только тех игроков, у которых нет даты ухода (left_at IS NULL)
   const membersAvailableForRoster = teamData.members?.filter(
     m => !m.left_at && !teamData.roster?.some(r => r.member_id === m.member_id)
   ) || [];
@@ -323,7 +324,7 @@ export const MyTeamPage = () => {
     rafRef.current = requestAnimationFrame(() => {
       if (stickyHeaderRef.current) {
         const isStuck = currentScroll > 84;
-        stickyHeaderRef.current.createdAt = isStuck; // сохраняем метаданные
+        stickyHeaderRef.current.createdAt = isStuck; 
         if (isStuck) {
           stickyHeaderRef.current.classList.add('shadow-md', 'bg-surface-border');
           stickyHeaderRef.current.classList.remove('bg-transparent');
@@ -336,14 +337,17 @@ export const MyTeamPage = () => {
   };
 
   const handlePersonClick = useCallback((person) => {
+    // ВАЖНОЕ ИСПРАВЛЕНИЕ: Передаем объекты авторизации (user, selectedTeam) внутрь панели, так как она живет вне Outlet
     openRightPanel('userDetails', { 
       ...person, 
       team_id: selectedTeamId,
       currentRoster: teamData.roster,
       onRefresh: fetchTeamData,
-      activeBrandColor: hasTeamColor ? activeBrandColor : null
+      activeBrandColor: hasTeamColor ? activeBrandColor : null,
+      user,
+      selectedTeam
     }, 'Профиль');
-  }, [openRightPanel, selectedTeamId, teamData.roster, fetchTeamData, hasTeamColor, activeBrandColor]);
+  }, [openRightPanel, selectedTeamId, teamData.roster, fetchTeamData, hasTeamColor, activeBrandColor, user, selectedTeam]);
 
   const handleExcludeClick = useCallback((member) => setMemberToRemove(member), []);
   const handleContainerClick = () => { if (isEditMode) setIsEditMode(false); };
@@ -400,7 +404,7 @@ export const MyTeamPage = () => {
                   {activeTab === 'all' && (
                     <TeamAllMembers 
                       members={teamData.members || []} onPersonClick={handlePersonClick} isEditMode={isEditMode}
-                      setIsEditMode={setIsEditMode} hasManageAccess={hasManageAccess} onExcludeClick={handleExcludeClick} animatingOutId={animatingOutId}
+                      setIsEditMode={setIsEditMode} hasManageAccess={hasAllTabManageAccess} isManager={isManagerOrCoach} onExcludeClick={handleExcludeClick} animatingOutId={animatingOutId}
                       activeBrandColor={hasTeamColor ? activeBrandColor : null}
                       onAddClick={() => {
                         setSearchPhone('');
@@ -417,7 +421,7 @@ export const MyTeamPage = () => {
                   {activeTab === 'roster' && (
                     <TeamRosterPlayers 
                       roster={teamData.roster || []} onPersonClick={handlePersonClick} isEditMode={isEditMode}
-                      setIsEditMode={setIsEditMode} hasManageAccess={hasManageAccess} onExcludeClick={handleExcludeClick} animatingOutId={animatingOutId}
+                      setIsEditMode={setIsEditMode} hasManageAccess={hasRosterTabManageAccess} isManager={isManagerOrCoach} onExcludeClick={handleExcludeClick} animatingOutId={animatingOutId}
                       activeBrandColor={hasTeamColor ? activeBrandColor : null}
                       onAddClick={handleOpenRosterSheet}
                     />

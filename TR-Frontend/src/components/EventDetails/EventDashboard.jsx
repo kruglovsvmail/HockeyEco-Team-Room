@@ -12,6 +12,10 @@ import { Header } from '../Header';
 import { PageLoader } from '../../ui/Loader';
 import { FadeIn } from '../../ui/FadeIn';
 
+// Импортируем инструменты контроля подписок и ограничений доступов
+import { SubscriptionStub } from '../../ui/SubscriptionStub';
+import { useAccess } from '../../hooks/useAccess';
+
 import { EventDetailsMatch } from './Match/EventDetailsMatch';
 import { EventDetailsTraining } from './EventDetailsTraining';
 import { EventDetailsMeeting } from './EventDetailsMeeting';
@@ -23,6 +27,12 @@ dayjs.locale('ru');
 
 export const EventDashboard = ({ isOpen, onClose, data, type, title, user, selectedTeam, onTeamUpdated }) => {
   
+  // Инициализируем хук доступов для проверки прав текущего пользователя
+  const { checkAccess } = useAccess(user, selectedTeam);
+  
+  // Вычисляем допуск к внутренностям события по правилу INTERNAL_VIEW на основе ID команды из события
+  const hasAccess = data ? checkAccess('INTERNAL_VIEW', data.my_team_id) : true;
+
   // Локальное состояние готовности контента панели (устраняет выполнение тяжелого JS во время анимации)
   const [isPanelReady, setIsPanelReady] = useState(false);
 
@@ -39,6 +49,11 @@ export const EventDashboard = ({ isOpen, onClose, data, type, title, user, selec
       setIsPanelReady(false);
     }
   }, [isOpen]);
+
+  // СЦЕНАРИЙ ОГРАНИЧЕНИЯ: Если подписка отсутствует, бесшовно подменяем экран на шторку-заглушку
+  if (!hasAccess) {
+    return <SubscriptionStub isOpen={isOpen} onClose={onClose} />;
+  }
 
   return (
     <div 

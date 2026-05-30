@@ -3,7 +3,8 @@ import { NavLink, useLocation, useNavigate } from 'react-router-dom';
 import { Icon } from '../ui/Icon';
 import { Avatar } from '../ui/Avatar';
 import { getImageUrl } from '../utils/helpers';
-import { PERMISSIONS } from '../utils/permissions';
+import { PERMISSIONS, ROLES } from '../utils/permissions';
+import { useAccess } from '../hooks/useAccess';
 import clsx from 'clsx';
 
 export function Sidebar({ user, teams = [], selectedTeam, onTeamChange, onClose }) {
@@ -19,11 +20,21 @@ export function Sidebar({ user, teams = [], selectedTeam, onTeamChange, onClose 
 
   const location = useLocation();
   const navigate = useNavigate();
+  const { checkAccess } = useAccess(user, selectedTeam);
 
-  // Вспомогательная функция безопасного извлечения ролей текущего пользователя в рамках конкретной команды
+  // Вспомогательная функция безопасного извлечения ролей с учетом динамической роли Владельца
   const getRolesForTeam = (team) => {
-    if (!team?.user_role || typeof team.user_role !== 'string') return [];
-    return team.user_role.split(',').map(r => r.trim()).filter(Boolean);
+    const roles = [];
+    if (team?.owner_id === user?.id) {
+      roles.push(ROLES.OWNER);
+    }
+    if (team?.user_role && typeof team.user_role === 'string') {
+      roles.push(...team.user_role.split(',').map(r => r.trim()).filter(Boolean));
+    }
+    if (roles.length === 0 && team) {
+      roles.push(ROLES.PLAYER);
+    }
+    return roles;
   };
 
   // Проверка глобального администратора
@@ -98,7 +109,7 @@ export function Sidebar({ user, teams = [], selectedTeam, onTeamChange, onClose 
           <button 
             onClick={() => handleSafeNavigate('/')}
             className={clsx(
-              "flex items-center gap-4 px-4 py-3 rounded-xl transition-all定位 outline-none text-left w-full font-semibold",
+              "flex items-center gap-4 px-4 py-3 rounded-xl transition-all outline-none text-left w-full font-semibold",
               location.pathname === '/' 
                 ? 'bg-brand-opacity text-brand font-bold' 
                 : 'text-content-main hover:text-brand'
@@ -184,7 +195,8 @@ export function Sidebar({ user, teams = [], selectedTeam, onTeamChange, onClose 
 
           {/* ДИНАМИЧЕСКИЕ ПУНКТЫ УПРАВЛЕНИЯ КОМАНДАМИ */}
           {managerSectionsConfig.map((section) => {
-            const allowedRoles = PERMISSIONS[section.id] || [];
+            const permissionConfig = PERMISSIONS[section.id];
+            const allowedRoles = permissionConfig ? permissionConfig.allowedRoles : [];
             
             const filteringTeams = teams.filter(team => {
               if (isGlobalAdmin) return true;
@@ -197,6 +209,9 @@ export function Sidebar({ user, teams = [], selectedTeam, onTeamChange, onClose 
             if (filteringTeams.length === 1) {
               const targetTeam = filteringTeams[0];
               const isUrlActive = location.pathname === section.path && selectedTeam?.id === targetTeam.id;
+              
+              // Вычисляем, есть ли полная подписка для этой команды
+              const hasSubAccess = checkAccess(section.id, targetTeam.id);
 
               return (
                 <button
@@ -205,14 +220,21 @@ export function Sidebar({ user, teams = [], selectedTeam, onTeamChange, onClose 
                     handleSafeNavigate(section.path, () => onTeamChange(targetTeam));
                   }}
                   className={clsx(
-                    "flex items-center gap-4 px-4 py-3 rounded-xl transition-all outline-none text-left w-full font-semibold",
+                    "flex items-center gap-4 px-4 py-3 rounded-xl transition-all定位 outline-none text-left w-full font-semibold justify-between",
                     isUrlActive 
                       ? 'bg-brand-opacity text-brand font-bold' 
                       : 'text-content-main hover:text-brand'
                   )}
                 >
-                  <Icon name={section.icon} className="w-4 h-4 shrink-0" />
-                  <span className="text-sm tracking-wider">{section.label}</span>
+                  <div className="flex items-center gap-4 min-w-0">
+                    <Icon name={section.icon} className="w-4 h-4 shrink-0" />
+                    <span className={clsx("text-sm tracking-wider truncate", !hasSubAccess && "opacity-70")}>
+                      {section.label}
+                    </span>
+                  </div>
+                  {!hasSubAccess && (
+                    <Icon name="lock" className="w-3 h-3 text-content-muted/60 shrink-0" />
+                  )}
                 </button>
               );
             }
@@ -244,6 +266,8 @@ export function Sidebar({ user, teams = [], selectedTeam, onTeamChange, onClose 
                     <div className="flex flex-col gap-1 pl-3 pr-1 py-1 mt-1 border-l-2 border-brand/30 ml-6">
                       {filteringTeams.map((team) => {
                         const isSubItemActive = location.pathname === section.path && selectedTeam?.id === team.id;
+                        const hasSubAccess = checkAccess(section.id, team.id);
+
                         return (
                           <button
                             key={team.id}
@@ -251,20 +275,27 @@ export function Sidebar({ user, teams = [], selectedTeam, onTeamChange, onClose 
                               handleSafeNavigate(section.path, () => onTeamChange(team));
                             }}
                             className={clsx(
-                              "flex items-center gap-3 w-full px-3 py-2 rounded-xl transition-all text-left outline-none text-xs font-bold uppercase tracking-wider",
+                              "flex items-center gap-3 w-full px-3 py-2 rounded-xl transition-all text-left outline-none text-xs font-bold uppercase tracking-wider justify-between",
                               isSubItemActive 
                                 ? "bg-brand-opacity text-brand" 
                                 : "text-content-muted hover:text-content-main hover:bg-surface-level2"
                             )}
                           >
-                            <div className="w-5 h-5 rounded bg-surface-level1 p-0.5 flex items-center justify-center shrink-0">
-                              <img 
-                                src={getImageUrl(team.logo_url)} 
-                                alt={team.name} 
-                                className="w-full h-full object-contain" 
-                              />
+                            <div className="flex items-center gap-3 min-w-0 flex-1">
+                              <div className="w-5 h-5 rounded bg-surface-level1 p-0.5 flex items-center justify-center shrink-0">
+                                <img 
+                                  src={getImageUrl(team.logo_url)} 
+                                  alt={team.name} 
+                                  className="w-full h-full object-contain" 
+                                />
+                              </div>
+                              <span className={clsx("truncate flex-1", !hasSubAccess && "opacity-70")}>
+                                {team.name}
+                              </span>
                             </div>
-                            <span className="truncate flex-1">{team.name}</span>
+                            {!hasSubAccess && (
+                              <Icon name="lock" className="w-3 h-3 text-content-muted/60 shrink-0 ml-1" />
+                            )}
                           </button>
                         );
                       })}

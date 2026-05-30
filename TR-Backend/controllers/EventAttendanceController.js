@@ -1,4 +1,71 @@
 import pool from '../config/db.js';
+import { PERMISSIONS } from '../utils/permissions.js';
+
+/**
+ * Внутренняя функция для проверки гранулярных прав доступа и подписки
+ */
+async function checkPermissionInternal(userId, teamId, permissionKey, client = pool) {
+  if (!userId) return false;
+
+  const userRes = await client.query(
+    'SELECT global_role, subscription_expires_at FROM users WHERE id = $1',
+    [userId]
+  );
+  if (userRes.rows.length === 0) return false;
+  const { global_role, subscription_expires_at } = userRes.rows[0];
+
+  if (global_role === 'admin') return true;
+
+  const permission = PERMISSIONS[permissionKey];
+  if (!permission) return false;
+
+  const hasSubscription = subscription_expires_at && new Date(subscription_expires_at) > new Date();
+  let userRoles = [];
+
+  if (teamId) {
+    const teamOwnerRes = await client.query('SELECT owner_id FROM teams WHERE id = $1', [teamId]);
+    if (teamOwnerRes.rows.length > 0 && teamOwnerRes.rows[0].owner_id === userId) {
+      userRoles.push('owner');
+    }
+
+    const trRes = await client.query(`
+      SELECT tr.role FROM team_roles tr 
+      JOIN team_members tm ON tr.member_id = tm.id 
+      WHERE tm.user_id = $1 AND tm.team_id = $2 AND tr.left_at IS NULL AND tm.left_at IS NULL
+    `, [userId, teamId]);
+    userRoles.push(...trRes.rows.map(r => r.role));
+
+    const crRes = await client.query(`
+      SELECT cr.role FROM club_roles cr
+      JOIN teams t ON t.club_id = cr.club_id
+      JOIN club_members cm ON cm.club_id = cr.club_id AND cm.user_id = cr.user_id
+      WHERE cr.user_id = $1 AND t.id = $2 AND cr.left_at IS NULL AND cm.left_at IS NULL
+    `, [userId, teamId]);
+    userRoles.push(...crRes.rows.map(r => r.role));
+
+    const memberRes = await client.query(`
+      SELECT id FROM team_members 
+      WHERE user_id = $1 AND team_id = $2 AND left_at IS NULL
+    `, [userId, teamId]);
+    if (memberRes.rows.length > 0) {
+      userRoles.push('player');
+    }
+  }
+
+  return userRoles.some(role => {
+    if (!permission.allowedRoles.includes(role)) return false;
+
+    let roleRequiresSub = false;
+    if (permission.requiresSubscription === true) {
+      roleRequiresSub = true;
+    } else if (Array.isArray(permission.requiresSubscription)) {
+      roleRequiresSub = permission.requiresSubscription.includes(role);
+    }
+
+    if (roleRequiresSub && !hasSubscription) return false;
+    return true;
+  });
+}
 
 export const getAvailableRoster = async (req, res) => {
   try {
@@ -105,24 +172,19 @@ export const toggleEventAttendance = async (req, res) => {
 
     const targetId = targetUserId || initiatorId;
 
-    if (targetId !== initiatorId) {
-      const roleCheckQuery = `
-        SELECT 1 FROM team_members tm
-        JOIN team_roles tr ON tr.member_id = tm.id
-        WHERE tm.user_id = $1 AND tm.team_id = $2 AND tr.left_at IS NULL AND tm.left_at IS NULL
-        UNION
-        SELECT 1 FROM club_roles cr
-        JOIN teams t ON t.club_id = cr.club_id
-        JOIN club_members cm ON cm.club_id = cr.club_id AND cm.user_id = cr.user_id
-        WHERE cr.user_id = $1 AND t.id = $2 AND cr.left_at IS NULL AND cm.left_at IS NULL AND cr.role IN ('top_manager', 'club_admin')
-        UNION
-        SELECT 1 FROM users WHERE id = $1 AND global_role = 'admin'
-      `;
-      
+    // Вычисляем контекстное правило проверки на основе инициатора действия
+    if (targetId === initiatorId) {
       if (teamId) {
-        const roleCheck = await pool.query(roleCheckQuery, [initiatorId, teamId]);
-        if (roleCheck.rowCount === 0) {
-          return res.status(403).json({ success: false, error: 'У вас нет прав администратора для отметки других пользователей' });
+        const hasAccess = await checkPermissionInternal(initiatorId, teamId, 'EVENT_SELF_ATTENDANCE');
+        if (!hasAccess) {
+          return res.status(403).json({ success: false, error: 'Доступ ограничен. Для самостоятельной отметки явки требуется продлить подписку' });
+        }
+      }
+    } else {
+      if (teamId) {
+        const hasAccess = await checkPermissionInternal(initiatorId, teamId, 'ATTENDANCE_MANAGE');
+        if (!hasAccess) {
+          return res.status(403).json({ success: false, error: 'Недостаточно прав доступа или требуется продление подписки руководителя' });
         }
       }
     }
@@ -305,23 +367,10 @@ export const toggleEventAttendanceTag = async (req, res) => {
       return res.status(400).json({ success: false, error: 'eventType и targetUserId обязателен' });
     }
 
-    const roleCheckQuery = `
-      SELECT 1 FROM team_members tm
-      JOIN team_roles tr ON tr.member_id = tm.id
-      WHERE tm.user_id = $1 AND tm.team_id = $2 AND tr.left_at IS NULL AND tm.left_at IS NULL
-      UNION
-      SELECT 1 FROM club_roles cr
-      JOIN teams t ON t.club_id = cr.club_id
-      JOIN club_members cm ON cm.club_id = cr.club_id AND cm.user_id = cr.user_id
-      WHERE cr.user_id = $1 AND t.id = $2 AND cr.left_at IS NULL AND cm.left_at IS NULL AND cr.role IN ('top_manager', 'club_admin')
-      UNION
-      SELECT 1 FROM users WHERE id = $1 AND global_role = 'admin'
-    `;
-    
     if (teamId) {
-      const roleCheck = await pool.query(roleCheckQuery, [initiatorId, teamId]);
-      if (roleCheck.rowCount === 0) {
-        return res.status(403).json({ success: false, error: 'У вас нет прав администратора для выставления пометок' });
+      const hasAccess = await checkPermissionInternal(initiatorId, teamId, 'ATTENDANCE_MANAGE');
+      if (!hasAccess) {
+        return res.status(403).json({ success: false, error: 'Недостаточно прав доступа или требуется продление подписки руководителя для выставления пометок' });
       }
     }
 

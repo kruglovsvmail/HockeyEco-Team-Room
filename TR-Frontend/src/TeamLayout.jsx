@@ -53,6 +53,30 @@ function TeamLayoutContent() {
   const [isDraggingSidebar, setIsDraggingSidebar] = useState(false);
   const [isDraggingRight, setIsDraggingRight] = useState(false);
 
+  // СЛУШАТЕЛЬ ОБНОВЛЕНИЯ МАТРИЦЫ ПРАВ ИЗ СЕТЕВОГО ИНТЕРЦЕПТОРА
+  useEffect(() => {
+    const handleMatrixRefresh = (e) => {
+      const freshUser = e.detail;
+      if (freshUser) {
+        setUser(freshUser);
+        localStorage.setItem('teampwa_cached_user', JSON.stringify(freshUser));
+        localStorage.setItem('teampwa_user', JSON.stringify(freshUser));
+        
+        if (freshUser.teams) {
+          setTeams(freshUser.teams);
+          setSelectedTeam(prev => {
+            if (!prev) return freshUser.teams[0] || null;
+            const updated = freshUser.teams.find(t => String(t.id) === String(prev.id));
+            return updated ? { ...prev, ...updated } : prev;
+          });
+        }
+      }
+    };
+
+    window.addEventListener('pwa_auth_matrix_refresh', handleMatrixRefresh);
+    return () => window.removeEventListener('pwa_auth_matrix_refresh', handleMatrixRefresh);
+  }, []);
+
   useEffect(() => {
     const handleGlobalRefresh = () => {
       if (document.visibilityState === 'visible') {
@@ -137,7 +161,7 @@ function TeamLayoutContent() {
         return navigate('/login');
       }
 
-      const cachedUserData = localStorage.getItem('teampwa_cached_user');
+      const cachedUserData = localStorage.getItem('teampwa_cached_user') || localStorage.getItem('teampwa_user');
       if (cachedUserData) {
         const parsedUser = JSON.parse(cachedUserData);
         setUser(parsedUser);
@@ -172,6 +196,7 @@ function TeamLayoutContent() {
         setUser(data.user);
         
         localStorage.setItem('teampwa_cached_user', JSON.stringify(data.user));
+        localStorage.setItem('teampwa_user', JSON.stringify(data.user));
         
         const userTeams = data.user.teams || [];
         setTeams(userTeams);
@@ -186,7 +211,7 @@ function TeamLayoutContent() {
         setSelectedTeam(currentTeam);
       } catch (err) {
         clearTimeout(timeoutId);
-        if (!localStorage.getItem('teampwa_cached_user')) {
+        if (!localStorage.getItem('teampwa_cached_user') && !localStorage.getItem('teampwa_user')) {
           removeToken();
           navigate('/login');
         }

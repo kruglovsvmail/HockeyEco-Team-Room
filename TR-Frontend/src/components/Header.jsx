@@ -6,6 +6,7 @@ import { useLocation } from 'react-router-dom';
 import { useAccess } from '../hooks/useAccess';
 import { TeamProfileEditSheet } from './MyTeam/TeamProfileEditSheet';
 import { EventFilters } from './EventCalendar/EventFilters';
+import { HintPopover } from '../ui/HintPopover';
 
 export function Header({ isSidebarOpen, onToggleSidebar, user, teams, selectedTeam, onTeamUpdated, hideActions = false }) {
   const [isFilterOpen, setIsFilterOpen] = useState(false);
@@ -16,6 +17,8 @@ export function Header({ isSidebarOpen, onToggleSidebar, user, teams, selectedTe
 
   const isSchedulePage = location.pathname === '/';
   const isMyTeamPage = location.pathname === '/my-team';
+  
+  // Проверяем наличие прав на редактирование профиля команды по матрице доступов
   const hasEditAccess = checkAccess('TEAM_EDIT_PROFILE');
 
   const openCalendar = () => {
@@ -63,16 +66,30 @@ export function Header({ isSidebarOpen, onToggleSidebar, user, teams, selectedTe
             </div>
           )}
 
-          {/* Раздел МОЯ КОМАНДА: кнопка изменения параметров */}
-          {isMyTeamPage && hasEditAccess && !hideActions && (
+          {/* Раздел МОЯ КОМАНДА: кнопка изменения параметров (теперь всегда видна, но тухнет без подписки) */}
+          {isMyTeamPage && !hideActions && (
             <div className="flex items-center gap-1 ml-auto">
-              <button
-                onClick={() => setIsEditOpen(true)}
-                className="p-2 bg-white/40 rounded-full text-content-main hover:text-brand transition-colors outline-none cursor-pointer active:scale-95"
-                aria-label="Редактировать профиль команды"
-              >
-                <Icon name="edit" className="w-5 h-5" />
-              </button>
+              {hasEditAccess ? (
+                /* Сценарий с подпиской: полнофункциональная кнопка, открывающая шторку */
+                <button
+                  onClick={() => setIsEditOpen(true)}
+                  className="p-2 bg-white/40 rounded-full text-content-main hover:text-brand transition-colors outline-none cursor-pointer active:scale-95 flex items-center justify-center"
+                  aria-label="Редактировать профиль команды"
+                >
+                  <Icon name="edit" className="w-5 h-5" />
+                </button>
+              ) : (
+                /* Сценарий БЕЗ подписки: кнопка «потухла» (opacity-30) и завернута в поповер ограничений */
+                <HintPopover status="no_subscription">
+                  <button
+                    type="button"
+                    className="p-2 bg-white/10 border border-white/5 rounded-full text-content-main opacity-30 transition-all outline-none cursor-pointer flex items-center justify-center"
+                    aria-label="Редактирование профиля ограничено подпиской"
+                  >
+                    <Icon name="edit" className="w-5 h-5" />
+                  </button>
+                </HintPopover>
+              )}
             </div>
           )}
         </div>

@@ -1,18 +1,23 @@
 import React from 'react';
-import { useOutletContext } from 'react-router-dom';
+import { useOutletContext, useNavigate } from 'react-router-dom';
 import { useAccess } from '../../hooks/useAccess';
+import { SubscriptionStub } from '../../ui/SubscriptionStub';
 
 export function SeasonRostersPage() {
   const { selectedTeam, user } = useOutletContext();
   const { checkAccess } = useAccess(user, selectedTeam);
+  const navigate = useNavigate();
 
   const hasAccess = checkAccess('MGR_SEASON_ROSTERS');
 
   if (!hasAccess) {
     return (
-      <div className="p-6 text-center text-danger font-bold uppercase tracking-widest text-xs">
-        Доступ закрыт. У вашей роли недостаточно полномочий для управления заявочными листами.
-      </div>
+      <SubscriptionStub 
+        isOpen={true} 
+        onClose={() => navigate(-1)} 
+        title="Заявочный лист заблокирован"
+        description="Раздел управления дозаявками и отзаявками хоккеистов в официальные дивизионы лиги через буфер заявок ограничен. Пожалуйста, продлите подписку."
+      />
     );
   }
 

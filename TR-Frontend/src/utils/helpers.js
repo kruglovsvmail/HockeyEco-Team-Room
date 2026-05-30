@@ -45,3 +45,70 @@ export const getContrastTextColor = (hexColor) => {
   const yiq = (r * 299 + g * 587 + b * 114) / 1000;
   return yiq >= 184 ? 'text-content-main' : 'text-white';
 };
+
+// =============================================================================
+// СЕТЕВОЙ ГЛОБАЛЬНЫЙ ИНТЕРЦЕПТОР 403 ОШИБОК (БЕЗБЛИКОВАЯ РЕВАЛИДАЦИЯ UX)
+// =============================================================================
+
+let isRevalidating = false;
+let revalidatePromise = null;
+
+if (typeof window !== 'undefined' && !window.__fetchInterceptorInitialized) {
+  window.__fetchInterceptorInitialized = true;
+  const originalFetch = window.fetch;
+
+  window.fetch = async function (...args) {
+    const response = await originalFetch(...args);
+
+    // Если сервер ответил кодом 403 (Доступ запрещен или истекла подписка)
+    if (response.status === 403) {
+      const url = args[0];
+      // Защита от зацикливания: не перехватываем сам запрос проверки профиля
+      const isMeEndpoint = typeof url === 'string' && (url.includes('/api/auth/me') || url.includes('/me'));
+
+      if (!isMeEndpoint && getToken()) {
+        if (!isRevalidating) {
+          isRevalidating = true;
+          
+          // Выполняем строго ОДИН микро-запрос на бэкенд для извлечения свежей матрицы прав
+          revalidatePromise = originalFetch('/api/auth/me', {
+            method: 'GET',
+            headers: {
+              'Content-Type': 'application/json',
+              ...getAuthHeaders()
+            }
+          })
+          .then(res => {
+            if (res.status === 401 || res.status === 403) {
+              return null; // Сессия полностью уничтожена
+            }
+            return res.json();
+          })
+          .then(data => {
+            if (data && data.success && data.user) {
+              // Обновляем кэш профиля в локальном хранилище устройства
+              localStorage.setItem('teampwa_user', JSON.stringify(data.user));
+              
+              // Генерируем системное событие для синхронизации и плавного изменения стейта React
+              window.dispatchEvent(new CustomEvent('pwa_auth_matrix_refresh', { detail: data.user }));
+            }
+            return data;
+          })
+          .catch(err => {
+            console.error('[Fetch Interceptor Error]: Ошибка обновления матрицы прав:', err);
+          })
+          .finally(() => {
+            // Размораживаем флаг по окончании операции
+            isRevalidating = false;
+            revalidatePromise = null;
+          });
+        }
+
+        // Вся лавина параллельных запросов плавно ждет выполнения одной этой микро-проверки
+        await revalidatePromise;
+      }
+    }
+
+    return response;
+  };
+}
