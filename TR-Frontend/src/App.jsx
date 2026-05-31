@@ -23,7 +23,7 @@ if (typeof window !== 'undefined' && !window.__fetch_mutation_patched__) {
       // Генерируем глобальное событие для вызова Тоста о блокировке записи
       window.dispatchEvent(
         new CustomEvent('show-offline-mutation-toast', {
-          detail: { message: 'Вы находитесь в офлайн-режиме. Сохранение изменений недоступно.' }
+          detail: { message: 'Офлайн-режим. Изменения не сохранятся!.' }
         })
       );
 

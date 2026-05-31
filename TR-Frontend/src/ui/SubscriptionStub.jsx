@@ -14,7 +14,7 @@ export function SubscriptionStub({
   isOpen, 
   onClose, 
   title = 'Доступ ограничен', 
-  description = 'Для просмотра деталей и взаимодействия с данным разделом необходимо продлить действие личной подписки.' 
+  description = 'Для просмотра деталей и взаимодействия с данным разделом необходимо оформить продлить подписку.' 
 }) {
 
   // Блокируем скролл основного интерфейса PWA под шторкой, когда она открыта
@@ -52,7 +52,7 @@ export function SubscriptionStub({
           <Icon name="chevron_left" className="w-7 h-7 text-content-main" />
         </button>
         <span className="text-[11px] font-bold uppercase tracking-widest text-content-muted">
-          HockeyEco LMS
+          HockeyEco
         </span>
         <div className="w-7 h-7 opacity-0 pointer-events-none" /> {/* Фантомный распор для центрирования */}
       </header>
@@ -75,37 +75,6 @@ export function SubscriptionStub({
         <p className="text-sm font-medium text-content-muted leading-relaxed max-w-sm mb-10 px-2 opacity-80">
           {description}
         </p>
-
-        {/* МАТОВАЯ ИНТЕРАКТИВНАЯ ПАНЕЛЬ ДЕЙСТВИЯ (Glassmorphism) */}
-        <div className="w-full max-w-xs p-5 rounded-2xl bg-surface-level2/40 border border-surface-border/40 backdrop-blur-xl shadow-xl flex flex-col items-center gap-4">
-          <div className="text-left w-full border-b border-surface-border/30 pb-3 mb-1">
-            <span className="text-[10px] uppercase font-bold tracking-widest text-brand block mb-1">
-              Статус тарифа
-            </span>
-            <div className="flex items-center gap-2">
-              <span className="inline-block w-2 h-2 rounded-full bg-danger animate-ping" />
-              <span className="text-xs font-bold text-content-main">
-                Подписка игрока истекла
-              </span>
-            </div>
-          </div>
-
-          <button
-            type="button"
-            className="w-full h-11 bg-brand text-white font-bold text-sm rounded-xl shadow-lg shadow-brand/20 active:scale-[0.98] hover:bg-brand-hover transition-all outline-none cursor-pointer flex items-center justify-center gap-2"
-          >
-            <Icon name="credit_card" className="w-5 h-5" />
-            <span>Продлить подписку</span>
-          </button>
-          
-          <button
-            type="button"
-            onClick={onClose}
-            className="w-full h-10 bg-transparent text-content-muted hover:text-content-main font-semibold text-xs rounded-xl active:scale-[0.98] transition-all outline-none cursor-pointer flex items-center justify-center"
-          >
-            Вернуться назад
-          </button>
-        </div>
 
       </div>
 

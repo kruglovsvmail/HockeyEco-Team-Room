@@ -33,7 +33,7 @@ export function Toast({ isOpen, message, type = 'success', onClose, duration = 3
   if (!shouldRender) return null;
 
   return createPortal(
-    <div className="fixed top-[calc(env(safe-area-inset-top,0px)+16px)] left-1/2 -translate-x-1/2 z-[300] w-full max-w-sm px-4 pointer-events-none">
+    <div className="fixed top-[calc(env(safe-area-inset-top,0px)+48px)] left-1/2 -translate-x-1/2 z-[300] w-full max-w-sm px-4 pointer-events-none">
       
       {/* Изолированные CSS-анимации без использования opacity */}
       <style>
