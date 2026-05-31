@@ -8,6 +8,7 @@ import { ROLES, PERMISSIONS } from '../../../utils/permissions';
 import { Avatar } from '../../../ui/Avatar';
 import { Icon } from '../../../ui/Icon';
 import { ContainerContent } from '../../../ui/ContainerContent';
+import { HintPopover } from '../../../ui/HintPopover';
 import clsx from 'clsx';
 import { PageLoader } from '../../../ui/Loader';
 import { FadeIn } from '../../../ui/FadeIn';
@@ -44,7 +45,21 @@ export const MatchAttendance = ({ event, initialAttendees = [], initialTeamRoste
 
   const pressTimer = useRef(null);
 
-  const { user, checkAccess, selectedTeam } = useAccess();
+  // СТАБИЛЬНОЕ ИЗВЛЕЧЕНИЕ ДАННЫХ АВТОРИЗАЦИИ ИЗ КЭША ДЛЯ ЗАЩИТЫ ОТ ПОТЕРИ КОНТЕКСТА OUTLET В ШТОРКЕ ГЕЙМ-ЦЕНТРА
+  const localUser = useMemo(() => {
+    try {
+      return JSON.parse(localStorage.getItem('teampwa_user') || localStorage.getItem('teampwa_cached_user'));
+    } catch { return null; }
+  }, []);
+
+  const localTeam = useMemo(() => {
+    try {
+      if (!localUser || !event?.my_team_id) return null;
+      return localUser.teams?.find(t => String(t.id) === String(event.my_team_id));
+    } catch { return null; }
+  }, [localUser, event?.my_team_id]);
+
+  const { user, checkAccess, selectedTeam } = useAccess(localUser, localTeam);
 
   const tokenUser = getSafeUserFromToken();
   const activeUserId = user?.id || tokenUser?.id || tokenUser?.userId;
@@ -53,6 +68,9 @@ export const MatchAttendance = ({ event, initialAttendees = [], initialTeamRoste
   const isColorsEnabled = localStorage.getItem('tr_use_team_colors') !== 'false';
   const hasTeamColor = isColorsEnabled && !!event?.team_color;
   const activeBrandColor = hasTeamColor ? event.team_color : 'var(--color-brand)';
+
+  // Проверка наличия полной подписки (тарифа) на управление явками
+  const hasAttendanceSubscription = checkAccess('ATTENDANCE_MANAGE', event?.my_team_id);
 
   // Реактивная синхронизация локального стейта с централизованным хранилищем родителя матча
   useEffect(() => {
@@ -63,26 +81,34 @@ export const MatchAttendance = ({ event, initialAttendees = [], initialTeamRoste
     setTeamRoster(initialTeamRoster);
   }, [initialTeamRoster]);
 
-  // Вычисление прав доступа на основе переданного централизованного списка стаффа
-  useEffect(() => {
+  // Вычисление наличия роли менеджера/администратора/тренера (независимо от статуса подписки)
+  const isAttendanceManagerRole = useMemo(() => {
     const activeGlobalRole = String(user?.global_role || user?.globalRole || tokenUser?.global_role || tokenUser?.globalRole || '').toLowerCase();
-    let access = false;
-    
-    if (activeGlobalRole === (ROLES.GLOBAL_ADMIN || '').toLowerCase()) {
-      access = true;
-    } else if (selectedTeam && checkAccess('ATTENDANCE_MANAGE')) {
-      access = true;
-    } else if (initialStaffMembers && activeUserId) {
+    if (activeGlobalRole === 'admin') return true;
+
+    const allowedRoles = PERMISSIONS.ATTENDANCE_MANAGE?.allowedRoles || 
+                         (Array.isArray(PERMISSIONS.ATTENDANCE_MANAGE) ? PERMISSIONS.ATTENDANCE_MANAGE : []);
+    const allowedLow = allowedRoles.map(r => String(r).toLowerCase());
+
+    if (selectedTeam?.user_role) {
+      const teamRoles = selectedTeam.user_role.split(',').map(r => r.trim().toLowerCase());
+      if (teamRoles.some(r => allowedLow.includes(r))) return true;
+    }
+
+    if (initialStaffMembers && activeUserId) {
       const myStaffRecord = initialStaffMembers.find(s => String(s.user_id) === String(activeUserId));
       if (myStaffRecord && myStaffRecord.roles) {
         const myRoles = myStaffRecord.roles.split(',').map(r => r.trim().toLowerCase());
-        const allowed = PERMISSIONS.ATTENDANCE_MANAGE || [];
-        access = myRoles.some(r => allowed.includes(r.toLowerCase()));
+        if (myRoles.some(r => allowedLow.includes(r))) return true;
       }
     }
+    return false;
+  }, [user, tokenUser, selectedTeam, initialStaffMembers, activeUserId]);
 
-    setHasManageAccess(access);
-  }, [user, tokenUser, selectedTeam, initialStaffMembers, activeUserId, checkAccess]);
+  // Синхронизируем вычисленную роль с оригинальным состоянием hasManageAccess
+  useEffect(() => {
+    setHasManageAccess(isAttendanceManagerRole);
+  }, [isAttendanceManagerRole]);
 
   // Проверка: находится ли удаляемый пользователь в текущей формации пятерок
   const isPlayerInLines = useMemo(() => {
@@ -136,7 +162,7 @@ export const MatchAttendance = ({ event, initialAttendees = [], initialTeamRoste
 
   const handleTogglePayTag = async (e, attendeeUser) => {
     e.stopPropagation();
-    if (!hasManageAccess) return;
+    if (!hasManageAccess || !hasAttendanceSubscription) return;
 
     const targetNewState = !attendeeUser.has_pay_tag;
 
@@ -233,7 +259,7 @@ export const MatchAttendance = ({ event, initialAttendees = [], initialTeamRoste
 
         refreshData(); 
       } catch (err) {
-        console.error('Ошибка при удалении игрока и обновлении звеньев:', err);
+        console.error('Ошибка при удаления игрока и обновлении звеньев:', err);
         refreshData(); 
       }
     }, 200);
@@ -304,30 +330,58 @@ export const MatchAttendance = ({ event, initialAttendees = [], initialTeamRoste
             )}
           />
           
+          {/* КРЕСТИК ИСКЛЮЧЕНИЯ ИЗ ЯВОК С УЧЕТОМ ПОДПИСКИ */}
           {isEditMode && canRemove && !isRemoving && (
-            <button 
-              onClick={(e) => {
-                e.stopPropagation();
-                setUserToRemove(attendeeUser); 
-              }}
-              className="absolute -top-1.5 -right-1.5 w-[22px] h-[22px] bg-red-500 rounded-full flex items-center justify-center shadow-md z-10 hover:scale-110 active:scale-90 transition-transform"
-            >
-              <Icon name="close" className="w-3 h-3 text-white" strokeWidth={3.5} />
-            </button>
+            hasAttendanceSubscription ? (
+              <button 
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setUserToRemove(attendeeUser); 
+                }}
+                className="absolute -top-1.5 -right-1.5 w-[22px] h-[22px] bg-red-500 rounded-full flex items-center justify-center shadow-md z-10 hover:scale-110 active:scale-90 transition-transform cursor-pointer"
+              >
+                <Icon name="close" className="w-3 h-3 text-white" strokeWidth={3.5} />
+              </button>
+            ) : (
+              <div className="absolute -top-1.5 -right-1.5 z-10">
+                <HintPopover status="no_subscription">
+                  <button 
+                    type="button"
+                    className="w-[22px] h-[22px] bg-red-500 opacity-30 rounded-full flex items-center justify-center shadow-md cursor-pointer"
+                  >
+                    <Icon name="close" className="w-3 h-3 text-white" strokeWidth={3.5} />
+                  </button>
+                </HintPopover>
+              </div>
+            )
           )}
 
+          {/* ТУМБЛЕР ДОЛИ ОПЛАТЫ "₽" С УЧЕТОМ ПОДПИСКИ */}
           {(isEditMode && hasManageAccess) ? (
-            <button
-              onClick={(e) => handleTogglePayTag(e, attendeeUser)}
-              style={payTagStyle}
-              className={clsx(
-                "absolute -bottom-1.5 -left-1.5 w-[22px] h-[22px] rounded-full flex items-center justify-center text-[11px] font-black shadow-md z-10 transition-all transform hover:scale-110 active:scale-90",
-                attendeeUser.has_pay_tag && !hasTeamColor && "bg-brand text-white border border-brand",
-                !attendeeUser.has_pay_tag && "bg-surface-level3 text-content-muted border border-surface-border"
-              )}
-            >
-              ₽
-            </button>
+            hasAttendanceSubscription ? (
+              <button
+                onClick={(e) => handleTogglePayTag(e, attendeeUser)}
+                style={payTagStyle}
+                className={clsx(
+                  "absolute -bottom-1.5 -left-1.5 w-[22px] h-[22px] rounded-full flex items-center justify-center text-[11px] font-black shadow-md z-10 transition-all transform hover:scale-110 active:scale-90 cursor-pointer",
+                  attendeeUser.has_pay_tag && !hasTeamColor && "bg-brand text-white border border-brand",
+                  !attendeeUser.has_pay_tag && "bg-surface-level3 text-content-muted border border-surface-border"
+                )}
+              >
+                ₽
+              </button>
+            ) : (
+              <div className="absolute -bottom-1.5 -left-1.5 z-10">
+                <HintPopover status="no_subscription">
+                  <button
+                    type="button"
+                    className="w-[22px] h-[22px] rounded-full flex items-center justify-center text-[11px] font-black shadow-md bg-surface-level3 text-content-muted opacity-30 border border-surface-border cursor-pointer"
+                  >
+                    ₽
+                  </button>
+                </HintPopover>
+              </div>
+            )
           ) : (
             attendeeUser.has_pay_tag && (
               <div 
@@ -355,32 +409,57 @@ export const MatchAttendance = ({ event, initialAttendees = [], initialTeamRoste
     );
   };
 
+  // Кнопки добавления игроков в явки (теперь красиво затухают без подписки)
   const goalieAddButton = hasManageAccess && !isEditMode && (
-    <button
-      onClick={(e) => {
-        e.stopPropagation();
-        setSheetFilterType('goalie');
-        setIsSheetOpen(true);
-      }}
-      style={{ color: activeBrandColor }}
-      className="transition-colors active:scale-90 outline-none flex items-center justify-center hover:opacity-80"
-    >
-      <Icon name="user_plus" className="w-5 h-5" />
-    </button>
+    hasAttendanceSubscription ? (
+      <button
+        onClick={(e) => {
+          e.stopPropagation();
+          setSheetFilterType('goalie');
+          setIsSheetOpen(true);
+        }}
+        style={{ color: activeBrandColor }}
+        className="transition-colors active:scale-90 outline-none flex items-center justify-center hover:opacity-80 cursor-pointer"
+      >
+        <Icon name="user_plus" className="w-5 h-5" />
+      </button>
+    ) : (
+      <HintPopover status="no_subscription">
+        <button
+          type="button"
+          style={{ color: activeBrandColor }}
+          className="transition-all opacity-30 outline-none flex items-center justify-center cursor-pointer"
+        >
+          <Icon name="user_plus" className="w-5 h-5" />
+        </button>
+      </HintPopover>
+    )
   );
 
   const skaterAddButton = hasManageAccess && !isEditMode && (
-    <button
-      onClick={(e) => {
-        e.stopPropagation();
-        setSheetFilterType('skater');
-        setIsSheetOpen(true);
-      }}
-      style={{ color: activeBrandColor }}
-      className="transition-colors active:scale-90 outline-none flex items-center justify-center hover:opacity-80"
-    >
-      <Icon name="user_plus" className="w-5 h-5" />
-    </button>
+    hasAttendanceSubscription ? (
+      <button
+        onClick={(e) => {
+          e.stopPropagation();
+          setSheetFilterType('skater');
+          setIsSheetOpen(true);
+        }}
+        style={{ color: activeBrandColor }}
+        className="transition-colors active:scale-90 outline-none flex items-center justify-center hover:opacity-80 cursor-pointer"
+      >
+        <Icon name="user_plus" className="w-5 h-5" />
+      </button>
+    ) : (
+      <HintPopover status="no_subscription">
+        <button
+          type="button"
+          style={{ color: activeBrandColor }}
+          className="transition-all opacity-30 outline-none flex items-center justify-center cursor-pointer"
+        >
+          <Icon name="user_plus" className="w-5 h-5" />
+        </button>
+      </HintPopover>
+    )
   );
 
   return (
@@ -473,7 +552,7 @@ export const MatchAttendance = ({ event, initialAttendees = [], initialTeamRoste
                           lastName={player.last_name}
                           className="w-10 h-10 rounded-xl bg-surface-level1 border border-surface-border"
                         />
-                        <div className="flex flex-col">
+                        <div className="flex flex-col text-left">
                           <span className="text-[12px] font-bold text-content-main">
                             {player.last_name} {player.first_name}
                           </span>

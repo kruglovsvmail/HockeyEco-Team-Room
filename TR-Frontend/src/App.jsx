@@ -102,9 +102,33 @@ export default function App() {
         </BrowserRouter>
       </div>
 
-      {/* ФИКСИРОВАННЫЙ ТОП-ЦЕНТР БАННЕР ОФФЛАЙНА НАД ВСЕМИ СЛОЯМИ */}
+      {/* ФИКСИРОВАННЫЙ ТОП-ЦЕНТР БАННЕР ОФФЛАЙНА НАД ВСЕМИ СЛОЯМИ (ИСПРАВЛЕНЫ СЛОИ И GPU АНИМАЦИЯ) */}
       {!isOnline && (
-        <div className="fixed top-[calc(env(safe-area-inset-top,0px)+12px)] left-1/2 -translate-x-1/2 z-[250] pointer-events-none animate-fade-in">
+        <div 
+          className="fixed top-[calc(env(safe-area-inset-top,0px)+12px)] left-1/2 -translate-x-1/2 z-[999999] pointer-events-none will-change-transform"
+          style={{
+            animationName: 'tr-global-offline-enter',
+            animationDuration: '350ms',
+            animationTimingFunction: 'cubic-bezier(0.21, 1.02, 0.43, 1.01)',
+            animationFillMode: 'both'
+          }}
+        >
+          {/* Изолированные CSS-правила для аппаратного рендеринга на видеокарте */}
+          <style>
+            {`
+              @keyframes tr-global-offline-enter {
+                0% {
+                  opacity: 0;
+                  transform: translate(-50%, -10px) translateZ(0);
+                }
+                100% {
+                  opacity: 1;
+                  transform: translate(-50%, 0) translateZ(0);
+                }
+              }
+            `}
+          </style>
+
           <div className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-[#1a080a]/90 backdrop-blur-md border border-red-500/20 shadow-xl shadow-black/50">
             <span className="w-1.5 h-1.5 rounded-full bg-red-500 animate-pulse shrink-0" />
             <span className="text-[10px] font-black text-red-400 uppercase tracking-widest select-none whitespace-nowrap">

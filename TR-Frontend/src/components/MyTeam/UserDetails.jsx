@@ -35,7 +35,7 @@ const InfoRow = ({ label, value, highlight = false, activeBrandColor }) => (
 );
 
 // Кастомный матовый блок карточки с адаптивным брендированием и сквозной Portal-проверкой подписок
-const CustomBlock = ({ title, icon, isEditing, isManager, hasAccess = true, onAction, activeBrandColor, children }) => {
+const CustomBlock = ({ title, icon, isEditing, isManager, hasAccess = true, popoverStatus = "no_subscription", onAction, activeBrandColor, children }) => {
   const accentColor = activeBrandColor || 'var(--color-brand)';
   
   return (
@@ -49,7 +49,7 @@ const CustomBlock = ({ title, icon, isEditing, isManager, hasAccess = true, onAc
         </div>
         {isManager && onAction && (
           hasAccess ? (
-            /* Есть подписка: кнопка переключения режима редактирования */
+            /* Есть подписка и выполнены условия: кнопка переключения режима редактирования */
             <button 
               onClick={onAction} 
               className="transition-colors p-0.5 hover:opacity-80 outline-none cursor-pointer flex items-center justify-center"
@@ -58,9 +58,9 @@ const CustomBlock = ({ title, icon, isEditing, isManager, hasAccess = true, onAc
               <Icon name={isEditing ? "close" : "edit"} className="w-4 h-4" />
             </button>
           ) : (
-            /* Нет подписки: кнопка «потухла» и вызывает плавающий адаптивный поповер */
-            <HintPopover status="no_subscription">
-              <div className="transition-colors p-0.5 opacity-30 flex items-center justify-center" style={{ color: accentColor }}>
+            /* Ограничено тарифом или регламентом ростера: кнопка «потухла» и вызывает поповер с нужным статусом */
+            <HintPopover status={popoverStatus}>
+              <div className="transition-colors p-0.5 opacity-30 flex items-center justify-center cursor-pointer" style={{ color: accentColor }}>
                 <Icon name="edit" className="w-4 h-4" />
               </div>
             </HintPopover>
@@ -105,7 +105,7 @@ export const UserDetails = ({ data }) => {
   const currentUser = data?.user;
   const currentTeam = data?.selectedTeam;
 
-  // Подключаем наш хук доступов к операционной In-Memory матрице прав
+  // Подключаем наш хук доступов к операционной In-Memory матрицы прав
   const { checkAccess } = useAccess(currentUser, currentTeam);
   
   // КЛИЕНТСКИЙ ГАРАНТ: Рассчитываем полный статус руководителя на клиенте для защиты от багов роли в БД
@@ -116,13 +116,34 @@ export const UserDetails = ({ data }) => {
     return isTeamOwner || teamRoles.some(r => ['team_manager', 'team_admin', 'head_coach', 'coach'].includes(r));
   }, [currentUser, currentTeam]);
 
+  // Разбираем массив ролей текущего менеджера для точечных проверок видимости
+  const currentTeamRoles = useMemo(() => {
+    if (!currentTeam?.user_role) return [];
+    return currentTeam.user_role.split(',').map(r => r.trim());
+  }, [currentTeam]);
+
+  const isTeamOwner = useMemo(() => {
+    if (!currentUser || !currentTeam) return false;
+    return String(currentTeam.owner_id) === String(currentUser.id);
+  }, [currentUser, currentTeam]);
+
   // Объединяем оба источника: если хоть один подтверждает, что юзер админ — выкатываем карандаши
   const showAdminControls = isManager || frontendIsManager;
 
+  // ЖЕСТКИЙ РОЛЕВОЙ ЗАСЛОН: Карандаш роли видят ТОЛЬКО Owner и Team Manager. Остальные не видят вообще
+  const canSeeRolesEditBlock = isTeamOwner || currentTeamRoles.includes('team_manager') || currentUser?.global_role === 'admin' || currentUser?.globalRole === 'admin';
+
+  // Проверка: находится ли просматриваемый игрок в ростере турнира
+  const isUserInRoster = useMemo(() => !!profile?.roster_id, [profile?.roster_id]);
+
   // Рассчитываем гранулярные права на редактирование разделов по подписке
   const hasHeaderBlockAccess = checkAccess('EDIT_USER_BLOCK_BASE', teamId);
-  const hasRolesBlockAccess = checkAccess('TEAM_MANAGE_TAB_ALL', teamId);
+  const hasRolesBlockAccess = checkAccess('EDIT_USER_BLOCK_ROLES', teamId); // Заменено на EDIT_USER_BLOCK_ROLES
   const hasGameBlockAccess = checkAccess('TEAM_MANAGE_TAB_ROSTER', teamId);
+
+  // Вычисляем финальный допуск игрового профиля: подписка + обязательное нахождение в ростере
+  const hasGameBlockAccessFinal = isUserInRoster && hasGameBlockAccess;
+  const gameBlockPopoverStatus = isUserInRoster ? "no_subscription" : "not_in_roster";
 
   const AVAILABLE_ROLES = [
     { id: 'team_manager', label: 'Руководитель' },
@@ -421,13 +442,14 @@ export const UserDetails = ({ data }) => {
           )}
         </div>
 
-        {/* БЛОК 1: АДМИНИСТРАТИВНЫЙ СТАТУС РОЛЕЙ */}
+        {/* БЛОК 1: АДМИНИСТРАТИВНЫЙ СТАТУС РОЛЕЙ (Карандаш строго привязан к canSeeRolesEditBlock) */}
         <CustomBlock 
           title="Роли в команде" 
           icon="gear"
           isEditing={isEditRoles}
-          isManager={showAdminControls}
+          isManager={showAdminControls && canSeeRolesEditBlock}
           hasAccess={hasRolesBlockAccess}
+          popoverStatus="no_subscription"
           onAction={() => setIsEditingRoles(!isEditRoles)}
           activeBrandColor={activeBrandColor}
         >
@@ -459,17 +481,18 @@ export const UserDetails = ({ data }) => {
           )}
         </CustomBlock>
 
-        {/* БЛОК 2: ИГРОВОЙ ПРОФИЛЬ (НОМЕР + АМПЛУА) */}
+        {/* БЛОК 2: ИГРОВОЙ ПРОФИЛЬ (Блокируется регламентным HintPopover, если игрок вне ростера турнира) */}
         <CustomBlock 
           title="Игровой профиль" 
           icon="jersey"
           isEditing={isEditGame}
           isManager={showAdminControls}
-          hasAccess={hasGameBlockAccess}
+          hasAccess={hasGameBlockAccessFinal}
+          popoverStatus={gameBlockPopoverStatus}
           onAction={handleToggleEditGame}
           activeBrandColor={activeBrandColor}
         >
-          {isEditGame && hasGameBlockAccess ? (
+          {isEditGame && hasGameBlockAccessFinal ? (
             <div className="flex flex-col gap-3 pt-1">
               <TextInputLP 
                 label="Игровой номер" 

@@ -9,8 +9,8 @@ import { Avatar } from '../../../ui/Avatar';
 import { Icon } from '../../../ui/Icon';
 import { CheckboxLP } from '../../../ui/Checkbox-LP';
 import { ContainerContent } from '../../../ui/ContainerContent';
-import { TooltipLP } from '../../../ui/TooltipLP';
 import { Toast } from '../../../ui/Toast';
+import { HintPopover } from '../../../ui/HintPopover';
 import clsx from 'clsx';
 import { PageLoader } from '../../../ui/Loader';
 import { FadeIn } from '../../../ui/FadeIn';
@@ -59,18 +59,6 @@ export const MatchLines = ({ event, initialAttendees = [], initialDraftLines = [
   // Состояние кастомного тост-уведомления
   const [toast, setToast] = useState({ isOpen: false, message: '', type: 'success' });
 
-  const [showTooltip, setShowTooltip] = useState(false);
-  const [showSubmitTooltip, setShowSubmitTooltip] = useState(false);
-  const [showPlayerEditTooltip, setShowPlayerEditTooltip] = useState(false);
-  
-  const [tooltipCoords, setTooltipCoords] = useState(null);
-  const [submitTooltipCoords, setSubmitTooltipCoords] = useState(null);
-  const [playerEditTooltipCoords, setPlayerEditTooltipCoords] = useState(null);
-  
-  const tooltipTimer = useRef(null);
-  const submitTooltipTimer = useRef(null);
-  const playerEditTooltipTimer = useRef(null);
-
   const [currentSlide, setCurrentSlide] = useState(0);
   const [activeSelection, setActiveSelection] = useState(null);
   const [userInteracted, setUserInteracted] = useState(false);
@@ -84,7 +72,27 @@ export const MatchLines = ({ event, initialAttendees = [], initialDraftLines = [
   const [sheetError, setSheetError] = useState('');
   const [isSheetSaving, setIsSheetSaving] = useState(false);
 
-  const { user, checkAccess, selectedTeam } = useAccess();
+  // 1. АВТОНОМНОЕ И СТРОГО ЛИНЕЙНОЕ ЧТЕНИЕ КЭША ДЛЯ ИСКЛЮЧЕНИЯ ИНФРАСТРУКТУРНЫХ ОШИБОК ИНИЦИАЛИЗАЦИИ
+  const localUser = useMemo(() => {
+    try {
+      return JSON.parse(localStorage.getItem('teampwa_user') || localStorage.getItem('teampwa_cached_user'));
+    } catch { return null; }
+  }, []);
+
+  const localTeam = useMemo(() => {
+    try {
+      if (!localUser || !event?.my_team_id) return null;
+      return localUser.teams?.find(t => String(t.id) === String(event.my_team_id));
+    } catch { return null; }
+  }, [localUser, event?.my_team_id]);
+
+  // 2. БЕЗОПАСНЫЙ ВЫЗОВ ХУКА ПРАВ НА ОСНОВЕ ЧИСТЫХ ОФЛАЙН-КОНТЕКСТОВ ПРИЛОЖЕНИЯ
+  const { user, checkAccess, selectedTeam } = useAccess(localUser, localTeam);
+
+  // Вычисляем гранулярные права допуска In-Memory матрицы по подписке для этой команды матча
+  const hasLinesManageAccess = checkAccess('LINES_MANAGE', event?.my_team_id);
+  const hasRosterSubmitAccess = checkAccess('ROSTER_SUBMIT', event?.my_team_id);
+  const hasPlayerParamsAccess = checkAccess('LINES_EDIT_PLAYER_PARAMS', event?.my_team_id);
 
   const carouselRef = useRef(null);
   const chipsScrollRef = useRef(null);
@@ -138,13 +146,15 @@ export const MatchLines = ({ event, initialAttendees = [], initialDraftLines = [
 
   const hasAdminAccess = useMemo(() => {
     if (userRoles.includes('admin')) return true;
-    const allowedAdminRoles = (PERMISSIONS.ROSTER_SUBMIT || []).map(r => r.toLowerCase());
+    const rawRoles = PERMISSIONS.ROSTER_SUBMIT?.allowedRoles || (Array.isArray(PERMISSIONS.ROSTER_SUBMIT) ? PERMISSIONS.ROSTER_SUBMIT : []);
+    const allowedAdminRoles = rawRoles.map(r => String(r).toLowerCase());
     return userRoles.some(role => allowedAdminRoles.includes(role));
   }, [userRoles]);
 
   const hasCoachAccess = useMemo(() => {
     if (userRoles.includes('admin')) return true;
-    const allowedCoachRoles = (PERMISSIONS.LINES_MANAGE || []).map(r => r.toLowerCase());
+    const rawRoles = PERMISSIONS.LINES_MANAGE?.allowedRoles || (Array.isArray(PERMISSIONS.LINES_MANAGE) ? PERMISSIONS.LINES_MANAGE : []);
+    const allowedCoachRoles = rawRoles.map(r => String(r).toLowerCase());
     return userRoles.some(role => allowedCoachRoles.includes(role));
   }, [userRoles]);
 
@@ -198,7 +208,6 @@ export const MatchLines = ({ event, initialAttendees = [], initialDraftLines = [
     try {
       const apiUrl = import.meta.env.VITE_API_URL || '';
       const headers = getAuthHeaders();
-      // ИСПРАВЛЕНО: Нормализация нормального сопоставления полей player_id || id
       const res = await fetch(`${apiUrl}/api/events/${event.event_id}/lines`, {
         method: 'POST',
         headers: { ...headers, 'Content-Type': 'application/json' },
@@ -228,15 +237,6 @@ export const MatchLines = ({ event, initialAttendees = [], initialDraftLines = [
 
   const handleSubmitOfficialRoster = async (e) => {
     if (timeToMatch < DEADLINES.ROSTER_SUBMIT_MINUTES) {
-      if (e && e.currentTarget) {
-        const rect = e.currentTarget.getBoundingClientRect();
-        setSubmitTooltipCoords({ x: rect.left + rect.width / 2, y: rect.top });
-      }
-      setShowTooltip(false);
-      setShowPlayerEditTooltip(false);
-      setShowSubmitTooltip(true);
-      if (submitTooltipTimer.current) clearTimeout(submitTooltipTimer.current);
-      submitTooltipTimer.current = setTimeout(() => setShowSubmitTooltip(false), 2000);
       return;
     }
     try {
@@ -281,15 +281,6 @@ export const MatchLines = ({ event, initialAttendees = [], initialDraftLines = [
       refreshData(); 
     } else {
       if (timeToMatch <= DEADLINES.MIDDLE_EDIT_MINUTES) {
-        if (e && e.currentTarget) {
-          const rect = e.currentTarget.getBoundingClientRect();
-          setTooltipCoords({ x: rect.left + rect.width / 2, y: rect.top });
-        }
-        setShowSubmitTooltip(false);
-        setShowPlayerEditTooltip(false);
-        setShowTooltip(true);
-        if (tooltipTimer.current) clearTimeout(tooltipTimer.current);
-        tooltipTimer.current = setTimeout(() => setShowTooltip(false), 2000);
         return;
       }
       setIsEditMode(true);
@@ -430,18 +421,6 @@ export const MatchLines = ({ event, initialAttendees = [], initialDraftLines = [
 
   const handleViewPlayerClick = (player, e) => {
     if (!hasAdminAccess) return;
-    if (timeToMatch < DEADLINES.ROSTER_SUBMIT_MINUTES) {
-      if (e && e.currentTarget) {
-        const rect = e.currentTarget.getBoundingClientRect();
-        setPlayerEditTooltipCoords({ x: rect.left + rect.width / 2, y: rect.top });
-      }
-      setShowTooltip(false);
-      setShowSubmitTooltip(false);
-      setShowPlayerEditTooltip(true);
-      if (playerEditTooltipTimer.current) clearTimeout(playerEditTooltipTimer.current);
-      playerEditTooltipTimer.current = setTimeout(() => setShowPlayerEditTooltip(false), 2000);
-      return;
-    }
     setSelectedPlayer(player);
     setEditJersey(player.jersey_number ?? '');
     setEditCaptain(player.is_captain || false);
@@ -509,7 +488,7 @@ export const MatchLines = ({ event, initialAttendees = [], initialDraftLines = [
     const jiggleDelay = (lineNum + (pos === 'LW' ? 0 : pos === 'C' ? 1 : 2)) % 3;
     const jiggleClass = isDeleteMode && player && !isRemoving ? `animate-jiggle jiggle-delay-${jiggleDelay}` : '';
 
-    return (
+    const slotContent = (
       <div 
         key={`${lineNum}-${pos}`}
         onPointerDown={handlePointerDown}
@@ -530,6 +509,10 @@ export const MatchLines = ({ event, initialAttendees = [], initialDraftLines = [
           if (isEditMode) {
             handleSlotClick(lineNum, pos);
           } else if (player) {
+            // ЖЕСТКИЙ БЛОК: Если нет подписки или наступил временной дедлайн лиги — шторку не инициируем
+            if (!hasPlayerParamsAccess || timeToMatch < DEADLINES.ROSTER_SUBMIT_MINUTES) {
+              return;
+            }
             handleViewPlayerClick(player, e);
           }
         }}
@@ -608,6 +591,25 @@ export const MatchLines = ({ event, initialAttendees = [], initialDraftLines = [
         </div>
       </div>
     );
+
+    // ДЕКЛАРАТИВНАЯ ОЧЕРЕДЬ КЛИЕНТСКИХ ОГРАНИЧЕНИЙ: Подписка в приоритете, затем временной дедлайн
+    if (!isEditMode && player && hasAdminAccess) {
+      if (!hasPlayerParamsAccess) {
+        return (
+          <HintPopover status="no_subscription" key={`${lineNum}-${pos}`}>
+            {slotContent}
+          </HintPopover>
+        );
+      }
+      if (timeToMatch < DEADLINES.ROSTER_SUBMIT_MINUTES) {
+        return (
+          <HintPopover status="deadline_player_params" key={`${lineNum}-${pos}`}>
+            {slotContent}
+          </HintPopover>
+        );
+      }
+    }
+    return slotContent;
   };
 
   const renderLineBlock = (lineNum) => (
@@ -677,27 +679,6 @@ export const MatchLines = ({ event, initialAttendees = [], initialDraftLines = [
           .jiggle-delay-2 { animation-delay: 0.2s; }
         `}
       </style>
-      
-      <TooltipLP 
-        isOpen={showSubmitTooltip} 
-        coords={submitTooltipCoords}
-        message={`Отправка заблокирована. До игры осталось меньше ${DEADLINES.ROSTER_SUBMIT_MINUTES} минут.`} 
-        onClose={() => setShowSubmitTooltip(false)}
-      />
-
-      <TooltipLP 
-        isOpen={showTooltip} 
-        coords={tooltipCoords}
-        message={`Изменение пятерок заблокировано. До игры осталось меньше ${DEADLINES.MIDDLE_EDIT_MINUTES} минут.`} 
-        onClose={() => setShowTooltip(false)}
-      />
-
-      <TooltipLP 
-        isOpen={showPlayerEditTooltip} 
-        coords={playerEditTooltipCoords}
-        message={`Изменение параметров игрока заблокировано. До игры осталось меньше ${DEADLINES.ROSTER_SUBMIT_MINUTES} минут.`} 
-        onClose={() => setShowPlayerEditTooltip(false)}
-      />
 
       <div className="flex items-center justify-between w-full px-4 relative">
         <SectionHeader 
@@ -743,14 +724,14 @@ export const MatchLines = ({ event, initialAttendees = [], initialDraftLines = [
         </div>
       </div>
 
-      {/* КНОПКИ УПРАВЛЕНИЯ ПЯТЕРКАМИ */}
+      {/* КНОПКИ УПРАВЛЕНИЯ ПЯТЕРКАМИ С УЧЕТОМ СТАТУСА ТАРИФА ПОДПИСКИ ИЛИ ВРЕМЕННЫХ ДЕДЛАЙНОВ */}
       <div className="flex justify-center items-center gap-8 py-3 my-1 w-full bg-transparent">
         {isEditMode ? (
           <>
             <button
               onClick={(e) => handleHeaderActionClick(e)}
               disabled={isPublishing}
-              className="flex flex-col items-center justify-center transition-all active:scale-90 relative outline-none min-w-[72px] hover:scale-105"
+              className="flex flex-col items-center justify-center transition-all active:scale-90 relative outline-none min-w-[72px] hover:scale-105 cursor-pointer"
             >
               <div className="w-11 h-11 rounded-full bg-surface-level2 border border-surface-border flex items-center justify-center text-red-500 shadow-sm">
                 <Icon name="close" className="w-4 h-4" strokeWidth={3} />
@@ -763,7 +744,7 @@ export const MatchLines = ({ event, initialAttendees = [], initialDraftLines = [
             <button
               onClick={handlePublish}
               disabled={isPublishing}
-              className="flex flex-col items-center justify-center transition-all active:scale-90 relative outline-none min-w-[72px] hover:scale-105"
+              className="flex flex-col items-center justify-center transition-all active:scale-90 relative outline-none min-w-[72px] hover:scale-105 cursor-pointer"
             >
               <div 
                 style={{ backgroundColor: activeBrandColor }}
@@ -782,43 +763,108 @@ export const MatchLines = ({ event, initialAttendees = [], initialDraftLines = [
           </>
         ) : (
           <>
+            {/* Кнопка "В лигу" (Заявка состава на матч) */}
             {hasAdminAccess && (
-              <button
-                onClick={(e) => handleSubmitOfficialRoster(e)}
-                disabled={isPublished}
-                className={clsx(
-                  "flex flex-col items-center justify-center transition-all relative outline-none min-w-[72px]",
-                  isPublished ? "opacity-50 cursor-not-allowed" : "active:scale-90 hover:scale-105"
-                )}
-              >
-                <div className={clsx(
-                  "w-11 h-11 rounded-full flex items-center justify-center shadow-sm border border-surface-border",
-                  isPublished ? "bg-green-500 text-white" : "bg-surface-level2 text-content-main",
-                  timeToMatch < DEADLINES.ROSTER_SUBMIT_MINUTES && "opacity-40"
-                )}>
-                  <Icon name="registry" className="w-4 h-4" />
-                </div>
-                <span className="text-[9px] font-black uppercase tracking-widest text-content-main block text-center select-none mt-1">
-                  {isPublished ? 'Отправлено' : 'В лигу'}
-                </span>
-              </button>
+              hasRosterSubmitAccess ? (
+                timeToMatch < DEADLINES.ROSTER_SUBMIT_MINUTES ? (
+                  <HintPopover status="deadline_roster_submit">
+                    <button
+                      type="button"
+                      className="flex flex-col items-center justify-center transition-all relative outline-none min-w-[72px] opacity-40 cursor-pointer"
+                    >
+                      <div className="w-11 h-11 rounded-full flex items-center justify-center shadow-sm border border-surface-border bg-surface-level2 text-content-main">
+                        <Icon name="registry" className="w-4 h-4" />
+                      </div>
+                      <span className="text-[9px] font-black uppercase tracking-widest text-content-main block text-center select-none mt-1">
+                        В лигу
+                      </span>
+                    </button>
+                  </HintPopover>
+                ) : (
+                  <button
+                    onClick={(e) => handleSubmitOfficialRoster(e)}
+                    disabled={isPublished}
+                    className={clsx(
+                      "flex flex-col items-center justify-center transition-all relative outline-none min-w-[72px]",
+                      isPublished ? "opacity-50 cursor-not-allowed" : "active:scale-90 hover:scale-105 cursor-pointer"
+                    )}
+                  >
+                    <div className={clsx(
+                      "w-11 h-11 rounded-full flex items-center justify-center shadow-sm border border-surface-border",
+                      isPublished ? "bg-green-500 text-white" : "bg-surface-level2 text-content-main"
+                    )}>
+                      <Icon name="registry" className="w-4 h-4" />
+                    </div>
+                    <span className="text-[9px] font-black uppercase tracking-widest text-content-main block text-center select-none mt-1">
+                      {isPublished ? 'Отправлено' : 'В лигу'}
+                    </span>
+                  </button>
+                )
+              ) : (
+                <HintPopover status="no_subscription">
+                  <button
+                    type="button"
+                    className="flex flex-col items-center justify-center transition-all relative outline-none min-w-[72px] opacity-30 cursor-pointer"
+                  >
+                    <div className="w-11 h-11 rounded-full flex items-center justify-center shadow-sm border border-surface-border bg-surface-level2 text-content-main">
+                      <Icon name="registry" className="w-4 h-4" />
+                    </div>
+                    <span className="text-[9px] font-black uppercase tracking-widest text-content-main block text-center select-none mt-1">
+                      В лигу
+                    </span>
+                  </button>
+                </HintPopover>
+              )
             )}
 
+            {/* Кнопка "Состав" (Редактирование сочетаний звеньев) */}
             {hasCoachAccess && !isPublished && (
-              <button
-                onClick={(e) => handleHeaderActionClick(e)}
-                className="flex flex-col items-center justify-center transition-all active:scale-90 relative outline-none min-w-[72px] hover:scale-105"
-              >
-                <div 
-                  style={{ color: activeBrandColor }}
-                  className="w-11 h-11 rounded-full bg-surface-level2 border border-surface-border flex items-center justify-center text-brand shadow-sm"
-                >
-                  <Icon name="edit" className="w-4 h-4" />
-                </div>
-                <span className="text-[9px] font-black uppercase tracking-widest text-content-main block text-center select-none mt-1">
-                  Состав
-                </span>
-              </button>
+              hasLinesManageAccess ? (
+                timeToMatch <= DEADLINES.MIDDLE_EDIT_MINUTES ? (
+                  <HintPopover status="deadline_lines_edit">
+                    <button
+                      type="button"
+                      className="flex flex-col items-center justify-center transition-all relative outline-none min-w-[72px] opacity-40 cursor-pointer"
+                    >
+                      <div className="w-11 h-11 rounded-full bg-surface-level2 border border-surface-border flex items-center justify-center text-brand shadow-sm">
+                        <Icon name="edit" className="w-4 h-4" />
+                      </div>
+                      <span className="text-[9px] font-black uppercase tracking-widest text-content-main block text-center select-none mt-1">
+                        Состав
+                      </span>
+                    </button>
+                  </HintPopover>
+                ) : (
+                  <button
+                    onClick={(e) => handleHeaderActionClick(e)}
+                    className="flex flex-col items-center justify-center transition-all active:scale-90 relative outline-none min-w-[72px] hover:scale-105 cursor-pointer"
+                  >
+                    <div 
+                      style={{ color: activeBrandColor }}
+                      className="w-11 h-11 rounded-full bg-surface-level2 border border-surface-border flex items-center justify-center text-brand shadow-sm"
+                    >
+                      <Icon name="edit" className="w-4 h-4" />
+                    </div>
+                    <span className="text-[9px] font-black uppercase tracking-widest text-content-main block text-center select-none mt-1">
+                      Состав
+                    </span>
+                  </button>
+                )
+              ) : (
+                <HintPopover status="no_subscription">
+                  <button
+                    type="button"
+                    className="flex flex-col items-center justify-center transition-all relative outline-none min-w-[72px] opacity-30 cursor-pointer"
+                  >
+                    <div className="w-11 h-11 rounded-full bg-surface-level2 border border-surface-border flex items-center justify-center text-brand shadow-sm">
+                      <Icon name="edit" className="w-4 h-4" />
+                    </div>
+                    <span className="text-[9px] font-black uppercase tracking-widest text-content-main block text-center select-none mt-1">
+                      Состав
+                    </span>
+                  </button>
+                </HintPopover>
+              )
             )}
           </>
         )}
@@ -846,7 +892,7 @@ export const MatchLines = ({ event, initialAttendees = [], initialDraftLines = [
               <button
                 key={`dot-${index}`}
                 onClick={(e) => { e.stopPropagation(); scrollToSlide(index); }}
-                className="p-2 -m-2 focus:outline-none" 
+                className="p-2 -m-2 focus:outline-none cursor-pointer" 
               >
                 <div className={clsx(
                   "h-2 rounded-full transition-all duration-300 ease-out opacity-50",

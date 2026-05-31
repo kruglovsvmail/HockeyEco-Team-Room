@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import { Menu, X } from 'lucide-react';
 import { Icon } from '../ui/Icon';
 import { TopSheet } from '../ui/TopSheet';
@@ -18,8 +18,25 @@ export function Header({ isSidebarOpen, onToggleSidebar, user, teams, selectedTe
   const isSchedulePage = location.pathname === '/';
   const isMyTeamPage = location.pathname === '/my-team';
   
-  // Проверяем наличие прав на редактирование профиля команды по матрице доступов
+  // Проверяем наличие прав на редактирование профиля команды по матрице доступов (учитывает тариф подписки)
   const hasEditAccess = checkAccess('TEAM_EDIT_PROFILE');
+
+  // ЖЕСТКИЙ РОЛЕВОЙ ЗАСЛОН: Вычисляем, имеет ли право пользователь вообще видеть кнопку редактирования
+  const canSeeEditButton = useMemo(() => {
+    if (!user || !selectedTeam) return false;
+    
+    // Проверяем, является ли текущий пользователь создателем/владельцем команды
+    const isTeamOwner = String(selectedTeam.owner_id) === String(user.id);
+    
+    // Разбираем локальные роли пользователя в рамках выбранной команды
+    const teamRoles = selectedTeam.user_role?.split(',').map(r => r.trim().toLowerCase()) || [];
+    
+    // Проверяем глобального суперадмина платформы
+    const isGlobalAdmin = user.global_role === 'admin' || user.globalRole === 'admin';
+
+    // Кнопка рендерится только для Owner, роли team_manager или глобального админа платформы
+    return isTeamOwner || teamRoles.includes('team_manager') || isGlobalAdmin;
+  }, [user, selectedTeam]);
 
   const openCalendar = () => {
     window.dispatchEvent(new Event('open-calendar-sheet'));
@@ -66,8 +83,8 @@ export function Header({ isSidebarOpen, onToggleSidebar, user, teams, selectedTe
             </div>
           )}
 
-          {/* Раздел МОЯ КОМАНДА: кнопка изменения параметров (теперь всегда видна, но тухнет без подписки) */}
-          {isMyTeamPage && !hideActions && (
+          {/* Раздел МОЯ КОМАНДА: кнопка изменения параметров (видна только разрешенным ролям, тухнет без подписки) */}
+          {isMyTeamPage && canSeeEditButton && !hideActions && (
             <div className="flex items-center gap-1 ml-auto">
               {hasEditAccess ? (
                 /* Сценарий с подпиской: полнофункциональная кнопка, открывающая шторку */
