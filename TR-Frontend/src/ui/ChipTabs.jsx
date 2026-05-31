@@ -15,7 +15,7 @@ export const ChipTabs = ({ tabs, activeTab, onChange, className = '', activeColo
         const dynamicStyle = isActive && activeColor 
           ? { 
               backgroundColor: activeColor, 
-              backgroundImage: 'linear-gradient(to bottom, rgba(255, 255, 255, 0.25) 40%, rgba(255, 255, 255, 0) 70%)',
+              backgroundImage: 'linear-gradient(to bottom, rgba(255, 255, 255, 0.25) 20%, rgba(255, 255, 255, 0) 100%)',
               color: getContrastTextColor(activeColor) === 'text-white' ? '#ffffff' : '#1f2937' 
             } 
           : {};

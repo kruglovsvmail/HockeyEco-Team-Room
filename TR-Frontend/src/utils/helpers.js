@@ -82,6 +82,13 @@ if (typeof window !== 'undefined' && !window.__fetchInterceptorInitialized) {
             if (res.status === 401 || res.status === 403) {
               return null; // Сессия полностью уничтожена
             }
+
+            // БЕЗОПАСНАЯ ПРОВЕРКА CONTENT-TYPE: Предотвращает краш парсинга HTML-страниц ошибок
+            const contentType = res.headers.get('content-type');
+            if (!contentType || !contentType.includes('application/json')) {
+              return null; // Сервер вернул текстовый HTML вместо валидного JSON
+            }
+
             return res.json();
           })
           .then(data => {
