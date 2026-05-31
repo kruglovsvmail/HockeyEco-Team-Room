@@ -1,10 +1,11 @@
 import React, { Suspense, lazy, useState, useEffect } from 'react';
+import { createPortal } from 'react-dom'; // Импортируем Portal для выноса в body
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { useRegisterSW } from 'virtual:pwa-register/react';
 import { TeamLayout } from './TeamLayout';
 import { UpdatePromptModal } from './components/UpdatePromptModal';
 
-// Разделяем код стандартных страниц на независимые чанки
+// Разделяем код standard страниц на независимые чанки
 const LoginPage = lazy(() => import('./pages/LoginPage'));
 const SchedulePage = lazy(() => import('./pages/SchedulePage').then(module => ({ default: module.SchedulePage })));
 const MyTeamPage = lazy(() => import('./pages/MyTeamPage').then(module => ({ default: module.MyTeamPage })));
@@ -102,21 +103,20 @@ export default function App() {
         </BrowserRouter>
       </div>
 
-      {/* ФИКСИРОВАННЫЙ ТОП-ЦЕНТР БАННЕР ОФФЛАЙНА НАД ВСЕМИ СЛОЯМИ (ИСПРАВЛЕНЫ СЛОИ И GPU АНИМАЦИЯ) */}
-      {!isOnline && (
+      {/* ПОРТАЛЬНЫЙ ВЫНОС: Баннер монтируется напрямую в body, исключая зависание слоев */}
+      {!isOnline && createPortal(
         <div 
-          className="fixed top-[calc(env(safe-area-inset-top,0px)+12px)] left-1/2 -translate-x-1/2 z-[999999] pointer-events-none will-change-transform"
+          className="fixed top-[calc(env(safe-area-inset-top,0px)+12px)] left-1/2 z-[999999] pointer-events-none will-change-transform"
           style={{
-            animationName: 'tr-global-offline-enter',
+            animationName: 'tr-portal-offline-enter',
             animationDuration: '350ms',
             animationTimingFunction: 'cubic-bezier(0.21, 1.02, 0.43, 1.01)',
             animationFillMode: 'both'
           }}
         >
-          {/* Изолированные CSS-правила для аппаратного рендеринга на видеокарте */}
           <style>
             {`
-              @keyframes tr-global-offline-enter {
+              @keyframes tr-portal-offline-enter {
                 0% {
                   opacity: 0;
                   transform: translate(-50%, -10px) translateZ(0);
@@ -135,7 +135,8 @@ export default function App() {
               Нет сети
             </span>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
 
       {/* ГЛОБАЛЬНЫЙ ИНТЕРАКТИВНЫЙ ОБНОВЛЯТОР КОДА PWA С СПИСКОМ ИЗМЕНЕНИЙ */}
