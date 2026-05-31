@@ -4,6 +4,45 @@ import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { useRegisterSW } from 'virtual:pwa-register/react';
 import { TeamLayout } from './TeamLayout';
 import { UpdatePromptModal } from './components/UpdatePromptModal';
+import { Toast } from './ui/Toast'; // Импортируем наш переиспользуемый компонент тостов
+
+// ============================================================================
+// ГЛОБАЛЬНЫЙ СЕТЕВОЙ ИНТЕРЦЕПТОР (СТРАТЕГИЯ №1)
+// Перехватывает любые POST, PUT, DELETE, PATCH запросы в офлайне ДО отправки на сервер
+// ============================================================================
+if (typeof window !== 'undefined' && !window.__fetch_mutation_patched__) {
+  window.__fetch_mutation_patched__ = true;
+  const originalFetch = window.fetch;
+
+  window.fetch = async function (...args) {
+    const [resource, config] = args;
+    const method = (config?.method || 'GET').toUpperCase();
+
+    // Если устройство находится вне сети и совершается попытка изменить БД (мутация)
+    if (!navigator.onLine && ['POST', 'PUT', 'DELETE', 'PATCH'].includes(method)) {
+      // Генерируем глобальное событие для вызова Тоста о блокировке записи
+      window.dispatchEvent(
+        new CustomEvent('show-offline-mutation-toast', {
+          detail: { message: 'Вы находитесь в офлайн-режиме. Сохранение изменений недоступно.' }
+        })
+      );
+
+      // Возвращаем структурированный ответ с кодом 503, чтобы в вызывающих компонентах 
+      // сработали проверки (!res.ok) или блоки catch, сбросив лоадеры на кнопках
+      return new Response(
+        JSON.stringify({ success: false, error: 'Database mutation blocked due to offline state' }),
+        {
+          status: 503,
+          statusText: 'Service Unavailable',
+          headers: { 'Content-Type': 'application/json' }
+        }
+      );
+    }
+
+    // Если сеть есть или это обычный GET-запрос чтения — пропускаем дальше в штатном режиме
+    return originalFetch.apply(this, args);
+  };
+}
 
 // Разделяем код standard страниц на независимые чанки
 const LoginPage = lazy(() => import('./pages/LoginPage'));
@@ -31,6 +70,9 @@ export default function App() {
   // Единый глобальный статус сети для плавающего баннера
   const [isOnline, setIsOnline] = useState(() => navigator.onLine);
 
+  // Состояние отображения глобального тоста блокировки мутаций в офлайне
+  const [mutationToast, setMutationToast] = useState({ isOpen: false, message: '' });
+
   useEffect(() => {
     const handleOnline = () => setIsOnline(true);
     const handleOffline = () => setIsOnline(false);
@@ -41,6 +83,21 @@ export default function App() {
     return () => {
       window.removeEventListener('online', handleOnline);
       window.removeEventListener('offline', handleOffline);
+    };
+  }, []);
+
+  // Контроль подписки на событие системного шинного перехвата fetch-интерцептора
+  useEffect(() => {
+    const handleShowOfflineToast = (e) => {
+      setMutationToast({
+        isOpen: true,
+        message: e.detail?.message || 'Действие недоступно в офлайн-режиме.'
+      });
+    };
+
+    window.addEventListener('show-offline-mutation-toast', handleShowOfflineToast);
+    return () => {
+      window.removeEventListener('show-offline-mutation-toast', handleShowOfflineToast);
     };
   }, []);
 
@@ -103,27 +160,27 @@ export default function App() {
         </BrowserRouter>
       </div>
 
-      {/* ПОРТАЛЬНЫЙ ВЫНОС: Баннер монтируется напрямую в body, исключая зависание слоев */}
+      {/* ФИКСИРОВАННЫЙ ТОП-ЦЕНТР БАННЕР ОФФЛАЙНА НАД ВСЕМИ СЛОЯМИ */}
       {!isOnline && createPortal(
         <div 
-          className="fixed top-[calc(env(safe-area-inset-top,0px)+12px)] left-1/2 z-[999999] pointer-events-none will-change-transform"
+          className="fixed left-0 right-0 mx-auto w-max z-[999999] pointer-events-none"
           style={{
-            animationName: 'tr-portal-offline-enter',
-            animationDuration: '350ms',
+            animationName: 'tr-pure-layout-offline',
+            animationDuration: '300ms',
             animationTimingFunction: 'cubic-bezier(0.21, 1.02, 0.43, 1.01)',
             animationFillMode: 'both'
           }}
         >
           <style>
             {`
-              @keyframes tr-portal-offline-enter {
+              @keyframes tr-pure-layout-offline {
                 0% {
+                  top: -50px;
                   opacity: 0;
-                  transform: translate(-50%, -10px) translateZ(0);
                 }
                 100% {
+                  top: calc(env(safe-area-inset-top, 0px) + 12px);
                   opacity: 1;
-                  transform: translate(-50%, 0) translateZ(0);
                 }
               }
             `}
@@ -138,6 +195,14 @@ export default function App() {
         </div>,
         document.body
       )}
+
+      {/* ГЛОБАЛЬНЫЙ ТОСТ ПРЕДУПРЕЖДЕНИЯ О БЛОКИРОВКЕ ОФЛАЙН-МУТАЦИЙ */}
+      <Toast 
+        isOpen={mutationToast.isOpen}
+        message={mutationToast.message}
+        type="danger"
+        onClose={() => setMutationToast(prev => ({ ...prev, isOpen: false }))}
+      />
 
       {/* ГЛОБАЛЬНЫЙ ИНТЕРАКТИВНЫЙ ОБНОВЛЯТОР КОДА PWA С СПИСКОМ ИЗМЕНЕНИЙ */}
       <UpdatePromptModal 
