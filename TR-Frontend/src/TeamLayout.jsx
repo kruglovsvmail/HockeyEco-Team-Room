@@ -270,12 +270,15 @@ function TeamLayoutContent() {
       style={{ '--sidebar-w': `${sidebarWidth}%`, '--right-w': `${rightPanelWidth}%` }}
     >
       
-      {/* 1. ЛЕВОЕ МЕНЮ (Сайдбар) — Добавлена аппаратная композиция слоев */}
-      <aside className={clsx(
-        "fixed inset-y-0 left-0 z-40 h-full bg-surface-level1 transition-transform duration-300 ease-[cubic-bezier(0.32,0.72,0,1)] flex-shrink-0",
-        "w-[80%] md:w-[var(--sidebar-w)] md:static md:translate-x-0 md:shadow-xl style-change-hardware",
-        isSidebarOpen ? "translate-x-0" : "-translate-x-full"
-      )} style={{ willChange: 'transform', transform: isSidebarOpen ? 'translateX(0) translateZ(0)' : 'translateX(-100%) translateZ(0)' }}>
+      {/* 1. ЛЕВОЕ МЕНЮ (Сайдбар) — Исправлено перекрытие инлайнового transform */}
+      <aside 
+        className={clsx(
+          "fixed inset-y-0 left-0 z-40 h-full bg-surface-level1 transition-transform duration-300 ease-[cubic-bezier(0.32,0.72,0,1)] flex-shrink-0",
+          "w-[80%] md:w-[var(--sidebar-w)] md:static md:translate-x-0 md:shadow-xl style-change-hardware",
+          isSidebarOpen ? "translate-x-0" : "-translate-x-full"
+        )} 
+        style={{ willChange: 'transform' }}
+      >
         <Sidebar user={user} teams={teams} selectedTeam={selectedTeam} onTeamChange={handleTeamChange} onClose={() => setIsSidebarOpen(false)} />
       </aside>
 
