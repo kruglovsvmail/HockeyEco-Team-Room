@@ -89,13 +89,19 @@ export const PERMISSIONS = {
   },
 
   // ==========================================
-  // 📄 Файл: EventCard.jsx
+  // 📄 Файл: EventCard.jsx / MatchInfo.jsx
   // ==========================================
 
   // Возможность игрока самостоятельно отметить явку на событие через тумблер
   EVENT_SELF_ATTENDANCE: {
     allowedRoles: [ROLES.PLAYER],
     requiresSubscription: [ROLES.PLAYER]
+  },
+
+  // Подтверждение или отмена товарищеского матча (friendly_pwa) в статусе ожидания
+  MATCH_CONFIRM_CANCEL: {
+    allowedRoles: [ROLES.OWNER, ROLES.TEAM_MANAGER, ROLES.TEAM_ADMIN],
+    requiresSubscription: [ROLES.TEAM_MANAGER, ROLES.TEAM_ADMIN]
   },
 
   // ==========================================

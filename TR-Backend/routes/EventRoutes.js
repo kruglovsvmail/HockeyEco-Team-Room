@@ -1,6 +1,13 @@
 import express from 'express';
 import { getEvents } from '../controllers/EventInfoController.js';
-import { toggleEventAttendance, getEventAttendance, getAvailableRoster, toggleEventAttendanceTag } from '../controllers/EventAttendanceController.js';
+import { 
+  toggleEventAttendance, 
+  getEventAttendance, 
+  getAvailableRoster, 
+  toggleEventAttendanceTag,
+  confirmFriendlyMatch,
+  cancelFriendlyMatch 
+} from '../controllers/EventAttendanceController.js';
 import { getMatchLines, saveMatchLines, submitMatchRoster, updateLinePlayer } from '../controllers/EventLinesController.js';
 import { verifyToken, requireTeamPermission } from '../middleware/auth.js';
 
@@ -20,6 +27,12 @@ router.post('/:eventId/attendance', verifyToken, requireTeamPermission('INTERNAL
 
 // Изменить финансовую пометку игрока (₽) без удаления его из списка
 router.put('/:eventId/attendance-tag', verifyToken, requireTeamPermission('ATTENDANCE_MANAGE'), toggleEventAttendanceTag);
+
+// Подтвердить товарищеский матч friendly_pwa вызываемой стороной
+router.post('/:eventId/confirm', verifyToken, requireTeamPermission('MATCH_CONFIRM_CANCEL'), confirmFriendlyMatch);
+
+// Отменить вызов или отклонить товарищеский матч friendly_pwa
+router.post('/:eventId/cancel', verifyToken, requireTeamPermission('MATCH_CONFIRM_CANCEL'), cancelFriendlyMatch);
 
 // Получить опубликованные пятерки на матч (черновик)
 router.get('/:eventId/lines', verifyToken, requireTeamPermission('INTERNAL_VIEW'), getMatchLines);

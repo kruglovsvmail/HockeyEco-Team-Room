@@ -77,7 +77,7 @@ export const getAvailableRoster = async (req, res) => {
     }
 
     const gameCheck = await pool.query(
-      `SELECT stage_type, division_id FROM games WHERE id = $1`,
+      `SELECT game_type, division_id FROM games WHERE id = $1`,
       [eventId]
     );
 
@@ -85,10 +85,10 @@ export const getAvailableRoster = async (req, res) => {
       return res.status(404).json({ success: false, error: 'Матч не найден' });
     }
 
-    const { stage_type, division_id } = gameCheck.rows[0];
+    const { game_type, division_id } = gameCheck.rows[0];
     let rosterRows = [];
 
-    if ((stage_type === 'regular' || stage_type === 'playoff') && division_id) {
+    if (game_type === 'official' && division_id) {
       const officialQuery = `
         SELECT 
           u.id AS user_id,
@@ -172,7 +172,6 @@ export const toggleEventAttendance = async (req, res) => {
 
     const targetId = targetUserId || initiatorId;
 
-    // Вычисляем контекстное правило проверки на основе инициатора действия
     if (targetId === initiatorId) {
       if (teamId) {
         const hasAccess = await checkPermissionInternal(initiatorId, teamId, 'EVENT_SELF_ATTENDANCE');
@@ -259,14 +258,14 @@ export const getEventAttendance = async (req, res) => {
         if (!teamId) return res.status(400).json({ success: false, error: 'teamId обязателен для матча' });
         
         const gameCheck = await pool.query(
-          `SELECT stage_type, division_id FROM games WHERE id = $1`,
+          `SELECT game_type, division_id FROM games WHERE id = $1`,
           [eventId]
         );
         
-        const stageType = gameCheck.rows[0]?.stage_type || 'friendly';
+        const gameType = gameCheck.rows[0]?.game_type || 'friendly_pwa';
         const divisionId = gameCheck.rows[0]?.division_id;
 
-        if ((stageType === 'regular' || stageType === 'playoff') && divisionId) {
+        if (gameType === 'official' && divisionId) {
           query = `
             SELECT u.id, u.first_name, u.last_name, tm.photo_url AS team_photo, u.avatar_url, tr.position, tga.has_pay_tag
             FROM team_game_attendance tga
@@ -397,6 +396,116 @@ export const toggleEventAttendanceTag = async (req, res) => {
     res.json({ success: true });
   } catch (err) {
     console.error('Ошибка изменения финансовой пометки:', err);
+    res.status(500).json({ success: false, error: 'Ошибка сервера' });
+  }
+};
+
+export const confirmFriendlyMatch = async (req, res) => {
+  try {
+    const userId = req.user.id;
+    const { eventId } = req.params;
+    const { teamId } = req.body;
+
+    if (!teamId) {
+      return res.status(400).json({ success: false, error: 'teamId обязателен' });
+    }
+
+    const hasAccess = await checkPermissionInternal(userId, teamId, 'MATCH_CONFIRM_CANCEL');
+    if (!hasAccess) {
+      return res.status(403).json({ success: false, error: 'Недостаточно прав для подтверждения матча' });
+    }
+
+    const gameRes = await pool.query(
+      `SELECT game_type, status, initiator_team_id, confirm_deadline, home_team_id, away_team_id 
+       FROM games WHERE id = $1`,
+      [eventId]
+    );
+
+    if (gameRes.rowCount === 0) {
+      return res.status(404).json({ success: false, error: 'Матч не найден' });
+    }
+
+    const game = gameRes.rows[0];
+
+    if (game.game_type !== 'friendly_pwa') {
+      return res.status(400).json({ success: false, error: 'Этот тип матча не поддерживает подтверждение через PWA' });
+    }
+
+    if (game.status !== 'pending') {
+      return res.status(400).json({ success: false, error: `Нельзя подтвердить матч в статусе: ${game.status}` });
+    }
+
+    if (Number(game.initiator_team_id) === Number(teamId)) {
+      return res.status(400).json({ success: false, error: 'Команда-инициатор не может подтвердить собственный вызов' });
+    }
+
+    if (Number(game.home_team_id) !== Number(teamId) && Number(game.away_team_id) !== Number(teamId)) {
+      return res.status(400).json({ success: false, error: 'Ваша команда не участвует в данном матче' });
+    }
+
+    if (game.confirm_deadline && new Date(game.confirm_deadline) < new Date()) {
+      return res.status(400).json({ success: false, error: 'Срок подтверждения вызова на матч истек' });
+    }
+
+    await pool.query(
+      `UPDATE games SET status = 'scheduled', updated_at = NOW() WHERE id = $1`,
+      [eventId]
+    );
+
+    res.json({ success: true, message: 'Матч успешно подтвержден' });
+  } catch (err) {
+    console.error('Ошибка подтверждения матча:', err);
+    res.status(500).json({ success: false, error: 'Ошибка сервера' });
+  }
+};
+
+export const cancelFriendlyMatch = async (req, res) => {
+  try {
+    const userId = req.user.id;
+    const { eventId } = req.params;
+    const { teamId } = req.body;
+
+    if (!teamId) {
+      return res.status(400).json({ success: false, error: 'teamId обязателен' });
+    }
+
+    const hasAccess = await checkPermissionInternal(userId, teamId, 'MATCH_CONFIRM_CANCEL');
+    if (!hasAccess) {
+      return res.status(403).json({ success: false, error: 'Недостаточно прав для управления статусом матча' });
+    }
+
+    const gameRes = await pool.query(
+      `SELECT game_type, status, home_team_id, away_team_id 
+       FROM games WHERE id = $1`,
+      [eventId]
+    );
+
+    if (gameRes.rowCount === 0) {
+      return res.status(404).json({ success: false, error: 'Матч не найден' });
+    }
+
+    const game = gameRes.rows[0];
+
+    if (game.game_type !== 'friendly_pwa') {
+      return res.status(400).json({ success: false, error: 'Этот тип матча не поддерживает отмену через PWA' });
+    }
+
+    if (game.status !== 'pending') {
+      return res.status(400).json({ success: false, error: 'Можно отменить только матч, ожидающий подтверждения' });
+    }
+
+    if (Number(game.home_team_id) !== Number(teamId) && Number(game.away_team_id) !== Number(teamId)) {
+      return res.status(400).json({ success: false, error: 'Ваша команда не участвует в данном матче' });
+    }
+
+    await pool.query(
+      `UPDATE games SET status = 'cancelled', updated_at = NOW() WHERE id = $1`,
+      [eventId]
+    );
+
+    res.json({ success: true, message: 'Матч успешно отменен' });
+  } catch (err) {
+    console.error('Ошибка отмены матча:', err);
     res.status(500).json({ success: false, error: 'Ошибка сервера' });
   }
 };

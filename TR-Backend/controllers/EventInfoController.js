@@ -5,6 +5,20 @@ export const getEvents = async (req, res) => {
     const userId = req.user.id;
     const { startDate, endDate } = req.query;
 
+    // =========================================================================
+    // АВТОМАТИЧЕСКАЯ СМЕНА СТАТУСА НА ЛЕТУ (БЕЗ ВНЕШНИХ ПЛАНИРОВЩИКОВ И CRON)
+    // =========================================================================
+    // Если дедлайн подтверждения прошел, статус матча прямо сейчас меняется на 'cancelled',
+    // и благодаря условию фильтрации ниже он автоматически не попадет в календарь.
+    await pool.query(`
+      UPDATE "public"."games"
+      SET "status" = 'cancelled',
+          "updated_at" = NOW()
+      WHERE "game_type" = 'friendly_pwa'
+        AND "status" = 'pending'
+        AND "confirm_deadline" < NOW()
+    `);
+
     const dateFilter = startDate && endDate 
       ? `AND event_date BETWEEN $2 AND $3` 
       : ``;
@@ -27,6 +41,18 @@ export const getEvents = async (req, res) => {
       user_clubs AS (
         SELECT club_id FROM club_members WHERE user_id = $1 AND left_at IS NULL
       ),
+      user_team_roles AS (
+        SELECT t.id as team_id, 'owner'::varchar as role FROM teams t WHERE t.owner_id = $1
+        UNION
+        SELECT tm.team_id, tr.role::varchar FROM team_roles tr 
+        JOIN team_members tm ON tr.member_id = tm.id 
+        WHERE tm.user_id = $1 AND tr.left_at IS NULL AND tm.left_at IS NULL
+        UNION
+        SELECT t.id as team_id, cr.role::varchar FROM club_roles cr
+        JOIN teams t ON t.club_id = cr.club_id
+        JOIN club_members cm ON cm.club_id = cr.club_id AND cm.user_id = cr.user_id
+        WHERE cr.user_id = $1 AND cr.left_at IS NULL AND cm.left_at IS NULL
+      ),
 
       -- ==========================================
       -- БЛОК 1: МАТЧИ (games)
@@ -35,6 +61,9 @@ export const getEvents = async (req, res) => {
         SELECT 
           g.id::int AS event_id,
           'match'::varchar AS event_type,
+          g.game_type::varchar AS game_type,
+          g.initiator_team_id::int AS initiator_team_id,
+          g.confirm_deadline::timestamptz AS confirm_deadline,
           g.game_date::timestamptz AS event_date,
           g.status::varchar AS status,
           a.name::varchar AS arena_name,
@@ -59,10 +88,11 @@ export const getEvents = async (req, res) => {
           (g.is_technical::text IN ('true', 't', '1', 'yes', 'y'))::boolean AS is_technical,
           g.end_type::varchar AS end_type,
           
-          d.name::varchar AS division_name,
-          l.name::varchar AS league_name,
-          l.logo_url::varchar AS league_logo_url,
-          d.logo_url::varchar AS division_logo_url,
+          COALESCE(d.name, ext_div.name)::varchar AS division_name,
+          COALESCE(l.name, ext_tour.name)::varchar AS league_name,
+          COALESCE(l.logo_url, ext_tour.logo_url)::varchar AS league_logo_url,
+          COALESCE(d.logo_url, ext_tour.logo_url)::varchar AS division_logo_url,
+          
           g.stage_type::varchar AS stage_type,
           g.stage_label::varchar AS stage_label,
           g.series_number::int AS series_number,
@@ -86,18 +116,7 @@ export const getEvents = async (req, res) => {
           (EXISTS (SELECT 1 FROM team_game_attendance tga WHERE tga.game_id = g.id AND tga.user_id = $1 AND tga.team_id = ut.team_id))::boolean AS is_attending,
           
           (CASE 
-            WHEN g.stage_type = 'friendly' THEN
-              COALESCE(
-                (SELECT CASE 
-                          WHEN tr.left_at IS NOT NULL THEN 'unregistered' 
-                          WHEN NOT (SELECT has_subscription FROM user_context) THEN 'no_subscription'
-                          ELSE 'allowed' 
-                        END
-                 FROM team_rosters tr JOIN team_members tm ON tr.member_id = tm.id
-                 WHERE tm.user_id = $1 AND tm.team_id = ut.team_id AND tm.left_at IS NULL ORDER BY tr.left_at NULLS FIRST LIMIT 1),
-                'not_in_team'
-              )
-            ELSE
+            WHEN g.game_type = 'official' THEN
               CASE 
                 -- 1. Проверка на исключение из базового состава команды (team_members.left_at)
                 WHEN NOT EXISTS (
@@ -126,7 +145,23 @@ export const getEvents = async (req, res) => {
                   'not_in_tournament'
                 )
               END
-          END)::varchar AS toggle_status
+            ELSE
+              COALESCE(
+                (SELECT CASE 
+                          WHEN tr.left_at IS NOT NULL THEN 'unregistered' 
+                          WHEN NOT (SELECT has_subscription FROM user_context) THEN 'no_subscription'
+                          ELSE 'allowed' 
+                        END
+                 FROM team_rosters tr JOIN team_members tm ON tr.member_id = tm.id
+                 WHERE tm.user_id = $1 AND tm.team_id = ut.team_id AND tm.left_at IS NULL ORDER BY tr.left_at NULLS FIRST LIMIT 1),
+                'not_in_team'
+              )
+          END)::varchar AS toggle_status,
+          COALESCE(
+            (SELECT role FROM user_team_roles WHERE team_id = ut.team_id AND role IN ('owner', 'team_manager', 'team_admin') LIMIT 1),
+            'player'
+          )::varchar AS user_role,
+          (SELECT has_subscription FROM user_context)::boolean AS has_subscription
 
         FROM user_teams ut
         JOIN games g ON (g.home_team_id = ut.team_id OR g.away_team_id = ut.team_id)
@@ -139,6 +174,9 @@ export const getEvents = async (req, res) => {
         LEFT JOIN external_opponents ext_opp ON g.away_external_id = ext_opp.id
         LEFT JOIN tournament_teams tt_my ON tt_my.division_id = g.division_id AND tt_my.team_id = ut.team_id
         LEFT JOIN tournament_teams tt_opp ON tt_opp.division_id = g.division_id AND tt_opp.team_id = CASE WHEN g.home_team_id = ut.team_id THEN g.away_team_id ELSE g.home_team_id END
+        LEFT JOIN team_external_tournaments ext_tour ON g.external_tournament_id = ext_tour.id
+        LEFT JOIN team_external_divisions ext_div ON g.external_division_id = ext_div.id
+        WHERE g.status != 'cancelled'
       ),
 
       -- ==========================================
@@ -148,6 +186,9 @@ export const getEvents = async (req, res) => {
         SELECT 
           tt.id::int AS event_id,
           'team_training'::varchar AS event_type,
+          NULL::varchar AS game_type,
+          NULL::int AS initiator_team_id,
+          NULL::timestamptz AS confirm_deadline,
           tt.training_date::timestamptz AS event_date,
           (CASE WHEN tt.training_date < NOW() THEN 'finished' ELSE 'scheduled' END)::varchar AS status,
           a.name::varchar AS arena_name,
@@ -203,7 +244,12 @@ export const getEvents = async (req, res) => {
              FROM team_rosters tr JOIN team_members tm ON tr.member_id = tm.id
              WHERE tm.user_id = $1 AND tm.team_id = ut.team_id AND tm.left_at IS NULL ORDER BY tr.left_at NULLS FIRST LIMIT 1),
             'not_in_team'
-          ))::varchar AS toggle_status
+          ))::varchar AS toggle_status,
+          COALESCE(
+            (SELECT role FROM user_team_roles WHERE team_id = ut.team_id AND role IN ('owner', 'team_manager', 'team_admin') LIMIT 1),
+            'player'
+          )::varchar AS user_role,
+          (SELECT has_subscription FROM user_context)::boolean AS has_subscription
 
         FROM user_teams ut
         JOIN team_training tt ON tt.team_id = ut.team_id
@@ -218,6 +264,9 @@ export const getEvents = async (req, res) => {
         SELECT 
           tm.id::int AS event_id,
           'team_meeting'::varchar AS event_type,
+          NULL::varchar AS game_type,
+          NULL::int AS initiator_team_id,
+          NULL::timestamptz AS confirm_deadline,
           tm.meeting_date::timestamptz AS event_date,
           (CASE WHEN tm.meeting_date < NOW() THEN 'finished' ELSE 'scheduled' END)::varchar AS status,
           a.name::varchar AS arena_name,
@@ -262,7 +311,12 @@ export const getEvents = async (req, res) => {
 
           (CASE WHEN (SELECT active_clubs FROM user_context) = 0 AND (SELECT active_teams FROM user_context) = 1 THEN false ELSE true END)::boolean AS show_team_context,
           (EXISTS (SELECT 1 FROM team_meeting_attendance tma WHERE tma.team_meeting_id = tm.id AND tma.user_id = $1))::boolean AS is_attending,
-          (CASE WHEN NOT (SELECT has_subscription FROM user_context) THEN 'no_subscription' ELSE 'allowed' END)::varchar AS toggle_status 
+          (CASE WHEN NOT (SELECT has_subscription FROM user_context) THEN 'no_subscription' ELSE 'allowed' END)::varchar AS toggle_status,
+          COALESCE(
+            (SELECT role FROM user_team_roles WHERE team_id = ut.team_id AND role IN ('owner', 'team_manager', 'team_admin') LIMIT 1),
+            'player'
+          )::varchar AS user_role,
+          (SELECT has_subscription FROM user_context)::boolean AS has_subscription
 
         FROM user_teams ut
         JOIN team_meeting tm ON tm.team_id = ut.team_id
@@ -277,6 +331,9 @@ export const getEvents = async (req, res) => {
         SELECT 
           ct.id::int AS event_id,
           'club_training'::varchar AS event_type,
+          NULL::varchar AS game_type,
+          NULL::int AS initiator_team_id,
+          NULL::timestamptz AS confirm_deadline,
           ct.training_date::timestamptz AS event_date,
           (CASE WHEN ct.training_date < NOW() THEN 'finished' ELSE 'scheduled' END)::varchar AS status,
           a.name::varchar AS arena_name,
@@ -321,7 +378,9 @@ export const getEvents = async (req, res) => {
 
           false::boolean AS show_team_context, 
           (EXISTS (SELECT 1 FROM club_training_attendance cta WHERE cta.club_training_id = ct.id AND cta.user_id = $1))::boolean AS is_attending,
-          (CASE WHEN NOT (SELECT has_subscription FROM user_context) THEN 'no_subscription' ELSE 'allowed' END)::varchar AS toggle_status
+          (CASE WHEN NOT (SELECT has_subscription FROM user_context) THEN 'no_subscription' ELSE 'allowed' END)::varchar AS toggle_status,
+          'player'::varchar AS user_role,
+          (SELECT has_subscription FROM user_context)::boolean AS has_subscription
 
         FROM user_clubs uc
         JOIN club_training ct ON ct.club_id = uc.club_id
@@ -336,6 +395,9 @@ export const getEvents = async (req, res) => {
         SELECT 
           cm.id::int AS event_id,
           'club_meeting'::varchar AS event_type,
+          NULL::varchar AS game_type,
+          NULL::int AS initiator_team_id,
+          NULL::timestamptz AS confirm_deadline,
           cm.meeting_date::timestamptz AS event_date,
           (CASE WHEN cm.meeting_date < NOW() THEN 'finished' ELSE 'scheduled' END)::varchar AS status,
           a.name::varchar AS arena_name,
@@ -380,7 +442,9 @@ export const getEvents = async (req, res) => {
 
           false::boolean AS show_team_context,
           (EXISTS (SELECT 1 FROM club_meeting_attendance cma WHERE cma.club_meeting_id = cm.id AND cma.user_id = $1))::boolean AS is_attending,
-          (CASE WHEN NOT (SELECT has_subscription FROM user_context) THEN 'no_subscription' ELSE 'allowed' END)::varchar AS toggle_status
+          (CASE WHEN NOT (SELECT has_subscription FROM user_context) THEN 'no_subscription' ELSE 'allowed' END)::varchar AS toggle_status,
+          'player'::varchar AS user_role,
+          (SELECT has_subscription FROM user_context)::boolean AS has_subscription
 
         FROM user_clubs uc
         JOIN club_meeting cm ON cm.club_id = uc.club_id

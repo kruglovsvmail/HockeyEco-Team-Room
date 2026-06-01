@@ -76,8 +76,9 @@ export const getMatchLines = async (req, res) => {
       return res.status(400).json({ success: false, error: 'teamId обязателен' });
     }
 
+    // Извлечение game_type вместо устаревшего stage_type
     const gameCheck = await pool.query(
-      `SELECT stage_type, division_id FROM games WHERE id = $1`,
+      `SELECT game_type, division_id FROM games WHERE id = $1`,
       [eventId]
     );
 
@@ -85,11 +86,12 @@ export const getMatchLines = async (req, res) => {
       return res.status(404).json({ success: false, error: 'Матч не найден' });
     }
 
-    const { stage_type, division_id } = gameCheck.rows[0];
+    const { game_type, division_id } = gameCheck.rows[0];
     let query = '';
     let params = [eventId, teamId];
 
-    if (stage_type === 'friendly') {
+    // Если матч товарищеский (pwa/ext) или кастомный внешний (tournament_ext)
+    if (game_type !== 'official') {
       query = `
         SELECT 
           tfg.player_id, 
@@ -108,6 +110,7 @@ export const getMatchLines = async (req, res) => {
         WHERE tfg.game_id = $1 AND tfg.team_id = $2
       `;
     } else {
+      // Исключительно для официальных внутренних матчей лиги платформы
       query = `
         SELECT 
           tfg.player_id, 
@@ -164,10 +167,10 @@ export const saveMatchLines = async (req, res) => {
       return res.status(403).json({ success: false, error: 'У вас нет прав для сохранения расстановки звеньев' });
     }
 
-    const gameQuery = await client.query(`SELECT game_date, stage_type, division_id FROM games WHERE id = $1`, [eventId]);
+    const gameQuery = await client.query(`SELECT game_date, game_type, division_id FROM games WHERE id = $1`, [eventId]);
     if (gameQuery.rowCount === 0) return res.status(404).json({ success: false, error: 'Матч не найден' });
 
-    const { game_date, stage_type, division_id } = gameQuery.rows[0];
+    const { game_date, game_type, division_id } = gameQuery.rows[0];
     const diffMinutes = (new Date(game_date) - new Date()) / 1000 / 60;
 
     if (diffMinutes < DEADLINES.MIDDLE_EDIT_MINUTES) {
@@ -186,7 +189,8 @@ export const saveMatchLines = async (req, res) => {
         let defaultAssistant = player.is_assistant;
 
         if (defaultJersey === undefined || defaultJersey === null) {
-          if (stage_type === 'friendly') {
+          // Если матч не является официальным внутренним — берем дефолты из локального состава
+          if (game_type !== 'official') {
             const defRes = await client.query(`
               SELECT tr.jersey_number, tr.is_captain, tr.is_assistant FROM team_members tm
               JOIN team_rosters tr ON tr.member_id = tm.id
@@ -198,6 +202,7 @@ export const saveMatchLines = async (req, res) => {
               defaultAssistant = defRes.rows[0].is_assistant;
             }
           } else {
+            // Исключительно для официальной лиги вытягиваем параметры из турнирной заявки
             const defRes = await client.query(`
               SELECT tr.jersey_number, tr.is_captain, tr.is_assistant FROM tournament_teams tt
               JOIN tournament_rosters tr ON tr.tournament_team_id = tt.id
@@ -342,10 +347,10 @@ export const submitMatchRoster = async (req, res) => {
       return res.status(403).json({ success: false, error: 'У вас нет прав для отправки заявки или требуется продление подписки' });
     }
 
-    const gameQuery = await client.query(`SELECT game_date, stage_type, division_id FROM games WHERE id = $1`, [eventId]);
+    const gameQuery = await client.query(`SELECT game_date, game_type, division_id FROM games WHERE id = $1`, [eventId]);
     if (gameQuery.rowCount === 0) return res.status(404).json({ success: false, error: 'Матч не найден' });
 
-    const { game_date, stage_type, division_id } = gameQuery.rows[0];
+    const { game_date, game_type, division_id } = gameQuery.rows[0];
     const diffMinutes = (new Date(game_date) - new Date()) / 1000 / 60;
 
     if (diffMinutes < DEADLINES.ROSTER_SUBMIT_MINUTES) {
@@ -370,7 +375,8 @@ export const submitMatchRoster = async (req, res) => {
     let insertQuery = '';
     let insertParams = [eventId, teamId];
 
-    if (stage_type === 'friendly') {
+    // Формирование официального протокола игры на основе локального или турнирного ростера
+    if (game_type !== 'official') {
       insertQuery = `
         INSERT INTO game_rosters (game_id, team_id, player_id, is_in_lineup, line_number, position_in_line, jersey_number, is_captain, is_assistant)
         SELECT 

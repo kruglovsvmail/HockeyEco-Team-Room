@@ -1,41 +1,93 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { Icon } from '../../../ui/Icon';
 import { getImageUrl } from '../../../utils/helpers';
 import { ContainerContent } from '../../../ui/ContainerContent';
+import { HintPopover } from '../../../ui/HintPopover';
 import clsx from 'clsx';
+import dayjs from 'dayjs';
 
 // Импортируем наш новый унифицированный компонент производительности
 import { FadeIn } from '../../../ui/FadeIn';
 
-export const MatchInfo = ({ event }) => {
-  const isFriendly = event.stage_type === 'friendly';
+export const MatchInfo = ({ 
+  event, 
+  onConfirmFriendlyMatch, 
+  onCancelFriendlyMatch, 
+  userRole,
+  hasSubscription
+}) => {
   const isMyTeamHome = event.my_team_id === event.home_team_id;
 
-  // Динамическое определение флага включения цветов из localStorage (по дефолту true)
   const isColorsEnabled = localStorage.getItem('tr_use_team_colors') !== 'false';
   const hasTeamColor = isColorsEnabled && !!event.team_color;
   const activeBrandColor = hasTeamColor ? event.team_color : 'var(--color-brand)';
 
-  // --- ЛОГИКА БЛОКА "ТУРНИР" ---
+  const isPendingFriendly = event.game_type === 'friendly_pwa' && event.status === 'pending';
+  const isInitiator = isPendingFriendly ? Number(event.initiator_team_id) === Number(event.my_team_id) : false;
+
+  // ПРИОРИТЕТ ДАННЫХ ИЗ БАЗЫ
+  const currentUserRole = event.user_role || userRole || 'player';
+  const currentUserHasSub = event.has_subscription !== undefined ? event.has_subscription : (hasSubscription || false);
+
+  const allowedRoles = ['owner', 'team_manager', 'team_admin'];
+  const requiresSubscriptionRoles = ['team_manager', 'team_admin'];
+
+  const isRoleAllowed = allowedRoles.includes(currentUserRole);
+  const isSubscriptionMissing = isRoleAllowed && requiresSubscriptionRoles.includes(currentUserRole) && !currentUserHasSub;
+
+  // Локальное состояние загрузки для кнопок гейм-центра
+  const [isActionLoading, setIsActionLoading] = useState(false);
+  const [timeLeft, setTimeLeft] = useState('');
+
+  useEffect(() => {
+    if (!isPendingFriendly || !event.confirm_deadline) return;
+
+    const calculateTimeLeft = () => {
+      const now = dayjs();
+      const deadline = dayjs(event.confirm_deadline);
+      const diffSeconds = deadline.diff(now, 'second');
+
+      if (diffSeconds <= 0) {
+        setTimeLeft('Время истекло');
+        return;
+      }
+
+      const hours = Math.floor(diffSeconds / 3600);
+      const minutes = Math.floor((diffSeconds % 3600) / 60);
+      const seconds = diffSeconds % 60;
+
+      const pad = (val) => String(val).padStart(2, '0');
+      setTimeLeft(`${pad(hours)}:${pad(minutes)}:${pad(seconds)}`);
+    };
+
+    calculateTimeLeft();
+    const timerId = setInterval(calculateTimeLeft, 1000);
+
+    return () => clearInterval(timerId);
+  }, [event.confirm_deadline, isPendingFriendly]);
+
   let tournamentValue = 'Официальный турнир';
   let tournamentSubValue = event.division_name || '';
   let tournamentIcon = 'trophy';
   let tournamentLogo = event.league_logo_url || event.division_logo_url;
 
-  if (isFriendly) {
+  if (event.game_type === 'friendly_pwa' || event.game_type === 'friendly_ext') {
     tournamentValue = 'Товарищеский матч';
     tournamentSubValue = 'Вне рамок лиги';
     tournamentIcon = 'handshake';
     tournamentLogo = null;
+  } else if (event.game_type === 'tournament_ext') {
+    tournamentValue = event.league_name || 'Внешний турнир';
+    tournamentSubValue = event.division_name ? `Дивизион: ${event.division_name}` : 'Внешний дивизион';
+    tournamentIcon = 'trophy';
   } else if (event.league_name) {
     tournamentValue = event.league_name;
   }
 
-  // --- ЛОГИКА БЛОКА "СТАДИЯ" ---
   let stageValue = '—';
   let stageSubValue = '';
 
-  if (isFriendly) {
+  if (event.game_type === 'friendly_pwa' || event.game_type === 'friendly_ext') {
     stageValue = 'ТМ';
     stageSubValue = 'Контрольный';
   } else {
@@ -45,7 +97,6 @@ export const MatchInfo = ({ event }) => {
       : '';
   }
 
-  // --- ЛОГИКА ИГРОВОЙ ФОРМЫ ---
   const homeName = isMyTeamHome ? event.my_team_name : (event.opponent_name || 'Неизвестно');
   const awayName = isMyTeamHome ? (event.opponent_name || 'Неизвестно') : event.my_team_name;
 
@@ -63,14 +114,106 @@ export const MatchInfo = ({ event }) => {
     return 'Не выбрана';
   };
 
-  // Конфигурация динамических прозрачных альфа-слоев (без использования слэшей в tailwind)
-  const brandTintBg = hasTeamColor ? `${event.team_color}1a` : 'var(--color-brand-opacity)'; // 10% альфа
-  const brandTintBorder = hasTeamColor ? `${event.team_color}33` : 'color-mix(in srgb, var(--color-brand) 20%, transparent)'; // 20% альфа
+  const brandTintBg = hasTeamColor ? `${event.team_color}1a` : 'var(--color-brand-opacity)'; 
+  const brandTintBorder = hasTeamColor ? `${event.team_color}33` : 'color-mix(in srgb, var(--color-brand) 20%, transparent)';
 
   return (
     <FadeIn>
       <div className="flex flex-col gap-4">
         
+        {/* БЛОК СОГЛАСОВАНИЯ МАТЧА ДЛЯ FRIENDLY_PWA */}
+        {isPendingFriendly && (
+          <ContainerContent>
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 py-1 w-full">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-xl bg-surface-level2 border border-surface-border/40 flex items-center justify-center shrink-0">
+                  <Icon name="clock" className="w-5 h-5" style={{ color: activeBrandColor }} />
+                </div>
+                <div className="flex flex-col">
+                  <span className="text-[10px] font-black text-content-muted uppercase tracking-wider leading-none">
+                    {isInitiator ? 'Ожидание подтверждения соперником' : 'Требуется ваше подтверждение'}
+                  </span>
+                  <span className="text-sm font-mono font-black text-content-main mt-1.5 tracking-widest leading-none">
+                    Осталось: {timeLeft || '--:--:--'}
+                  </span>
+                </div>
+              </div>
+
+              {isRoleAllowed && (
+                <div className="flex items-center gap-2 self-end sm:self-auto shrink-0">
+                  {isInitiator ? (
+                    isSubscriptionMissing ? (
+                      <HintPopover status="no_subscription">
+                        <button
+                          type="button"
+                          className="px-4 py-2 bg-danger/10 border border-danger/30 text-danger text-[11px] font-black uppercase tracking-widest rounded-xl opacity-50 cursor-pointer"
+                        >
+                          Отменить вызов
+                        </button>
+                      </HintPopover>
+                    ) : (
+                      <button
+                        type="button"
+                        disabled={isActionLoading}
+                        onClick={async () => {
+                          setIsActionLoading(true);
+                          try {
+                            if (onCancelFriendlyMatch) await onCancelFriendlyMatch(event.event_id || event.id, event.my_team_id);
+                          } catch (err) {
+                            console.error(err);
+                          } finally {
+                            setIsActionLoading(false);
+                          }
+                        }}
+                        className="px-4 py-2 bg-danger/10 hover:bg-danger/15 border border-danger/30 text-danger text-[11px] font-black uppercase tracking-widest rounded-xl transition-all active:scale-95 cursor-pointer flex items-center justify-center min-w-[130px]"
+                      >
+                        {isActionLoading ? (
+                          <div className="w-3 h-3 border-2 border-danger border-t-transparent rounded-full animate-spin" />
+                        ) : (
+                          'Отменить вызов'
+                        )}
+                      </button>
+                    )
+                  ) : (
+                    isSubscriptionMissing ? (
+                      <HintPopover status="no_subscription">
+                        <button
+                          type="button"
+                          className="px-5 py-2 bg-success/10 border border-success/30 text-success text-[11px] font-black uppercase tracking-widest rounded-xl opacity-50 cursor-pointer"
+                        >
+                          Подтвердить матч
+                        </button>
+                      </HintPopover>
+                    ) : (
+                      <button
+                        type="button"
+                        disabled={isActionLoading}
+                        onClick={async () => {
+                          setIsActionLoading(true);
+                          try {
+                            if (onConfirmFriendlyMatch) await onConfirmFriendlyMatch(event.event_id || event.id, event.my_team_id);
+                          } catch (err) {
+                            console.error(err);
+                          } finally {
+                            setIsActionLoading(false);
+                          }
+                        }}
+                        className="px-5 py-2 bg-success/10 hover:bg-success/15 border border-success/30 text-success text-[11px] font-black uppercase tracking-widest rounded-xl transition-all active:scale-95 cursor-pointer flex items-center justify-center min-w-[150px]"
+                      >
+                        {isActionLoading ? (
+                          <div className="w-3 h-3 border-2 border-success border-t-transparent rounded-full animate-spin" />
+                        ) : (
+                          'Подтвердить матч'
+                        )}
+                      </button>
+                    )
+                  )}
+                </div>
+              )}
+            </div>
+          </ContainerContent>
+        )}
+
         {/* 1. МЕСТО ПРОВЕДЕНИЯ */}
         <ContainerContent icon="arena">
           <div className="flex items-center gap-3 py-0.5">
@@ -126,7 +269,7 @@ export const MatchInfo = ({ event }) => {
           </div>
         </ContainerContent>
 
-        {/* 3. ИГРОВАЯ ФОРМА КОМАНД (ГЕЙМ-ЦЕНТР С КОМАНДНОЙ ПОДСВЕТКОЙ) */}
+        {/* 3. ИГРОВАЯ ФОРМА КОМАНД */}
         <ContainerContent title="Игровая форма команд">
           <div className="grid grid-cols-2 gap-3 relative mt-0.5">
             

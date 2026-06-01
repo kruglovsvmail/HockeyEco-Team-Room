@@ -586,7 +586,7 @@ export const searchUserByPhone = async (req, res) => {
              (tm.id IS NOT NULL AND tm.left_at IS NULL) as is_already_in_team,
              (tm.id IS NOT NULL AND tm.left_at IS NOT NULL) as is_archived_in_team
       FROM users u
-      LEFT JOIN team_members tm ON tm.user_id = u.id AND tm.team_id = $1
+      LEFT JOIN team_members tm ON tm.team_id = t.id AND tm.team_id = $1
       WHERE right(regexp_replace(u.phone, '\\D', '', 'g'), 10) = $2
       LIMIT 1
     `;
@@ -675,6 +675,230 @@ export const addTeamMemberToRoster = async (req, res) => {
     res.json({ success: true, message: 'Игрок успешно добавлен в активный ростер' });
   } catch (error) {
     console.error('[Add Member To Roster Error]:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+};
+
+// =============================================================================
+// НОВЫЙ БЛОК: СИСТЕМА УПРАВЛЕНИЯ ВНЕШНИМИ ТУРНИРАМИ И ДИВИЗИОНАМИ КОМАНДЫ
+// =============================================================================
+
+// Получить список внешних турниров команды вместе со вложенными дивизионами
+export const getExternalTournaments = async (req, res) => {
+  const { teamId } = req.params;
+  try {
+    const query = `
+      SELECT t.id, t.team_id, t.name, t.short_name, t.logo_url, t.city, t.created_at,
+             COALESCE(
+               json_agg(
+                 json_build_object('id', d.id, 'name', d.name)
+               ) FILTER (WHERE d.id IS NOT NULL), '[]'
+             ) as divisions
+      FROM team_external_tournaments t
+      LEFT JOIN team_external_divisions d ON t.id = d.tournament_id
+      WHERE t.team_id = $1
+      GROUP BY t.id
+      ORDER BY t.name ASC
+    `;
+    const { rows } = await pool.query(query, [teamId]);
+    res.json({ success: true, tournaments: rows });
+  } catch (error) {
+    console.error('[Get External Tournaments Error]:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+};
+
+// Создать новый кастомный внешний турнир команды
+export const createExternalTournament = async (req, res) => {
+  const { teamId } = req.params;
+  const { name, short_name, city } = req.body;
+  const reqUserId = req.user?.id;
+
+  try {
+    const hasAccess = await checkPermissionInternal(reqUserId, teamId, 'TEAM_MANAGE_TAB_ALL');
+    if (!hasAccess) {
+      return res.status(403).json({ error: 'Недостаточно прав для создания внешнего турнира' });
+    }
+
+    let logo_url = null;
+    if (req.file) {
+      const ext = path.extname(req.file.originalname) || '.png';
+      const key = `uploads/teams_${teamId}_ext_tour_logo_${Date.now()}${ext}`;
+      await uploadBufferToS3(req.file, key);
+      logo_url = `/${key}`;
+    }
+
+    const query = `
+      INSERT INTO team_external_tournaments (team_id, name, short_name, logo_url, city)
+      VALUES ($1, $2, $3, $4, $5)
+      RETURNING *
+    `;
+    const { rows } = await pool.query(query, [teamId, name, short_name, logo_url, city]);
+    res.json({ success: true, tournament: rows[0] });
+  } catch (error) {
+    console.error('[Create External Tournament Error]:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+};
+
+// Полностью удалить внешний турнир (каскадом удалит и дивизионы)
+export const deleteExternalTournament = async (req, res) => {
+  const { teamId, id } = req.params;
+  const reqUserId = req.user?.id;
+
+  try {
+    const hasAccess = await checkPermissionInternal(reqUserId, teamId, 'TEAM_MANAGE_TAB_ALL');
+    if (!hasAccess) {
+      return res.status(403).json({ error: 'Недостаточно прав для удаления внешнего турнира' });
+    }
+
+    const query = `DELETE FROM team_external_tournaments WHERE id = $1 AND team_id = $2 RETURNING *`;
+    const { rowCount } = await pool.query(query, [id, teamId]);
+    
+    if (rowCount === 0) {
+      return res.status(404).json({ error: 'Внешний турнир не найден' });
+    }
+
+    res.json({ success: true, message: 'Внешний турнир успешно удален' });
+  } catch (error) {
+    console.error('[Delete External Tournament Error]:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+};
+
+// Создать кастомный дивизион внутри внешнего турнира
+export const createExternalDivision = async (req, res) => {
+  const { teamId, tournamentId } = req.params;
+  const { name } = req.body;
+  const reqUserId = req.user?.id;
+
+  try {
+    const hasAccess = await checkPermissionInternal(reqUserId, teamId, 'TEAM_MANAGE_TAB_ALL');
+    if (!hasAccess) {
+      return res.status(403).json({ error: 'Недостаточно прав для создания дивизиона' });
+    }
+
+    const tourCheck = await pool.query(
+      'SELECT 1 FROM team_external_tournaments WHERE id = $1 AND team_id = $2', 
+      [tournamentId, teamId]
+    );
+    if (tourCheck.rows.length === 0) {
+      return res.status(404).json({ error: 'Внешний турнир не найден для данной команды' });
+    }
+
+    const query = `
+      INSERT INTO team_external_divisions (tournament_id, name)
+      VALUES ($1, $2)
+      RETURNING *
+    `;
+    const { rows } = await pool.query(query, [tournamentId, name]);
+    res.json({ success: true, division: rows[0] });
+  } catch (error) {
+    console.error('[Create External Division Error]:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+};
+
+// Удалить кастомный дивизион внешнего турнира
+export const deleteExternalDivision = async (req, res) => {
+  const { teamId, id } = req.params;
+  const reqUserId = req.user?.id;
+
+  try {
+    const hasAccess = await checkPermissionInternal(reqUserId, teamId, 'TEAM_MANAGE_TAB_ALL');
+    if (!hasAccess) {
+      return res.status(403).json({ error: 'Недостаточно прав для удаления дивизиона' });
+    }
+
+    const divCheck = await pool.query(`
+      SELECT d.id FROM team_external_divisions d
+      JOIN team_external_tournaments t ON d.tournament_id = t.id
+      WHERE d.id = $1 AND t.team_id = $2
+    `, [id, teamId]);
+
+    if (divCheck.rows.length === 0) {
+      return res.status(404).json({ error: 'Дивизион не найден или не принадлежит вашей команде' });
+    }
+
+    await pool.query('DELETE FROM team_external_divisions WHERE id = $1', [id]);
+    res.json({ success: true, message: 'Дивизион успешно удален' });
+  } catch (error) {
+    console.error('[Delete External Division Error]:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+};
+
+// =============================================================================
+// НОВЫЙ БЛОК: СУЩНОСТЬ ЕДИНОГО СПРАВОЧНИКА ВНЕШНИХ СОПЕРНИКОВ КОМАНДЫ
+// =============================================================================
+
+// Получить список кастомных соперников команды
+export const getExternalOpponents = async (req, res) => {
+  const { teamId } = req.params;
+  try {
+    const query = `SELECT * FROM external_opponents WHERE team_id = $1 ORDER BY name ASC`;
+    const { rows } = await pool.query(query, [teamId]);
+    res.json({ success: true, opponents: rows });
+  } catch (error) {
+    console.error('[Get External Opponents Error]:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+};
+
+// Создать карточку внешнего соперника с загрузкой логотипа в S3
+export const createExternalOpponent = async (req, res) => {
+  const { teamId } = req.params;
+  const { name, short_name, city } = req.body;
+  const reqUserId = req.user?.id;
+
+  try {
+    const hasAccess = await checkPermissionInternal(reqUserId, teamId, 'TEAM_MANAGE_TAB_ALL');
+    if (!hasAccess) {
+      return res.status(403).json({ error: 'Недостаточно прав для добавления карточки соперника' });
+    }
+
+    let logo_url = null;
+    if (req.file) {
+      const ext = path.extname(req.file.originalname) || '.png';
+      const key = `uploads/teams_${teamId}_ext_opp_logo_${Date.now()}${ext}`;
+      await uploadBufferToS3(req.file, key);
+      logo_url = `/${key}`;
+    }
+
+    const query = `
+      INSERT INTO external_opponents (team_id, name, short_name, city, logo_url, status)
+      VALUES ($1, $2, $3, $4, $5, 'active')
+      RETURNING *
+    `;
+    const { rows } = await pool.query(query, [teamId, name, short_name, city, logo_url]);
+    res.json({ success: true, opponent: rows[0] });
+  } catch (error) {
+    console.error('[Create External Opponent Error]:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+};
+
+// Удалить карточку внешнего соперника из справочника команды
+export const deleteExternalOpponent = async (req, res) => {
+  const { teamId, id } = req.params;
+  const reqUserId = req.user?.id;
+
+  try {
+    const hasAccess = await checkPermissionInternal(reqUserId, teamId, 'TEAM_MANAGE_TAB_ALL');
+    if (!hasAccess) {
+      return res.status(403).json({ error: 'Недостаточно прав для удаления карточки соперника' });
+    }
+
+    const query = `DELETE FROM external_opponents WHERE id = $1 AND team_id = $2 RETURNING *`;
+    const { rowCount } = await pool.query(query, [id, teamId]);
+
+    if (rowCount === 0) {
+      return res.status(404).json({ error: 'Внешний соперник не найден' });
+    }
+
+    res.json({ success: true, message: 'Внешний соперник успешно удален из вашего справочника' });
+  } catch (error) {
+    console.error('[Delete External Opponent Error]:', error);
     res.status(500).json({ error: 'Internal server error' });
   }
 };

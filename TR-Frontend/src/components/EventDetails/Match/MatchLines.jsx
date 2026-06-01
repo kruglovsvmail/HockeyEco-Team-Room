@@ -667,6 +667,7 @@ export const MatchLines = ({ event, initialAttendees = [], initialDraftLines = [
         {`
           .grid-expand-transition { display: grid; grid-template-rows: 0fr; transition: grid-template-rows 0.3s cubic-bezier(0.25, 1, 0.5, 1), opacity 0.2s ease-out; opacity: 0; pointer-events: none; }
           .grid-expand-transition.expanded { grid-template-rows: 1fr; opacity: 1; pointer-events: auto; }
+          .grid-expand-transition.expanded { grid-template-rows: 1fr; opacity: 1; pointer-events: auto; }
           .grid-expand-inner { min-height: 0; overflow: hidden; }
           @keyframes slotEnter { 0% { transform: scale(0.2); opacity: 0; } 100% { transform: scale(1); opacity: 1; } }
           @keyframes slotExit { 0% { transform: scale(1); opacity: 1; } 100% { transform: scale(0.2); opacity: 0; } }
@@ -763,8 +764,8 @@ export const MatchLines = ({ event, initialAttendees = [], initialDraftLines = [
           </>
         ) : (
           <>
-            {/* Кнопка "В лигу" (Заявка состава на матч) */}
-            {hasAdminAccess && (
+            {/* Кнопка "В лигу" (Заявка состава на матч) — ОТОБРАЖАЕТСЯ ИСКЛЮЧИТЕЛЬНО ДЛЯ ОФИЦИАЛЬНЫХ МАТЧЕЙ ВНУТРИ ПЛАТФОРМЫ */}
+            {hasAdminAccess && event?.game_type === 'official' && (
               hasRosterSubmitAccess ? (
                 timeToMatch < DEADLINES.ROSTER_SUBMIT_MINUTES ? (
                   <HintPopover status="deadline_roster_submit">

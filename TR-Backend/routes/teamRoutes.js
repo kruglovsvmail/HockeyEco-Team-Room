@@ -11,7 +11,17 @@ import {
   getTeamMemberDetails,
   updateMemberDetails,
   updateMemberPhoto,
-  deleteMemberPhoto
+  deleteMemberPhoto,
+  
+  // Импортируем новые методы кастомного внешнего контекста лиг и соперников
+  getExternalTournaments,
+  createExternalTournament,
+  deleteExternalTournament,
+  createExternalDivision,
+  deleteExternalDivision,
+  getExternalOpponents,
+  createExternalOpponent,
+  deleteExternalOpponent
 } from '../controllers/TeamController.js';
 import { verifyToken, requireTeamPermission } from '../middleware/auth.js';
 import multer from 'multer';
@@ -50,7 +60,7 @@ router.put(
   updateMemberPhoto
 );
 
-// 删除 переопределенной фотографии участника из состава команды
+// Удаление переопределенной фотографии участника из состава команды
 router.delete(
   '/:teamId/members/:memberId/photo',
   verifyToken,
@@ -109,6 +119,80 @@ router.post(
   verifyToken,
   requireTeamPermission('TEAM_MANAGE_TAB_ROSTER'),
   addTeamMemberToRoster
+);
+
+// =============================================================================
+// РОУТЫ СИСТЕМЫ КАСТОМНЫХ ВНЕШНИХ ТУРНИРОВ И ДИВИЗИОНОВ
+// =============================================================================
+
+// Получить все турниры со вложенными дивизионами для конкретной команды
+router.get(
+  '/:teamId/external-tournaments',
+  verifyToken,
+  requireTeamPermission('INTERNAL_VIEW'),
+  getExternalTournaments
+);
+
+// Создать новый внешний турнир (с поддержкой загрузки логотипа)
+router.post(
+  '/:teamId/external-tournaments',
+  verifyToken,
+  requireTeamPermission('TEAM_MANAGE_TAB_ALL'),
+  upload.single('logo'),
+  createExternalTournament
+);
+
+// Полностью удалить кастомный турнир из базы
+router.delete(
+  '/:teamId/external-tournaments/:id',
+  verifyToken,
+  requireTeamPermission('TEAM_MANAGE_TAB_ALL'),
+  deleteExternalTournament
+);
+
+// Создать дивизион внутри определенного внешнего турнира
+router.post(
+  '/:teamId/external-tournaments/:tournamentId/divisions',
+  verifyToken,
+  requireTeamPermission('TEAM_MANAGE_TAB_ALL'),
+  createExternalDivision
+);
+
+// Удалить дивизион внешнего турнира
+router.delete(
+  '/:teamId/external-tournaments/divisions/:id',
+  verifyToken,
+  requireTeamPermission('TEAM_MANAGE_TAB_ALL'),
+  deleteExternalDivision
+);
+
+// =============================================================================
+// РОУТЫ ЕДИНОГО ЛОКАЛЬНОГО СПРАВОЧНИКА ВНЕШНИХ СОПЕРНИКОВ КОМАНДЫ
+// =============================================================================
+
+// Получить список всех кастомных соперников команды
+router.get(
+  '/:teamId/external-opponents',
+  verifyToken,
+  requireTeamPermission('INTERNAL_VIEW'),
+  getExternalOpponents
+);
+
+// Создать карточку нового внешнего соперника (с загрузкой логотипа)
+router.post(
+  '/:teamId/external-opponents',
+  verifyToken,
+  requireTeamPermission('TEAM_MANAGE_TAB_ALL'),
+  upload.single('logo'),
+  createExternalOpponent
+);
+
+// Удалить карточку внешнего соперника из справочника
+router.delete(
+  '/:teamId/external-opponents/:id',
+  verifyToken,
+  requireTeamPermission('TEAM_MANAGE_TAB_ALL'),
+  deleteExternalOpponent
 );
 
 export default router;

@@ -114,12 +114,10 @@ export function SchedulePage() {
     return events
       .filter(event => {
         if (event.my_team_id) {
-          // Если у события есть ID команды, и этот ID явно выключен в фильтрах — скрываем его
           if (activeFilters.teams[event.my_team_id] === false) {
             return false;
           }
         } else {
-          // Клубное событие — проверяем общую клубную галочку
           if (!activeFilters.showClub) {
             return false;
           }
@@ -215,6 +213,52 @@ export function SchedulePage() {
       );
       setEvents(rolledBackEvents);
       localStorage.setItem(cacheKey, JSON.stringify(rolledBackEvents));
+    }
+  };
+
+  // МЕТОД ПОДТВЕРЖДЕНИЯ МАТЧА ВЫЗЫВАЕМОЙ СТОРОНОЙ
+  const handleConfirmFriendlyMatch = async (eventId, teamId) => {
+    try {
+      const response = await fetch(`${import.meta.env.VITE_API_URL}/api/events/${eventId}/confirm`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...getAuthHeaders()
+        },
+        body: JSON.stringify({ teamId })
+      });
+      const data = await response.json();
+      if (response.ok && data.success) {
+        fetchEvents();
+      } else {
+        alert(data.error || 'Ошибка при подтверждении матча');
+      }
+    } catch (err) {
+      console.error('Ошибка отправки подтверждения матча:', err);
+      alert('Не удалось связаться с сервером');
+    }
+  };
+
+  // МЕТОД ОТМЕНЫ ВЫЗОВА ИЛИ ОТКЛОНЕНИЯ МАТЧА
+  const handleCancelFriendlyMatch = async (eventId, teamId) => {
+    try {
+      const response = await fetch(`${import.meta.env.VITE_API_URL}/api/events/${eventId}/cancel`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...getAuthHeaders()
+        },
+        body: JSON.stringify({ teamId })
+      });
+      const data = await response.json();
+      if (response.ok && data.success) {
+        fetchEvents();
+      } else {
+        alert(data.error || 'Ошибка при отмене матча');
+      }
+    } catch (err) {
+      console.error('Ошибка отмены матча:', err);
+      alert('Не удалось связаться с сервером');
     }
   };
 
@@ -389,6 +433,8 @@ export function SchedulePage() {
                               key={`${event.event_type}-${event.event_id}-${event.my_team_id || 'club'}`} 
                               event={event} 
                               onToggleAttendance={handleToggleAttendance}
+                              onConfirmFriendlyMatch={handleConfirmFriendlyMatch}
+                              onCancelFriendlyMatch={handleCancelFriendlyMatch}
                               onClick={() => openFullPage(panelType, event, panelTitle)}
                             />
                           );
