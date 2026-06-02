@@ -90,7 +90,7 @@ export const TeamRosterPlayers = ({
         return (
           <ContainerContent key={group.id} title={group.label} count={players.length} action={addButton}>
             {players.length > 0 ? (
-              <div className="grid grid-cols-[repeat(auto-fill,minmax(94px,1fr))] gap-y-5 gap-x-2 justify-items-center">
+              <div className="grid grid-cols-[repeat(auto-fill,minmax(94px,1fr))] gap-y-5 gap-x-3 justify-items-center mt-2">
                 {players.map((p, index) => {
                   const isRemoving = p.member_id === animatingOutId;
                   const jiggleClass = isEditMode && isManager && !isRemoving 

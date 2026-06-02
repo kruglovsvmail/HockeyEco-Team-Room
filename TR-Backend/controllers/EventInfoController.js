@@ -8,8 +8,6 @@ export const getEvents = async (req, res) => {
     // =========================================================================
     // АВТОМАТИЧЕСКАЯ СМЕНА СТАТУСА НА ЛЕТУ (БЕЗ ВНЕШНИХ ПЛАНИРОВЩИКОВ И CRON)
     // =========================================================================
-    // Если дедлайн подтверждения прошел, статус матча прямо сейчас меняется на 'cancelled',
-    // и благодаря условию фильтрации ниже он автоматически не попадет в календарь.
     await pool.query(`
       UPDATE "public"."games"
       SET "status" = 'cancelled',
@@ -88,7 +86,7 @@ export const getEvents = async (req, res) => {
           (g.is_technical::text IN ('true', 't', '1', 'yes', 'y'))::boolean AS is_technical,
           g.end_type::varchar AS end_type,
           
-          COALESCE(d.name, ext_div.name)::varchar AS division_name,
+          d.name::varchar AS division_name,
           COALESCE(l.name, ext_tour.name)::varchar AS league_name,
           COALESCE(l.logo_url, ext_tour.logo_url)::varchar AS league_logo_url,
           COALESCE(d.logo_url, ext_tour.logo_url)::varchar AS division_logo_url,
@@ -118,12 +116,10 @@ export const getEvents = async (req, res) => {
           (CASE 
             WHEN g.game_type = 'official' THEN
               CASE 
-                -- 1. Проверка на исключение из базового состава команды (team_members.left_at)
                 WHEN NOT EXISTS (
                   SELECT 1 FROM team_members WHERE user_id = $1 AND team_id = ut.team_id AND left_at IS NULL
                 ) THEN 'not_in_team'
                 
-                -- 2. Проверка активных дисквалификаций по турнирному ростеру
                 WHEN EXISTS (
                   SELECT 1 FROM disqualifications dq 
                   JOIN tournament_rosters tr_dq ON dq.tournament_roster_id = tr_dq.id
@@ -175,7 +171,6 @@ export const getEvents = async (req, res) => {
         LEFT JOIN tournament_teams tt_my ON tt_my.division_id = g.division_id AND tt_my.team_id = ut.team_id
         LEFT JOIN tournament_teams tt_opp ON tt_opp.division_id = g.division_id AND tt_opp.team_id = CASE WHEN g.home_team_id = ut.team_id THEN g.away_team_id ELSE g.home_team_id END
         LEFT JOIN team_external_tournaments ext_tour ON g.external_tournament_id = ext_tour.id
-        LEFT JOIN team_external_divisions ext_div ON g.external_division_id = ext_div.id
         WHERE g.status != 'cancelled'
       ),
 
@@ -191,7 +186,9 @@ export const getEvents = async (req, res) => {
           NULL::timestamptz AS confirm_deadline,
           tt.training_date::timestamptz AS event_date,
           (CASE WHEN tt.training_date < NOW() THEN 'finished' ELSE 'scheduled' END)::varchar AS status,
-          a.name::varchar AS arena_name,
+          
+          -- ИСПРАВЛЕНО: Если арена системная — берем имя из справочника арен, если ручной ввод — из текстового поля тренировки
+          COALESCE(a.name, tt.location)::varchar AS arena_name,
           a.timezone::varchar AS arena_timezone,
           
           ut.team_id::int AS my_team_id,
@@ -269,7 +266,9 @@ export const getEvents = async (req, res) => {
           NULL::timestamptz AS confirm_deadline,
           tm.meeting_date::timestamptz AS event_date,
           (CASE WHEN tm.meeting_date < NOW() THEN 'finished' ELSE 'scheduled' END)::varchar AS status,
-          a.name::varchar AS arena_name,
+          
+          -- ИСПРАВЛЕНО: Имя арены или кастомный адрес собрания из таблицы team_meeting
+          COALESCE(a.name, tm.location)::varchar AS arena_name,
           a.timezone::varchar AS arena_timezone,
           
           ut.team_id::int AS my_team_id,
@@ -336,7 +335,9 @@ export const getEvents = async (req, res) => {
           NULL::timestamptz AS confirm_deadline,
           ct.training_date::timestamptz AS event_date,
           (CASE WHEN ct.training_date < NOW() THEN 'finished' ELSE 'scheduled' END)::varchar AS status,
-          a.name::varchar AS arena_name,
+          
+          -- ИСПРАВЛЕНО: Имя арены или кастомный адрес клубной тренировки из club_training
+          COALESCE(a.name, ct.location)::varchar AS arena_name,
           a.timezone::varchar AS arena_timezone,
           
           NULL::int AS my_team_id,
@@ -400,7 +401,9 @@ export const getEvents = async (req, res) => {
           NULL::timestamptz AS confirm_deadline,
           cm.meeting_date::timestamptz AS event_date,
           (CASE WHEN cm.meeting_date < NOW() THEN 'finished' ELSE 'scheduled' END)::varchar AS status,
-          a.name::varchar AS arena_name,
+          
+          -- ИСПРАВЛЕНО: Имя арены или кастомный адрес клубного собрания из club_meeting
+          COALESCE(a.name, cm.location)::varchar AS arena_name,
           a.timezone::varchar AS arena_timezone,
           
           NULL::int AS my_team_id,

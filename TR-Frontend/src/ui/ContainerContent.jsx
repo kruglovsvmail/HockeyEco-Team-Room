@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { Icon } from './Icon';
 import { getImageUrl } from '../utils/helpers';
 import clsx from 'clsx';
@@ -11,19 +11,32 @@ export function ContainerContent({
   children,
   className,
   action,
+  collapsible = false,
+  defaultExpanded = true,
+  activeBrandColor, // ИСПРАВЛЕНО: Извлекаем проп из ...props, чтобы он не улетал в нативный HTML-тег <div>
   ...props
 }) {
+  const [isExpanded, setIsExpanded] = useState(defaultExpanded);
+
+  // Синхронизируем внутренний стейт при изменении дефолтных пропсов извне
+  useEffect(() => {
+    setIsExpanded(defaultExpanded);
+  }, [defaultExpanded]);
+
   const hasCount = count !== undefined && count !== null;
+
+  // Жесткая страховка: если компонент не collapsible, он гарантированно всегда развернут
+  const finalExpanded = collapsible ? isExpanded : true;
 
   return (
     <div
       className={clsx(
-        "bg-brand-glow rounded-2xl p-3 flex flex-col gap-4 relative z-0 shadow-md overflow-hidden mx-4",
+        "bg-brand-glow rounded-2xl p-3 flex flex-col relative z-0 shadow-md overflow-hidden mx-4 transition-all duration-300 ease-[cubic-bezier(0.32,0.72,0,1)]",
         className
       )}
       {...props}
     >
-      {/* Опциональная фоновая иконка (показывается, если нет логотипа) */}
+      {/* Опциональная фоновая иконка */}
       {icon && !logoUrl && (
         <Icon
           name={icon}
@@ -31,7 +44,7 @@ export function ContainerContent({
         />
       )}
 
-      {/* Опциональный фоновый логотип (например, лиги или дивизиона) */}
+      {/* Опциональный фоновый логотип */}
       {logoUrl && (
         <img
           src={getImageUrl(logoUrl)}
@@ -40,19 +53,53 @@ export function ContainerContent({
         />
       )}
 
-      {/* Шапка контейнера с заголовком, счетчиком и кнопкой действия */}
+      {/* Шапка контейнера с поддержкой клика только при collapsible={true} */}
       {title && (
-        <div className="flex items-center justify-between border-b border-surface-border pt-1 pl-4 pr-1 pb-3">
+        <div 
+          className={clsx(
+            "flex items-center justify-between border-b border-surface-border pt-1 pl-4 pr-1 pb-3 select-none",
+            collapsible && "cursor-pointer active:opacity-80 transition-opacity"
+          )}
+          onClick={() => collapsible && setIsExpanded(!isExpanded)}
+        >
           <h4 className="text-[12px] font-bold text-content-muted uppercase tracking-wider">
             {title}
             {hasCount && ` (${count})`}
           </h4>
-          {action && <div className="flex items-center shrink-0">{action}</div>}
+          
+          <div className="flex items-center gap-2 shrink-0">
+            {action && <div onClick={(e) => e.stopPropagation()}>{action}</div>}
+            
+            {/* Шеврон из Icon.jsx с плавным вращением и мягкой клубной подсветкой */}
+            {collapsible && (
+              <Icon
+                name="chevron_right"
+                style={finalExpanded && activeBrandColor ? { color: activeBrandColor } : {}}
+                className={clsx(
+                  "w-4 h-4 text-content-muted transition-transform duration-300 ease-[cubic-bezier(0.32,0.72,0,1)]",
+                  finalExpanded ? "rotate-90" : "rotate-0"
+                )}
+              />
+            )}
+          </div>
         </div>
       )}
 
-      {/* Рендеринг основного контента напрямую для сохранения flex/grid структуры */}
-      {children}
+      {/* Анимированный грид-контейнер высоты */}
+      <div
+        className={clsx(
+          "grid transition-[grid-template-rows] duration-300 ease-[cubic-bezier(0.32,0.72,0,1)]",
+          title && "mt-3",
+          finalExpanded ? "grid-rows-[1fr]" : "grid-rows-[0fr]"
+        )}
+      >
+        <div className="overflow-hidden">
+          <div className="flex flex-col gap-4 pb-1">
+            {children}
+          </div>
+        </div>
+      </div>
+
     </div>
   );
 }

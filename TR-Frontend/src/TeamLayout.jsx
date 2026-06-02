@@ -19,6 +19,12 @@ import { EventDetailsMatch } from './components/EventDetails/Match/EventDetailsM
 import { EventDetailsTraining } from './components/EventDetails/EventDetailsTraining';
 import { EventDetailsMeeting } from './components/EventDetails/EventDetailsMeeting';
 
+// ПОДКЛЮЧЕНИЕ НАПРАВЛЕННЫХ НА МЕНЕДЖМЕНТ ТУРНИРОВ СЕЛЕКТОРОВ ИЗ ПРАВОЙ ПАНЕЛИ
+import { ArenaSelector } from './components/Manager/ArenaSelector';
+import { OpponentSelectorFriendly } from './components/Manager/OpponentSelectorFriendly';
+import { ExternalTournamentSelector } from './components/Manager/ExternalTournamentSelector';
+import { ExternalOpponentSelector } from './components/Manager/ExternalOpponentSelector';
+
 dayjs.extend(utc);
 dayjs.extend(timezone);
 dayjs.locale('ru');
@@ -228,7 +234,17 @@ function TeamLayoutContent() {
     localStorage.setItem('teampwa_selected_team', team.id.toString());
   };
 
-  const openRightPanel = (type, data, title = 'Детали') => setRightPanel({ isOpen: true, type, data, title });
+  const openRightPanel = (type, data, title = 'Детали') => {
+    const extendedData = {
+      ...data,
+      onSelect: (selectedItem) => {
+        if (data && data.onSelect) data.onSelect(selectedItem);
+        closeRightPanel();
+      }
+    };
+    setRightPanel({ isOpen: true, type, data: extendedData, title });
+  };
+  
   const closeRightPanel = () => setRightPanel({ isOpen: false, type: null, data: null, title: '' });
 
   const openFullPage = (type, data, title = 'Детали') => {
@@ -269,8 +285,6 @@ function TeamLayoutContent() {
       className="flex w-full h-full overflow-hidden relative"
       style={{ '--sidebar-w': `${sidebarWidth}%`, '--right-w': `${rightPanelWidth}%` }}
     >
-      
-      {/* 1. ЛЕВОЕ МЕНЮ (Сайдбар) — Исправлено перекрытие инлайнового transform */}
       <aside 
         className={clsx(
           "fixed inset-y-0 left-0 z-40 h-full bg-surface-level1 transition-transform duration-300 ease-[cubic-bezier(0.32,0.72,0,1)] flex-shrink-0",
@@ -282,7 +296,6 @@ function TeamLayoutContent() {
         <Sidebar user={user} teams={teams} selectedTeam={selectedTeam} onTeamChange={handleTeamChange} onClose={() => setIsSidebarOpen(false)} />
       </aside>
 
-      {/* РЕСАЙЗЕР ЛЕВОЙ ПАНЕЛИ */}
       <div 
         className={clsx(
           "hidden md:block w-1.5 cursor-col-resize z-50 flex-shrink-0 transition-colors",
@@ -291,7 +304,6 @@ function TeamLayoutContent() {
         onMouseDown={() => setIsDraggingSidebar(true)}
       />
 
-      {/* 2. ЦЕНТРАЛЬНЫЙ КОНТЕЙНЕР КОНТЕНТА */}
       <div className={clsx(
         "flex flex-col flex-1 w-full h-full min-w-0 transition-transform duration-300 ease-[cubic-bezier(0.32,0.72,0,1)] z-30 relative",
         isSidebarOpen ? "translate-x-[80%] shadow-2xl md:translate-x-0 md:shadow-none" : "",
@@ -315,15 +327,12 @@ function TeamLayoutContent() {
 
         <main 
           className="flex-1 overflow-y-auto overflow-x-hidden relative overscroll-none transition-all duration-300 ease-[cubic-bezier(0.32,0.72,0,1)]"
-          style={{
-            paddingTop: '60px'
-          }}
+          style={{ paddingTop: '60px' }}
         >
           <Outlet context={{ user, teams, selectedTeam, handleTeamChange, openRightPanel, openFullPage }} />
         </main>
       </div>
 
-      {/* РЕСАЙЗЕР ПРАВОЙ ПАНЕЛИ */}
       <div 
         className={clsx(
           "hidden md:block w-1.5 cursor-col-resize z-50 flex-shrink-0 transition-colors",
@@ -332,7 +341,6 @@ function TeamLayoutContent() {
         onMouseDown={() => setIsDraggingRight(true)}
       />
 
-      {/* 3. ПРАВАЯ ПАНЕЛЬ ДЕТАЛЕЙ */}
       <div className={clsx(
         "fixed top-0 right-0 w-[80%] h-full z-[40] bg-surface-level2 shadow-[-15px_0_30px_rgba(0,0,0,0.1)] flex flex-col overflow-hidden transition-all duration-300 ease-[cubic-bezier(0.32,0.72,0,1)] flex-shrink-0",
         "md:static md:w-[var(--right-w)] md:translate-x-0 md:shadow-3xl",
@@ -356,6 +364,19 @@ function TeamLayoutContent() {
                   <FadeIn className="h-full w-full">
                     {rightPanel.type === 'userDetails' && (
                       <UserDetails data={rightPanel.data} />
+                    )}
+                    {rightPanel.type === 'arenaSelector' && (
+                      <ArenaSelector data={rightPanel.data} />
+                    )}
+                    {rightPanel.type === 'opponentSelectorFriendly' && (
+                      <OpponentSelectorFriendly data={rightPanel.data} />
+                    )}
+                    {/* РЕГИСТРАЦИЯ СЕЛЕКТОРОВ СТОРОННЕГО ТУРНИРА ПО СХЕМЕ ВНЕШНИХ СВЯЗЕЙ */}
+                    {rightPanel.type === 'externalTournamentSelector' && (
+                      <ExternalTournamentSelector data={rightPanel.data} />
+                    )}
+                    {rightPanel.type === 'externalOpponentSelector' && (
+                      <ExternalOpponentSelector data={rightPanel.data} />
                     )}
                   </FadeIn>
                 )}

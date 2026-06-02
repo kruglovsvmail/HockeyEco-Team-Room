@@ -74,7 +74,7 @@ export const TeamAllMembers = ({
   }
 
   const renderGrid = (itemsList, isArchiveGroup = false) => (
-    <div className="grid grid-cols-[repeat(auto-fill,minmax(94px,1fr))] gap-y-5 gap-x-2 justify-items-center">
+    <div className="grid grid-cols-[repeat(auto-fill,minmax(94px,1fr))] gap-y-5 gap-x-3 justify-items-center mt-2">
       {itemsList.map((m, index) => {
         const isRemoving = m.member_id === animatingOutId;
         // Режим покачивания jiggle активен только для действующего состава руководителей
