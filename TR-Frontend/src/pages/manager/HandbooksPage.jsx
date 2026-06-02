@@ -274,10 +274,10 @@ export function HandbooksPage() {
       <div className="absolute top-0 left-0 right-0 z-40 bg-transparent pointer-events-none flex flex-col">
         <div className="absolute top-0 left-0 right-0 h-32 bg-gradient-to-b from-surface-border from-60% to-transparent z-10" />
 
-        <div className="px-4 pt-4 pb-1 pointer-events-auto relative z-20">
+        <div className="px-4 pb-1 pointer-events-auto relative z-20">
           {selectedTeam && (
             <div className="bg-surface-base pt-4 px-5 pb-4 rounded-3xl flex items-center gap-4 shadow-lg border-b border-surface-level2 text-left">
-              <div className="w-16 h-16 rounded-2xl flex items-center justify-center overflow-hidden drop-shadow-sm shrink-0 ml-4">
+              <div className="w-14 h-14 rounded-2xl flex items-center justify-center overflow-hidden drop-shadow-sm shrink-0 ml-4">
                 <img src={getImageUrl(cachedDetails?.logo_url || selectedTeam?.logo_url)} alt="" className="w-full h-full object-contain p-1" />
               </div>
               <div className="flex flex-col min-w-0">
@@ -304,8 +304,8 @@ export function HandbooksPage() {
             <div className="transition-colors duration-300">
               <SegmentedControl
                 options={[
-                  { value: 'opponents', label: 'Внешние соперники' },
-                  { value: 'tournaments', label: 'Внешние турниры' }
+                  { value: 'opponents', label: 'Соперники' },
+                  { value: 'tournaments', label: 'Турниры/лиги' }
                 ]}
                 value={activeTab}
                 onChange={(val) => { setActiveTab(val); setSearchQuery(''); }}
@@ -315,8 +315,7 @@ export function HandbooksPage() {
             {/* Строка интеллектуального поиска */}
             <div className="transition-colors duration-300">
               <TextInputLP 
-                label={activeTab === 'opponents' ? 'Поиск команд' : 'Поиск турниров'} 
-                placeholder="Введите ключевые слова для фильтрации..." 
+                placeholder="Начните ввод для фильтрации..." 
                 value={searchQuery} 
                 onChange={setSearchQuery} 
                 activeColor={activeBrandColor}
@@ -479,10 +478,10 @@ export function HandbooksPage() {
             {editingOpponent ? 'Редактировать команду' : 'Новый внешний соперник'}
           </h3>
           
-          <TextInputLP label="Название хоккейного клуба" placeholder="Например: ХК Легион" value={oppName} onChange={setOppName} activeColor={activeBrandColor} />
+          <TextInputLP placeholder="Полное название команды" value={oppName} onChange={setOppName} activeColor={activeBrandColor} />
           <div className="grid grid-cols-2 gap-3">
-            <TextInputLP label="Аббревиатура (3 буквы)" placeholder="LEG" value={oppShort} onChange={setOppShort} activeColor={activeBrandColor} />
-            <TextInputLP label="Город привязки" placeholder="Екатеринбург" value={oppCity} onChange={setOppCity} activeColor={activeBrandColor} />
+            <TextInputLP placeholder="Город" value={oppCity} onChange={setOppCity} activeColor={activeBrandColor} />
+            <TextInputLP placeholder="Аббревиатура" value={oppShort} onChange={setOppShort} activeColor={activeBrandColor} />
           </div>
 
           <div className="mt-4">

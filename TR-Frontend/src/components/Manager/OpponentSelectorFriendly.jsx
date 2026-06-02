@@ -110,8 +110,8 @@ export function OpponentSelectorFriendly({ data }) {
       <div className="shrink-0">
         <SegmentedControl 
           options={[
-            { value: 'pwa', label: 'Бросить вызов' }, 
-            { value: 'external', label: 'Из справочника' }
+            { value: 'pwa', label: 'Вызов' }, 
+            { value: 'external', label: 'Из справоч.' }
           ]} 
           value={opponentTab} 
           onChange={setOpponentTab} 
@@ -120,8 +120,7 @@ export function OpponentSelectorFriendly({ data }) {
 
       <div className="shrink-0 text-left">
         <TextInputLP 
-          label="Поиск соперника по имени" 
-          placeholder="Начните вводить название..." 
+          placeholder="Команда соперника..." 
           value={opponentSearch} 
           onChange={setOpponentSearch} 
           activeColor={currentTeamColor}
@@ -142,7 +141,7 @@ export function OpponentSelectorFriendly({ data }) {
               >
                 <div className="flex flex-col">
                   <span className="text-sm font-bold text-content-main">{team.name}</span>
-                  <span className="text-[11px] text-content-muted mt-0.5">Лига PWA • {team.city}</span>
+                  <span className="text-[11px] text-content-muted mt-0.5">{team.city}</span>
                 </div>
                 <Icon name="chevron_right" className="w-4 h-4 text-content-subtle shrink-0" />
               </button>
@@ -166,7 +165,7 @@ export function OpponentSelectorFriendly({ data }) {
                 >
                   <div className="flex flex-col">
                     <span className="text-sm font-bold text-content-main">{opp.name}</span>
-                    <span className="text-[11px] text-content-muted mt-0.5">Внешний клуб • {opp.city} ({opp.short_name})</span>
+                    <span className="text-[11px] text-content-muted mt-0.5">{opp.city}</span>
                   </div>
                   <Icon name="chevron_right" className="w-4 h-4 text-content-subtle shrink-0" />
                 </button>
@@ -192,12 +191,12 @@ export function OpponentSelectorFriendly({ data }) {
 
       <BottomSheet isOpen={isNewOpponentSheetOpen} onClose={() => setIsNewOpponentSheetOpen(false)}>
         <form onSubmit={handleCreateNewOpponentSubmit} className="flex flex-col gap-4 text-left pb-6">
-          <h3 className="text-base font-black uppercase tracking-wider text-content-main mb-1">Новый соперник в справочник</h3>
+          <h3 className="text-base font-black uppercase tracking-wider text-content-main mb-1">Новый соперник в справочник команды</h3>
           
-          <TextInputLP label="Полное название клуба" placeholder="Например: ХК Метеор" value={newOpponentName} onChange={setNewOpponentName} activeColor={currentTeamColor} />
-          <div className="grid grid-cols-2 gap-3">
-            <TextInputLP label="Аббревиатура (3 буквы)" placeholder="MET" value={newOpponentShort} onChange={setNewOpponentShort} activeColor={currentTeamColor} />
-            <TextInputLP label="Город базирования" placeholder="Тюмень" value={newOpponentCity} onChange={setNewOpponentCity} activeColor={currentTeamColor} />
+          <TextInputLP placeholder="Полное название команды" value={newOpponentName} onChange={setNewOpponentName} activeColor={currentTeamColor} />
+          <div className="grid grid-cols-2 gap-10">
+            <TextInputLP placeholder="Город" value={newOpponentCity} onChange={setNewOpponentCity} activeColor={currentTeamColor} />
+            <TextInputLP placeholder="Аббревиатура" value={newOpponentShort} onChange={setNewOpponentShort} activeColor={currentTeamColor} />
           </div>
 
           <div className="mt-4">

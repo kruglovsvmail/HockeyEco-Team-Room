@@ -251,10 +251,10 @@ export function CreateEventPage() {
       <div className="absolute top-0 left-0 right-0 z-40 bg-transparent pointer-events-none flex flex-col">
         <div className="absolute top-0 left-0 right-0 h-32 bg-gradient-to-b from-surface-border from-60% to-transparent z-10" />
 
-        <div className="px-4 pt-4 pb-1 pointer-events-auto relative z-20">
+        <div className="px-4 pb-1 pointer-events-auto relative z-20">
           {selectedTeam && (
             <div className="bg-surface-base pt-4 px-5 pb-4 rounded-3xl flex items-center gap-4 shadow-lg border-b border-surface-level2 text-left">
-              <div className="w-16 h-16 rounded-2xl flex items-center justify-center overflow-hidden drop-shadow-sm shrink-0 ml-4">
+              <div className="w-14 h-14 rounded-2xl flex items-center justify-center overflow-hidden drop-shadow-sm shrink-0 ml-4">
                 <img src={getImageUrl(cachedDetails?.logo_url || selectedTeam?.logo_url)} alt="" className="w-full h-full object-contain p-1" />
               </div>
               <div className="flex flex-col min-w-0">
@@ -274,7 +274,7 @@ export function CreateEventPage() {
       <div className="w-full h-full relative overflow-hidden">
         <form 
           onSubmit={handleSubmitForm} 
-          className="w-full h-full overflow-y-auto scrollbar-hide pt-[124px] pb-16 flex flex-col gap-4"
+          className="w-full h-full overflow-y-auto scrollbar-hide pt-[116px] pb-16 flex flex-col gap-4"
         >
           
           {/* СЕЛЕКТОР ТИПА СОБЫТИЯ */}
@@ -294,7 +294,7 @@ export function CreateEventPage() {
           {/* КАРТОЧКА: ОСНОВНАЯ ИНФОРМАЦИЯ */}
           <FadeIn key={`base-info-${eventType}-${matchType}`} duration={250} delay={100}>
             <ContainerContent title="Основная информация" icon="calendar" collapsible={true} defaultExpanded={false} activeBrandColor={hasTeamColor ? activeBrandColor : null}>
-              <div className="flex flex-col gap-4 text-left py-1">
+              <div className="flex flex-col gap-4 text-left py-1 px-3">
                 
                 {/* Ряд: Дата и Время */}
                 <div className="grid grid-cols-2 gap-3">
@@ -304,7 +304,7 @@ export function CreateEventPage() {
 
                 {/* Выбор места */}
                 <div className="flex flex-col gap-1.5">
-                  <span className="text-xs font-bold text-content-muted uppercase tracking-wider pl-1">Место проведения</span>
+                  <span className="text-[10px] font-bold text-content-muted uppercase tracking-wider pl-1">Место проведения</span>
                   <button
                     type="button"
                     onClick={handleSelectArenaClick}
@@ -341,12 +341,12 @@ export function CreateEventPage() {
               {/* КАРТОЧКА: ПАРАМЕТРЫ СОПЕРНИКА */}
               <FadeIn key={`opponent-panel-${matchType}`} duration={250} delay={150}>
                 <ContainerContent title="Параметры соперника" icon="users" collapsible={true} defaultExpanded={false} activeBrandColor={hasTeamColor ? activeBrandColor : null}>
-                  <div className="flex flex-col gap-4 text-left py-1">
+                  <div className="flex flex-col gap-4 text-left py-1 px-3">
                     
                     {/* СЦЕНАРИЙ А: Товарищеский матч */}
                     {matchType === 'friendly' && (
                       <div className="flex flex-col gap-1.5">
-                        <span className="text-xs font-bold text-content-muted uppercase tracking-wider pl-1">Команда соперника</span>
+                        <span className="text-[10px] font-bold text-content-muted uppercase tracking-wider pl-1">Команда соперника</span>
                         <button
                           type="button"
                           onClick={handleSelectOpponentClick}
@@ -431,11 +431,11 @@ export function CreateEventPage() {
 
                     {/* Комплект игровой формы */}
                     <div className="flex flex-col gap-1.5 border-t border-surface-border/50 pt-3 mt-1">
-                      <span className="text-xs font-bold text-content-muted uppercase tracking-wider pl-1">Комплект формы нашей команды</span>
+                      <span className="text-[10px] font-bold text-content-muted uppercase tracking-wider pl-1">Комплект формы нашей команды</span>
                       <SegmentedControl
                         options={[
-                          { value: 'dark', label: 'Темная комплектация' },
-                          { value: 'light', label: 'Светлая комплектация' }
+                          { value: 'dark', label: 'Темная' },
+                          { value: 'light', label: 'Светлая' }
                         ]}
                         value={myJerseyType}
                         onChange={setMyJerseyType}
@@ -450,7 +450,7 @@ export function CreateEventPage() {
               {matchType === 'friendly' && selectedOpponent?.isPwa && (
                 <FadeIn key="deadline-panel" duration={250} delay={200}>
                   <ContainerContent title="Дедлайн подтверждения вызова" icon="clock" collapsible={true} defaultExpanded={false} activeBrandColor={hasTeamColor ? activeBrandColor : null}>
-                    <div className="grid grid-cols-2 gap-3 text-left py-1">
+                    <div className="grid grid-cols-2 gap-3 text-left py-1 px-3">
                       <DateMaskInputLP label="Дата дедлайна" placeholder="дд.мм.гггг" value={deadlineDate} onChange={setDeadlineDate} activeColor={hasTeamColor ? activeBrandColor : null} />
                       <TextInputLP label="Время дедлайна" placeholder="19:30" value={deadlineTime} onChange={(val) => setDeadlineTime(val.replace(/[^0-9:]/g, ''))} activeColor={hasTeamColor ? activeBrandColor : null} />
                     </div>
@@ -462,9 +462,8 @@ export function CreateEventPage() {
               {matchType === 'tournament_ext' && (
                 <FadeIn key="stage-panel" duration={250} delay={250}>
                   <ContainerContent title="Этап и турнирная стадия" icon="trophy" collapsible={true} defaultExpanded={false} activeBrandColor={hasTeamColor ? activeBrandColor : null}>
-                    <div className="pb-1 flex flex-col gap-4 text-left">
+                    <div className="py-1 px-3 flex flex-col gap-4 text-left">
                       <div className="flex flex-col gap-1.5">
-                        <span className="text-xs font-bold text-content-muted uppercase tracking-wider pl-1">Этап внешнего турнира</span>
                         <SegmentedControl options={stageTypeOptions} value={stageType} onChange={setStageType} />
                       </div>
 
@@ -478,7 +477,6 @@ export function CreateEventPage() {
                       {stageType === 'playoff' && (
                         <div className="flex flex-col gap-3 animate-fade-in">
                           <div className="flex flex-col gap-1.5">
-                            <span className="text-xs font-bold text-content-muted uppercase tracking-wider pl-1">Стадия кубковой сетки</span>
                             <div className="grid grid-cols-3 gap-1.5 bg-surface-level2 p-1.5 border border-surface-border rounded-xl">
                               {playoffPresets.map(preset => (
                                 <button
@@ -512,7 +510,7 @@ export function CreateEventPage() {
               {/* КАРТОЧКА: МЕДИА И ТРАНСЛЯЦИИ */}
               <FadeIn key={`media-panel-${matchType}`} duration={250} delay={300}>
                 <ContainerContent title="Медиа и трансляция" icon="video" collapsible={true} defaultExpanded={false} activeBrandColor={hasTeamColor ? activeBrandColor : null}>
-                  <div className="flex flex-col gap-4 text-left py-1">
+                  <div className="flex flex-col gap-4 text-left py-1 px-3">
                     <TextInputLP label="Ссылка на YouTube трансляцию" placeholder="https://youtube.com/watch?v=..." value={videoYtUrl} onChange={setVideoYtUrl} activeColor={hasTeamColor ? activeBrandColor : null} />
                     <TextInputLP label="Ссылка на VK Видео" placeholder="https://vk.com/video-..." value={videoVkUrl} onChange={setVideoVkUrl} activeColor={hasTeamColor ? activeBrandColor : null} />
                   </div>
@@ -524,9 +522,9 @@ export function CreateEventPage() {
           {/* КАРТОЧКА: ТЕМА И НАЗВАНИЕ СОБЫТИЯ В САМОМ НИЗУ */}
           {(eventType === 'training' || eventType === 'meeting') && (
             <FadeIn key={`title-panel-${eventType}`} duration={250} delay={200}>
-              <ContainerContent title="Название события" icon="hint" collapsible={true} defaultExpanded={false} activeBrandColor={hasTeamColor ? activeBrandColor : null}>
-                <div className="py-1 text-left">
-                  <TextInputLP label="Тема события / Примечание (опционально)" placeholder={eventType === 'training' ? 'Например: Лед + Втягивающая земля' : 'Например: Разбор тактики и оргвзносы'} value={eventTitle} onChange={setEventTitle} activeColor={hasTeamColor ? activeBrandColor : null} />
+              <ContainerContent title="Описание" icon="hint" collapsible={true} defaultExpanded={false} activeBrandColor={hasTeamColor ? activeBrandColor : null}>
+                <div className="py-1 px-3 text-left">
+                  <TextInputLP placeholder={eventType === 'training' ? 'Например: Бросковая...' : 'Например: Разбор тактики...'} value={eventTitle} onChange={setEventTitle} activeColor={hasTeamColor ? activeBrandColor : null} />
                 </div>
               </ContainerContent>
             </FadeIn>

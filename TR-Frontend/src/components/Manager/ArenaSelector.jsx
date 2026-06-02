@@ -56,8 +56,8 @@ export function ArenaSelector({ data }) {
       <div className="shrink-0">
         <SegmentedControl 
           options={[
-            { value: 'directory', label: 'Справочник арен' }, 
-            { value: 'custom', label: 'Свой вариант' }
+            { value: 'directory', label: 'Арены' }, 
+            { value: 'custom', label: 'Ручной ввод' }
           ]} 
           value={arenaTab} 
           onChange={setArenaTab} 
@@ -68,8 +68,7 @@ export function ArenaSelector({ data }) {
         <FadeIn key="dir" duration={200} className="flex-1 flex flex-col gap-4 overflow-hidden">
           <div className="shrink-0">
             <TextInputLP 
-              label="Быстрый поиск арены" 
-              placeholder="Введите название или город..." 
+              placeholder="Название или город..." 
               value={arenaSearch} 
               onChange={setArenaSearch} 
               activeColor={currentTeamColor} 
@@ -104,15 +103,13 @@ export function ArenaSelector({ data }) {
       ) : (
         <FadeIn key="custom" duration={200} className="flex-1 overflow-y-auto scrollbar-hide text-left flex flex-col gap-4 pt-1">
           <TextInputLP 
-            label="Название места проведения" 
-            placeholder="Например: Спортзал Олимп / Кафе Шайба" 
+            placeholder="Название места проведения..." 
             value={customName} 
             onChange={setCustomName} 
             activeColor={currentTeamColor} 
           />
           <TextInputLP 
-            label="Ссылка на карты / Геопозиция (опционально)" 
-            placeholder="https://yandex.ru/maps/..." 
+            placeholder="Ссылка на геопозицию..." 
             value={customUrl} 
             onChange={setCustomUrl} 
             activeColor={currentTeamColor} 
