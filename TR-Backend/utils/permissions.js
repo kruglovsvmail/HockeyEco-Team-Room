@@ -89,19 +89,13 @@ export const PERMISSIONS = {
   },
 
   // ==========================================
-  // 📄 Файл: EventCard.jsx / MatchInfo.jsx
+  // 📄 Файл: EventCard.jsx
   // ==========================================
 
   // Возможность игрока самостоятельно отметить явку на событие через тумблер
   EVENT_SELF_ATTENDANCE: {
     allowedRoles: [ROLES.PLAYER],
     requiresSubscription: [ROLES.PLAYER]
-  },
-
-  // Подтверждение или отмена товарищеского матча (friendly_pwa) в статусе ожидания
-  MATCH_CONFIRM_CANCEL: {
-    allowedRoles: [ROLES.OWNER, ROLES.TEAM_MANAGER, ROLES.TEAM_ADMIN],
-    requiresSubscription: [ROLES.TEAM_MANAGER, ROLES.TEAM_ADMIN]
   },
 
   // ==========================================
@@ -173,14 +167,14 @@ export const PERMISSIONS = {
 
   // Доступ к разделу заявочных кампаний в турниры (Заявки)
   MGR_SEASON_ROSTERS: {
-    allowedRoles: [ROLES.OWNER, ROLES.CLUB_TOP_MANAGER, ROLES.TEAM_MANAGER, ROLES.TEAM_ADMIN],
-    requiresSubscription: [ROLES.CLUB_TOP_MANAGER, ROLES.TEAM_MANAGER, ROLES.TEAM_ADMIN]
+    allowedRoles: [],
+    requiresSubscription: []
   },
 
   // Доступ к разделу финансового контроля (Финансы)
   MGR_FINANCES: {
-    allowedRoles: [ROLES.OWNER, ROLES.CLUB_TOP_MANAGER, ROLES.TEAM_MANAGER, ROLES.TEAM_ADMIN],
-    requiresSubscription: [ROLES.CLUB_TOP_MANAGER, ROLES.TEAM_MANAGER, ROLES.TEAM_ADMIN]
+    allowedRoles: [],
+    requiresSubscription: []
   },
 
   // Доступ к разделу внутрикомандных реестров (Справочники)

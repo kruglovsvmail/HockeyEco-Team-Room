@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { useOutletContext, useNavigate } from 'react-router-dom';
 import clsx from 'clsx';
 import { useAccess } from '../../hooks/useAccess';
@@ -223,7 +223,6 @@ export function HandbooksPage() {
     setSelectedTournamentForRooster(tour);
     setIsLeagueRoosterOpen(true);
     try {
-      // Запрашиваем полный список соперников с отметками о включении в этот турнир
       const res = await fetch(`${import.meta.env.VITE_API_URL}/api/manager/handbooks/external-tournaments/${tour.id}/roster-map?teamId=${selectedTeam.id}`, {
         headers: getAuthHeaders()
       });
@@ -265,169 +264,204 @@ export function HandbooksPage() {
 
   return (
     <div 
-      className="flex flex-col h-full bg-surface-base overflow-hidden relative transition-colors duration-300"
+      className="flex flex-col w-full h-full overflow-hidden relative bg-surface-border transition-colors duration-300"
       style={{ 
         ...(hasTeamColor ? { '--color-brand': activeBrandColor } : {}),
         touchAction: 'pan-y' 
       }}
     >
-      {/* 1. НАЗВАНИЕ И ТАБЫ (Фиксированные элементы) */}
-      <div className="shrink-0 p-4 pb-2 text-left">
-        <h1 className="text-2xl font-black uppercase tracking-widest text-content-main">
-          Справочники команды
-        </h1>
-        <p className="text-[11px] font-black uppercase tracking-widest mt-1" style={{ color: activeBrandColor }}>
-          Управление реестрами лиги
-        </p>
+      {/* ФИКСИРОВАННАЯ ШАПКА КЛУБА ИЗ CREATEEVENTPAGE */}
+      <div className="absolute top-0 left-0 right-0 z-40 bg-transparent pointer-events-none flex flex-col">
+        <div className="absolute top-0 left-0 right-0 h-32 bg-gradient-to-b from-surface-border from-60% to-transparent z-10" />
 
-        <div className="mt-4">
-          <SegmentedControl
-            options={[
-              { value: 'opponents', label: 'Внешние соперники' },
-              { value: 'tournaments', label: 'Внешние турниры' }
-            ]}
-            value={activeTab}
-            onChange={(val) => { setActiveTab(val); setSearchQuery(''); }}
-          />
-        </div>
-
-        <div className="mt-4">
-          <TextInputLP 
-            label={activeTab === 'opponents' ? 'Поиск команд' : 'Поиск турниров'} 
-            placeholder="Введите ключевые слова для фильтрации..." 
-            value={searchQuery} 
-            onChange={setSearchQuery} 
-            activeColor={activeBrandColor}
-          />
+        <div className="px-4 pt-4 pb-1 pointer-events-auto relative z-20">
+          {selectedTeam && (
+            <div className="bg-surface-base pt-4 px-5 pb-4 rounded-3xl flex items-center gap-4 shadow-lg border-b border-surface-level2 text-left">
+              <div className="w-16 h-16 rounded-2xl flex items-center justify-center overflow-hidden drop-shadow-sm shrink-0 ml-4">
+                <img src={getImageUrl(cachedDetails?.logo_url || selectedTeam?.logo_url)} alt="" className="w-full h-full object-contain p-1" />
+              </div>
+              <div className="flex flex-col min-w-0">
+                <h2 className="text-[14px] font-black uppercase tracking-widest text-content-main leading-tight truncate">
+                  {cachedDetails?.name || selectedTeam?.name}
+                </h2>
+                <span className="text-[10px] font-black uppercase tracking-[0.2em] mt-1" style={{ color: activeBrandColor }}>
+                  Справочники команды
+                </span>
+              </div>
+            </div>
+          )}
         </div>
       </div>
 
-      {/* 2. ДИНАМИЧЕСКИЙ СПИСОК (Изолированный скролл) */}
-      <div className="flex-1 overflow-y-auto scrollbar-hide px-4 pb-24">
-        {isLoading ? (
-          <div className="py-16"><PageLoader /></div>
-        ) : activeTab === 'opponents' ? (
+      {/* ИЗОЛИРОВАННЫЙ СКРОЛЛ-КОНТЕЙНЕР (ОТСТУП ПОД ШАПКУ) */}
+      <div className="w-full h-full relative overflow-hidden">
+        <div className="w-full h-full overflow-y-auto scrollbar-hide pt-[124px] pb-24 flex flex-col gap-4">
           
-          /* ВКЛАДКА А: ВНЕШНИЕ СОПЕРНИКИ */
-          <FadeIn key="opps" className="flex flex-col gap-2">
-            {opponents.length > 0 ? (
-              opponents.map(opp => (
-                <div 
-                  key={opp.id} 
-                  className="w-full p-4 bg-surface-level1 border border-surface-border rounded-2xl flex items-center justify-between text-left transition-all"
-                >
-                  <div className="flex flex-col min-w-0 pr-2">
-                    <span className="text-sm font-bold text-content-main truncate">{opp.name}</span>
-                    <span className="text-[11px] text-content-muted font-medium mt-0.5">{opp.city} ({opp.short_name})</span>
-                    <div className="flex items-center gap-1.5 mt-2">
-                      <span className="text-[9px] font-black uppercase px-2 py-0.5 rounded bg-surface-level2 text-content-muted border border-surface-border">
-                        Матчей: {opp.games_count || 0}
-                      </span>
-                    </div>
-                  </div>
-                  
-                  <div className="flex items-center gap-1 shrink-0">
-                    <button 
-                      type="button" 
-                      onClick={() => handleOpenOpponentEdit(opp)}
-                      className="w-9 h-9 rounded-xl bg-surface-level2 flex items-center justify-center border border-surface-border transition-all active:scale-90"
+          {/* СЕГМЕНТНЫЙ ПЕРЕКЛЮЧАТЕЛЬ И ИНПУТ ОБЪЕДИНЕНЫ В ОДИН ОТДЕЛЬНЫЙ БЛОК */}
+          <div className="mx-4 p-4 bg-surface-level1 border border-surface-border/60 rounded-3xl flex flex-col gap-4 shadow-md">
+            
+            {/* Вкладки выбора реестра */}
+            <div className="transition-colors duration-300">
+              <SegmentedControl
+                options={[
+                  { value: 'opponents', label: 'Внешние соперники' },
+                  { value: 'tournaments', label: 'Внешние турниры' }
+                ]}
+                value={activeTab}
+                onChange={(val) => { setActiveTab(val); setSearchQuery(''); }}
+              />
+            </div>
+
+            {/* Строка интеллектуального поиска */}
+            <div className="transition-colors duration-300">
+              <TextInputLP 
+                label={activeTab === 'opponents' ? 'Поиск команд' : 'Поиск турниров'} 
+                placeholder="Введите ключевые слова для фильтрации..." 
+                value={searchQuery} 
+                onChange={setSearchQuery} 
+                activeColor={activeBrandColor}
+              />
+            </div>
+
+          </div>
+
+          {/* ВЫВОД РЕЗУЛЬТАТОВ ФИЛЬТРАЦИИ ИЗ БАЗЫ ДАННЫХ */}
+          <div className="mx-4 flex flex-col gap-3">
+            {isLoading ? (
+              <div className="py-16"><PageLoader /></div>
+            ) : activeTab === 'opponents' ? (
+              
+              /* ВКЛАДКА А: ВНЕШНИЕ СОПЕРНИКИ */
+              <FadeIn key="opps" className="flex flex-col gap-3">
+                {opponents.length > 0 ? (
+                  opponents.map(opp => (
+                    <div 
+                      key={opp.id} 
+                      className="w-full p-4 bg-surface-level1 border border-surface-border/60 rounded-3xl flex items-center justify-between shadow-md text-left transition-all"
                     >
-                      <Icon name="edit" className="w-4 h-4 text-content-main" />
-                    </button>
-                    <button 
-                      type="button"
-                      disabled={opp.games_count > 0}
-                      onClick={() => handleDeleteOpponent(opp.id)}
-                      className={clsx(
-                        "w-9 h-9 rounded-xl flex items-center justify-center border transition-all",
-                        opp.games_count > 0 
-                          ? "bg-surface-level2/40 border-surface-border/30 opacity-30 cursor-not-allowed" 
-                          : "bg-danger/10 border-danger/20 text-danger active:scale-90"
-                      )}
-                    >
-                      <Icon name="trash" className="w-4 h-4" />
-                    </button>
-                  </div>
-                </div>
-              ))
-            ) : (
-              <div className="text-center py-12 text-xs font-bold text-content-muted opacity-50">Ни одного соперника не добавлено</div>
-            )}
-          </FadeIn>
-        ) : (
-          
-          /* ВКЛАДКА Б: ВНЕШНИЕ ТУРНИРЫ */
-          <FadeIn key="tours" className="flex flex-col gap-2">
-            {tournaments.length > 0 ? (
-              tournaments.map(tour => (
-                <div 
-                  key={tour.id} 
-                  className="w-full p-4 bg-surface-level1 border border-surface-border rounded-2xl flex flex-col text-left transition-all"
-                >
-                  <div className="flex items-start justify-between w-full">
-                    <div className="flex flex-col min-w-0 pr-2">
-                      <span className="text-sm font-bold text-content-main line-clamp-2 leading-snug">{tour.name}</span>
-                      <div className="flex items-center gap-2 mt-2">
-                        <span className={clsx(
-                          "text-[9px] font-black uppercase tracking-wider px-2 py-0.5 rounded border",
-                          tour.is_active 
-                            ? "bg-success/10 border-success/20 text-success" 
-                            : "bg-surface-level2 border-surface-border text-content-muted"
-                        )}>
-                          {tour.is_active ? '● Активен' : 'Архив'}
-                        </span>
-                        <span className="text-[9px] font-black uppercase px-2 py-0.5 rounded bg-surface-level2 text-content-muted border border-surface-border">
-                          Игр в базе: {tour.games_count || 0}
-                        </span>
+                      <div className="flex flex-col min-w-0 pr-2">
+                        <span className="text-sm font-bold text-content-main truncate">{opp.name}</span>
+                        <span className="text-[11px] text-content-muted font-medium uppercase tracking-wider mt-0.5">{opp.city} ({opp.short_name})</span>
+                        
+                        {/* ИСПРАВЛЕНО: Двойной хоккейный счетчик сыгранных и завершенных встреч */}
+                        <div className="flex items-center gap-1.5 mt-2.5">
+                          <span className="text-[9px] font-black uppercase px-2 py-0.5 rounded bg-surface-level2 text-content-muted border border-surface-border/50">
+                            Матчей: {opp.games_count || 0} , из них завершенные: {opp.finished_games_count || 0}
+                          </span>
+                        </div>
+                      </div>
+                      
+                      <div className="flex items-center gap-1.5 shrink-0">
+                        <button 
+                          type="button" 
+                          onClick={() => handleOpenOpponentEdit(opp)}
+                          className="w-9 h-9 rounded-xl bg-surface-level2 flex items-center justify-center border border-surface-border transition-all active:scale-90 outline-none cursor-pointer"
+                        >
+                          <Icon name="edit" className="w-4 h-4 text-content-main" />
+                        </button>
+                        <button 
+                          type="button"
+                          disabled={opp.games_count > 0}
+                          onClick={() => handleDeleteOpponent(opp.id)}
+                          className={clsx(
+                            "w-9 h-9 rounded-xl flex items-center justify-center border transition-all outline-none cursor-pointer",
+                            opp.games_count > 0 
+                              ? "bg-surface-level2/40 border-surface-border/30 opacity-30 cursor-not-allowed text-content-subtle" 
+                              : "bg-danger/10 border-danger/20 text-danger active:scale-90"
+                          )}
+                        >
+                          <Icon name="trash" className="w-4 h-4" />
+                        </button>
                       </div>
                     </div>
-                    
-                    <div className="flex items-center gap-1 shrink-0">
-                      <button 
-                        type="button" 
-                        onClick={() => handleOpenTournamentEdit(tour)}
-                        className="w-9 h-9 rounded-xl bg-surface-level2 flex items-center justify-center border border-surface-border transition-all active:scale-90"
-                      >
-                        <Icon name="edit" className="w-4 h-4 text-content-main" />
-                      </button>
-                      <button 
-                        type="button"
-                        disabled={tour.games_count > 0}
-                        onClick={() => handleDeleteTournament(tour.id)}
-                        className={clsx(
-                          "w-9 h-9 rounded-xl flex items-center justify-center border transition-all",
-                          tour.games_count > 0 
-                            ? "bg-surface-level2/40 border-surface-border/30 opacity-30 cursor-not-allowed" 
-                            : "bg-danger/10 border-danger/20 text-danger active:scale-90"
-                        )}
-                      >
-                        <Icon name="trash" className="w-4 h-4" />
-                      </button>
-                    </div>
+                  ))
+                ) : (
+                  <div className="text-center py-12 text-xs font-bold text-content-muted opacity-50 bg-surface-level1 border border-surface-border/60 rounded-3xl p-6 shadow-sm">
+                    Ни одного соперника не добавлено
                   </div>
-
-                  {/* Кнопка быстрой настройки состава участников лиги */}
-                  <div className="mt-3 pt-3 border-t border-surface-border/60">
-                    <button
-                      type="button"
-                      onClick={() => handleOpenLeagueRooster(tour)}
-                      className="w-full py-2.5 bg-surface-level2 hover:bg-surface-level3 border border-surface-border rounded-xl text-center text-xs font-bold text-content-main uppercase tracking-wider flex items-center justify-center gap-2 transition-all active:scale-[0.99]"
-                    >
-                      <Icon name="users" className="w-3.5 h-3.5" style={{ color: activeBrandColor }} />
-                      Команды турнира ({tour.opponents_count || 0})
-                    </button>
-                  </div>
-                </div>
-              ))
+                )}
+              </FadeIn>
             ) : (
-              <div className="text-center py-12 text-xs font-bold text-content-muted opacity-50">Список внешних лиг пуст</div>
+              
+              /* ВКЛАДКА Б: ВНЕШНИЕ ТУРНИРЫ */
+              <FadeIn key="tours" className="flex flex-col gap-3">
+                {tournaments.length > 0 ? (
+                  tournaments.map(tour => (
+                    <div 
+                      key={tour.id} 
+                      className="w-full p-4 bg-surface-level1 border border-surface-border/60 rounded-3xl flex flex-col shadow-md text-left transition-all"
+                    >
+                      <div className="flex items-start justify-between w-full">
+                        <div className="flex flex-col min-w-0 pr-2">
+                          <span className="text-sm font-bold text-content-main line-clamp-2 leading-snug">{tour.name}</span>
+                          
+                          {/* ИСПРАВЛЕНО: Двойной хоккейный счетчик игр внутри турнира */}
+                          <div className="flex items-center gap-2 mt-2">
+                            <span className={clsx(
+                              "text-[9px] font-black uppercase tracking-wider px-2 py-0.5 rounded border",
+                              tour.is_active 
+                                ? "bg-success/10 border-success/20 text-success" 
+                                : "bg-surface-level2 border-surface-border text-content-muted"
+                            )}>
+                              {tour.is_active ? '● Активен' : 'Архив'}
+                            </span>
+                            <span className="text-[9px] font-black uppercase px-2 py-0.5 rounded bg-surface-level2 text-content-muted border border-surface-border/50">
+                              Игр в базе: {tour.games_count || 0} , из них завершенные: {tour.finished_games_count || 0}
+                            </span>
+                          </div>
+                        </div>
+                        
+                        <div className="flex items-center gap-1.5 shrink-0">
+                          <button 
+                            type="button" 
+                            onClick={() => handleOpenTournamentEdit(tour)}
+                            className="w-9 h-9 rounded-xl bg-surface-level2 flex items-center justify-center border border-surface-border transition-all active:scale-90 outline-none cursor-pointer"
+                          >
+                            <Icon name="edit" className="w-4 h-4 text-content-main" />
+                          </button>
+                          <button 
+                            type="button"
+                            disabled={tour.games_count > 0}
+                            onClick={() => handleDeleteTournament(tour.id)}
+                            className={clsx(
+                              "w-9 h-9 rounded-xl flex items-center justify-center border transition-all outline-none cursor-pointer",
+                              tour.games_count > 0 
+                                ? "bg-surface-level2/40 border-surface-border/30 opacity-30 cursor-not-allowed text-content-subtle" 
+                                : "bg-danger/10 border-danger/20 text-danger active:scale-90"
+                            )}
+                          >
+                            <Icon name="trash" className="w-4 h-4" />
+                          </button>
+                        </div>
+                      </div>
+
+                      {/* Кнопка настройки состава участников лиги */}
+                      <div className="mt-3 pt-3 border-t border-surface-border/40">
+                        <button
+                          type="button"
+                          onClick={() => handleOpenLeagueRooster(tour)}
+                          className="w-full py-2.5 bg-surface-level2 hover:bg-surface-level3 border border-surface-border rounded-xl text-center text-xs font-bold text-content-main uppercase tracking-wider flex items-center justify-center gap-2 transition-all active:scale-[0.99] outline-none cursor-pointer"
+                        >
+                          <Icon name="users" className="w-3.5 h-3.5" style={{ color: activeBrandColor }} />
+                          Команды турнира ({tour.opponents_count || 0})
+                        </button>
+                      </div>
+                    </div>
+                  ))
+                ) : (
+                  <div className="text-center py-12 text-xs font-bold text-content-muted opacity-50 bg-surface-level1 border border-surface-border/60 rounded-3xl p-6 shadow-sm">
+                    Список внешних лиг пуст
+                  </div>
+                )}
+              </FadeIn>
             )}
-          </FadeIn>
-        )}
+          </div>
+
+        </div>
       </div>
 
-      {/* 3. ОПЛАВАЮЩАЯ КНОПКА ПЛЮСА ДЛЯ СОЗДАНИЯ ЗАПИСЕЙ */}
-      <div className="absolute bottom-6 right-6 z-40">
+      {/* ПЛАВАЮЩАЯ КНОПКА ДОБАВЛЕНИЯ НОВЫХ ЗАПИСЕЙ */}
+      <div className="fixed bottom-6 right-6 z-40">
         <button
           type="button"
           onClick={activeTab === 'opponents' ? handleOpenOpponentCreate : handleOpenTournamentCreate}
@@ -487,11 +521,11 @@ export function HandbooksPage() {
               Состав участников лиги
             </h3>
             <p className="text-xs font-medium text-content-muted mt-0.5 line-clamp-1">
-              Турнир: {selectedTournamentForRooster?.name}
+              Tournament: {selectedTournamentForRooster?.name}
             </p>
           </div>
 
-          {/* Список команд с чекбоксами */}
+          {/* Список команд с чекбоксами внутри шторки */}
           <div className="flex-1 overflow-y-auto scrollbar-hide flex flex-col gap-2 my-2 pr-1 border-y border-surface-border/50 py-2">
             {leagueRoosterTeams.length > 0 ? (
               leagueRoosterTeams.map(team => (
