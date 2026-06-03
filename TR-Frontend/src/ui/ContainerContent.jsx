@@ -13,7 +13,7 @@ export function ContainerContent({
   action,
   collapsible = false,
   defaultExpanded = true,
-  activeBrandColor, // ИСПРАВЛЕНО: Извлекаем проп из ...props, чтобы он не улетал в нативный HTML-тег <div>
+  activeBrandColor, 
   ...props
 }) {
   const [isExpanded, setIsExpanded] = useState(defaultExpanded);
@@ -31,7 +31,8 @@ export function ContainerContent({
   return (
     <div
       className={clsx(
-        "bg-brand-glow rounded-2xl p-3 flex flex-col relative z-0 shadow-md overflow-hidden mx-4 transition-all duration-300 ease-[cubic-bezier(0.32,0.72,0,1)]",
+        // ИСПРАВЛЕНО: Удален хардкод mx-4, мешавший пиксельной стыковке, добавлен w-full для растяжения по сетке
+        "bg-brand-glow rounded-2xl p-3 flex flex-col relative z-0 shadow-md overflow-hidden w-full transition-all duration-300 ease-[cubic-bezier(0.32,0.72,0,1)]",
         className
       )}
       {...props}

@@ -401,7 +401,7 @@ export const MatchAttendance = ({ event, initialAttendees = [], initialTeamRoste
           <span className="text-[13px] font-bold text-content-main leading-tight break-words block pointer-events-none">
             {attendeeUser.last_name}
           </span>
-          <span className="text-[11px] text-content-muted leading-tight break-words block pointer-events-none mt-0.5">
+          <span className="text-[11px] text-content-muted leading-tight break-words block pointer-events-none ">
             {attendeeUser.first_name}
           </span>
         </div>
@@ -557,7 +557,7 @@ export const MatchAttendance = ({ event, initialAttendees = [], initialTeamRoste
                             {player.last_name} {player.first_name}
                           </span>
                           {player.jersey_number && (
-                            <span className="text-[10px] text-content-muted leading-none mt-0.5">
+                            <span className="text-[10px] text-content-muted leading-none ">
                               #{player.jersey_number} • {player.position === 'goalie' ? 'Вратарь' : player.position === 'defense' ? 'Защитник' : 'Нападающий'}
                             </span>
                           )}
@@ -613,7 +613,7 @@ export const MatchAttendance = ({ event, initialAttendees = [], initialTeamRoste
                 Вы уверены, что хотите удалить игрока <span className="font-bold text-content-main">{userToRemove?.last_name}</span> из списка отметившихся?
               </p>
             </div>
-            <div className="flex gap-3 w-full mt-4">
+            <div className="flex gap-3 w-full ">
               <ButtonLP variant="outline" onClick={() => setUserToRemove(null)} className="flex-1">
                 Отмена
               </ButtonLP>

@@ -346,7 +346,7 @@ export const EventDetailsMatch = ({ event }) => {
       </div>
 
       {/* 3. КОНТЕНТНАЯ ЧАСТЬ */}
-      <div className="w-full overflow-hidden pt-2 min-h-screen pb-[30vh]">
+      <div className="w-full overflow-hidden px-4 min-h-screen pb-[30vh]">
         {loading ? (
           <PageLoader />
         ) : (

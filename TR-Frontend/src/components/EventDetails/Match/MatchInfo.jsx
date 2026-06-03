@@ -119,7 +119,7 @@ export const MatchInfo = ({
 
   return (
     <FadeIn>
-      <div className="flex flex-col gap-4">
+      <div className="flex flex-col gap-4 ">
         
         {/* БЛОК СОГЛАСОВАНИЯ МАТЧА ДЛЯ FRIENDLY_PWA */}
         {isPendingFriendly && (

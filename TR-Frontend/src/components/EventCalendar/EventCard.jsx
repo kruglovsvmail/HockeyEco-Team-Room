@@ -198,7 +198,7 @@ const EventCard = ({
       </div>
 
       {/* 2. ЦЕНТР: Тип события и Время */}
-      <div className="flex justify-between items-end px-5 mt-3 mb-2">
+      <div className="flex justify-between items-end px-5 mt-4">
         <div className="flex items-center gap-2">
           <h2 className="text-[28px] font-black text-content-main leading-none uppercase tracking-wide">
             {eventTitle}
@@ -213,7 +213,7 @@ const EventCard = ({
       {/* СЕРАЯ ПОЛОСА С ТАЙМЕРОМ ДЛЯ FRIENDLY_PWA В СТАТУСЕ PENDING */}
       {isMatch && event.game_type === 'friendly_pwa' && event.status === 'pending' && (
         <div 
-          className="w-full bg-surface-level2 px-5 py-2.5 flex items-center justify-between gap-3 select-none"
+          className="w-full bg-surface-level2 px-5 py-2 mt-4 flex items-center justify-between gap-3 select-none"
           onClick={(e) => e.stopPropagation()}
         >
           <div className="flex flex-col text-left">
@@ -232,7 +232,7 @@ const EventCard = ({
                   <HintPopover status="no_subscription">
                     <button
                       type="button"
-                      className="px-3 py-1.5 bg-danger/10 border border-danger/30 text-danger text-[10px] font-black uppercase tracking-widest rounded-xl opacity-50 cursor-pointer"
+                      className="px-3 py-1.5 text-danger text-[10px] font-black uppercase tracking-widest rounded-xl opacity-50 cursor-pointer"
                     >
                       Отменить
                     </button>
@@ -251,10 +251,10 @@ const EventCard = ({
                         setIsActionLoading(false);
                       }
                     }}
-                    className="px-2 py-2 bg-danger/10 border border-danger/30 text-danger text-[10px] font-black uppercase tracking-widest rounded-xl transition-all active:scale-95 cursor-pointer flex items-center justify-center min-w-[75px]"
+                    className="px-2 py-2 text-danger text-[10px] font-black uppercase tracking-widest rounded-xl transition-all active:scale-95 cursor-pointer flex items-center justify-center min-w-[75px]"
                   >
                     {isActionLoading ? (
-                      <div className="w-3 h-3 border-2 border-danger border-t-transparent rounded-full animate-spin" />
+                      <div className="w-3 h-3 rounded-full animate-spin" />
                     ) : (
                       'Отменить'
                     )}
@@ -265,7 +265,7 @@ const EventCard = ({
                   <HintPopover status="no_subscription">
                     <button
                       type="button"
-                      className="px-2 py-2 bg-success/10 border border-success/30 text-success text-[10px] font-black uppercase tracking-widest rounded-xl opacity-50 cursor-pointer"
+                      className="px-2 py-2 btext-success text-[10px] font-black uppercase tracking-widest rounded-xl opacity-50 cursor-pointer"
                     >
                       Подтвердить
                     </button>
@@ -284,7 +284,7 @@ const EventCard = ({
                         setIsActionLoading(false);
                       }
                     }}
-                    className="px-2 py-2 bg-success/10 border border-success/30 text-success text-[10px] font-black uppercase tracking-widest rounded-xl transition-all active:scale-95 cursor-pointer flex items-center justify-center min-w-[95px]"
+                    className="px-2 py-2 text-success text-[10px] font-black uppercase tracking-widest rounded-xl transition-all active:scale-95 cursor-pointer flex items-center justify-center min-w-[95px]"
                   >
                     {isActionLoading ? (
                       <div className="w-3 h-3 border-2 border-success border-t-transparent rounded-full animate-spin" />
@@ -301,11 +301,11 @@ const EventCard = ({
 
       {/* 3. КОМАНДЫ: Логотип и Соперник */}
       {shouldRenderTeamsBlock && (
-        <div className="flex w-full px-5 mb-4 min-h-[60px] items-end mt-2">
+        <div className="flex w-full px-5 mb-4 mt-4 items-end">
           {event.show_team_context ? (
             <>
-              <div className="w-[50%] flex items-center gap-2.5 text-left">
-                <div className="w-12 h-12 shrink-0 overflow-hidden drop-shadow-lg flex items-center justify-center bg-surface-level2 rounded-xl">
+              <div className="w-[50%] flex items-center gap-3 text-left">
+                <div className="w-10 h-10 shrink-0 overflow-hidden drop-shadow-lg flex items-center justify-center">
                   {event.my_team_logo_url ? (
                     <img src={getImageUrl(event.my_team_logo_url)} alt="Лого" className="w-full h-full object-cover" />
                   ) : (

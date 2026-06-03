@@ -51,7 +51,7 @@ export const CompactWeek = React.memo(function CompactWeek({
     <div className="flex items-center gap-2 w-full justify-between select-none">
       
       {/* БЛОК 1: Изолированный переключатель недель без лишней логики раскрытия */}
-      <div className="flex flex-1 items-center justify-between bg-surface-level1 shadow-lg rounded-2xl px-2 py-2.5">
+      <div className="flex flex-1 items-center justify-between bg-surface-level1 shadow-lg rounded-3xl px-2 py-2.5">
         <button 
           onClick={handlePrevWeek}
           className="p-1 text-content-main hover:text-brand transition-colors outline-none z-10"
@@ -96,7 +96,7 @@ export const CompactWeek = React.memo(function CompactWeek({
       </div>
 
       {/* БЛОК 2: Симметричный по высоте островок действий для календаря и фильтра */}
-      <div className="flex items-center gap-2 bg-surface-level1 shadow-lg rounded-2xl px-3 py-2.5  shrink-0">
+      <div className="flex items-center gap-2 bg-surface-level1 shadow-lg rounded-3xl px-5 py-2.5  shrink-0">
         <button 
           onClick={openCalendar}
           className="p-1 text-content-main hover:text-brand transition-colors outline-none flex items-center justify-center active:scale-95"

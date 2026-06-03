@@ -1,97 +1,55 @@
-import React, { useState, useMemo } from 'react';
+import React from 'react';
 import { Menu, X } from 'lucide-react';
-import { Icon } from '../ui/Icon';
 import { useLocation } from 'react-router-dom';
-import { useAccess } from '../hooks/useAccess';
-import { TeamProfileEditSheet } from './MyTeam/TeamProfileEditSheet';
-import { HintPopover } from '../ui/HintPopover';
 
 export function Header({ isSidebarOpen, onToggleSidebar, user, teams, selectedTeam, onTeamUpdated, hideActions = false }) {
-  const [isEditOpen, setIsEditOpen] = useState(false);
-
   const location = useLocation();
-  const { checkAccess } = useAccess(user, selectedTeam);
 
-  const isMyTeamPage = location.pathname === '/my-team';
-  
-  // Проверяем наличие прав на редактирование профиля команды по матрице доступов (учитывает тариф подписки)
-  const hasEditAccess = checkAccess('TEAM_EDIT_PROFILE');
-
-  // ЖЕСТКИЙ РОЛЕВОЙ ЗАСЛОН: Вычисляем, имеет ли право пользователь вообще видеть кнопку редактирования
-  const canSeeEditButton = useMemo(() => {
-    if (!user || !selectedTeam) return false;
+  // Интеллектуальное определение заголовка раздела с гибким поиском по подстроке (.includes)
+  // Это гарантирует корректный показ названия, даже если пути вложенные или содержат префиксы типа /manager/
+  const getSectionTitle = () => {
+    const path = location.pathname.toLowerCase();
     
-    // Проверяем, является ли текущий пользователь создателем/владельцем команды
-    const isTeamOwner = String(selectedTeam.owner_id) === String(user.id);
+    if (path.includes('my-team')) {
+      return 'Состав команды';
+    }
+    if (path.includes('handbook')) {
+      return 'Справочник команды';
+    }
+    // Если в пути одновременно фигурируют "event" и "create" (подходит под /events/create, /create-event, /manager/events/create)
+    if (path.includes('event') && path.includes('create')) {
+      return 'Создание события';
+    }
     
-    // Разбираем локальные роли пользователя в рамках выбранной команды
-    const teamRoles = selectedTeam.user_role?.split(',').map(r => r.trim().toLowerCase()) || [];
-    
-    // Проверяем глобального суперадмина платформы
-    const isGlobalAdmin = user.global_role === 'admin' || user.globalRole === 'admin';
-
-    // Кнопка рендерится только для Owner, роли team_manager или глобального админа платформы
-    return isTeamOwner || teamRoles.includes('team_manager') || isGlobalAdmin;
-  }, [user, selectedTeam]);
+    return '';
+  };
 
   return (
-    <>
-      {/* Шапка приведена к строгим 60px высоты без системных safe-area сдвигов */}
-      <header 
-        className="absolute top-0 left-0 right-0 flex flex-col z-40 transition-all duration-300 ease-[cubic-bezier(0.32,0.72,0,1)] overflow-hidden"
-        style={{
-          height: '60px',
-          paddingTop: '0px' 
-        }}
-      >
-        
-        {/* Основной контент оригинального хедера */}
-        <div className="flex-1 flex items-center justify-between p-4 h-[60px] w-full">
-          <button 
-            onClick={onToggleSidebar}
-            className="md:hidden p-2 bg-white/40 rounded-full text-content-main hover:text-brand transition-colors outline-none"
-            aria-label="Menu"
-          >
-            {isSidebarOpen ? <X size={20} /> : <Menu size={20} />}
-          </button>
+    <header 
+      className="absolute top-0 left-0 right-0 flex flex-col z-40 transition-all duration-300 ease-[cubic-bezier(0.32,0.72,0,1)] overflow-hidden"
+      style={{
+        height: '60px',
+        paddingTop: '0px' 
+      }}
+    >
+      {/* Основной контент оригинального хедера */}
+      <div className="flex-1 flex items-center justify-between p-4 h-[60px] w-full relative">
+        <button 
+          onClick={onToggleSidebar}
+          className="p-2 bg-white/20 rounded-xl text-content-main hover:text-brand transition-colors outline-none z-10"
+          aria-label="Menu"
+        >
+          {isSidebarOpen ? <X size={20} /> : <Menu size={20} />}
+        </button>
 
-          {/* Раздел МОЯ КОМАНДА: кнопка изменения параметров (видна только разрешенным ролям, тухнет без подписки) */}
-          {isMyTeamPage && canSeeEditButton && !hideActions && (
-            <div className="flex items-center gap-1 ml-auto">
-              {hasEditAccess ? (
-                /* Сценарий с подпиской: полнофункциональная кнопка, открывающая шторку */
-                <button
-                  onClick={() => setIsEditOpen(true)}
-                  className="p-2 bg-white/40 rounded-full text-content-main hover:text-brand transition-colors outline-none cursor-pointer active:scale-95 flex items-center justify-center"
-                  aria-label="Редактировать профиль команды"
-                >
-                  <Icon name="edit" className="w-5 h-5" />
-                </button>
-              ) : (
-                /* Сценарий БЕЗ подписки: кнопка «потухла» (opacity-30) и завернута в поповер ограничений */
-                <HintPopover status="no_subscription">
-                  <button
-                    type="button"
-                    className="p-2 bg-white/10 border border-white/5 rounded-full text-content-main opacity-30 transition-all outline-none cursor-pointer flex items-center justify-center"
-                    aria-label="Редактирование профиля ограничено подпиской"
-                  >
-                    <Icon name="edit" className="w-5 h-5" />
-                  </button>
-                </HintPopover>
-              )}
-            </div>
-          )}
+        {/* АБСОЛЮТНО ЦЕНТРИРОВАННЫЙ ЗАГОЛОВОК ТЕКУЩЕГО РАЗДЕЛА */}
+        <div className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 text-[14px] font-semibold uppercase tracking-widest text-content-main pointer-events-none whitespace-nowrap text-center">
+          {getSectionTitle()}
         </div>
-      </header>
 
-      {/* Выделенная изолированная шторка редактирования профиля команды */}
-      <TeamProfileEditSheet 
-        isOpen={isEditOpen}
-        onClose={() => setIsEditOpen(false)}
-        selectedTeam={selectedTeam}
-        user={user}
-        onTeamUpdated={onTeamUpdated}
-      />
-    </>
+        {/* Пустая заглушка справа для идеального Flex-баланса */}
+        <div className="w-9 h-9 opacity-0 pointer-events-none" />
+      </div>
+    </header>
   );
 }

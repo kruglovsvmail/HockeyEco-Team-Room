@@ -25,6 +25,9 @@ import { OpponentSelectorFriendly } from './components/Manager/OpponentSelectorF
 import { ExternalTournamentSelector } from './components/Manager/ExternalTournamentSelector';
 import { ExternalOpponentSelector } from './components/Manager/ExternalOpponentSelector';
 
+// ИСПРАВЛЕНО: Импортируем нашу новую боковую панель управления профилем команды
+import { EditTeamProfilePanel } from './components/MyTeam/EditTeamProfilePanel';
+
 dayjs.extend(utc);
 dayjs.extend(timezone);
 dayjs.locale('ru');
@@ -329,7 +332,10 @@ function TeamLayoutContent() {
           className="flex-1 overflow-y-auto overflow-x-hidden relative overscroll-none transition-all duration-300 ease-[cubic-bezier(0.32,0.72,0,1)]"
           style={{ paddingTop: '60px' }}
         >
-          <Outlet context={{ user, teams, selectedTeam, handleTeamChange, openRightPanel, openFullPage }} />
+          <Outlet context={{ user, teams, selectedTeam, handleTeamChange, openRightPanel, openFullPage, onTeamUpdated: (updatedTeam) => {
+            setSelectedTeam(prev => ({ ...prev, ...updatedTeam }));
+            setTeams(prev => prev.map(t => t.id === updatedTeam.id ? { ...t, ...updatedTeam } : t));
+          }}} />
         </main>
       </div>
 
@@ -371,12 +377,16 @@ function TeamLayoutContent() {
                     {rightPanel.type === 'opponentSelectorFriendly' && (
                       <OpponentSelectorFriendly data={rightPanel.data} />
                     )}
-                    {/* РЕГИСТРАЦИЯ СЕЛЕКТОРОВ СТОРОННЕГО ТУРНИРА ПО СХЕМЕ ВНЕШНИХ СВЯЗЕЙ */}
                     {rightPanel.type === 'externalTournamentSelector' && (
                       <ExternalTournamentSelector data={rightPanel.data} />
                     )}
                     {rightPanel.type === 'externalOpponentSelector' && (
                       <ExternalOpponentSelector data={rightPanel.data} />
+                    )}
+                    
+                    {/* ИСПРАВЛЕНО: Регистрируем тип editTeamProfile для корректного рендеринга нашей формы */}
+                    {rightPanel.type === 'editTeamProfile' && (
+                      <EditTeamProfilePanel {...rightPanel.data} onClose={closeRightPanel} />
                     )}
                   </FadeIn>
                 )}
