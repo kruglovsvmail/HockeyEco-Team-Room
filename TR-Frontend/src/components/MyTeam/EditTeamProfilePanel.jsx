@@ -138,7 +138,7 @@ export function EditTeamProfilePanel({ teamId, onRefresh, activeBrandColor, onCl
         className="flex-1 flex flex-col gap-4 overflow-y-auto scrollbar-hide p-4 pb-32"
       >
         {/* ВЕРХНИЙ БЛОК: ЛОГОТИП + ТЕКСТОВЫЙ БЛОК НАЗВАНИЙ И ГОРОДА */}
-        <div className="grid grid-cols-[90px_1fr] gap-3 items-center w-full bg-surface-level1 p-4 rounded-3xl border border-surface-border/40 shadow-sm">
+        <div className="grid grid-cols-[90px_1fr] gap-3 items-center w-full bg-surface-level1 p-4 rounded-2xl border border-surface-border/40 shadow-sm">
           
           {/* Аскетичный квадрат логотипа */}
           <ImageUploaderLP 
@@ -180,7 +180,7 @@ export function EditTeamProfilePanel({ teamId, onRefresh, activeBrandColor, onCl
         </div>
 
         {/* ПОЛЕ ОПИСАНИЯ КЛУБА */}
-        <div className="w-full bg-surface-level1 p-4 rounded-3xl border border-surface-border/40 shadow-sm">
+        <div className="w-full bg-surface-level1 p-4 rounded-2xl border border-surface-border/40 shadow-sm">
           <TextInputLP 
             type="textarea"
             rows={3}
@@ -196,7 +196,7 @@ export function EditTeamProfilePanel({ teamId, onRefresh, activeBrandColor, onCl
         <div className="grid grid-cols-2 gap-2 w-full">
           
           {/* ЛЕВАЯ ПОЛОВИНА: ДОМАШНИЙ КОМПЛЕКТ */}
-          <div className="flex flex-col p-3 bg-surface-level1 border border-surface-border/40 rounded-3xl justify-between min-h-[120px] shadow-sm">
+          <div className="flex flex-col p-3 bg-surface-level1 rounded-2xl justify-between min-h-[120px] shadow-sm">
             <span className="text-[10px] font-black text-content-muted uppercase tracking-widest block px-0.5 mb-3 select-none">
               Домашняя
             </span>
@@ -227,7 +227,7 @@ export function EditTeamProfilePanel({ teamId, onRefresh, activeBrandColor, onCl
           </div>
 
           {/* ПРАВАЯ ПОЛОВИНА: ГОСТЕВОЙ КОМПЛЕКТ */}
-          <div className="flex flex-col p-3 bg-surface-level1 border border-surface-border/40 rounded-3xl justify-between min-h-[120px] shadow-sm">
+          <div className="flex flex-col p-3 bg-surface-level1 rounded-2xl justify-between min-h-[120px] shadow-sm">
             <span className="text-[10px] font-black text-content-muted uppercase tracking-widest block px-0.5 mb-3 select-none">
               Гостевая
             </span>

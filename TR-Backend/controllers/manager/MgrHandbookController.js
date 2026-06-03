@@ -60,7 +60,7 @@ export const getPwaTeams = async (req, res) => {
 
 /**
  * GET /api/manager/handbooks/external-opponents
- * ИСПРАВЛЕНО: Теперь список соперников для селектора матчей строго фильтруется по team_id команды-организатора
+ * Список соперников для селектора матчей строго фильтруется по team_id команды-организатора
  */
 export const getExternalOpponents = async (req, res) => {
   try {
@@ -94,7 +94,7 @@ export const getExternalOpponents = async (req, res) => {
 
 /**
  * POST /api/manager/handbooks/external-opponents
- * ИСПРАВЛЕНО: При быстром создании соперника из шторки теперь передается и записывается team_id
+ * При быстром создании соперника из шторки передается и записывается team_id
  */
 export const createExternalOpponent = async (req, res) => {
   try {
@@ -126,7 +126,7 @@ export const createExternalOpponent = async (req, res) => {
 
 /**
  * GET /api/manager/handbooks/external-tournaments
- * Получение списка только АКТИВНЫХ сторонних турниров (согласно новому правилу и флагу is_active)
+ * Получение списка только АКТИВНЫХ сторонних турниров
  */
 export const getExternalTournaments = async (req, res) => {
   try {
@@ -200,7 +200,7 @@ export const getExternalTournamentOpponents = async (req, res) => {
 
 /**
  * GET /api/manager/handbooks/opponents-extended
- * ИСПРАВЛЕНО: Выгрузка блокнота соперников теперь строго изолирована по team_id текущего представителя
+ * Выгрузка блокнота соперников строго изолирована по team_id текущего представителя
  */
 export const getOpponentsExtended = async (req, res) => {
   try {
@@ -236,7 +236,7 @@ export const getOpponentsExtended = async (req, res) => {
 
 /**
  * PUT /api/manager/handbooks/external-opponents/:id
- * Изменение реквизитов существующего стороннего ХК
+ * ИСПРАВЛЕНО: Убрана несуществующая колонка updated_at из SQL-запроса
  */
 export const updateExternalOpponent = async (req, res) => {
   try {
@@ -249,7 +249,7 @@ export const updateExternalOpponent = async (req, res) => {
 
     const query = `
       UPDATE external_opponents
-      SET name = $1, short_name = $2, city = $3, updated_at = NOW()
+      SET name = $1, short_name = $2, city = $3
       WHERE id = $4
       RETURNING id;
     `;
@@ -360,7 +360,7 @@ export const createExternalTournament = async (req, res) => {
 
 /**
  * PUT /api/manager/handbooks/external-tournaments/:id
- * Обновление параметров и статуса активности (активен/архив) турнира с валидацией team_id
+ * ИСПРАВЛЕНО: Убрана несуществующая колонка updated_at из SQL-запроса
  */
 export const updateExternalTournament = async (req, res) => {
   try {
@@ -373,7 +373,7 @@ export const updateExternalTournament = async (req, res) => {
 
     const query = `
       UPDATE team_external_tournaments
-      SET name = $1, is_active = $2, updated_at = NOW()
+      SET name = $1, is_active = $2
       WHERE id = $3 AND team_id = $4
       RETURNING id;
     `;
@@ -428,7 +428,7 @@ export const deleteExternalTournament = async (req, res) => {
 
 /**
  * GET /api/manager/handbooks/external-tournaments/:tournamentId/roster-map
- * ИСПРАВЛЕНО: Наполнение кубка командами теперь выгружает чекбоксы СТРОГО из личного блокнота соперников этой команды (eo.team_id = $2)
+ * Наполнение кубка командами выгружает чекбоксы СТРОГО из личного блокнота соперников этой команды
  */
 export const getTournamentRosterMap = async (req, res) => {
   try {
@@ -479,7 +479,7 @@ export const saveTournamentRoster = async (req, res) => {
     if (opponentIds.length > 0) {
       const insertQuery = `
         INSERT INTO external_tournaments_opponents (tournament_id, external_opponent_id)
-        SELECT $1, UNNEST($2::int[])
+        VALUES ($1, UNNEST($2::int[]))
       `;
       await client.query(insertQuery, [tournamentId, opponentIds]);
     }

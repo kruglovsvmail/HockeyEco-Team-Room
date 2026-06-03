@@ -8,15 +8,9 @@ import { useAccess } from '../hooks/useAccess';
 import clsx from 'clsx';
 
 export function Sidebar({ user, teams = [], selectedTeam, onTeamChange, onClose }) {
-  const [isTeamsExpanded, setIsTeamsExpanded] = useState(false);
-  
-  // Храним состояния раскрытия для каждого из 4-х менеджерских пунктов
-  const [expandedMenus, setExpandedMenus] = useState({
-    MGR_CREATE_EVENT: false,
-    MGR_SEASON_ROSTERS: false,
-    MGR_FINANCES: false,
-    MGR_HANDBOOKS: false
-  });
+  // Храним ID единственного открытого в данный момент меню (string или null)
+  // Для списка команд будем использовать условный ID 'TEAMS'
+  const [expandedMenuId, setExpandedMenuId] = useState(null);
 
   const location = useLocation();
   const navigate = useNavigate();
@@ -48,13 +42,12 @@ export function Sidebar({ user, teams = [], selectedTeam, onTeamChange, onClose 
     { id: 'MGR_HANDBOOKS', path: '/manager/handbooks', label: 'Справочники', icon: 'handbook' },
   ];
 
-  // Переключатель раскрытия аккордеона для менеджерских пунктов
+  // Единый переключатель для всех аккордеонов
   const toggleMenu = (menuId) => {
-    setExpandedMenus(prev => ({
-      ...prev,
-      [menuId]: !prev[menuId]
-    }));
+    setExpandedMenuId(prevId => prevId === menuId ? null : menuId);
   };
+
+  const isTeamsExpanded = expandedMenuId === 'TEAMS';
 
   // ОПТИМИЗАЦИЯ СДВИГА: Плавный отложенный переход для разгрузки мобильного процессора
   const handleSafeNavigate = (path, callbackBeforeNavigate) => {
@@ -109,13 +102,13 @@ export function Sidebar({ user, teams = [], selectedTeam, onTeamChange, onClose 
           <button 
             onClick={() => handleSafeNavigate('/')}
             className={clsx(
-              "flex items-center gap-4 px-4 py-3 rounded-xl transition-all outline-none text-left w-full font-semibold",
+              "flex items-center gap-4 px-4 py-3 rounded-xl transition-all outline-none text-left w-full font-bold",
               location.pathname === '/' 
                 ? 'bg-brand-opacity text-brand font-bold' 
                 : 'text-content-main hover:text-brand'
             )}
           >
-            <Icon name="calendar" className="w-4 h-4" />
+            <Icon name="calendar" className="w-5 h-5" />
             <span className="text-sm tracking-wider">Расписание</span>
           </button>
 
@@ -129,31 +122,31 @@ export function Sidebar({ user, teams = [], selectedTeam, onTeamChange, onClose 
                   }
                 })}
                 className={clsx(
-                  "flex items-center gap-4 px-4 py-3 rounded-xl transition-all outline-none text-left w-full font-semibold",
+                  "flex items-center gap-4 px-4 py-3 rounded-xl transition-all outline-none text-left w-full font-bold",
                   location.pathname === '/my-team' 
                     ? 'bg-brand-opacity text-brand font-bold' 
                     : 'text-content-main hover:text-brand'
                 )}
               >
-                <Icon name="users" className="w-4 h-4" />
+                <Icon name="users" className="w-5 h-5" />
                 <span className="text-sm tracking-wider">Моя команда</span>
               </button>
             ) : null
           ) : (
             <div className="flex flex-col w-full">
               <button 
-                onClick={() => setIsTeamsExpanded(!isTeamsExpanded)}
+                onClick={() => toggleMenu('TEAMS')}
                 className={clsx(
-                  "flex items-center justify-between w-full px-4 py-3 rounded-xl transition-all outline-none text-content-main hover:text-brand font-semibold",
+                  "flex items-center justify-between w-full px-4 py-3 rounded-xl transition-all outline-none text-content-main hover:text-brand font-bold",
                   (location.pathname === '/my-team' && !isTeamsExpanded) && "bg-brand-opacity text-brand font-bold"
                 )}
               >
                 <div className="flex items-center gap-4">
-                  <Icon name="users" className="w-4 h-4" />
+                  <Icon name="users" className="w-5 h-5" />
                   <span className="text-sm tracking-wider">Мои команды</span>
                 </div>
                 <div className={clsx("transition-transform duration-200", isTeamsExpanded && "rotate-180")}>
-                  <Icon name="chevron" className="w-4 h-4" />
+                  <Icon name="chevron" className="w-5 h-5" />
                 </div>
               </button>
               
@@ -220,14 +213,14 @@ export function Sidebar({ user, teams = [], selectedTeam, onTeamChange, onClose 
                     handleSafeNavigate(section.path, () => onTeamChange(targetTeam));
                   }}
                   className={clsx(
-                    "flex items-center gap-4 px-4 py-3 rounded-xl transition-all定位 outline-none text-left w-full font-semibold justify-between",
+                    "flex items-center gap-4 px-4 py-3 rounded-xl transition-all outline-none text-left w-full font-bold justify-between",
                     isUrlActive 
                       ? 'bg-brand-opacity text-brand font-bold' 
                       : 'text-content-main hover:text-brand'
                   )}
                 >
                   <div className="flex items-center gap-4 min-w-0">
-                    <Icon name={section.icon} className="w-4 h-4 shrink-0" />
+                    <Icon name={section.icon} className="w-5 h-5 shrink-0" />
                     <span className={clsx("text-sm tracking-wider truncate", !hasSubAccess && "opacity-70")}>
                       {section.label}
                     </span>
@@ -239,7 +232,7 @@ export function Sidebar({ user, teams = [], selectedTeam, onTeamChange, onClose 
               );
             }
 
-            const RichmondMenuOpen = expandedMenus[section.id];
+            const isMenuOpen = expandedMenuId === section.id;
             const isAnySubRouteActive = location.pathname === section.path;
 
             return (
@@ -247,21 +240,21 @@ export function Sidebar({ user, teams = [], selectedTeam, onTeamChange, onClose 
                 <button 
                   onClick={() => toggleMenu(section.id)}
                   className={clsx(
-                    "flex items-center justify-between w-full px-4 py-3 rounded-xl transition-all outline-none text-content-main hover:text-brand font-semibold",
-                    (isAnySubRouteActive && !RichmondMenuOpen) && "bg-brand-opacity text-brand font-bold"
+                    "flex items-center justify-between w-full px-4 py-3 rounded-xl transition-all outline-none text-content-main hover:text-brand font-bold",
+                    (isAnySubRouteActive && !isMenuOpen) && "bg-brand-opacity text-brand font-bold"
                   )}
                 >
                   <div className="flex items-center gap-4">
-                    <Icon name={section.icon} className="w-4 h-4 shrink-0" />
+                    <Icon name={section.icon} className="w-5 h-5 shrink-0" />
                     <span className="text-sm tracking-wider">{section.label}</span>
                   </div>
-                  <div className={clsx("transition-transform duration-200", RichmondMenuOpen && "rotate-180")}>
-                    <Icon name="chevron" className="w-4 h-4" />
+                  <div className={clsx("transition-transform duration-200", isMenuOpen && "rotate-180")}>
+                    <Icon name="chevron" className="w-5 h-5" />
                   </div>
                 </button>
                 
                 {/* Выкатывающийся список команд */}
-                <div className={clsx("grid-expand-transition", RichmondMenuOpen && "expanded")}>
+                <div className={clsx("grid-expand-transition", isMenuOpen && "expanded")}>
                   <div className="grid-expand-inner">
                     <div className="flex flex-col gap-1 pl-3 pr-1 py-1 mt-1 border-l-2 border-brand/30 ml-6">
                       {filteringTeams.map((team) => {
@@ -310,13 +303,13 @@ export function Sidebar({ user, teams = [], selectedTeam, onTeamChange, onClose 
           <button 
             onClick={() => handleSafeNavigate('/settings')}
             className={clsx(
-              "flex items-center gap-4 px-4 py-3 rounded-xl transition-all outline-none text-left w-full font-semibold mt-1",
+              "flex items-center gap-4 px-4 py-3 rounded-xl transition-all outline-none text-left w-full font-bold mt-1",
               location.pathname === '/settings' 
                 ? 'bg-brand-opacity text-brand font-bold' 
                 : 'text-content-main hover:text-brand'
             )}
           >
-            <Icon name="settings" className="w-4 h-4" />
+            <Icon name="settings" className="w-5 h-5" />
             <span className="text-sm tracking-wider">Настройки</span>
           </button>
 
@@ -340,7 +333,7 @@ export function Sidebar({ user, teams = [], selectedTeam, onTeamChange, onClose 
           <span className="text-sm font-bold text-content-main leading-tight truncate">
             {user?.lastName}
           </span>
-          <span className="text-xs font-semibold text-content-muted leading-tight truncate mt-0.5">
+          <span className="text-xs font-bold text-content-muted leading-tight truncate mt-0.5">
             {user?.firstName}
           </span>
         </div>

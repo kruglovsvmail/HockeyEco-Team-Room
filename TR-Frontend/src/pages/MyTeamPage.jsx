@@ -325,7 +325,7 @@ export const MyTeamPage = () => {
       activeBrandColor: hasTeamColor ? activeBrandColor : null,
       user,
       selectedTeam
-    }, 'Профиль');
+    }, 'Участник команды');
   }, [openRightPanel, selectedTeamId, teamData.roster, fetchTeamData, hasTeamColor, activeBrandColor, user, selectedTeam]);
 
   const handleEditTeamProfileClick = () => {
@@ -334,7 +334,7 @@ export const MyTeamPage = () => {
       onRefresh: fetchTeamData,
       onTeamUpdated: onTeamUpdated,
       activeBrandColor: hasTeamColor ? activeBrandColor : null 
-    }, 'Редактировать клуб');
+    }, 'Команда');
   };
 
   const handleExcludeClick = useCallback((member) => setMemberToRemove(member), []);

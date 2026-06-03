@@ -25,7 +25,11 @@ import { OpponentSelectorFriendly } from './components/Manager/OpponentSelectorF
 import { ExternalTournamentSelector } from './components/Manager/ExternalTournamentSelector';
 import { ExternalOpponentSelector } from './components/Manager/ExternalOpponentSelector';
 
-// ИСПРАВЛЕНО: Импортируем нашу новую боковую панель управления профилем команды
+// ИСПРАВЛЕНО: Подключаем новые панели управления единым справочником
+import { OpponentHandbookPanel } from './components/Manager/OpponentHandbookPanel';
+import { TournamentHandbookPanel } from './components/Manager/TournamentHandbookPanel';
+
+// Импортируем боковую панель управления профилем команды
 import { EditTeamProfilePanel } from './components/MyTeam/EditTeamProfilePanel';
 
 dayjs.extend(utc);
@@ -356,8 +360,8 @@ function TeamLayoutContent() {
           {rightPanel.isOpen ? (
             <>
               <div className="flex items-center justify-between shadow-md p-4 h-[60px] shrink-0 z-[90]">
-                <button onClick={closeRightPanel} className="p-1 ml-1 bg-white/40 rounded-full text-content-muted hover:text-brand transition-colors outline-none cursor-pointer active:scale-95 flex items-center">
-                  <Icon name="chevron_left" className="w-7 h-7 text-content-main" />
+                <button onClick={closeRightPanel} className="p-1.5 ml-1 bg-white/30 rounded-xl text-content-muted hover:text-brand transition-colors outline-none cursor-pointer active:scale-95 flex items-center">
+                  <Icon name="chevron_left" className="w-6 h-6 text-content-main" />
                 </button>
                 <h3 className="text-sm font-bold text-content-main uppercase tracking-wider text-right truncate pl-4">
                   {rightPanel.title}
@@ -384,7 +388,15 @@ function TeamLayoutContent() {
                       <ExternalOpponentSelector data={rightPanel.data} />
                     )}
                     
-                    {/* ИСПРАВЛЕНО: Регистрируем тип editTeamProfile для корректного рендеринга нашей формы */}
+                    {/* ДОБАВЛЕНО: Регистрация новых панелей единого справочника */}
+                    {rightPanel.type === 'opponentForm' && (
+                      <OpponentHandbookPanel data={rightPanel.data} onClose={closeRightPanel} />
+                    )}
+                    {rightPanel.type === 'tournamentForm' && (
+                      <TournamentHandbookPanel data={rightPanel.data} onClose={closeRightPanel} />
+                    )}
+                    
+                    {/* Регистрируем тип editTeamProfile для корректного рендеринга нашей формы */}
                     {rightPanel.type === 'editTeamProfile' && (
                       <EditTeamProfilePanel {...rightPanel.data} onClose={closeRightPanel} />
                     )}

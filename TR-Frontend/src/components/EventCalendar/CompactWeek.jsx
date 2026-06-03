@@ -61,7 +61,7 @@ export const CompactWeek = React.memo(function CompactWeek({
 
         {/* Ограничивающее окно фиксированной ширины без иконки календаря внутри */}
         <div className="flex items-center overflow-hidden flex-1 justify-center ">
-          <div className="relative overflow-hidden w-[120px] h-5 flex items-center justify-center">
+          <div className="relative overflow-hidden w-[150px] h-5 flex items-center justify-center">
             {/* Трехколоночный трек, двигающийся зеркально карусели событий */}
             <div 
               className="w-[300%] flex items-start h-full absolute left-0 top-0"

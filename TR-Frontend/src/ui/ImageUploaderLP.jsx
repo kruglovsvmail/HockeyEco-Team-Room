@@ -49,7 +49,7 @@ export const ImageUploaderLP = ({ currentImageUrl, onChange, onDelete, sizeClass
           <img 
             src={preview || getImageUrl(currentImageUrl)} 
             alt="Загруженное медиа" 
-            className="w-full h-full object-contain p-1.5 drop-shadow-sm rounded-3xl" 
+            className="w-full h-full object-contain p-1.5 drop-shadow-sm rounded-2xl" 
           />
 
           {/* Бейдж УДАЛЕНИЯ (Справа сверху) */}
@@ -64,8 +64,8 @@ export const ImageUploaderLP = ({ currentImageUrl, onChange, onDelete, sizeClass
         </>
       ) : (
         /* Пустое состояние: Новая иконка ЗАГРУЗКИ (upload) во всю площадь превью квадрата */
-        <div className="text-content-muted border border-surface-border border rounded-2xl group-hover:text-brand transition-colors pointer-events-none flex items-center justify-center w-full h-full">
-          <Icon name="upload" className="w-7 h-7" strokeWidth={2.5} />
+        <div className="text-content-muted border border-surface-border border rounded-xl group-hover:text-brand transition-colors pointer-events-none flex items-center justify-center w-full h-full">
+          <Icon name="upload" className="w-6 h-6" strokeWidth={2.5} />
         </div>
       )}
     </div>
