@@ -60,20 +60,25 @@ export const getPwaTeams = async (req, res) => {
 
 /**
  * GET /api/manager/handbooks/external-opponents
- * Получение списка внешних соперников из блокнота команды
+ * ИСПРАВЛЕНО: Теперь список соперников для селектора матчей строго фильтруется по team_id команды-организатора
  */
 export const getExternalOpponents = async (req, res) => {
   try {
-    const { search } = req.query;
+    const { teamId, search } = req.query;
+
+    if (!teamId) {
+      return res.status(400).json({ success: false, error: 'Контекст команды (teamId) обязателен' });
+    }
+
     let query = `
       SELECT id, name, short_name, city, logo_url 
       FROM external_opponents 
-      WHERE status = 'active'
+      WHERE status = 'active' AND team_id = $1
     `;
-    const params = [];
+    const params = [teamId];
 
     if (search && search.trim()) {
-      query += ` AND (name ILIKE $1 OR city ILIKE $1)`;
+      query += ` AND (name ILIKE $2 OR city ILIKE $2)`;
       params.push(`%${search.trim()}%`);
     }
 
@@ -89,23 +94,24 @@ export const getExternalOpponents = async (req, res) => {
 
 /**
  * POST /api/manager/handbooks/external-opponents
- * Быстрое создание и сохранение нового внешнего соперника в базу прямо из шторки фронтенда
+ * ИСПРАВЛЕНО: При быстром создании соперника из шторки теперь передается и записывается team_id
  */
 export const createExternalOpponent = async (req, res) => {
   try {
-    const { name, short_name, city } = req.body;
+    const { teamId, name, short_name, city } = req.body;
 
-    if (!name || !city) {
-      return res.status(400).json({ success: false, error: 'Название и город соперника обязательны' });
+    if (!teamId || !name || !city) {
+      return res.status(400).json({ success: false, error: 'Идентификатор команды, название и город соперника обязательны' });
     }
 
     const insertQuery = `
-      INSERT INTO external_opponents (name, short_name, city, status)
-      VALUES ($1, $2, $3, 'active')
+      INSERT INTO external_opponents (team_id, name, short_name, city, status)
+      VALUES ($1, $2, $3, $4, 'active')
       RETURNING id, name, short_name, city, logo_url;
     `;
 
     const result = await pool.query(insertQuery, [
+      teamId,
       name.trim(),
       (short_name || name.trim().slice(0, 3)).toUpperCase(),
       city.trim()
@@ -120,7 +126,7 @@ export const createExternalOpponent = async (req, res) => {
 
 /**
  * GET /api/manager/handbooks/external-tournaments
- * ИСПРАВЛЕНО: Добавлена строгая изоляция по team_id, чтобы менеджеры видели только турниры своего клуба
+ * Получение списка только АКТИВНЫХ сторонних турниров (согласно новому правилу и флагу is_active)
  */
 export const getExternalTournaments = async (req, res) => {
   try {
@@ -194,22 +200,27 @@ export const getExternalTournamentOpponents = async (req, res) => {
 
 /**
  * GET /api/manager/handbooks/opponents-extended
- * Выгрузка реестра соперников с подсчетом количества сыгранных матчей (games_count) для защиты удаления
+ * ИСПРАВЛЕНО: Выгрузка блокнота соперников теперь строго изолирована по team_id текущего представителя
  */
 export const getOpponentsExtended = async (req, res) => {
   try {
-    const { search } = req.query;
+    const { teamId, search } = req.query;
+
+    if (!teamId) {
+      return res.status(400).json({ success: false, error: 'Параметр teamId обязателен для инициализации реестра' });
+    }
+
     let query = `
       SELECT eo.id, eo.name, eo.short_name, eo.city, eo.logo_url,
              (SELECT COUNT(*)::int FROM games WHERE away_external_id = eo.id) as games_count,
              (SELECT COUNT(*)::int FROM games WHERE away_external_id = eo.id AND status = 'finished') as finished_games_count
       FROM external_opponents eo
-      WHERE eo.status = 'active'
+      WHERE eo.status = 'active' AND eo.team_id = $1
     `;
-    const params = [];
+    const params = [teamId];
 
     if (search && search.trim()) {
-      query += ` AND (eo.name ILIKE $1 OR eo.city ILIKE $1)`;
+      query += ` AND (eo.name ILIKE $2 OR eo.city ILIKE $2)`;
       params.push(`%${search.trim()}%`);
     }
 
@@ -287,7 +298,7 @@ export const deleteExternalOpponent = async (req, res) => {
 
 /**
  * GET /api/manager/handbooks/tournaments-extended
- * ИСПРАВЛЕНО: Добавлен обязательный фильтр по team_id, чтобы выгружались только кубки текущей команды
+ * Выгрузка всех сторонних кубков с подсчетом матчей и общего количества допущенных команд
  */
 export const getTournamentsExtended = async (req, res) => {
   try {
@@ -324,7 +335,7 @@ export const getTournamentsExtended = async (req, res) => {
 
 /**
  * POST /api/manager/handbooks/external-tournaments
- * КРИТИЧЕСКОЕ ИСПРАВЛЕНО: Теперь из req.body извлекается teamId и корректно передается в INSERT, закрывая ошибку 23502
+ * Создание нового стороннего чемпионата в реестре команды
  */
 export const createExternalTournament = async (req, res) => {
   try {
@@ -399,7 +410,6 @@ export const deleteExternalTournament = async (req, res) => {
       return res.status(400).json({ success: false, error: 'Нельзя удалить турнир, внутри которого уже проведены или запланированы матчи' });
     }
 
-    // Очищаем связи участников перед полным удалением кубка
     await pool.query(`DELETE FROM external_tournaments_opponents WHERE tournament_id = $1`, [id]);
     
     const deleteQuery = `DELETE FROM team_external_tournaments WHERE id = $1 AND team_id = $2 RETURNING id;`;
@@ -418,11 +428,16 @@ export const deleteExternalTournament = async (req, res) => {
 
 /**
  * GET /api/manager/handbooks/external-tournaments/:tournamentId/roster-map
- * Выгрузка полной карты чекбоксов соперников
+ * ИСПРАВЛЕНО: Наполнение кубка командами теперь выгружает чекбоксы СТРОГО из личного блокнота соперников этой команды (eo.team_id = $2)
  */
 export const getTournamentRosterMap = async (req, res) => {
   try {
     const { tournamentId } = req.params;
+    const { teamId } = req.query;
+
+    if (!teamId) {
+      return res.status(400).json({ success: false, error: 'Контекст команды (teamId) не передан для составления карты' });
+    }
 
     const query = `
       SELECT eo.id, eo.name, eo.city,
@@ -431,11 +446,11 @@ export const getTournamentRosterMap = async (req, res) => {
                WHERE tournament_id = $1 AND external_opponent_id = eo.id
              )::boolean as is_in_tournament
       FROM external_opponents eo
-      WHERE eo.status = 'active'
+      WHERE eo.status = 'active' AND eo.team_id = $2
       ORDER BY eo.name ASC;
     `;
     
-    const result = await pool.query(query, [tournamentId]);
+    const result = await pool.query(query, [tournamentId, teamId]);
     return res.json({ success: true, teams: result.rows });
   } catch (err) {
     console.error('[Get Tournament Roster Map Error]:', err);

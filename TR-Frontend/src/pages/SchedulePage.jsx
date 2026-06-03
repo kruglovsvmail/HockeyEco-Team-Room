@@ -10,6 +10,7 @@ import isSameOrAfter from 'dayjs/plugin/isSameOrAfter';
 
 import { CompactWeek } from '../components/EventCalendar/CompactWeek';
 import { ExpandedGrid } from '../components/EventCalendar/ExpandedGrid';
+import { EventFilters } from '../components/EventCalendar/EventFilters';
 import { TopSheet } from '../ui/TopSheet';
 import EventCard from '../components/EventCalendar/EventCard';
 import { getAuthHeaders } from '../utils/helpers';
@@ -24,10 +25,11 @@ dayjs.extend(isSameOrAfter);
 dayjs.locale('ru');
 
 export function SchedulePage() {
-  const { selectedTeam, openRightPanel, openFullPage } = useOutletContext();
+  const { selectedTeam, openRightPanel, openFullPage, teams } = useOutletContext();
 
   const [currentDate, setCurrentDate] = useState(dayjs());
   const [isExpanded, setIsExpanded] = useState(false);
+  const [isFilterOpen, setIsFilterOpen] = useState(false);
   const [isPageReady, setIsPageReady] = useState(false);
 
   // Состояние активных фильтров для клиентской фильтрации
@@ -377,7 +379,7 @@ export function SchedulePage() {
                 else if (newDate.isAfter(currentDate, 'day')) slideTo('next');
                 else setCurrentDate(newDate);
               }}
-              onToggleExpand={() => setIsExpanded(true)} 
+              onFilterClick={() => setIsFilterOpen(true)}
             />
           </div>
         </div>
@@ -471,6 +473,15 @@ export function SchedulePage() {
             </div>
           </TopSheet>
         </div>
+
+        {/* Шторка Фильтра календаря, успешно перенесенная из Хедера */}
+        <TopSheet isOpen={isFilterOpen} onClose={() => setIsFilterOpen(false)}>
+          <EventFilters 
+            user={user}
+            teams={teams}
+            onClose={() => setIsFilterOpen(false)}
+          />
+        </TopSheet>
       </div>
     </FadeIn>
   );
