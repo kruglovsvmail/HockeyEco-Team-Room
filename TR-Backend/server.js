@@ -8,6 +8,7 @@ import pool from './config/db.js';
 import authRoutes from './routes/authRoutes.js';
 import EventRoutes from './routes/EventRoutes.js'; 
 import teamRoutes from './routes/teamRoutes.js';
+import profileRouter from './routes/profileRouter.js';
 
 // Импорт новых роутов управления командой
 import mgrEventRoutes from './routes/manager/mgrEventRoutes.js';
@@ -44,6 +45,7 @@ app.use(express.json());
 app.use('/api/auth', authRoutes);
 app.use('/api/events', EventRoutes); 
 app.use('/api/teams', teamRoutes);
+app.use(profileRouter);
 
 // Новые эндпоинты раздела Руководства
 app.use('/api/manager/events', mgrEventRoutes);
@@ -51,10 +53,20 @@ app.use('/api/manager/seasons', mgrSeasonRoutes);
 app.use('/api/manager/finances', mgrFinanceRoutes);
 app.use('/api/manager/handbooks', mgrHandbookRoutes);
 
+// --- ГЛОБАЛЬНЫЙ ОБРАБОТЧИК ОШИБОК ---
+// Гарантирует, что при любом непредвиденном сбое бэкенд вернет JSON, а не HTML-страницу
+app.use((err, req, res, next) => {
+  console.error('🚨 Критическая системная ошибка:', err);
+  res.status(err.status || 500).json({
+    success: false,
+    error: err.message || 'Внутренняя ошибка сервера'
+  });
+});
+
 const startServer = async () => {
   try {
-    const res = await pool.query('SELECT NOW()');
-    console.log('PostgreSQL connected:', res.rows[0].now);
+    const res = pool.query('SELECT NOW()');
+    console.log('PostgreSQL connected:', (await res).rows[0].now);
     
     app.listen(PORT, '0.0.0.0', () => {
       console.log(`Server running on port ${PORT}`);

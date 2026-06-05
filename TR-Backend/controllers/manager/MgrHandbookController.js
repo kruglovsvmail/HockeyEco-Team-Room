@@ -207,7 +207,7 @@ export const getOpponentsExtended = async (req, res) => {
     const { teamId, search } = req.query;
 
     if (!teamId) {
-      return res.status(400).json({ success: false, error: 'Параметр teamId обязателен для инициализации реестра' });
+      return res.status(400).json({ success: false, error: 'Параметр teamId обязателен для初始化реестра' });
     }
 
     let query = `
@@ -236,7 +236,6 @@ export const getOpponentsExtended = async (req, res) => {
 
 /**
  * PUT /api/manager/handbooks/external-opponents/:id
- * ИСПРАВЛЕНО: Убрана несуществующая колонка updated_at из SQL-запроса
  */
 export const updateExternalOpponent = async (req, res) => {
   try {
@@ -360,7 +359,6 @@ export const createExternalTournament = async (req, res) => {
 
 /**
  * PUT /api/manager/handbooks/external-tournaments/:id
- * ИСПРАВЛЕНО: Убрана несуществующая колонка updated_at из SQL-запроса
  */
 export const updateExternalTournament = async (req, res) => {
   try {
@@ -428,7 +426,7 @@ export const deleteExternalTournament = async (req, res) => {
 
 /**
  * GET /api/manager/handbooks/external-tournaments/:tournamentId/roster-map
- * Наполнение кубка командами выгружает чекбоксы СТРОГО из личного блокнота соперников этой команды
+ * ИСПРАВЛЕНО: Добавлен сбор флага is_locked. Если с соперником в рамках лиги есть матчи — блокируем удаление из ростера.
  */
 export const getTournamentRosterMap = async (req, res) => {
   try {
@@ -444,7 +442,11 @@ export const getTournamentRosterMap = async (req, res) => {
              EXISTS(
                SELECT 1 FROM external_tournaments_opponents 
                WHERE tournament_id = $1 AND external_opponent_id = eo.id
-             )::boolean as is_in_tournament
+             )::boolean as is_in_tournament,
+             EXISTS(
+               SELECT 1 FROM games 
+               WHERE external_tournament_id = $1 AND away_external_id = eo.id
+             )::boolean as is_locked
       FROM external_opponents eo
       WHERE eo.status = 'active' AND eo.team_id = $2
       ORDER BY eo.name ASC;
@@ -460,7 +462,6 @@ export const getTournamentRosterMap = async (req, res) => {
 
 /**
  * POST /api/manager/handbooks/external-tournaments/:tournamentId/roster-save
- * Сохранение состава участников лиги пачкой
  */
 export const saveTournamentRoster = async (req, res) => {
   const { tournamentId } = req.params;
@@ -473,6 +474,19 @@ export const saveTournamentRoster = async (req, res) => {
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
+
+    // Перед удалением пачки убеждаемся, что не удалим жестко заблокированные игры
+    const lockCheck = await client.query(`
+      SELECT external_opponent_id FROM external_tournaments_opponents eto
+      WHERE eto.tournament_id = $1 AND EXISTS(
+        SELECT 1 FROM games WHERE external_tournament_id = $1 AND away_external_id = eto.external_opponent_id
+      ) AND NOT (eto.external_opponent_id = ANY($2::int[]))
+    `, [tournamentId, opponentIds]);
+
+    if (lockCheck.rows.length > 0) {
+      await client.query('ROLLBACK');
+      return res.status(400).json({ success: false, error: 'Нарушение целостности: нельзя исключить команды, с которыми уже сыграны матчи' });
+    }
 
     await client.query(`DELETE FROM external_tournaments_opponents WHERE tournament_id = $1`, [tournamentId]);
 

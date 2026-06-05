@@ -98,7 +98,7 @@ export function Sidebar({ user, teams = [], selectedTeam, onTeamChange, onClose 
       <div className="flex-1 overflow-y-auto scrollbar-hide p-3 pt-4">
         <nav className="flex flex-col gap-1">
           
-          {/* Пункт 1: Расписание */}
+          {/* Пункт 1: Календарь */}
           <button 
             onClick={() => handleSafeNavigate('/')}
             className={clsx(
@@ -109,7 +109,7 @@ export function Sidebar({ user, teams = [], selectedTeam, onTeamChange, onClose 
             )}
           >
             <Icon name="calendar" className="w-5 h-5" />
-            <span className="text-sm tracking-wider">Расписание</span>
+            <span className="text-sm tracking-wider">Календарь</span>
           </button>
 
           {/* Пункт 2: Умное управление командами */}

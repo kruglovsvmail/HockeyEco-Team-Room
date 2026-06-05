@@ -109,7 +109,7 @@ export function HandbooksPage() {
         loadData,
         selectedTeam,
         onInitiateDelete: (id, name) => setDeleteConfirmation({ isOpen: true, type: 'tournament', id, name })
-      }, 'Управление турниром');
+      }, 'Лига / Турнир');
     }
   };
 

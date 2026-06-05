@@ -71,6 +71,7 @@ export const EventDashboard = ({ isOpen, onClose, data, type, title, user, selec
         selectedTeam={selectedTeam}
         onTeamUpdated={onTeamUpdated}
         hideActions={true}
+        title={title}
       />
 
       {/* КОНТЕНТНАЯ ЗОНА С СТАТИЧНЫМ СДВИГОМ ПОД ВЫСОТУ ШАПКИ */}

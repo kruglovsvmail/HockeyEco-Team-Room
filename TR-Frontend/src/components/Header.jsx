@@ -2,12 +2,17 @@ import React from 'react';
 import { Menu, X } from 'lucide-react';
 import { useLocation } from 'react-router-dom';
 
-export function Header({ isSidebarOpen, onToggleSidebar, user, teams, selectedTeam, onTeamUpdated, hideActions = false }) {
+export function Header({ isSidebarOpen, onToggleSidebar, user, teams, selectedTeam, onTeamUpdated, hideActions = false, title }) {
   const location = useLocation();
 
   // Интеллектуальное определение заголовка раздела с гибким поиском по подстроке (.includes)
   // Это гарантирует корректный показ названия, даже если пути вложенные или содержат префиксы типа /manager/
   const getSectionTitle = () => {
+    // Если заголовок передан принудительно через пропсы (например, из шторки EventDashboard), приоритет у него
+    if (title) {
+      return title;
+    }
+
     const path = location.pathname.toLowerCase();
     
     if (path.includes('my-team')) {
@@ -19,6 +24,20 @@ export function Header({ isSidebarOpen, onToggleSidebar, user, teams, selectedTe
     // Если в пути одновременно фигурируют "event" и "create" (подходит под /events/create, /create-event, /manager/events/create)
     if (path.includes('event') && path.includes('create')) {
       return 'Создание события';
+    }
+    if (path.includes('settings')) {
+      return 'Настройки';
+    }
+    if (path.includes('profile')) {
+      return 'Мой профиль';
+    }
+    if (path.includes('match')) {
+      return 'Матч-центр';
+    }
+    
+    // Строгая проверка для страницы расписания/календаря, чтобы заголовок не утекал на другие экраны
+    if (path === '/' || path === '/manager' || path === '/manager/' || path.includes('schedule') || path.includes('calendar')) {
+      return 'Календарь';
     }
     
     return '';
