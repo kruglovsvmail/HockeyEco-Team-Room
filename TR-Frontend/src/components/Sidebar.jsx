@@ -48,6 +48,7 @@ export function Sidebar({ user, teams = [], selectedTeam, onTeamChange, onClose 
   };
 
   const isTeamsExpanded = expandedMenuId === 'TEAMS';
+  const isTournamentsExpanded = expandedMenuId === 'TOURNAMENTS';
 
   // ОПТИМИЗАЦИЯ СДВИГА: Плавный отложенный переход для разгрузки мобильного процессора
   const handleSafeNavigate = (path, callbackBeforeNavigate) => {
@@ -155,12 +156,85 @@ export function Sidebar({ user, teams = [], selectedTeam, onTeamChange, onClose 
                 <div className="grid-expand-inner">
                   <div className="flex flex-col gap-1 pl-3 pr-1 py-1 mt-1 border-l-2 border-surface-border/40 ml-6">
                     {teams.map((team) => {
-                      const isTeamSelected = selectedTeam?.id === team.id;
+                      const isTeamSelected = selectedTeam?.id === team.id && location.pathname === '/my-team';
                       return (
                         <button
                           key={team.id}
                           onClick={() => {
                             handleSafeNavigate('/my-team', () => onTeamChange(team));
+                          }}
+                          className={clsx(
+                            "flex items-center gap-3 w-full px-3 py-2 rounded-xl transition-all text-left outline-none text-xs font-bold uppercase tracking-wider",
+                            isTeamSelected 
+                              ? "bg-brand-opacity text-brand" 
+                              : "text-content-muted hover:text-content-main hover:bg-surface-level2"
+                          )}
+                        >
+                          <div className="w-6 h-6 rounded-md bg-surface-level1 p-0.5 flex items-center justify-center shrink-0 ">
+                            <img 
+                              src={getImageUrl(team.logo_url)} 
+                              alt={team.name} 
+                              className="w-full h-full object-contain" 
+                            />
+                          </div>
+                          <span className="truncate flex-1">{team.name}</span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* НОВЫЙ РАЗДЕЛ: Турниры / Лиги с умным раскрытием под команды */}
+          {teams.length <= 1 ? (
+            teams.length === 1 ? (
+              <button 
+                onClick={() => handleSafeNavigate('/tournaments', () => {
+                  if (selectedTeam?.id !== teams[0].id) {
+                    onTeamChange(teams[0]);
+                  }
+                })}
+                className={clsx(
+                  "flex items-center gap-4 px-4 py-3 rounded-xl transition-all outline-none text-left w-full font-bold",
+                  location.pathname === '/tournaments' 
+                    ? 'bg-brand-opacity text-brand font-bold' 
+                    : 'text-content-main hover:text-brand'
+                )}
+              >
+                <Icon name="registry" className="w-5 h-5" />
+                <span className="text-sm tracking-wider">Турниры / Лиги</span>
+              </button>
+            ) : null
+          ) : (
+            <div className="flex flex-col w-full">
+              <button 
+                onClick={() => toggleMenu('TOURNAMENTS')}
+                className={clsx(
+                  "flex items-center justify-between w-full px-4 py-3 rounded-xl transition-all outline-none text-content-main hover:text-brand font-bold",
+                  (location.pathname === '/tournaments' && !isTournamentsExpanded) && "bg-brand-opacity text-brand font-bold"
+                )}
+              >
+                <div className="flex items-center gap-4">
+                  <Icon name="registry" className="w-5 h-5" />
+                  <span className="text-sm tracking-wider">Турниры / Лиги</span>
+                </div>
+                <div className={clsx("transition-transform duration-200", isTournamentsExpanded && "rotate-180")}>
+                  <Icon name="chevron" className="w-5 h-5" />
+                </div>
+              </button>
+              
+              <div className={clsx("grid-expand-transition", isTournamentsExpanded && "expanded")}>
+                <div className="grid-expand-inner">
+                  <div className="flex flex-col gap-1 pl-3 pr-1 py-1 mt-1 border-l-2 border-surface-border/40 ml-6">
+                    {teams.map((team) => {
+                      const isTeamSelected = selectedTeam?.id === team.id && location.pathname === '/tournaments';
+                      return (
+                        <button
+                          key={team.id}
+                          onClick={() => {
+                            handleSafeNavigate('/tournaments', () => onTeamChange(team));
                           }}
                           className={clsx(
                             "flex items-center gap-3 w-full px-3 py-2 rounded-xl transition-all text-left outline-none text-xs font-bold uppercase tracking-wider",

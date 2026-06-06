@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import clsx from 'clsx';
 import { TextInputLP } from '../../ui/Input-LP';
+import { CheckboxLP } from '../../ui/Checkbox-LP';
 import { ButtonLP } from '../../ui/Button-LP';
 import { Icon } from '../../ui/Icon';
 import { FadeIn, StaggerContainer } from '../../ui/FadeIn';
@@ -55,14 +56,16 @@ export function OpponentHandbookPanel({ data, onClose }) {
   const [oppName, setOppName] = useState('');
   const [oppShort, setOppShort] = useState('');
   const [oppCity, setOppCity] = useState('');
+  const [oppIsActive, setOppIsActive] = useState(true);
   
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [savingBlock, setSavingBlock] = useState(null); // 'name' | 'city' | 'short'
+  const [savingBlock, setSavingBlock] = useState(null); // 'name' | 'city' | 'short' | 'status'
 
   // Режимы редактирования блоков (карандашики)
   const [isEditName, setIsEditName] = useState(!editingOpponent);
   const [isEditCity, setIsEditCity] = useState(!editingOpponent);
   const [isEditShort, setIsEditShort] = useState(!editingOpponent);
+  const [isEditStatus, setIsEditStatus] = useState(!editingOpponent);
 
   // Вычисление динамического командного цвета
   const isColorsEnabled = localStorage.getItem('tr_use_team_colors') !== 'false';
@@ -79,16 +82,20 @@ export function OpponentHandbookPanel({ data, onClose }) {
       setOppName(editingOpponent.name || '');
       setOppShort(editingOpponent.short_name || '');
       setOppCity(editingOpponent.city || '');
+      setOppIsActive(editingOpponent.status !== 'archive');
       setIsEditName(false);
       setIsEditCity(false);
       setIsEditShort(false);
+      setIsEditStatus(false);
     } else {
       setOppName('');
       setOppShort('');
       setOppCity('');
+      setOppIsActive(true);
       setIsEditName(true);
       setIsEditCity(true);
       setIsEditShort(true);
+      setIsEditStatus(true);
     }
   }, [editingOpponent]);
 
@@ -110,7 +117,8 @@ export function OpponentHandbookPanel({ data, onClose }) {
           teamId: selectedTeam.id, 
           name: oppName.trim(), 
           short_name: oppShort.trim().toUpperCase(), 
-          city: oppCity.trim() 
+          city: oppCity.trim(),
+          status: oppIsActive ? 'active' : 'archive'
         })
       });
 
@@ -119,6 +127,7 @@ export function OpponentHandbookPanel({ data, onClose }) {
         if (blockKey === 'name') setIsEditName(false);
         if (blockKey === 'city') setIsEditCity(false);
         if (blockKey === 'short') setIsEditShort(false);
+        if (blockKey === 'status') setIsEditStatus(false);
       }
     } catch (err) {
       console.error(err);
@@ -141,7 +150,8 @@ export function OpponentHandbookPanel({ data, onClose }) {
           teamId: selectedTeam.id, 
           name: oppName.trim(), 
           short_name: oppShort.trim().toUpperCase(), 
-          city: oppCity.trim() 
+          city: oppCity.trim(),
+          status: oppIsActive ? 'active' : 'archive'
         })
       });
 
@@ -167,7 +177,6 @@ export function OpponentHandbookPanel({ data, onClose }) {
         onSubmit={editingOpponent ? (e) => e.preventDefault() : handleCreateSubmit} 
         className="flex-1 overflow-y-auto scrollbar-hide p-5 pb-24"
       >
-        {/* Поочередная анимация появления контента на основе ключа состояния */}
         <StaggerContainer key={editingOpponent ? "edit_opponent" : "create_opponent"}>
           
           {/* БЛОК 1: НАЗВАНИЕ КОМАНДЫ */}
@@ -189,7 +198,6 @@ export function OpponentHandbookPanel({ data, onClose }) {
                 activeColor={activeBrandColor}
               />
             ) : (
-              /* ИСПРАВЛЕНО: Дублирующий лейбл удален, значение выведено крупнее по левой стороне */
               <div className="text-base font-black text-brand tracking-wide pt-1">
                 {oppName || '—'}
               </div>
@@ -215,7 +223,6 @@ export function OpponentHandbookPanel({ data, onClose }) {
                 activeColor={activeBrandColor}
               />
             ) : (
-              /* ИСПРАВЛЕНО: Дублирующий лейбл удален, значение выведено крупнее по левой стороне */
               <div className="text-sm font-black text-content-main tracking-wide pt-1">
                 {oppCity || '—'}
               </div>
@@ -242,14 +249,41 @@ export function OpponentHandbookPanel({ data, onClose }) {
                 activeColor={activeBrandColor}
               />
             ) : (
-              /* ИСПРАВЛЕНО: Дублирующий лейбл удален, значение выведено крупнее по левой стороне */
               <div className="text-sm font-black text-content-main tracking-wide pt-1">
                 {oppShort || '—'}
               </div>
             )}
           </CustomBlock>
 
-          {/* БЛОК СТАТИСТИКИ (показывается только при редактировании) */}
+          {/* БЛОК 4: СТАТУС СОПЕРНИКА В БАЗЕ ДАННЫХ */}
+          <CustomBlock 
+            title="Статус соперника" 
+            icon="calendar"
+            isEditing={isEditStatus}
+            isSaving={savingBlock === 'status'}
+            onAction={editingOpponent ? () => {
+              if (isEditStatus) handleSaveField('status');
+              else setIsEditStatus(true);
+            } : null}
+          >
+            {isEditStatus ? (
+              <div className="pt-1">
+                <CheckboxLP 
+                  checked={oppIsActive} 
+                  onChange={setOppIsActive} 
+                  label="Активный соперник" 
+                  activeColor={activeBrandColor}
+                />
+              </div>
+            ) : (
+              <div className="text-sm font-black text-content-main tracking-wide pt-1 flex items-center gap-1.5">
+                <div className={clsx("w-2 h-2 rounded-full", oppIsActive ? "bg-brand animate-pulse" : "bg-content-muted")} />
+                {oppIsActive ? 'Доступен (Активен)' : 'В архиве'}
+              </div>
+            )}
+          </CustomBlock>
+
+          {/* БЛОК СТАТИСТИКИ */}
           {editingOpponent && (
             <div className="p-4 bg-surface-level1 border border-surface-border rounded-2xl flex flex-col gap-1 my-6">
               <span className="text-[10px] font-bold text-content-muted uppercase tracking-wider">Статистическая сводка</span>
@@ -259,7 +293,7 @@ export function OpponentHandbookPanel({ data, onClose }) {
             </div>
           )}
 
-          {/* НИЖНИЙ БЛОК ДЕЙСТВИЙ ВНУТРИ СТЭКА СТЭГГЕРА */}
+          {/* НИЖНИЙ БЛОК ДЕЙСТВИЙ */}
           <div className="pt-4 shrink-0 flex flex-col gap-2">
             {!editingOpponent ? (
               <ButtonLP 
@@ -286,7 +320,6 @@ export function OpponentHandbookPanel({ data, onClose }) {
                 >
                   Удалить
                 </button>
-                {/* ИСПРАВЛЕНО: Добавлено развернутое хоккейное пояснение при заблокированном удалении */}
                 {isDeleteDisabled && (
                   <p className="text-[13px] text-content-muted font-medium leading-relaxed text-center mt-1 px-1">
                     Удаление невозможно: ваша команда уже сыграла или планирует сыграть матч с этим соперником.

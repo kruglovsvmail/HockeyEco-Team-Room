@@ -26,7 +26,8 @@ export function HintPopover({ status, children }) {
     deadline_lines_edit: `Изменение пятерок заблокировано. До игры осталось меньше ${DEADLINES?.MIDDLE_EDIT_MINUTES || 60} минут.`,
     deadline_roster_submit: `Отправка заблокирована. До игры осталось меньше ${DEADLINES?.ROSTER_SUBMIT_MINUTES || 120} минут.`,
     deadline_player_params: `Изменение параметров игрока заблокировано. До игры осталось меньше ${DEADLINES?.ROSTER_SUBMIT_MINUTES || 120} минут.`,
-    not_in_roster: 'Не доступно. Пользователь не в ростере команды'
+    not_in_roster: 'Не доступно. Пользователь не в ростере команды',
+    match_locked: 'У этой командой есть запланированые или сыграные матчи.'
   }), []);
 
   const message = messages[status] || 'Действие недоступно.';
@@ -141,7 +142,7 @@ export function HintPopover({ status, children }) {
     };
   }, [isOpen]);
 
-  // Генерация динамических высокопроизводительных правил интерполяции GPU
+  // Generation of dynamic high-performance GPU interpolation rules
   const keyframesStyles = useMemo(() => {
     if (placement === 'top') {
       return `

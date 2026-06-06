@@ -32,6 +32,9 @@ import { TournamentHandbookPanel } from './components/Manager/TournamentHandbook
 // Импортируем боковую панель управления профилем команды
 import { EditTeamProfilePanel } from './components/MyTeam/EditTeamProfilePanel';
 
+// Добавлен импорт новой боковой панели для отображения и выбора турниров
+import { TournamentListPanel } from './components/Tournaments/TournamentListPanel';
+
 dayjs.extend(utc);
 dayjs.extend(timezone);
 dayjs.locale('ru');
@@ -399,6 +402,11 @@ function TeamLayoutContent() {
                     {/* Регистрируем тип editTeamProfile для корректного рендеринга нашей формы */}
                     {rightPanel.type === 'editTeamProfile' && (
                       <EditTeamProfilePanel {...rightPanel.data} onClose={closeRightPanel} />
+                    )}
+
+                    {/* ДОБАВЛЕНО: Регистрация боковой панели выбора лиг и турниров */}
+                    {rightPanel.type === 'tournamentSelector' && (
+                      <TournamentListPanel {...rightPanel.data} />
                     )}
                   </FadeIn>
                 )}

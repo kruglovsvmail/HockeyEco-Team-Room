@@ -21,6 +21,9 @@ export function Header({ isSidebarOpen, onToggleSidebar, user, teams, selectedTe
     if (path.includes('handbook')) {
       return 'Справочник команды';
     }
+    if (path.includes('tournaments') || path.includes('leagues')) {
+      return 'Турниры / Лиги';
+    }
     // Если в пути одновременно фигурируют "event" и "create" (подходит под /events/create, /create-event, /manager/events/create)
     if (path.includes('event') && path.includes('create')) {
       return 'Создание события';

@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import clsx from 'clsx';
 import { TextInputLP } from '../../ui/Input-LP';
 import { CheckboxLP } from '../../ui/Checkbox-LP';
@@ -7,7 +7,7 @@ import { SegmentedControl } from '../../ui/SegmentedControl';
 import { Icon } from '../../ui/Icon';
 import { PageLoader } from '../../ui/Loader';
 import { FadeIn, StaggerContainer } from '../../ui/FadeIn';
-import { HintPopover } from '../../ui/HintPopover'; // Импортируем ваш HintPopover
+import { HintPopover } from '../../ui/HintPopover';
 import { getAuthHeaders } from '../../utils/helpers';
 
 const CustomBlock = ({ title, icon, isEditing, onAction, isSaving, children }) => {
@@ -61,13 +61,16 @@ export function TournamentHandbookPanel({ data, onClose }) {
   const [isRosterLoading, setIsRosterLoading] = useState(false);
   const [leagueRoosterTeams, setLeagueRoosterTeams] = useState([]);
   
-  // Умный компактный UX-фильтр
   const [teamSearch, setTeamSearch] = useState('');
-  const [showOnlySelected, setShowOnlySelected] = useState(false); // ИСПРАВЛЕНО: Теперь стейт обычного чекбокса
+  const [showOnlySelected, setShowOnlySelected] = useState(false);
 
   const [savingBlock, setSavingBlock] = useState(null);
-  const [isEditName, setIsEditName] = useState(!editingTournament);
+  const [isEditName, CancelIsEditName] = useState(!editingTournament);
   const [isEditStatus, setIsEditStatus] = useState(!editingTournament);
+
+  // Ссылки для управления таймером задержки (Debounce) и отменой летящих запросов (AbortController)
+  const saveTimeoutRef = useRef(null);
+  const abortControllerRef = useRef(null);
 
   const isColorsEnabled = localStorage.getItem('tr_use_team_colors') !== 'false';
   const teamCacheKey = selectedTeam?.id ? `tr_cached_team_${selectedTeam.id}` : null;
@@ -82,7 +85,7 @@ export function TournamentHandbookPanel({ data, onClose }) {
     if (editingTournament) {
       setTourName(editingTournament.name || '');
       setTourIsActive(editingTournament.is_active ?? true);
-      setIsEditName(false);
+      CancelIsEditName(false);
       setIsEditStatus(false);
       setActivePanelTab('info');
       if (selectedTeam?.id) {
@@ -92,7 +95,7 @@ export function TournamentHandbookPanel({ data, onClose }) {
       setTourName('');
       setTourIsActive(true);
       setLeagueRoosterTeams([]);
-      setIsEditName(true);
+      CancelIsEditName(true);
       setIsEditStatus(true);
       setActivePanelTab('info');
     }
@@ -101,7 +104,13 @@ export function TournamentHandbookPanel({ data, onClose }) {
   useEffect(() => {
     const handleClosePanel = () => onClose();
     window.addEventListener('close-manager-right-panel', handleClosePanel);
-    return () => window.removeEventListener('close-manager-right-panel', handleClosePanel);
+    
+    return () => {
+      window.removeEventListener('close-manager-right-panel', handleClosePanel);
+      // Очистка при размонтировании панели
+      if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current);
+      if (abortControllerRef.current) abortControllerRef.current.abort();
+    };
   }, [onClose]);
 
   const loadLeagueRooster = async (tournamentId) => {
@@ -117,12 +126,65 @@ export function TournamentHandbookPanel({ data, onClose }) {
     }
   };
 
+  // Высокоэффективная фоновая отправка данных с автоотменой прошлых сессий
+  const saveRosterInBackground = async (currentTeams) => {
+    // Если предыдущий запрос еще выполняется — отменяем его на уровне сетевого стека браузера
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
+    }
+
+    const controller = new AbortController();
+    abortControllerRef.current = controller;
+
+    try {
+      const targetOpponentIds = currentTeams.filter(t => t.is_in_tournament).map(t => t.id);
+      const res = await fetch(`${import.meta.env.VITE_API_URL}/api/manager/handbooks/external-tournaments/${editingTournament.id}/roster-save`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
+        body: JSON.stringify({ teamId: selectedTeam.id, opponentIds: targetOpponentIds }),
+        signal: controller.signal
+      });
+
+      if (res.ok) {
+        loadData();
+        // Гарантируем, что скрываем плашку лоадера только если это была самая последняя и актуальная сессия кликов
+        if (abortControllerRef.current === controller) {
+          setSavingBlock(null);
+        }
+      }
+    } catch (err) {
+      if (err.name !== 'AbortError') {
+        console.error(err);
+        if (abortControllerRef.current === controller) {
+          setSavingBlock(null);
+        }
+      }
+    }
+  };
+
   const handleToggleRoosterTeamCheckbox = (team) => {
-    // ИСПРАВЛЕНО: Блокируем клик наглухо, если матч уже сыгран или запланирован
     if (team.is_locked && team.is_in_tournament) {
       return;
     }
-    setLeagueRoosterTeams(prev => prev.map(t => t.id === team.id ? { ...t, is_in_tournament: !t.is_in_tournament } : t));
+
+    setLeagueRoosterTeams(prev => {
+      const next = prev.map(t => t.id === team.id ? { ...t, is_in_tournament: !t.is_in_tournament } : t);
+      
+      // Сбрасываем предыдущий таймер ожидания (Debounce)
+      if (saveTimeoutRef.current) {
+        clearTimeout(saveTimeoutRef.current);
+      }
+
+      // Мгновенно зажигаем плашку "Сохранение изменений..." для идеального UX отклика
+      setSavingBlock('roster');
+
+      // Ждем 500 миллисекунд тишины перед отправкой пакета в Postgres
+      saveTimeoutRef.current = setTimeout(() => {
+        saveRosterInBackground(next);
+      }, 500);
+      
+      return next;
+    });
   };
 
   const handleSaveField = async (blockKey) => {
@@ -136,27 +198,8 @@ export function TournamentHandbookPanel({ data, onClose }) {
       });
       if (res.ok) {
         loadData();
-        if (blockKey === 'name') setIsEditName(false);
+        if (blockKey === 'name') CancelIsEditName(false);
         if (blockKey === 'status') setIsEditStatus(false);
-      }
-    } catch (err) {
-      console.error(err);
-    } finally {
-      setSavingBlock(null);
-    }
-  };
-
-  const handleSaveRosterMap = async () => {
-    setSavingBlock('roster');
-    try {
-      const targetOpponentIds = leagueRoosterTeams.filter(t => t.is_in_tournament).map(t => t.id);
-      const res = await fetch(`${import.meta.env.VITE_API_URL}/api/manager/handbooks/external-tournaments/${editingTournament.id}/roster-save`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
-        body: JSON.stringify({ teamId: selectedTeam.id, opponentIds: targetOpponentIds })
-      });
-      if (res.ok) {
-        loadData();
       }
     } catch (err) {
       console.error(err);
@@ -192,10 +235,13 @@ export function TournamentHandbookPanel({ data, onClose }) {
   const filteredTeams = leagueRoosterTeams.filter(team => {
     const matchesSearch = team.name.toLowerCase().includes(teamSearch.toLowerCase()) || 
                           team.city.toLowerCase().includes(teamSearch.toLowerCase());
+    
+    const isVisible = (team.status !== 'archive') || team.is_in_tournament;
+
     if (showOnlySelected) {
       return matchesSearch && team.is_in_tournament;
     }
-    return matchesSearch;
+    return matchesSearch && isVisible;
   });
 
   const isDeleteDisabled = editingTournament?.games_count > 0;
@@ -221,15 +267,6 @@ export function TournamentHandbookPanel({ data, onClose }) {
 
       {/* ОСНОВНАЯ ЗОНА КОНТЕНТА */}
       <div className="flex-1 flex flex-col overflow-hidden relative">
-        
-        {savingBlock === 'roster' && (
-          <div className="absolute inset-0 bg-surface-base/40 backdrop-blur-[1px] z-50 flex items-center justify-center animate-fade-in">
-            <div className="flex items-center gap-2 px-4 py-2 bg-surface-level1 border border-surface-border rounded-xl shadow-xl">
-              <div className="w-4 h-4 border-2 border-brand border-t-transparent rounded-full animate-spin" />
-              <span className="text-xs font-bold uppercase tracking-wider text-content-main">Сохранение состава лиги...</span>
-            </div>
-          </div>
-        )}
 
         {!editingTournament || activePanelTab === 'info' ? (
           <form onSubmit={handleCreateSubmit} className="flex-1 overflow-y-auto scrollbar-hide p-5 pb-24">
@@ -242,12 +279,12 @@ export function TournamentHandbookPanel({ data, onClose }) {
                 isSaving={savingBlock === 'name'}
                 onAction={editingTournament ? () => {
                   if (isEditName) handleSaveField('name');
-                  else setIsEditName(true);
+                  else CancelIsEditName(true);
                 } : null}
               >
                 {isEditName ? (
                   <TextInputLP 
-                    placeholder="Например: ТХЛ 40+ (2026)" 
+                    placeholder="Например: ТХЛ (25/26)" 
                     value={tourName} 
                     onChange={setTourName} 
                     activeColor={activeBrandColor}
@@ -316,7 +353,7 @@ export function TournamentHandbookPanel({ data, onClose }) {
                         "w-full py-3.5 text-xs font-bold uppercase tracking-wider border transition-all rounded-xl text-center outline-none shadow-sm cursor-pointer",
                         isDeleteDisabled 
                           ? "bg-surface-level1 border-surface-border opacity-30 text-content-subtle cursor-not-allowed" 
-                      : "bg-danger-muted border-danger opacity-80 text-danger hover:bg-danger/20 active:scale-[0.98] cursor-pointer"
+                          : "bg-danger-muted border-danger opacity-80 text-danger hover:bg-danger/20 active:scale-[0.98] cursor-pointer"
                       )}
                     >
                       Удалить
@@ -333,10 +370,10 @@ export function TournamentHandbookPanel({ data, onClose }) {
             </StaggerContainer>
           </form>
         ) : (
-          /* ИСПРАВЛЕНО: Высокоэффективная шторка выбора ростеров команд */
+          /* ВЫСОКОЭФФЕКТИВНАЯ ШТОРКА ВЫБОРА РОСТЕРОВ КОМАНД */
           <div className="flex flex-col h-full overflow-hidden">
             
-            {/* ИСПРАВЛЕНО: ЗАБЛОКИРОВАННАЯ ОТ СКРОЛЛА ПАНЕЛЬ ПОИСКА И ЧЕКБОКСА */}
+            {/* ЗАБЛОКИРОВАННАЯ ОТ СКРОЛЛА ПАНЕЛЬ ПОИСКА И ЧЕКБОКСА */}
             <div className="px-5 py-4 bg-surface-level1 border border-surface-border rounded-2xl shadow-md mx-5 mt-2 mb-4 shrink-0 flex flex-col gap-3">
               <input 
                 type="text"
@@ -346,7 +383,6 @@ export function TournamentHandbookPanel({ data, onClose }) {
                 className="w-full px-4 py-2.5 bg-surface-level2 border border-surface-border rounded-xl text-xs font-bold text-content-main outline-none placeholder:text-content-muted focus:border-brand/40 transition-colors"
               />
               
-              {/* ИСПРАВЛЕНО: Замена тумблеров на аккуратный чекбокс */}
               <div className="mt-2">
                 <CheckboxLP 
                   checked={showOnlySelected} 
@@ -357,22 +393,52 @@ export function TournamentHandbookPanel({ data, onClose }) {
               </div>
             </div>
 
-            {/* ИСПРАВЛЕНО: ЧИСТЫЙ СПИСОК КАРТОЧЕК БЕЗ ВЛОЖЕННЫХ ОГРАНИЧИТЕЛЬНЫХ КОНТЕЙНЕРОВ */}
+            {/* СПИСОК КАРТОЧЕК */}
             <div className="flex-1 overflow-y-auto scrollbar-hide px-5 pb-24 gap-2 flex flex-col">
               <StaggerContainer key="pure_teams_list">
                 {isRosterLoading ? (
                   <div className="py-16"><PageLoader /></div>
                 ) : filteredTeams.length > 0 ? (
                   filteredTeams.map(team => {
-                    const cardContent = (
+                    const isLockedAndInTour = team.is_locked && team.is_in_tournament;
+
+                    if (isLockedAndInTour) {
+                      return (
+                        <div className="w-full [&>*]:!flex [&>*]:!w-full" key={team.id}>
+                          <HintPopover status="match_locked">
+                            <div 
+                              onClick={() => window.dispatchEvent(new CustomEvent('close-all-hint-popovers'))}
+                              className={clsx(
+                                "w-full py-3 px-4 border rounded-xl flex items-center justify-between transition-all bg-surface-level1 mb-2 shadow-sm select-none",
+                                "border-brand/30"
+                              )}
+                              style={{ borderColor: `${activeBrandColor}30` }}
+                            >
+                              <div className="flex flex-col min-w-0 pr-2 text-left">
+                                <span className="text-xs font-black text-content-main truncate">{team.name}</span>
+                                <span className="text-[10px] text-content-muted font-bold uppercase mt-0.5 tracking-wider">{team.city}</span>
+                              </div>
+                              <CheckboxLP 
+                                checked={true} 
+                                onChange={() => {}} 
+                                activeColor={activeBrandColor}
+                                disabled={true}
+                              />
+                            </div>
+                          </HintPopover>
+                        </div>
+                      );
+                    }
+
+                    return (
                       <div 
+                        key={team.id}
                         onClick={() => handleToggleRoosterTeamCheckbox(team)} 
                         className={clsx(
-                          "w-full py-3 px-4 border rounded-xl flex items-center justify-between transition-all bg-surface-level1 mb-2 shadow-sm select-none",
-                          team.is_in_tournament ? "border-brand/30" : "border-surface-border/50",
-                          team.is_locked && team.is_in_tournament ? "opacity-90 bg-surface-level2" : "active:scale-[0.995]"
+                          "w-full py-3 px-4 border rounded-xl flex items-center justify-between transition-all bg-surface-level1 mb-2 shadow-sm select-none active:scale-[0.995]",
+                          team.is_in_tournament ? "border-brand/30" : "border-surface-border/50"
                         )}
-                        style={team.is_in_tournament && !team.is_locked ? { borderColor: `${activeBrandColor}30` } : {}}
+                        style={team.is_in_tournament ? { borderColor: `${activeBrandColor}30` } : {}}
                       >
                         <div className="flex flex-col min-w-0 pr-2 text-left">
                           <span className="text-xs font-black text-content-main truncate">{team.name}</span>
@@ -380,49 +446,11 @@ export function TournamentHandbookPanel({ data, onClose }) {
                         </div>
                         <CheckboxLP 
                           checked={team.is_in_tournament || false} 
-                          // Отключаем нативную реакцию чекбокса при локе, обработку забирает HintPopover триггер
-                          onChange={team.is_locked && team.is_in_tournament ? () => {} : () => handleToggleRoosterTeamCheckbox(team)} 
+                          onChange={() => handleToggleRoosterTeamCheckbox(team)} 
                           activeColor={activeBrandColor}
-                          disabled={team.is_locked && team.is_in_tournament}
                         />
                       </div>
                     );
-
-                    // ИСПРАВЛЕНО: Если команда сыграла матч, оборачиваем её карточку в Portal-инжектор HintPopover
-                    if (team.is_locked && team.is_in_tournament) {
-                      return (
-                        <HintPopover key={team.id} status="not_in_team">
-                          {/* Кастомный рендер строки ошибки для HintPopover */}
-                          <style>
-                            {`
-                              .fixed p {
-                                font-size: 11px !important;
-                              }
-                            `}
-                          </style>
-                          <div onClick={(e) => e.stopPropagation()} className="w-full">
-                            {React.cloneElement(cardContent, {
-                              onClick: (e) => {
-                                e.stopPropagation();
-                                // Шлём шинный вызов, чтобы открыть поповер над этой карточкой
-                                window.dispatchEvent(new CustomEvent('close-all-hint-popovers'));
-                              },
-                              // Подменяем текст поповера на лету, перехватив рендер
-                              children: [
-                                ...cardContent.props.children.slice(0, -1),
-                                React.cloneElement(cardContent.props.children[cardContent.props.children.length - 1], {
-                                  label: undefined
-                                })
-                              ]
-                            })}
-                          </div>
-                          {/* Скрытый триггер-оверлей сообщения */}
-                          <span className="hidden">Матч с этой командой состоялся или запланирован</span>
-                        </HintPopover>
-                      );
-                    }
-
-                    return React.cloneElement(cardContent, { key: team.id });
                   })
                 ) : (
                   <div className="text-center py-16 text-xs font-bold text-content-muted opacity-40 italic">
@@ -432,18 +460,17 @@ export function TournamentHandbookPanel({ data, onClose }) {
               </StaggerContainer>
             </div>
 
-            {/* ФИКСИРОВАННАЯ НИЖНЯЯ КНОПКА СОХРАНЕНИЯ */}
-            <div className="absolute bottom-0 inset-x-0 p-5 bg-gradient-to-t from-surface-level2 via-surface-level2 to-transparent shrink-0 z-30">
-              <ButtonLP 
-                type="button" 
-                variant="primary" 
-                onClick={handleSaveRosterMap}
-                disabled={isRosterLoading}
-                className="rounded-xl font-bold uppercase tracking-wider text-xs !py-3.5 !h-12 w-full shadow-lg"
-                activeColor={activeBrandColor}
-              >
-                Сохранить состав участников
-              </ButtonLP>
+            {/* ПЛАВАЮЩИЙ НЕБЛОКИРУЮЩИЙ ИНДИКАТОР ФОНОВОГО АВТОСОХРАНЕНИЯ */}
+            <div className="absolute bottom-4 inset-x-0 shrink-0 z-30 flex justify-center pointer-events-none">
+              <div className={clsx(
+                "px-4 py-2 bg-surface-level1 border rounded-xl shadow-2xl flex items-center gap-2 transition-all duration-300 transform pointer-events-auto",
+                savingBlock === 'roster' ? "opacity-100 translate-y-0 border-brand/30 scale-100" : "opacity-0 translate-y-4 border-surface-border/50 scale-95"
+              )}>
+                <div className="w-3.5 h-3.5 border-2 border-brand border-t-transparent rounded-full animate-spin" />
+                <span className="text-[10px] font-black uppercase tracking-widest text-content-main">
+                  Сохранение изменений...
+                </span>
+              </div>
             </div>
 
           </div>

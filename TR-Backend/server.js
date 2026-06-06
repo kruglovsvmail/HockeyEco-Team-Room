@@ -9,6 +9,7 @@ import authRoutes from './routes/authRoutes.js';
 import EventRoutes from './routes/EventRoutes.js'; 
 import teamRoutes from './routes/teamRoutes.js';
 import profileRouter from './routes/profileRouter.js';
+import tournamentRoutes from './routes/tournamentRoutes.js'; // Импорт роутера турниров
 
 // Импорт новых роутов управления командой
 import mgrEventRoutes from './routes/manager/mgrEventRoutes.js';
@@ -45,6 +46,7 @@ app.use(express.json());
 app.use('/api/auth', authRoutes);
 app.use('/api/events', EventRoutes); 
 app.use('/api/teams', teamRoutes);
+app.use('/api/tournaments', tournamentRoutes); // Регистрация эндпоинта турниров
 app.use(profileRouter);
 
 // Новые эндпоинты раздела Руководства
