@@ -1,4 +1,3 @@
-// tournamentRoutes.js
 import { Router } from 'express';
 import tournamentController from '../controllers/tournamentController.js';
 
@@ -15,5 +14,8 @@ router.get('/division/:divisionId/standings', tournamentController.getDivisionSt
 
 // Получение структуры сеток, раундов и матчей плей-офф
 router.get('/division/:divisionId/playoffs', tournamentController.getDivisionPlayoffs);
+
+// Получение динамической статистики полевых игроков и вратарей по этапам
+router.get('/division/:divisionId/stats', tournamentController.getDivisionStats);
 
 export default router;

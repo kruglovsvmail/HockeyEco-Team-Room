@@ -1,5 +1,5 @@
 // TournamentsPage.jsx
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { useOutletContext } from 'react-router-dom';
 import clsx from 'clsx';
 import { FadeIn } from '../ui/FadeIn';
@@ -10,6 +10,7 @@ import { PageLoader } from '../ui/Loader';
 import { TournamentCardGame } from '../components/Tournaments/TournamentCardGame';
 import { TournamentTable } from '../components/Tournaments/TournamentTable';
 import { TournamentPlayoff } from '../components/Tournaments/TournamentPlayoff';
+import { TournamentStat } from '../components/Tournaments/TournamentStat';
 
 const TOURNAMENT_TABS = [
   { value: 'matches', label: 'Матчи' },
@@ -30,6 +31,15 @@ export function TournamentsPage() {
   const [playoffs, setPlayoffs] = useState([]);
   const [isTablesLoading, setIsTablesLoading] = useState(false);
   const [expandedTeams, setExpandedTeams] = useState({});
+
+  // Монолитный стэйт хранения ВСЕЙ хоккейной статистики (загружается один раз полностью)
+  const [statsData, setStatsData] = useState({
+    all: { skaters: [], goalies: [] },
+    regular: { skaters: [], goalies: [] },
+    playoff: { skaters: [], goalies: [] }
+  });
+  const [isStatsLoading, setIsStatsLoading] = useState(false);
+  const [statsStageType, setStatsStageType] = useState('all'); // 'all' / 'regular' / 'playoff'
 
   const [activeTeamDetails, setActiveTeamDetails] = useState(() => {
     if (selectedTeamId) {
@@ -111,6 +121,46 @@ export function TournamentsPage() {
     setExpandedTeams({});
   }, [activeTournament]);
 
+  // УМНЫЙ ФОНОВЫЙ ПАКЕТНЫЙ ЗАПРОС: Грузим все три этапа параллельно один раз при активации таба
+  useEffect(() => {
+    if (!activeTournament?.division_id || activeTab !== 'stats') return;
+
+    const fetchAllStatsUpfront = async () => {
+      setIsStatsLoading(true);
+      try {
+        const headers = getAuthHeaders();
+        const baseUrl = `${import.meta.env.VITE_API_URL}/api/tournaments/division/${activeTournament.division_id}/stats`;
+
+        // Параллельный запуск трех независимых потоков данных в фоне
+        const [allRes, regularRes, playoffRes] = await Promise.all([
+          fetch(`${baseUrl}?stageType=all`, { headers }),
+          fetch(`${baseUrl}?stageType=regular`, { headers }),
+          fetch(`${baseUrl}?stageType=playoff`, { headers })
+        ]);
+
+        const [allData, regularData, playoffData] = await Promise.all([
+          allRes.ok ? allRes.json() : { skaters: [], goalies: [] },
+          regularRes.ok ? regularRes.json() : { skaters: [], goalies: [] },
+          playoffRes.ok ? playoffRes.json() : { skaters: [], goalies: [] }
+        ]);
+
+        // Консолидируем всё в единое клиентское хранилище памяти
+        setStatsData({
+          all: { skaters: allData.skaters || [], goalies: allData.goalies || [] },
+          regular: { skaters: regularData.skaters || [], goalies: regularData.goalies || [] },
+          playoff: { skaters: playoffData.skaters || [], goalies: playoffData.goalies || [] }
+        });
+
+      } catch (err) {
+        console.error("Критическая ошибка пакетной предзагрузки топов статистики:", err);
+      } finally {
+        setIsStatsLoading(false);
+      }
+    };
+
+    fetchAllStatsUpfront();
+  }, [activeTournament, activeTab]); // Исключили statsStageType! Теперь триггера на клики фильтра нет.
+
   const toggleTeamAccordion = (teamId) => {
     setExpandedTeams(prev => ({ ...prev, [teamId]: !prev[teamId] }));
   };
@@ -148,25 +198,20 @@ export function TournamentsPage() {
   const { regular, playoff } = groupGamesByStageAndSeries();
   const hasGames = Object.keys(regular).length > 0 || Object.keys(playoff).length > 0;
 
-  // Группировка структуры плей-офф на изолированные сетки (Брекеты)
   const sortedBrackets = React.useMemo(() => {
     const bracketsMap = playoffs.reduce((acc, curr) => {
       if (!acc[curr.bracket_id]) {
-        acc[curr.bracket_id] = {
-          id: curr.bracket_id,
-          name: curr.bracket_name,
-          is_main: curr.is_main,
-          matchups: []
-        };
+        acc[curr.bracket_id] = { id: curr.bracket_id, name: curr.bracket_name, is_main: curr.is_main, matchups: [] };
       }
-      if (curr.matchup_id) {
-        acc[curr.bracket_id].matchups.push(curr);
-      }
+      if (curr.matchup_id) acc[curr.bracket_id].matchups.push(curr);
       return acc;
     }, {});
-    
     return Object.values(bracketsMap).sort((a, b) => (b.is_main ? 1 : 0) - (a.is_main ? 1 : 0));
   }, [playoffs]);
+
+  // Выбираем срез данных из памяти на основе активного локального стейта мгновенно
+  const currentSkaters = statsData[statsStageType]?.skaters || [];
+  const currentGoalies = statsData[statsStageType]?.goalies || [];
 
   return (
     <FadeIn 
@@ -197,8 +242,9 @@ export function TournamentsPage() {
               </p>
             </div>
           ) : (
-            <div className="animate-fade-in">
+            <FadeIn key={activeTab} duration={300}>
               
+              {/* ВКЛАДКА: МАТЧИ */}
               {activeTab === 'matches' && (
                 isGamesLoading ? <PageLoader /> : (
                   <div className="flex flex-col gap-8">
@@ -256,6 +302,7 @@ export function TournamentsPage() {
                 )
               )}
 
+              {/* ВКЛАДКА: ТАБЛИЦЫ И СЕТКИ */}
               {activeTab === 'tables' && (
                 isTablesLoading ? <PageLoader /> : (
                   <div className="flex flex-col gap-8">
@@ -272,20 +319,13 @@ export function TournamentsPage() {
                       </div>
 
                       {playoffs.length === 0 ? (
-                        <div className="text-center py-8 text-xs font-bold text-content-subtle uppercase tracking-wider bg-surface-base rounded-2xl border border-surface-border/40">
+                        <div className="text-center py-8 text-xs font-bold text-content-subtle uppercase tracking-wider bg-surface-base rounded-2xl border border-surface-border">
                           Матчи плей-офф еще не сформированы
                         </div>
                       ) : (
                         <div className="flex flex-col gap-6">
                           {sortedBrackets.map((bracket, index) => (
-                            <div 
-                              key={bracket.id} 
-                              className={clsx(
-                                "flex flex-col gap-4 w-full",
-                                index > 0 && "mt-6 pt-6 border-t border-surface-border/40"
-                              )}
-                            >
-                              {/* Показываем имя под-сетки только если она не является основной */}
+                            <div key={bracket.id} className={clsx("flex flex-col gap-4 w-full", index > 0 && "mt-6 pt-6 border-t border-surface-border")}>
                               {!bracket.is_main && (
                                 <div className="text-left text-[11px] font-black uppercase tracking-[0.12em] text-content-muted pl-1 opacity-90">
                                   {bracket.name}
@@ -308,14 +348,20 @@ export function TournamentsPage() {
                 )
               )}
 
+              {/* ВКЛАДКА: СТАТИСТИКА И ТОПЫ */}
               {activeTab === 'stats' && (
-                <div className="bg-surface-base p-8 rounded-2xl border border-surface-border shadow-sm flex flex-col items-center justify-center min-h-[160px]">
-                  <div className="text-center text-[10px] font-black uppercase tracking-[0.2em] text-content-subtle">
-                    Статистика лидеров чемпионата находится в разработке
-                  </div>
-                </div>
+                isStatsLoading ? <PageLoader /> : (
+                  <TournamentStat 
+                    skaters={currentSkaters}
+                    goalies={currentGoalies}
+                    stageType={statsStageType}
+                    onStageTypeChange={setStatsStageType}
+                    hasTeamColor={hasTeamColor}
+                    activeBrandColor={activeBrandColor}
+                  />
+                )
               )}
-            </div>
+            </FadeIn>
           )}
         </div>
       </div>

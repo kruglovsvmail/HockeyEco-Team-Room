@@ -146,13 +146,13 @@ export function TournamentPlayoff({
                     {game.home_team_logo ? (
                       <img src={getImageUrl(game.home_team_logo)} alt="" className="w-5 h-5 object-contain shrink-0" />
                     ) : (
-                      <div className="w-4 h-4 bg-surface-level3 border border-surface-border/40 text-[8px] text-content-muted font-bold shrink-0 flex items-center justify-center rounded-full">?</div>
+                      <div className="w-4 h-4 bg-surface-level3 border border-surface-border text-[8px] text-content-muted font-bold shrink-0 flex items-center justify-center rounded-full">?</div>
                     )}
                     <span className="uppercase tracking-tight text-content-main truncate">{homeShort}</span>
                   </div>
                   
                   <div className={clsx(
-                    "font-mono text-center font-black px-1.5 py-0.5 bg-surface-base border border-surface-border/60 rounded min-w-[44px]",
+                    "font-mono text-center font-black px-1.5 py-0.5 bg-surface-base border border-surface-border rounded min-w-[44px]",
                     game.status === 'live' ? "text-red-500" : "text-brand"
                   )}>
                     {isPlayed ? `${game.home_score}:${game.away_score}` : '—:—'}
@@ -163,7 +163,7 @@ export function TournamentPlayoff({
                     {game.away_team_logo ? (
                       <img src={getImageUrl(game.away_team_logo)} alt="" className="w-5 h-5 object-contain shrink-0" />
                     ) : (
-                      <div className="w-4 h-4 bg-surface-level3 border border-surface-border/40 text-[8px] text-content-muted font-bold shrink-0 flex items-center justify-center rounded-full">?</div>
+                      <div className="w-4 h-4 bg-surface-level3 border border-surface-border text-[8px] text-content-muted font-bold shrink-0 flex items-center justify-center rounded-full">?</div>
                     )}
                   </div>
                 </div>
@@ -190,7 +190,7 @@ export function TournamentPlayoff({
               onClick={() => handleRoundTabClick(r.id)}
               className={clsx(
                 "px-4 py-2 rounded-2xl text-[10px] font-bold uppercase tracking-widest border whitespace-nowrap snap-center transition-all shrink-0 outline-none",
-                isRoundActive ? "bg-brand text-white border-brand font-black" : "bg-surface-base text-content-muted border-surface-border/70"
+                isRoundActive ? "bg-brand text-white border-brand font-black" : "bg-surface-base text-content-muted border-surface-border"
               )}
               style={isRoundActive && hasTeamColor ? { backgroundColor: activeBrandColor, borderColor: activeBrandColor } : {}}
             >
@@ -261,7 +261,7 @@ export function TournamentPlayoff({
 
                     )}>
                       
-                      <div className="flex items-center justify-between w-full mb-3 pb-1 border-b border-b-surface-border/10">
+                      <div className="flex items-center justify-between w-full mb-3 pb-1 border-b border-b-surface-border">
                         <div>
                           {isMultiMatch ? (
                             <span className="text-[9px] font-bold uppercase tracking-widest text-content-muted ">
@@ -290,7 +290,7 @@ export function TournamentPlayoff({
                               {matchup.team1_logo ? (
                                 <img src={getImageUrl(matchup.team1_logo)} alt="" className="w-6 h-6 object-contain shrink-0" />
                               ) : (
-                                <div className="w-6 h-6 bg-surface-level2 border border-surface-border/60 text-[12px] text-content-muted font-bold shrink-0 flex items-center justify-center rounded-full">?</div>
+                                <div className="w-6 h-6 bg-surface-level2 border border-surface-border text-[12px] text-content-muted font-bold shrink-0 flex items-center justify-center rounded-full">?</div>
                               )}
                               <span 
                                 className={clsx("uppercase tracking-tight text-[11px] truncate", isTeam1Winner ? "font-black" : "font-bold text-content-main")}
@@ -313,7 +313,7 @@ export function TournamentPlayoff({
                               {matchup.team2_logo ? (
                                 <img src={getImageUrl(matchup.team2_logo)} alt="" className="w-6 h-6 object-contain shrink-0" />
                               ) : (
-                                <div className="w-6 h-6 bg-surface-level2 border border-surface-border/60 text-[12px] text-content-muted font-bold shrink-0 flex items-center justify-center rounded-full">?</div>
+                                <div className="w-6 h-6 bg-surface-level2 border border-surface-border text-[12px] text-content-muted font-bold shrink-0 flex items-center justify-center rounded-full">?</div>
                               )}
                               <span 
                                 className={clsx("uppercase tracking-tight text-[11px] truncate", isTeam2Winner ? "font-black" : "font-bold text-content-main")}
@@ -337,7 +337,7 @@ export function TournamentPlayoff({
                           <span className="text-[7px] font-black uppercase tracking-wider text-content-subtle mb-1 text-center block w-full whitespace-nowrap">
                             {isMultiMatch ? 'счет в серии' : 'счет матча'}
                           </span>
-                          <div className="flex flex-col gap-1 items-center justify-center bg-surface-level1 border border-surface-border/30 rounded-lg p-1 w-11">
+                          <div className="flex flex-col gap-1 items-center justify-center bg-surface-level1 border border-surface-border rounded-lg p-1 w-11">
                             <div className="h-6 flex items-center justify-center font-mono text-[14px] font-black text-content-main">
                               {score1}
                             </div>

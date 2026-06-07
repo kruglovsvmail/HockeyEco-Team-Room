@@ -154,7 +154,7 @@ export function Sidebar({ user, teams = [], selectedTeam, onTeamChange, onClose 
               {/* Раскрывающийся список логотипов и названий команд */}
               <div className={clsx("grid-expand-transition", isTeamsExpanded && "expanded")}>
                 <div className="grid-expand-inner">
-                  <div className="flex flex-col gap-1 pl-3 pr-1 py-1 mt-1 border-l-2 border-surface-border/40 ml-6">
+                  <div className="flex flex-col gap-1 pl-3 pr-1 py-1 mt-1 border-l-2 border-surface-border ml-6">
                     {teams.map((team) => {
                       const isTeamSelected = selectedTeam?.id === team.id && location.pathname === '/my-team';
                       return (
@@ -227,7 +227,7 @@ export function Sidebar({ user, teams = [], selectedTeam, onTeamChange, onClose 
               
               <div className={clsx("grid-expand-transition", isTournamentsExpanded && "expanded")}>
                 <div className="grid-expand-inner">
-                  <div className="flex flex-col gap-1 pl-3 pr-1 py-1 mt-1 border-l-2 border-surface-border/40 ml-6">
+                  <div className="flex flex-col gap-1 pl-3 pr-1 py-1 mt-1 border-l-2 border-surface-border ml-6">
                     {teams.map((team) => {
                       const isTeamSelected = selectedTeam?.id === team.id && location.pathname === '/tournaments';
                       return (

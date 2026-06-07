@@ -43,7 +43,7 @@ export function SubscriptionStub({
     >
       
       {/* МИНИМАЛИСТИЧНЫЙ ХЕДЕР ШТОРКИ */}
-      <header className="flex items-center justify-between px-4 h-[60px] border-b border-surface-border/20 shrink-0 bg-surface-level1/60 backdrop-blur-md">
+      <header className="flex items-center justify-between px-4 h-[60px] border-b border-surface-border shrink-0 bg-surface-level1/60 backdrop-blur-md">
         <button
           type="button"
           onClick={onClose}
@@ -79,7 +79,7 @@ export function SubscriptionStub({
       </div>
 
       {/* ФУТЕР ДЛЯ СОХРАНЕНИЯ ОЩУЩЕНИЯ НАИВНОГО ПРИЛОЖЕНИЯ */}
-      <footer className="h-8 bg-surface-base shrink-0 border-t border-surface-border/10 flex items-center justify-center opacity-40">
+      <footer className="h-8 bg-surface-base shrink-0 border-t border-surface-border flex items-center justify-center opacity-40">
         <span className="text-[9px] font-medium text-content-muted tracking-wider">
           Защищено сквозным rbac-шифрованием
         </span>

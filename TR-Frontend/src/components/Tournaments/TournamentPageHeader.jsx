@@ -20,7 +20,7 @@ export function TournamentPageHeader({
       <div className="px-4 pointer-events-auto relative z-20 bg-surface-border">
         <button 
           onClick={onClick}
-          className="w-full bg-surface-base p-4 rounded-3xl flex items-center shadow-lg text-left outline-none active:scale-[0.98] transition-all border border-surface-border/40"
+          className="w-full bg-surface-base p-4 rounded-3xl flex items-center shadow-lg text-left outline-none active:scale-[0.98] transition-all border border-surface-border"
         >
           <div className="w-[20%] shrink-0 flex items-center justify-center">
             <div className="w-14 h-14 flex items-center justify-center overflow-hidden">

@@ -282,7 +282,7 @@ export function CreateEventPage() {
                       </div>
                     )}
 
-                    <div className="flex flex-col gap-1.5 border-t border-surface-border/50 pt-3 mt-1">
+                    <div className="flex flex-col gap-1.5 border-t border-surface-border0 pt-3 mt-1">
                       <span className="text-[10px] font-bold text-content-muted uppercase tracking-wider pl-1">Комплект формы нашей команды</span>
                       <SegmentedControl options={[{ value: 'dark', label: 'Темная' }, { value: 'light', label: 'Светлая' }]} value={myJerseyType} onChange={setMyJerseyType} activeColor={hasTeamColor ? activeBrandColor : null} />
                     </div>

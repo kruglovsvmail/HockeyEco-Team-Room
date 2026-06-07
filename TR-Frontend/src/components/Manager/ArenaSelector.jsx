@@ -84,7 +84,7 @@ export function ArenaSelector({ data }) {
                   key={arena.id} 
                   type="button"
                   onClick={() => onSelect({ ...arena, isManual: false })}
-                  className="w-full p-4 bg-surface-level1 border border-surface-border/40 rounded-2xl text-left flex items-center justify-between outline-none cursor-pointer hover:border-brand/30 transition-all active:scale-[0.99]"
+                  className="w-full p-4 bg-surface-level1 border border-surface-border rounded-2xl text-left flex items-center justify-between outline-none cursor-pointer hover:border-brand/30 transition-all active:scale-[0.99]"
                 >
                   <div className="flex flex-col min-w-0 pr-2 text-left">
                     <span className="text-sm font-bold text-content-main truncate">{arena.name}</span>

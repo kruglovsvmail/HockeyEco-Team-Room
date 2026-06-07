@@ -436,7 +436,7 @@ export function TournamentHandbookPanel({ data, onClose }) {
                         onClick={() => handleToggleRoosterTeamCheckbox(team)} 
                         className={clsx(
                           "w-full py-3 px-4 border rounded-xl flex items-center justify-between transition-all bg-surface-level1 mb-2 shadow-sm select-none active:scale-[0.995]",
-                          team.is_in_tournament ? "border-brand/30" : "border-surface-border/50"
+                          team.is_in_tournament ? "border-brand/30" : "border-surface-border0"
                         )}
                         style={team.is_in_tournament ? { borderColor: `${activeBrandColor}30` } : {}}
                       >
@@ -464,7 +464,7 @@ export function TournamentHandbookPanel({ data, onClose }) {
             <div className="absolute bottom-4 inset-x-0 shrink-0 z-30 flex justify-center pointer-events-none">
               <div className={clsx(
                 "px-4 py-2 bg-surface-level1 border rounded-xl shadow-2xl flex items-center gap-2 transition-all duration-300 transform pointer-events-auto",
-                savingBlock === 'roster' ? "opacity-100 translate-y-0 border-brand/30 scale-100" : "opacity-0 translate-y-4 border-surface-border/50 scale-95"
+                savingBlock === 'roster' ? "opacity-100 translate-y-0 border-brand/30 scale-100" : "opacity-0 translate-y-4 border-surface-border0 scale-95"
               )}>
                 <div className="w-3.5 h-3.5 border-2 border-brand border-t-transparent rounded-full animate-spin" />
                 <span className="text-[10px] font-black uppercase tracking-widest text-content-main">

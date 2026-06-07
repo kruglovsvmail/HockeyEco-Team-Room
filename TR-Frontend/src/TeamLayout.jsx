@@ -436,7 +436,7 @@ function TeamLayoutContent() {
             </>
           ) : (
             <div className="hidden md:flex flex-col h-full w-full bg-surface-level1 select-none">
-              <div className="flex items-center bg-surface-base justify-between p-4 h-[60px] shrink-0 border-b border-surface-border/30">
+              <div className="flex items-center bg-surface-base justify-between p-4 h-[60px] shrink-0 border-b border-surface-border">
               </div>
               <div className="flex-1 flex flex-col items-center justify-center p-6 text-center">
               </div>

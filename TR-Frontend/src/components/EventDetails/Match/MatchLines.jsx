@@ -970,7 +970,7 @@ export const MatchLines = ({ event, initialAttendees = [], initialDraftLines = [
                   if (val) setEditAssistant(false);
                 }} 
               />
-              <div className="h-px bg-surface-border/50" />
+              <div className="h-px bg-surface-border0" />
               <CheckboxLP 
                 label="Ассистент капитана (A)" 
                 checked={editAssistant} 

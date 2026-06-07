@@ -334,7 +334,7 @@ export function ProfilePage() {
                   onChange={handleAvatarChange}
                   onDelete={null}
                   showDelete={false} 
-                  sizeClass="w-20 h-20 bg-surface-level2 border border-surface-border/80 rounded-2xl"
+                  sizeClass="w-20 h-20 bg-surface-level2 border border-surface-border rounded-2xl"
                 />
                 <div className="flex flex-col gap-1 min-w-0">
                   <span className="text-[12px] text-content-muted font-medium leading-normal">

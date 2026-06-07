@@ -51,7 +51,7 @@ export function TournamentCardGame({ game }) {
   return (
     <div className={clsx(
       "w-full bg-surface-base rounded-3xl border px-2 pb-2 pt-4 flex flex-col shadow-md gap-2 relative overflow-hidden select-none",
-      isLive ? "border-red-500/30 shadow-md shadow-red-500/5" : "border-surface-border/40"
+      isLive ? "border-red-500/30 shadow-md shadow-red-500/5" : "border-surface-border"
     )}>
       
       {/* 1. ОСНОВНОЙ БЛОК: Центрированное противостояние */}

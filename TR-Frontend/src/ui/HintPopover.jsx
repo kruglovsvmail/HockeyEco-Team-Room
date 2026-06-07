@@ -173,7 +173,7 @@ export function HintPopover({ status, customContent, children }) {
   const popoverContent = isRendered && createPortal(
     <div 
       className={clsx(
-        "fixed z-[9999] bg-surface-level1 border border-surface-border/60 shadow-2xl rounded-xl p-3 select-none pointer-events-auto will-change-transform",
+        "fixed z-[9999] bg-surface-level1 border border-surface-border shadow-2xl rounded-xl p-3 select-none pointer-events-auto will-change-transform",
         customContent ? "w-[260px]" : "w-[210px]"
       )}
       style={{
@@ -199,14 +199,14 @@ export function HintPopover({ status, customContent, children }) {
       {/* Динамическая стрелочка, меняющая положение в зависимости от placement */}
       {placement === 'top' ? (
         <div 
-          className="absolute -bottom-1.5 w-3 h-3 bg-surface-level1 border-b border-r border-surface-border/60 rotate-45"
+          className="absolute -bottom-1.5 w-3 h-3 bg-surface-level1 border-b border-r border-surface-border rotate-45"
           style={{
             left: `${Math.max(10, Math.min(customContent ? 238 : 188, coords.triggerX - coords.left - 6))}px`
           }}
         />
       ) : (
         <div 
-          className="absolute -top-1.5 w-3 h-3 bg-surface-level1 border-t border-l border-surface-border/60 rotate-45"
+          className="absolute -top-1.5 w-3 h-3 bg-surface-level1 border-t border-l border-surface-border rotate-45"
           style={{
             left: `${Math.max(10, Math.min(customContent ? 238 : 188, coords.triggerX - coords.left - 6))}px`
           }}

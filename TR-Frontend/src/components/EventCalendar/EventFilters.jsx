@@ -148,7 +148,7 @@ export function EventFilters({ user, teams = [], onClose }) {
                         className="w-7 h-7 object-contain img-render-smooth shrink-0"
                       />
                     ) : (
-                      <div className="flex items-center justify-center w-7 h-7 rounded-lg bg-surface-level3 border border-surface-border/50 text-content-muted font-black text-[10px] uppercase tracking-wider shrink-0">
+                      <div className="flex items-center justify-center w-7 h-7 rounded-lg bg-surface-level3 border border-surface-border0 text-content-muted font-black text-[10px] uppercase tracking-wider shrink-0">
                         {team.short_name || 'Т'}
                       </div>
                     )}

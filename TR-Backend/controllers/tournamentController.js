@@ -165,10 +165,8 @@ class TournamentController {
           pm.team2_wins,
           pm.winner_id,
           t1.name as team1_name,
-          t1.short_name as team1_short_name,
           t1.logo_url as team1_logo,
           t2.name as team2_name,
-          t2.short_name as team2_short_name,
           t2.logo_url as team2_logo
         FROM playoff_brackets pb
         JOIN playoff_rounds pr ON pb.id = pr.bracket_id
@@ -190,6 +188,147 @@ class TournamentController {
       return res.status(500).json({
         success: false,
         error: 'Внутренняя ошибка сервера при загрузке данных плей-офф'
+      });
+    }
+  }
+
+  // Динамический расчет статистики полевых игроков и вратарей из протоколов матчей (Вариант А)
+  async getDivisionStats(req, res) {
+    try {
+      const { divisionId } = req.params;
+      const stageType = req.query.stageType || 'all'; // 'all', 'regular', 'playoff'
+
+      // 1. Запрос статистики ПОЛЕВЫХ ИГРОКОВ (с учетом фоток из team_members)
+      const skatersQuery = `
+        WITH basic_roster AS (
+          SELECT DISTINCT gr.player_id, gr.team_id, gm.id as game_id
+          FROM game_rosters gr
+          JOIN games gm ON gr.game_id = gm.id
+          WHERE gm.division_id = $1 AND gm.status = 'finished'
+            AND gr.position_in_line != 'G'
+            AND ($2 = 'all' OR gm.stage_type = $2)
+        ),
+        player_games AS (
+          SELECT player_id, team_id, COUNT(*) as games_played
+          FROM basic_roster
+          GROUP BY player_id, team_id
+        ),
+        player_goals AS (
+          SELECT ge.scorer_id as player_id, COUNT(*) as goals
+          FROM game_events ge
+          JOIN games gm ON ge.game_id = gm.id
+          WHERE gm.division_id = $1 AND gm.status = 'finished' AND ge.event_type = 'goal'
+            AND ($2 = 'all' OR gm.stage_type = $2)
+          GROUP BY ge.scorer_id
+        ),
+        player_assists AS (
+          SELECT player_id, COUNT(*) as assists
+          FROM (
+            SELECT ge.assist1_id as player_id FROM game_events ge JOIN games gm ON ge.game_id = gm.id WHERE gm.division_id = $1 AND gm.status = 'finished' AND ge.event_type = 'goal' AND ($2 = 'all' OR gm.stage_type = $2) AND ge.assist1_id IS NOT NULL
+            UNION ALL
+            SELECT ge.assist2_id as player_id FROM game_events ge JOIN games gm ON ge.game_id = gm.id WHERE gm.division_id = $1 AND gm.status = 'finished' AND ge.event_type = 'goal' AND ($2 = 'all' OR gm.stage_type = $2) AND ge.assist2_id IS NOT NULL
+          ) as sub
+          GROUP BY player_id
+        ),
+        player_penalties AS (
+          SELECT ge.penalty_player_id as player_id, SUM(ge.penalty_minutes) as pim
+          FROM game_events ge
+          JOIN games gm ON ge.game_id = gm.id
+          WHERE gm.division_id = $1 AND gm.status = 'finished' AND ge.event_type = 'penalty'
+            AND ($2 = 'all' OR gm.stage_type = $2)
+          GROUP BY ge.penalty_player_id
+        )
+        SELECT 
+          u.id as player_id,
+          u.first_name,
+          u.last_name,
+          tm.photo_url as photo_url,
+          t.name as team_name,
+          t.logo_url as team_logo,
+          COALESCE(pg.games_played, 0) as games_played,
+          COALESCE(pgl.goals, 0) as goals,
+          COALESCE(pa.assists, 0) as assists,
+          (COALESCE(pgl.goals, 0) + COALESCE(pa.assists, 0)) as points,
+          COALESCE(pp.pim, 0) as penalty_minutes
+        FROM player_games pg
+        JOIN users u ON pg.player_id = u.id
+        JOIN teams t ON pg.team_id = t.id
+        LEFT JOIN team_members tm ON tm.user_id = u.id AND tm.team_id = t.id
+        LEFT JOIN player_goals pgl ON pg.player_id = pgl.player_id
+        LEFT JOIN player_assists pa ON pg.player_id = pa.player_id
+        LEFT JOIN player_penalties pp ON pg.player_id = pp.player_id
+      `;
+
+      // 2. Запрос статистики ВРАТАРЕЙ (с учетом фоток из team_members)
+      const goaliesQuery = `
+        WITH goalie_games AS (
+          SELECT DISTINCT gr.player_id, gr.team_id, gm.id as game_id,
+                 CASE WHEN gr.team_id = gm.home_team_id THEN gm.away_team_id ELSE gm.home_team_id END as opp_team_id
+          FROM game_rosters gr
+          JOIN games gm ON gr.game_id = gm.id
+          WHERE gm.division_id = $1 AND gm.status = 'finished'
+            AND gr.position_in_line = 'G'
+            AND ($2 = 'all' OR gm.stage_type = $2)
+        ),
+        goalie_match_stats AS (
+          SELECT 
+            gg.player_id, 
+            gg.team_id,
+            gg.game_id,
+            COUNT(ge.id) as match_goals_against,
+            COALESCE(SUM(gss.shots_count), 0) as match_shots_against
+          FROM goalie_games gg
+          LEFT JOIN game_events ge ON gg.game_id = ge.game_id AND ge.event_type = 'goal' AND ge.against_goalie_id = gg.player_id
+          LEFT JOIN game_shots_summary gss ON gg.game_id = gss.game_id AND gg.opp_team_id = gss.team_id
+          GROUP BY gg.player_id, gg.team_id, gg.game_id
+        ),
+        goalie_aggregated AS (
+          SELECT 
+            player_id,
+            team_id,
+            COUNT(*) as games_played,
+            SUM(match_goals_against) as goals_against,
+            SUM(match_shots_against) as shots_against,
+            SUM(CASE WHEN match_goals_against = 0 AND match_shots_against > 0 THEN 1 ELSE 0 END) as shutouts
+          FROM goalie_match_stats
+          GROUP BY player_id, team_id
+        )
+        SELECT 
+          u.id as player_id,
+          u.first_name,
+          u.last_name,
+          tm.photo_url as photo_url,
+          t.name as team_name,
+          t.logo_url as team_logo,
+          ga.games_played,
+          ga.goals_against,
+          CASE WHEN ga.shots_against >= ga.goals_against THEN (ga.shots_against - ga.goals_against) ELSE 0 END as saves,
+          CASE WHEN ga.shots_against > 0 
+               THEN ROUND(((ga.shots_against - ga.goals_against)::numeric / ga.shots_against * 100), 2)
+               ELSE 0.00 END as save_percent,
+          ROUND((ga.goals_against::numeric / NULLIF(ga.games_played, 0)), 2) as goals_against_average,
+          ga.shutouts
+        FROM goalie_aggregated ga
+        JOIN users u ON ga.player_id = u.id
+        JOIN teams t ON ga.team_id = t.id
+        LEFT JOIN team_members tm ON tm.user_id = u.id AND tm.team_id = t.id
+      `;
+
+      const [skatersResult, goaliesResult] = await Promise.all([
+        pool.query(skatersQuery, [divisionId, stageType]),
+        pool.query(goaliesQuery, [divisionId, stageType])
+      ]);
+
+      return res.json({
+        success: true,
+        skaters: skatersResult.rows,
+        goalies: goaliesResult.rows
+      });
+    } catch (err) {
+      console.error('Ошибка в TournamentController.getDivisionStats:', err);
+      return res.status(500).json({
+        success: false,
+        error: 'Внутренняя ошибка сервера при расчете хоккейной статистики'
       });
     }
   }

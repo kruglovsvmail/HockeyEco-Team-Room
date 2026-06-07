@@ -126,7 +126,7 @@ export const MatchInfo = ({
           <ContainerContent>
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 py-1 w-full">
               <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-xl bg-surface-level2 border border-surface-border/40 flex items-center justify-center shrink-0">
+                <div className="w-10 h-10 rounded-xl bg-surface-level2 border border-surface-border flex items-center justify-center shrink-0">
                   <Icon name="clock" className="w-5 h-5" style={{ color: activeBrandColor }} />
                 </div>
                 <div className="flex flex-col">
@@ -217,7 +217,7 @@ export const MatchInfo = ({
         {/* 1. МЕСТО ПРОВЕДЕНИЯ */}
         <ContainerContent icon="arena">
           <div className="flex items-center gap-3 py-0.5">
-            <div className="w-9 h-9 rounded-xl bg-surface-level2 border border-surface-border/40 flex items-center justify-center shrink-0">
+            <div className="w-9 h-9 rounded-xl bg-surface-level2 border border-surface-border flex items-center justify-center shrink-0">
               <Icon name="location_pin" className="w-4 h-4" style={{ color: activeBrandColor }} />
             </div>
             <span className="text-xs font-bold text-content-main leading-snug">
@@ -234,11 +234,11 @@ export const MatchInfo = ({
               {tournamentLogo ? (
                 <img 
                   src={getImageUrl(tournamentLogo)} 
-                  className="w-10 h-10 object-contain rounded-xl bg-surface-level2 p-1 border border-surface-border/30 shrink-0" 
+                  className="w-10 h-10 object-contain rounded-xl bg-surface-level2 p-1 border border-surface-border shrink-0" 
                   alt="Логотип турнира" 
                 />
               ) : (
-                <div className="w-10 h-10 rounded-xl bg-surface-level2 border border-surface-border/30 flex items-center justify-center shrink-0">
+                <div className="w-10 h-10 rounded-xl bg-surface-level2 border border-surface-border flex items-center justify-center shrink-0">
                   <Icon name={tournamentIcon} className="w-5 h-5" style={{ color: activeBrandColor }} />
                 </div>
               )}
@@ -255,7 +255,7 @@ export const MatchInfo = ({
               </div>
             </div>
 
-            <div className="flex flex-col items-end shrink-0 bg-surface-level2 border border-surface-border/50 px-2.5 py-1.5 rounded-xl text-right max-w-[35%] min-w-[65px]">
+            <div className="flex flex-col items-end shrink-0 bg-surface-level2 border border-surface-border0 px-2.5 py-1.5 rounded-xl text-right max-w-[35%] min-w-[65px]">
               <span className="text-[10px] font-black text-content-main leading-tight truncate w-full">
                 {stageValue}
               </span>
@@ -273,7 +273,7 @@ export const MatchInfo = ({
         <ContainerContent title="Игровая форма команд">
           <div className="grid grid-cols-2 gap-3 relative mt-0.5">
             
-            <div className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 z-20 bg-surface-base border border-surface-border/60 text-[9px] font-black text-content-muted uppercase tracking-widest w-6 h-6 rounded-full flex items-center justify-center shadow-sm pointer-events-none">
+            <div className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 z-20 bg-surface-base border border-surface-border text-[9px] font-black text-content-muted uppercase tracking-widest w-6 h-6 rounded-full flex items-center justify-center shadow-sm pointer-events-none">
               vs
             </div>
             
@@ -288,7 +288,7 @@ export const MatchInfo = ({
                 "flex flex-col items-center p-4 rounded-2xl border text-center relative overflow-hidden transition-all duration-300",
                 isMyTeamHome 
                   ? (!hasTeamColor ? "bg-gradient-to-b from-brand-glow/15 to-brand-glow/5 border-brand/50 shadow-[0_8px_25px_rgba(var(--color-brand),0.12)] scale-[1.01] z-10" : "scale-[1.01] z-10") 
-                  : "bg-surface-level2/40 border-surface-border/40 shadow-sm"
+                  : "bg-surface-level2/40 border-surface-border shadow-sm"
               )}
             >
               {isMyTeamHome && (
@@ -322,7 +322,7 @@ export const MatchInfo = ({
                 style={isMyTeamHome ? { backgroundColor: brandTintBg, color: activeBrandColor, borderColor: brandTintBorder } : {}}
                 className={clsx(
                   "text-[10px] font-black uppercase tracking-wider mt-2 px-2 py-0.5 rounded-md border",
-                  !isMyTeamHome && "bg-surface-level3 text-content-subtle border-surface-border/60",
+                  !isMyTeamHome && "bg-surface-level3 text-content-subtle border-surface-border",
                   (isMyTeamHome && !hasTeamColor) && "bg-brand/10 text-brand border-brand/20"
                 )}
               >
@@ -341,7 +341,7 @@ export const MatchInfo = ({
                 "flex flex-col items-center p-4 rounded-2xl border text-center relative overflow-hidden transition-all duration-300",
                 !isMyTeamHome 
                   ? (!hasTeamColor ? "bg-gradient-to-b from-brand-glow/15 to-brand-glow/5 border-brand/50 shadow-[0_8px_25px_rgba(var(--color-brand),0.12)] scale-[1.01] z-10" : "scale-[1.01] z-10") 
-                  : "bg-surface-level2/40 border-surface-border/40 shadow-sm"
+                  : "bg-surface-level2/40 border-surface-border shadow-sm"
               )}
             >
               {!isMyTeamHome && (
@@ -375,7 +375,7 @@ export const MatchInfo = ({
                 style={!isMyTeamHome ? { backgroundColor: brandTintBg, color: activeBrandColor, borderColor: brandTintBorder } : {}}
                 className={clsx(
                   "text-[10px] font-black uppercase tracking-wider mt-2 px-2 py-0.5 rounded-md border",
-                  isMyTeamHome && "bg-surface-level3 text-content-subtle border-surface-border/60",
+                  isMyTeamHome && "bg-surface-level3 text-content-subtle border-surface-border",
                   (!isMyTeamHome && !hasTeamColor) && "bg-brand/10 text-brand border-brand/20"
                 )}
               >

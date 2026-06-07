@@ -6,7 +6,7 @@ export function Table({ columns, data, rowKey = 'id', onRowClick, className }) {
     <div className={clsx("w-full overflow-x-auto scrollbar-hide bg-transparent", className)}>
       <table className="w-full border-collapse bg-transparent text-left">
         <thead>
-          <tr className="border-b border-surface-border/50">
+          <tr className="border-b border-surface-border0">
             {columns.map((col, idx) => (
               <th
                 key={col.key || idx}
@@ -28,7 +28,7 @@ export function Table({ columns, data, rowKey = 'id', onRowClick, className }) {
               key={row[rowKey] || rIdx} 
               onClick={() => onRowClick && onRowClick(row)}
               className={clsx(
-                "border-b border-surface-border/30 last:border-b-0 transition-colors",
+                "border-b border-surface-border last:border-b-0 transition-colors",
                 onRowClick && "cursor-pointer active:bg-surface-level2/10"
               )}
             >

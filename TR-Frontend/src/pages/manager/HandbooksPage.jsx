@@ -176,20 +176,20 @@ export function HandbooksPage() {
                     key={opp.id}
                     type="button"
                     onClick={() => handleEditOpen(opp)}
-                    className="w-full p-4 bg-surface-level1 border border-surface-border/60 rounded-3xl flex items-center justify-between shadow-md text-left transition-all hover:bg-surface-level2/40 active:scale-[0.99]"
+                    className="w-full p-4 bg-surface-level1 border border-surface-border rounded-3xl flex items-center justify-between shadow-md text-left transition-all hover:bg-surface-level2/40 active:scale-[0.99]"
                   >
                     <div className="flex flex-col min-w-0 pr-2">
                       <span className="text-sm font-bold text-content-main truncate">{opp.name}</span>
                       <span className="text-[11px] text-content-muted font-medium uppercase tracking-wider mt-0.5">{opp.city} ({opp.short_name})</span>
                       <div className="flex items-center gap-1.5 mt-2.5">
-                        <span className="text-[9px] font-black uppercase px-2 py-0.5 rounded bg-surface-level2 text-content-muted border border-surface-border/50">
+                        <span className="text-[9px] font-black uppercase px-2 py-0.5 rounded bg-surface-level2 text-content-muted border border-surface-border0">
                           Матчей: {opp.games_count || 0} , из них завершенные: {opp.finished_games_count || 0}
                         </span>
                       </div>
                     </div>
                     <Icon name="chevron_right" className="w-5 h-5 text-content-subtle shrink-0" />
                   </button>
-                )) : <div className="text-center py-12 text-xs font-bold text-content-muted bg-surface-level1 border border-surface-border/60 rounded-3xl p-6 shadow-sm">Ни одного соперника не добавлено</div>}
+                )) : <div className="text-center py-12 text-xs font-bold text-content-muted bg-surface-level1 border border-surface-border rounded-3xl p-6 shadow-sm">Ни одного соперника не добавлено</div>}
               </FadeIn>
             ) : (
               <FadeIn key="tours" className="flex flex-col gap-3">
@@ -198,7 +198,7 @@ export function HandbooksPage() {
                     key={tour.id}
                     type="button"
                     onClick={() => handleEditOpen(tour)}
-                    className="w-full p-4 bg-surface-level1 border border-surface-border/60 rounded-3xl flex items-center justify-between shadow-md text-left transition-all hover:bg-surface-level2/40 active:scale-[0.99]"
+                    className="w-full p-4 bg-surface-level1 border border-surface-border rounded-3xl flex items-center justify-between shadow-md text-left transition-all hover:bg-surface-level2/40 active:scale-[0.99]"
                   >
                     <div className="flex flex-col min-w-0 pr-4 flex-1">
                       <span className="text-sm font-bold text-content-main line-clamp-2 leading-snug">{tour.name}</span>
@@ -206,14 +206,14 @@ export function HandbooksPage() {
                         <span className={clsx("text-[9px] font-black uppercase border px-2 py-0.5 rounded", tour.is_active ? "bg-success/10 border-success/20 text-success" : "bg-surface-level2 border-surface-border text-content-muted")}>
                           {tour.is_active ? '● Активен' : 'Архив'}
                         </span>
-                        <span className="text-[9px] font-black uppercase px-2 py-0.5 rounded bg-surface-level2 text-content-muted border border-surface-border/50">
+                        <span className="text-[9px] font-black uppercase px-2 py-0.5 rounded bg-surface-level2 text-content-muted border border-surface-border0">
                           Команд лиги: {tour.opponents_count || 0}
                         </span>
                       </div>
                     </div>
                     <Icon name="chevron_right" className="w-5 h-5 text-content-subtle shrink-0" />
                   </button>
-                )) : <div className="text-center py-12 text-xs font-bold text-content-muted bg-surface-level1 border border-surface-border/60 rounded-3xl p-6 shadow-sm">Список внешних лиг пуст</div>}
+                )) : <div className="text-center py-12 text-xs font-bold text-content-muted bg-surface-level1 border border-surface-border rounded-3xl p-6 shadow-sm">Список внешних лиг пуст</div>}
               </FadeIn>
             )}
           </div>

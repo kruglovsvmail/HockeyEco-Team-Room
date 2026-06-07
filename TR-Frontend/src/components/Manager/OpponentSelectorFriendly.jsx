@@ -137,7 +137,7 @@ export function OpponentSelectorFriendly({ data }) {
                 key={team.id} 
                 type="button"
                 onClick={() => onSelect({ ...team, isPwa: true })}
-                className="w-full p-4 bg-surface-level1 border border-surface-border/40 rounded-2xl text-left flex items-center justify-between outline-none cursor-pointer hover:border-brand/30 transition-all active:scale-[0.99]"
+                className="w-full p-4 bg-surface-level1 border border-surface-border rounded-2xl text-left flex items-center justify-between outline-none cursor-pointer hover:border-brand/30 transition-all active:scale-[0.99]"
               >
                 <div className="flex flex-col">
                   <span className="text-sm font-bold text-content-main">{team.name}</span>
@@ -161,7 +161,7 @@ export function OpponentSelectorFriendly({ data }) {
                   key={opp.id} 
                   type="button"
                   onClick={() => onSelect({ ...opp, isPwa: false })}
-                  className="w-full p-4 bg-surface-level1 border border-surface-border/40 rounded-2xl text-left flex items-center justify-between outline-none cursor-pointer hover:border-brand/30 transition-all active:scale-[0.99]"
+                  className="w-full p-4 bg-surface-level1 border border-surface-border rounded-2xl text-left flex items-center justify-between outline-none cursor-pointer hover:border-brand/30 transition-all active:scale-[0.99]"
                 >
                   <div className="flex flex-col">
                     <span className="text-sm font-bold text-content-main">{opp.name}</span>

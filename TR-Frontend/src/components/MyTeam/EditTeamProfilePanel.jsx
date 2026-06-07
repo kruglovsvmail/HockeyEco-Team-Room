@@ -138,7 +138,7 @@ export function EditTeamProfilePanel({ teamId, onRefresh, activeBrandColor, onCl
         className="flex-1 flex flex-col gap-4 overflow-y-auto scrollbar-hide p-4 pb-32"
       >
         {/* ВЕРХНИЙ БЛОК: ЛОГОТИП + ТЕКСТОВЫЙ БЛОК НАЗВАНИЙ И ГОРОДА */}
-        <div className="grid grid-cols-[90px_1fr] gap-3 items-center w-full bg-surface-level1 p-4 rounded-2xl border border-surface-border/40 shadow-sm">
+        <div className="grid grid-cols-[90px_1fr] gap-3 items-center w-full bg-surface-level1 p-4 rounded-2xl border border-surface-border shadow-sm">
           
           {/* Аскетичный квадрат логотипа */}
           <ImageUploaderLP 
@@ -180,7 +180,7 @@ export function EditTeamProfilePanel({ teamId, onRefresh, activeBrandColor, onCl
         </div>
 
         {/* ПОЛЕ ОПИСАНИЯ КЛУБА */}
-        <div className="w-full bg-surface-level1 p-4 rounded-2xl border border-surface-border/40 shadow-sm">
+        <div className="w-full bg-surface-level1 p-4 rounded-2xl border border-surface-border shadow-sm">
           <TextInputLP 
             type="textarea"
             rows={3}
@@ -214,13 +214,13 @@ export function EditTeamProfilePanel({ teamId, onRefresh, activeBrandColor, onCl
                   type="color" 
                   value={formData.color_home_1} 
                   onChange={e => setFormData(prev => ({ ...prev, color_home_1: e.target.value }))} 
-                  className="w-[28px] h-[28px] rounded-full cursor-pointer border border-surface-border/50 bg-transparent p-0 overflow-hidden appearance-none [&::-webkit-color-swatch-wrapper]:p-0 [&::-webkit-color-swatch]:border-0 [&::-webkit-color-swatch]:rounded-full transition-transform active:scale-90" 
+                  className="w-[28px] h-[28px] rounded-full cursor-pointer border border-surface-border0 bg-transparent p-0 overflow-hidden appearance-none [&::-webkit-color-swatch-wrapper]:p-0 [&::-webkit-color-swatch]:border-0 [&::-webkit-color-swatch]:rounded-full transition-transform active:scale-90" 
                 />
                 <input 
                   type="color" 
                   value={formData.color_home_2} 
                   onChange={e => setFormData(prev => ({ ...prev, color_home_2: e.target.value }))} 
-                  className="w-[28px] h-[28px] rounded-full cursor-pointer border border-surface-border/50 bg-transparent p-0 overflow-hidden appearance-none [&::-webkit-color-swatch-wrapper]:p-0 [&::-webkit-color-swatch]:border-0 [&::-webkit-color-swatch]:rounded-full transition-transform active:scale-90" 
+                  className="w-[28px] h-[28px] rounded-full cursor-pointer border border-surface-border0 bg-transparent p-0 overflow-hidden appearance-none [&::-webkit-color-swatch-wrapper]:p-0 [&::-webkit-color-swatch]:border-0 [&::-webkit-color-swatch]:rounded-full transition-transform active:scale-90" 
                 />
               </div>
             </div>
@@ -245,13 +245,13 @@ export function EditTeamProfilePanel({ teamId, onRefresh, activeBrandColor, onCl
                   type="color" 
                   value={formData.color_away_1} 
                   onChange={e => setFormData(prev => ({ ...prev, color_away_1: e.target.value }))} 
-                  className="w-[28px] h-[28px] rounded-full cursor-pointer border border-surface-border/50 bg-transparent p-0 overflow-hidden appearance-none [&::-webkit-color-swatch-wrapper]:p-0 [&::-webkit-color-swatch]:border-0 [&::-webkit-color-swatch]:rounded-full transition-transform active:scale-90" 
+                  className="w-[28px] h-[28px] rounded-full cursor-pointer border border-surface-border0 bg-transparent p-0 overflow-hidden appearance-none [&::-webkit-color-swatch-wrapper]:p-0 [&::-webkit-color-swatch]:border-0 [&::-webkit-color-swatch]:rounded-full transition-transform active:scale-90" 
                 />
                 <input 
                   type="color" 
                   value={formData.color_away_2} 
                   onChange={e => setFormData(prev => ({ ...prev, color_away_2: e.target.value }))} 
-                  className="w-[28px] h-[28px] rounded-full cursor-pointer border border-surface-border/50 bg-transparent p-0 overflow-hidden appearance-none [&::-webkit-color-swatch-wrapper]:p-0 [&::-webkit-color-swatch]:border-0 [&::-webkit-color-swatch]:rounded-full transition-transform active:scale-90" 
+                  className="w-[28px] h-[28px] rounded-full cursor-pointer border border-surface-border0 bg-transparent p-0 overflow-hidden appearance-none [&::-webkit-color-swatch-wrapper]:p-0 [&::-webkit-color-swatch]:border-0 [&::-webkit-color-swatch]:rounded-full transition-transform active:scale-90" 
                 />
               </div>
             </div>

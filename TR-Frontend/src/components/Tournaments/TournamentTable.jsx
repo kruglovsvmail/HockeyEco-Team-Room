@@ -6,7 +6,7 @@ import { getImageUrl } from '../../utils/helpers';
 export function TournamentTable({ standings, expandedTeams, onToggleTeam }) {
   if (standings.length === 0) {
     return (
-      <div className="text-center py-8 text-xs font-bold text-content-subtle uppercase tracking-wider bg-surface-base rounded-2xl border border-surface-border/40">
+      <div className="text-center py-8 text-xs font-bold text-content-subtle uppercase tracking-wider bg-surface-base rounded-2xl border border-surface-border">
         Турнирная таблица пока не сформирована
       </div>
     );
@@ -27,7 +27,7 @@ export function TournamentTable({ standings, expandedTeams, onToggleTeam }) {
         const formattedDiff = goalsDiff > 0 ? `+${goalsDiff}` : goalsDiff;
         
         return (
-          <div key={row.team_id} className="border-b border-surface-border/20 last:border-0">
+          <div key={row.team_id} className="border-b border-surface-border last:border-0">
             <div 
               onClick={() => onToggleTeam(row.team_id)}
               className={clsx(
