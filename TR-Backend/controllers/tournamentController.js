@@ -1,3 +1,4 @@
+// tournamentController.js
 import pool from '../config/db.js';
 
 class TournamentController {
@@ -40,7 +41,7 @@ class TournamentController {
     }
   }
 
-  // Получение списка всех матчей конкретного дивизиона с учетом хоккейных исходов и номеров серий плей-офф
+  // Получение списка всех матчей конкретного дивизиона с учетом хоккейных исходов и настроек серий плей-офф
   async getDivisionGames(req, res) {
     try {
       const { divisionId } = req.params;
@@ -63,13 +64,28 @@ class TournamentController {
           t_home.logo_url as home_team_logo,
           t_away.name as away_team_name,
           t_away.logo_url as away_team_logo,
-          a.name as arena_name
+          a.name as arena_name,
+          (
+            SELECT pr.wins_needed 
+            FROM playoff_brackets pb
+            JOIN playoff_rounds pr ON pb.id = pr.bracket_id
+            WHERE pb.division_id = g.division_id AND pr.name = g.stage_label
+            LIMIT 1
+          ) as wins_needed
         FROM games g
         LEFT JOIN teams t_home ON g.home_team_id = t_home.id
         LEFT JOIN teams t_away ON g.away_team_id = t_away.id
         LEFT JOIN arenas a ON g.arena_id = a.id
         WHERE g.division_id = $1
-        ORDER BY g.game_date ASC, g.id ASC
+        ORDER BY 
+          CASE g.stage_type 
+            WHEN 'regular' THEN 1 
+            WHEN 'playoff' THEN 2 
+            ELSE 3 
+          END ASC,
+          g.game_date ASC, 
+          g.game_number ASC,
+          g.id ASC
       `;
 
       const { rows } = await pool.query(query, [divisionId]);
@@ -83,6 +99,87 @@ class TournamentController {
       return res.status(500).json({
         success: false,
         error: 'Внутренняя ошибка сервера при генерации календаря игр'
+      });
+    }
+  }
+
+  // Получение актуальной турнирной таблицы дивизиона (Регулярный чемпионат)
+  async getDivisionStandings(req, res) {
+    try {
+      const { divisionId } = req.params;
+
+      const query = `
+        SELECT 
+          ds.*,
+          t.name as team_name,
+          t.short_name as team_short_name,
+          t.logo_url as team_logo
+        FROM division_standings ds
+        JOIN teams t ON ds.team_id = t.id
+        WHERE ds.division_id = $1
+        ORDER BY ds.rank ASC, ds.points DESC
+      `;
+
+      const { rows } = await pool.query(query, [divisionId]);
+
+      return res.json({
+        success: true,
+        standings: rows
+      });
+    } catch (err) {
+      console.error('Ошибка в TournamentController.getDivisionStandings:', err);
+      return res.status(500).json({
+        success: false,
+        error: 'Внутренняя ошибка сервера при загрузке турнирной таблицы'
+      });
+    }
+  }
+
+  // Получение структуры сеток, раундов и матчапов плей-офф дивизиона
+  async getDivisionPlayoffs(req, res) {
+    try {
+      const { divisionId } = req.params;
+
+      const query = `
+        SELECT 
+          pb.id as bracket_id,
+          pb.name as bracket_name,
+          pb.is_main,
+          pr.id as round_id,
+          pr.name as round_name,
+          pr.order_index,
+          pr.wins_needed,
+          pm.id as matchup_id,
+          pm.matchup_number,
+          pm.team1_id,
+          pm.team2_id,
+          pm.team1_wins,
+          pm.team2_wins,
+          pm.winner_id,
+          t1.name as team1_name,
+          t1.logo_url as team1_logo,
+          t2.name as team2_name,
+          t2.logo_url as team2_logo
+        FROM playoff_brackets pb
+        JOIN playoff_rounds pr ON pb.id = pr.bracket_id
+        LEFT JOIN playoff_matchups pm ON pr.id = pm.round_id
+        LEFT JOIN teams t1 ON pm.team1_id = t1.id
+        LEFT JOIN teams t2 ON pm.team2_id = t2.id
+        WHERE pb.division_id = $1
+        ORDER BY pb.is_main DESC, pb.id ASC, pr.order_index ASC, pm.matchup_number ASC
+      `;
+
+      const { rows } = await pool.query(query, [divisionId]);
+
+      return res.json({
+        success: true,
+        playoffs: rows
+      });
+    } catch (err) {
+      console.error('Ошибка в TournamentController.getDivisionPlayoffs:', err);
+      return res.status(500).json({
+        success: false,
+        error: 'Внутренняя ошибка сервера при загрузке данных плей-офф'
       });
     }
   }

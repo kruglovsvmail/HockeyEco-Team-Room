@@ -50,7 +50,7 @@ export function TournamentCardGame({ game }) {
 
   return (
     <div className={clsx(
-      "w-full bg-surface-base rounded-3xl border px-2 pb-2 pt-4 flex flex-col gap-2 relative overflow-hidden select-none",
+      "w-full bg-surface-base rounded-3xl border px-2 pb-2 pt-4 flex flex-col shadow-md gap-2 relative overflow-hidden select-none",
       isLive ? "border-red-500/30 shadow-md shadow-red-500/5" : "border-surface-border/40"
     )}>
       
@@ -132,7 +132,7 @@ export function TournamentCardGame({ game }) {
             <>
               <span className="font-bold text-content-muted shrink-0">{formattedDateShort}</span>
               <span className="text-content-muted font-mono shrink-0">•</span>
-              <span className="font-bold -content-muted shrink-0">{formattedTime}</span>
+              <span className="font-bold text-content-muted shrink-0">{formattedTime}</span>
               <span className="text-content-muted font-mono shrink-0">•</span>
               <span className="truncate">{game.arena_name || 'Арена не указана'}</span>
             </>
@@ -145,7 +145,7 @@ export function TournamentCardGame({ game }) {
         {/* Правый блок: Отделенный и прижатый к правому краю номер матча */}
         <div className="flex justify-end shrink-0 opacity-60 pr-2">
           {game.game_number && (
-            <span className=" text-content-subtle">
+            <span className="text-content-subtle">
               №{game.game_number}
             </span>
           )}
