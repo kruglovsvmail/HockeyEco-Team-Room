@@ -4,7 +4,7 @@ import { Icon } from './Icon';
 import { DEADLINES } from '../utils/permissions';
 import clsx from 'clsx';
 
-export function HintPopover({ status, customContent, children }) {
+export function HintPopover({ status, customContent, children, className }) {
   const [isOpen, setIsOpen] = useState(false);
   const [isRendered, setIsRendered] = useState(false);
   const [isExiting, setIsExiting] = useState(false);
@@ -218,7 +218,7 @@ export function HintPopover({ status, customContent, children }) {
 
   return (
     <div 
-      className="inline-flex items-center justify-center relative cursor-pointer w-full h-full" 
+      className={clsx("relative inline-block cursor-pointer select-none", className)} 
       ref={triggerRef}
       onClick={handleToggle}
     >

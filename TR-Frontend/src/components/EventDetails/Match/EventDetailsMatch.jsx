@@ -40,7 +40,9 @@ export const EventDetailsMatch = ({ event }) => {
     draftLines: [],
     isPublished: false,
     teamRoster: [],
-    staffMembers: []
+    staffMembers: [],
+    referees: [],   // Hoisted
+    h2hData: null   // Hoisted
   });
   
   const [loading, setLoading] = useState(true);
@@ -49,8 +51,6 @@ export const EventDetailsMatch = ({ event }) => {
   const matchupHeaderRef = useRef(null);
   const stickyTabsRef = useRef(null);
   const rafRef = useRef(null);
-  
-  // Высокопроизводительные триггеры фиксации состояния скролла
   const wasCollapsedBeforeRef = useRef(false);
   const isSwitchingRef = useRef(false);
 
@@ -73,7 +73,9 @@ export const EventDetailsMatch = ({ event }) => {
         draftLines: [],
         isPublished: false,
         teamRoster: [],
-        staffMembers: []
+        staffMembers: [],
+        referees: [],
+        h2hData: null
       });
       setLoading(true);
     }
@@ -81,9 +83,8 @@ export const EventDetailsMatch = ({ event }) => {
 
   // Параллельный атомарный сбор данных со всех эндпоинтов матча за один проход
   const fetchAllMatchData = useCallback(async () => {
-    if (!event?.event_id) return;
+    if (!event?.event_id || !event?.my_team_id) return;
 
-    // ПРЕВЕНТИВНЫЙ ОФФЛАЙН-ВЫХОД: Если сети нет — мгновенно прекращаем запрос, убирая микро-фризы
     if (!navigator.onLine) {
       setLoading(false);
       return;
@@ -93,27 +94,32 @@ export const EventDetailsMatch = ({ event }) => {
       const apiUrl = import.meta.env.VITE_API_URL || '';
       const headers = getAuthHeaders();
 
-      const [attRes, linesRes, rosterRes] = await Promise.all([
+      // Загружаем абсолютно все данные параллельно
+      const [attRes, linesRes, rosterRes, staffRes, h2hRes] = await Promise.all([
         fetch(`${apiUrl}/api/events/${event.event_id}/attendance?eventType=${event.event_type}&teamId=${event.my_team_id}`, { headers }),
         fetch(`${apiUrl}/api/events/${event.event_id}/lines?teamId=${event.my_team_id}`, { headers }),
-        fetch(`${apiUrl}/api/events/${event.event_id}/available-roster?teamId=${event.my_team_id}`, { headers })
+        fetch(`${apiUrl}/api/events/${event.event_id}/available-roster?teamId=${event.my_team_id}`, { headers }),
+        fetch(`${apiUrl}/api/events/${event.event_id}/staff?teamId=${event.my_team_id}`, { headers }),
+        fetch(`${apiUrl}/api/events/${event.event_id}/h2h?teamId=${event.my_team_id}`, { headers })
       ]);
 
       const attData = await attRes.json();
       const linesData = await linesRes.json();
       const rosterData = await rosterRes.json();
+      const staffData = await staffRes.json();
+      const h2hData = await h2hRes.json();
 
       const freshData = {
         attendees: attData.success ? attData.attendees : [],
         draftLines: linesData.success ? (linesData.lines || []) : [],
         isPublished: linesData.success ? !!linesData.isPublished : false,
         teamRoster: rosterData.success ? (rosterData.roster || []) : [],
-        staffMembers: rosterData.success ? (rosterData.staff || []) : []
+        staffMembers: rosterData.success ? (rosterData.staff || []) : [],
+        referees: staffData.success ? staffData.staff : [],
+        h2hData: h2hData.success ? h2hData.h2h : null
       };
 
       setMatchData(freshData);
-      
-      // Перезаписываем изолированный кэш строго по связке ID матча и ID команды
       localStorage.setItem(cacheKey, JSON.stringify(freshData));
     } catch (err) {
       console.error('Ошибка централизованной загрузки данных матча:', err);
@@ -134,15 +140,25 @@ export const EventDetailsMatch = ({ event }) => {
     };
   }, []);
 
-  // Переключение вкладок без потери зафиксированного свернутого состояния шапки
   useEffect(() => {
     if (scrollContainerRef.current && wasCollapsedBeforeRef.current) {
       isSwitchingRef.current = true;
       scrollContainerRef.current.scrollTop = 140;
 
+      if (matchupHeaderRef.current) {
+        matchupHeaderRef.current.style.opacity = '0';
+        matchupHeaderRef.current.style.transform = 'translateY(14px) translateZ(0)';
+      }
+
+      if (stickyTabsRef.current) {
+        stickyTabsRef.current.dataset.stuck = "true";
+        stickyTabsRef.current.classList.add('shadow-md', 'bg-surface-border');
+        stickyTabsRef.current.classList.remove('bg-transparent');
+      }
+
       const timeoutId = setTimeout(() => {
         isSwitchingRef.current = false;
-      }, 100);
+      }, 60);
 
       return () => clearTimeout(timeoutId);
     }
@@ -230,10 +246,14 @@ export const EventDetailsMatch = ({ event }) => {
   const handleScroll = (e) => {
     const currentScroll = e.target.scrollTop;
 
-    // Защита от авто-клипа скролла браузером при изменении контента вкладок
+    // Защита от авто-клипа скролла браузером во время пересчета высоты контента
     if (isSwitchingRef.current) {
       if (wasCollapsedBeforeRef.current && currentScroll < 140) {
         scrollContainerRef.current.scrollTop = 140;
+        if (matchupHeaderRef.current) {
+          matchupHeaderRef.current.style.opacity = '0';
+          matchupHeaderRef.current.style.transform = 'translateY(14px) translateZ(0)';
+        }
         return;
       }
     }
@@ -245,8 +265,11 @@ export const EventDetailsMatch = ({ event }) => {
     if (rafRef.current) cancelAnimationFrame(rafRef.current);
     rafRef.current = requestAnimationFrame(() => {
       if (matchupHeaderRef.current) {
-        const opacity = Math.max(0, 1 - currentScroll / 80);
-        const translateY = currentScroll * 0.1;
+        // НАДЕЖНАЯ ДЕД-ЗОНА В 40PX: Полностью гасит любые ложные паразитные сдвиги мобильного рендера
+        const isAtTop = currentScroll <= 40;
+        const opacity = isAtTop ? 1 : Math.max(0, 1 - (currentScroll - 40) / 70);
+        const translateY = isAtTop ? 0 : (currentScroll - 40) * 0.1;
+
         matchupHeaderRef.current.style.opacity = opacity;
         matchupHeaderRef.current.style.transform = `translateY(${translateY}px) translateZ(0)`;
       }
@@ -274,20 +297,19 @@ export const EventDetailsMatch = ({ event }) => {
     <div 
       ref={scrollContainerRef}
       onScroll={handleScroll}
-      className="h-full overflow-y-auto scrollbar-hide relative z-10 snap-y snap-proximity"
+      style={{ overflowAnchor: 'none', touchAction: 'pan-y' }}
+      className="h-full overflow-y-auto scrollbar-hide relative z-10 scroll-smooth"
     >
       
-      {/* 1. БЛОК ШАПКИ С ГЕОМЕТРИЕЙ */}
+      {/* 1. БЛОК ШАПКИ (Убран ломающий инерцию snap-start) */}
       <div 
         ref={matchupHeaderRef}
         className={clsx(
-          "snap-start bg-surface-base border px-2 pb-2 pt-6 flex flex-col shadow-md gap-2 relative overflow-hidden select-none mb-1 will-change-transform z-20",
-          isLive ? "border-red-500/30 shadow-md shadow-red-500/5" : "border-surface-border"
+          "bg-surface-base border px-2 pb-2 pt-6 flex flex-col shadow-md gap-2 relative overflow-hidden select-none  will-change-transform z-20",
         )}
       >
         <div className="w-full flex items-center justify-between relative">
-        
-          {/* ХОЗЯЕВА (Левая половина) */}
+          
           <div className="w-[38%] flex flex-col items-center text-center gap-1.5 min-w-0">
             <div 
               className="w-11 h-11 flex items-center justify-center shrink-0 transition-all duration-300"
@@ -304,13 +326,9 @@ export const EventDetailsMatch = ({ event }) => {
             </span>
           </div>
 
-          {/* ЦЕНТРАЛЬНЫЙ БЛОК */}
           <div className="flex flex-col items-center justify-center text-center shrink-0 px-1 min-w-[84px]">
             {isFinished && matchStatusText && (
-              <span 
-                className={clsx("text-[9px] font-black uppercase tracking-widest mb-1.5 leading-none", matchStatusColor)}
-                style={matchStatusStyle}
-              >
+              <span className={clsx("text-[9px] font-black uppercase tracking-widest mb-1.5 leading-none", matchStatusColor)} style={matchStatusStyle}>
                 {matchStatusText}
               </span>
             )}
@@ -326,11 +344,8 @@ export const EventDetailsMatch = ({ event }) => {
             )}
 
             {isFinished && (isOvertime || isShootout || isTech) && (
-              <span className={clsx(
-                "text-[9px] font-bold uppercase tracking-widest mt-1.5 px-1.5 py-0.5 rounded leading-none border shadow-xs"
-              )}
-              style={isTech ? { color: 'var(--color-danger)', backgroundColor: 'rgba(239, 68, 68, 0.05)', borderColor: 'rgba(239, 68, 68, 0.1)' } : { color: activeBrandColor, backgroundColor: `${activeBrandColor}14`, borderColor: `${activeBrandColor}1a` }}
-              >
+              <span className="text-[9px] font-bold uppercase tracking-widest mt-1.5 px-1.5 py-0.5 rounded leading-none border shadow-xs"
+                    style={isTech ? { color: 'var(--color-danger)', backgroundColor: 'rgba(239, 68, 68, 0.05)', borderColor: 'rgba(239, 68, 68, 0.1)' } : { color: activeBrandColor, backgroundColor: `${activeBrandColor}14`, borderColor: `${activeBrandColor}1a` }}>
                 {isOvertime && 'от'}
                 {isShootout && 'булл'}
                 {isTech && 'тех'}
@@ -344,7 +359,6 @@ export const EventDetailsMatch = ({ event }) => {
               </div>
             )}
 
-            {/* Блок трансляций */}
             {(event.video_yt_url || event.video_vk_url) && (
               <div className="flex items-center gap-3 mt-2">
                 {event.video_yt_url && (
@@ -361,12 +375,9 @@ export const EventDetailsMatch = ({ event }) => {
             )}
           </div>
 
-          {/* ГОСТИ (Правая половина) */}
           <div className="w-[38%] flex flex-col items-center text-center gap-1.5 min-w-0">
-            <div 
-              className="w-11 h-11 flex items-center justify-center shrink-0 transition-all duration-300"
-              style={!isHome ? { filter: `drop-shadow(0 0 8px ${activeBrandColor})` } : {}}
-            >
+            <div className="w-11 h-11 flex items-center justify-center shrink-0 transition-all duration-300"
+                 style={!isHome ? { filter: `drop-shadow(0 0 8px ${activeBrandColor})` } : {}} >
               {awayLogo ? (
                 <img src={getImageUrl(awayLogo)} alt="" className="w-full h-full object-contain" />
               ) : (
@@ -377,13 +388,10 @@ export const EventDetailsMatch = ({ event }) => {
               {awayName}
             </span>
           </div>
-
         </div>
 
-        {/* 2. НИЖНЯЯ СТРОКА С МЕТАДАННЫМИ МАТЧА */}
-        <div className="w-full grid grid-cols-[1fr,auto,1fr] items-center text-[9px] font-bold text-content-muted border-t border-surface-level2/50 pt-1 px-0.5 relative mt-1">
+        <div className="w-full grid grid-cols-[1fr,auto,1fr] items-center text-[11px] font-bold text-content-muted border-t border-surface-level3 pt-1 px-0.5 relative mt-1">
           <div className="min-w-0" />
-          
           <div className="flex items-center justify-center gap-3 truncate max-w-[240px] px-2">
             <span className="font-bold text-content-muted shrink-0">{formattedDateShort}</span>
             <span className="text-content-muted font-mono shrink-0">•</span>
@@ -391,30 +399,15 @@ export const EventDetailsMatch = ({ event }) => {
             <span className="text-content-muted font-mono shrink-0">•</span>
             <span className="truncate">{event.arena_name || 'Арена не назначена'}</span>
           </div>
-          
           <div className="flex justify-end shrink-0 opacity-60 pr-2">
-            {event.game_number && (
-              <span className="text-content-subtle">
-                №{event.game_number}
-              </span>
-            )}
+            {event.game_number && <span className="text-content-subtle">№{event.game_number}</span>}
           </div>
         </div>
       </div>
 
-      {/* 2. ЗАКРЕПЛЕННЫЕ ЧИПСЫ-МЕНЮ */}
-      <div 
-        ref={stickyTabsRef}
-        data-stuck="false"
-        className="snap-start sticky top-0 z-40 shrink-0 transition-all duration-300 ease-in-out border-b border-surface-level2"
-      >
-        <ChipTabs 
-          tabs={MATCH_TABS} 
-          activeTab={activeTab} 
-          onChange={setActiveTab} 
-          className="!px-0"
-          activeColor={hasTeamColor ? event.team_color : null}
-        />
+      {/* 2. ЗАКРЕПЛЕННЫЕ ТАБЫ (Убран ломающий инерцию snap-start) */}
+      <div ref={stickyTabsRef} data-stuck="false" className="sticky top-0 z-40 shrink-0 transition-all duration-300 ease-in-out border-b border-surface-level2">
+        <ChipTabs tabs={MATCH_TABS} activeTab={activeTab} onChange={setActiveTab} className="!px-0" activeColor={hasTeamColor ? event.team_color : null} />
       </div>
 
       {/* 3. КОНТЕНТНАЯ ЗОНА */}
@@ -422,64 +415,35 @@ export const EventDetailsMatch = ({ event }) => {
         {loading ? (
           <PageLoader />
         ) : (
-          <div 
-            className="flex w-[500%] transition-transform duration-500 ease-[cubic-bezier(0.32,0.72,0,1)] items-start"
-            style={{ transform: `translateX(${translateX})` }}
-          >
+          <div className="flex w-[500%] transition-transform duration-500 ease-[cubic-bezier(0.32,0.72,0,1)] items-start" style={{ transform: `translateX(${translateX})` }}>
             
-            <div 
-              className="w-1/5 shrink-0 transition-opacity duration-500"
-              style={{ opacity: activeTab === 'info' ? 1 : 0.3 }}
-            >
+            <div className="w-1/5 shrink-0 transition-opacity duration-500" style={{ opacity: activeTab === 'info' ? 1 : 0.3 }}>
               <FadeIn>
-                <MatchInfo event={event} />
+                <MatchInfo event={event} referees={matchData.referees} h2hData={matchData.h2hData} />
               </FadeIn>
             </div>
 
-            <div 
-              className="w-1/5 shrink-0 transition-opacity duration-500"
-              style={{ opacity: activeTab === 'attendance' ? 1 : 0.3 }}
-            >
+            <div className="w-1/5 shrink-0 transition-opacity duration-500" style={{ opacity: activeTab === 'attendance' ? 1 : 0.3 }}>
               <Suspense fallback={<PageLoader />}>
                 {activeTab === 'attendance' && (
                   <FadeIn>
-                    <MatchAttendance 
-                      event={event} 
-                      initialAttendees={matchData.attendees}
-                      initialTeamRoster={matchData.teamRoster}
-                      initialStaffMembers={matchData.staffMembers}
-                      initialDraftLines={matchData.draftLines}
-                      refreshData={fetchAllMatchData}
-                    />
+                    <MatchAttendance event={event} initialAttendees={matchData.attendees} initialTeamRoster={matchData.teamRoster} initialStaffMembers={matchData.staffMembers} initialDraftLines={matchData.draftLines} refreshData={fetchAllMatchData} />
                   </FadeIn>
                 )}
               </Suspense>
             </div>
 
-            <div 
-              className="w-1/5 shrink-0 transition-opacity duration-500"
-              style={{ opacity: activeTab === 'lines' ? 1 : 0.3 }}
-            >
+            <div className="w-1/5 shrink-0 transition-opacity duration-500" style={{ opacity: activeTab === 'lines' ? 1 : 0.3 }}>
               <Suspense fallback={<PageLoader />}>
                 {activeTab === 'lines' && (
                   <FadeIn>
-                    <MatchLines 
-                      event={event} 
-                      initialAttendees={matchData.attendees}
-                      initialDraftLines={matchData.draftLines}
-                      initialIsPublished={matchData.isPublished}
-                      initialStaffMembers={matchData.staffMembers}
-                      refreshData={fetchAllMatchData}
-                    />
+                    <MatchLines event={event} initialAttendees={matchData.attendees} initialDraftLines={matchData.draftLines} initialIsPublished={matchData.isPublished} initialStaffMembers={matchData.staffMembers} refreshData={fetchAllMatchData} />
                   </FadeIn>
                 )}
               </Suspense>
             </div>
 
-            <div 
-              className="w-1/5 shrink-0 transition-opacity duration-500"
-              style={{ opacity: activeTab === 'events' ? 1 : 0.3 }}
-            >
+            <div className="w-1/5 shrink-0 transition-opacity duration-500" style={{ opacity: activeTab === 'events' ? 1 : 0.3 }}>
               <Suspense fallback={<PageLoader />}>
                 {activeTab === 'events' && (
                   <FadeIn>
@@ -489,10 +453,7 @@ export const EventDetailsMatch = ({ event }) => {
               </Suspense>
             </div>
 
-            <div 
-              className="w-1/5 shrink-0 transition-opacity duration-500"
-              style={{ opacity: activeTab === 'stats' ? 1 : 0.3 }}
-            >
+            <div className="w-1/5 shrink-0 transition-opacity duration-500" style={{ opacity: activeTab === 'stats' ? 1 : 0.3 }}>
               <Suspense fallback={<PageLoader />}>
                 {activeTab === 'stats' && (
                   <FadeIn>

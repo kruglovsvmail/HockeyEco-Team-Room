@@ -420,14 +420,14 @@ export function SchedulePage() {
                       <FadeIn className="flex flex-col gap-0">
                         {slideEvents.map(event => {
                           let panelType = 'matchDetails';
-                          let panelTitle = 'Детали матча';
+                          let panelTitle = 'Матч';
 
                           if (event.event_type.includes('training')) {
                             panelType = 'trainingDetails';
-                            panelTitle = 'Детали тренировки';
+                            panelTitle = 'Тренировка';
                           } else if (event.event_type.includes('meeting')) {
                             panelType = 'meetingDetails';
-                            panelTitle = 'Детали собрания';
+                            panelTitle = 'Собрания';
                           }
 
                           return (

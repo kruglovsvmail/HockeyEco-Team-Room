@@ -1,5 +1,5 @@
 import express from 'express';
-import { getEvents } from '../controllers/EventInfoController.js';
+import { getEvents, getMatchStaff, getMatchH2H } from '../controllers/EventInfoController.js';
 import { 
   toggleEventAttendance, 
   getEventAttendance, 
@@ -15,6 +15,12 @@ const router = express.Router();
 
 // Получить все события для календаря (внутри контроллера зашито автоматическое скрытие тумблеров по подписке)
 router.get('/', verifyToken, getEvents);
+
+// Получить судейскую бригаду конкретного матча (с аватарами из users)
+router.get('/:eventId/staff', verifyToken, requireTeamPermission('INTERNAL_VIEW'), getMatchStaff);
+
+// Получить историю очных встреч (Head-to-Head) между командами
+router.get('/:eventId/h2h', verifyToken, requireTeamPermission('INTERNAL_VIEW'), getMatchH2H);
 
 // Получить список отметившихся на конкретное событие
 router.get('/:eventId/attendance', verifyToken, requireTeamPermission('INTERNAL_VIEW'), getEventAttendance);

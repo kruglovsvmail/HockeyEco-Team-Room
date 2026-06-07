@@ -103,7 +103,6 @@ export const PERMISSIONS = {
   // ==========================================
 
   // Просмотр внутренней детальной информации (Вход в карточку события и доступ к его вкладкам)
-  // Тренеры (HEAD_COACH, COACH) и Owner беспрепятственно проходят без подписки
   INTERNAL_VIEW: {
     allowedRoles: [
       ROLES.OWNER, ROLES.CLUB_TOP_MANAGER, ROLES.CLUB_ADMIN, 

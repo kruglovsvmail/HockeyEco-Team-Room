@@ -1,75 +1,33 @@
-import React, { useState, useEffect } from 'react';
+import React from 'react';
 import { Icon } from '../../../ui/Icon';
 import { getImageUrl } from '../../../utils/helpers';
 import { ContainerContent } from '../../../ui/ContainerContent';
-import { HintPopover } from '../../../ui/HintPopover';
 import clsx from 'clsx';
 import dayjs from 'dayjs';
 
 // Импортируем наш новый унифицированный компонент производительности
 import { FadeIn } from '../../../ui/FadeIn';
 
-export const MatchInfo = ({ 
-  event, 
-  onConfirmFriendlyMatch, 
-  onCancelFriendlyMatch, 
-  userRole,
-  hasSubscription
-}) => {
+export const MatchInfo = ({ event, referees = [], h2hData = null }) => {
+  if (!event) return null;
+
   const isMyTeamHome = event.my_team_id === event.home_team_id;
 
+  // Динамическое определение цветов команды из настроек
   const isColorsEnabled = localStorage.getItem('tr_use_team_colors') !== 'false';
   const hasTeamColor = isColorsEnabled && !!event.team_color;
   const activeBrandColor = hasTeamColor ? event.team_color : 'var(--color-brand)';
 
-  const isPendingFriendly = event.game_type === 'friendly_pwa' && event.status === 'pending';
-  const isInitiator = isPendingFriendly ? Number(event.initiator_team_id) === Number(event.my_team_id) : false;
+  // Разделение судей по категориям ролей
+  const mainRefs = referees.filter(r => r.role === 'main-1' || r.role === 'main-2');
+  const linesmenRefs = referees.filter(r => r.role === 'linesman-1' || r.role === 'linesman-2');
+  const hasRefereesAssigned = mainRefs.length > 0 || linesmenRefs.length > 0;
 
-  // ПРИОРИТЕТ ДАННЫХ ИЗ БАЗЫ
-  const currentUserRole = event.user_role || userRole || 'player';
-  const currentUserHasSub = event.has_subscription !== undefined ? event.has_subscription : (hasSubscription || false);
-
-  const allowedRoles = ['owner', 'team_manager', 'team_admin'];
-  const requiresSubscriptionRoles = ['team_manager', 'team_admin'];
-
-  const isRoleAllowed = allowedRoles.includes(currentUserRole);
-  const isSubscriptionMissing = isRoleAllowed && requiresSubscriptionRoles.includes(currentUserRole) && !currentUserHasSub;
-
-  // Локальное состояние загрузки для кнопок гейм-центра
-  const [isActionLoading, setIsActionLoading] = useState(false);
-  const [timeLeft, setTimeLeft] = useState('');
-
-  useEffect(() => {
-    if (!isPendingFriendly || !event.confirm_deadline) return;
-
-    const calculateTimeLeft = () => {
-      const now = dayjs();
-      const deadline = dayjs(event.confirm_deadline);
-      const diffSeconds = deadline.diff(now, 'second');
-
-      if (diffSeconds <= 0) {
-        setTimeLeft('Время истекло');
-        return;
-      }
-
-      const hours = Math.floor(diffSeconds / 3600);
-      const minutes = Math.floor((diffSeconds % 3600) / 60);
-      const seconds = diffSeconds % 60;
-
-      const pad = (val) => String(val).padStart(2, '0');
-      setTimeLeft(`${pad(hours)}:${pad(minutes)}:${pad(seconds)}`);
-    };
-
-    calculateTimeLeft();
-    const timerId = setInterval(calculateTimeLeft, 1000);
-
-    return () => clearInterval(timerId);
-  }, [event.confirm_deadline, isPendingFriendly]);
-
-  let tournamentValue = 'Официальный турнир';
+  // Полное длинное название лиги
+  let tournamentValue = event.league_name || 'Официальный турнир';
   let tournamentSubValue = event.division_name || '';
   let tournamentIcon = 'trophy';
-  let tournamentLogo = event.league_logo_url || event.division_logo_url;
+  let tournamentLogo = event.division_logo_url || event.league_logo_url;
 
   if (event.game_type === 'friendly_pwa' || event.game_type === 'friendly_ext') {
     tournamentValue = 'Товарищеский матч';
@@ -80,311 +38,291 @@ export const MatchInfo = ({
     tournamentValue = event.league_name || 'Внешний турнир';
     tournamentSubValue = event.division_name ? `Дивизион: ${event.division_name}` : 'Внешний дивизион';
     tournamentIcon = 'trophy';
-  } else if (event.league_name) {
-    tournamentValue = event.league_name;
   }
 
-  let stageValue = '—';
-  let stageSubValue = '';
+  const targetDate = event.event_date || event.game_date;
+  const seasonYear = targetDate ? dayjs(targetDate).format('YYYY') : dayjs().format('YYYY');
+  const seasonValue = event.season_name || `Сезон ${seasonYear}/${dayjs(targetDate).add(1, 'year').format('YY')}`;
 
-  if (event.game_type === 'friendly_pwa' || event.game_type === 'friendly_ext') {
-    stageValue = 'ТМ';
-    stageSubValue = 'Контрольный';
-  } else {
-    stageValue = event.stage_label || 'Регулярный сезон';
-    stageSubValue = event.series_number 
-      ? (event.stage_type === 'playoff' ? `Матч №${event.series_number}` : `${event.series_number}-й тур`) 
-      : '';
-  }
-
-  const homeName = isMyTeamHome ? event.my_team_name : (event.opponent_name || 'Неизвестно');
-  const awayName = isMyTeamHome ? (event.opponent_name || 'Неизвестно') : event.my_team_name;
-
-  const homeJerseyUrl = isMyTeamHome
-    ? (event.home_jersey === 'dark' ? event.my_team_jersey_dark_url : event.my_team_jersey_light_url)
-    : (event.home_jersey === 'dark' ? event.opponent_jersey_dark_url : event.opponent_jersey_light_url);
-
-  const awayJerseyUrl = isMyTeamHome
-    ? (event.away_jersey === 'dark' ? event.opponent_jersey_dark_url : event.opponent_jersey_light_url)
-    : (event.away_jersey === 'dark' ? event.my_team_jersey_dark_url : event.my_team_jersey_light_url);
+  // Определение параметров и правильного склонения игровой формы
+  const myJerseyType = isMyTeamHome ? event.home_jersey : event.away_jersey;
+  const myJerseyUrl = myJerseyType === 'dark' ? event.my_team_jersey_dark_url : event.my_team_jersey_light_url;
 
   const getJerseyLabel = (type) => {
-    if (type === 'light') return 'Светлая';
-    if (type === 'dark') return 'Тёмная';
-    return 'Не выбрана';
+    if (type === 'light') return 'Светлый';
+    if (type === 'dark') return 'Тёмный';
+    return 'Не выбран';
   };
 
-  const brandTintBg = hasTeamColor ? `${event.team_color}1a` : 'var(--color-brand-opacity)'; 
-  const brandTintBorder = hasTeamColor ? `${event.team_color}33` : 'color-mix(in srgb, var(--color-brand) 20%, transparent)';
+  // Вычисление забитых и пропущенных шайб в очных противостояниях (только по завершенным)
+  let goalsScored = 0;
+  let goalsConceded = 0;
+  let lastGames = [];
+
+  if (h2hData && h2hData.games) {
+    const finishedGames = h2hData.games.filter(g => g.status === 'finished');
+    
+    finishedGames.forEach(game => {
+      const isGameHome = String(game.home_team_id) === String(event.my_team_id);
+      goalsScored += isGameHome ? (game.home_score || 0) : (game.away_score || 0);
+      goalsConceded += isGameHome ? (game.away_score || 0) : (game.home_score || 0);
+    });
+
+    // Берем последние 5 матчей в хронологическом порядке (слева направо)
+    lastGames = finishedGames.slice(0, 5).reverse();
+  }
+
+  // Построение координат для SVG линейного графика тренда последних 5 встреч
+  const sparklinePoints = lastGames.map((game, idx) => {
+    const isGameHome = String(game.home_team_id) === String(event.my_team_id);
+    const myScore = isGameHome ? game.home_score : game.away_score;
+    const oppScore = isGameHome ? game.away_score : game.home_score;
+
+    const x = 16 + idx * 42; 
+    let y = 20; 
+    let dotColor = '#9ca3af'; 
+
+    if (myScore > oppScore) {
+      y = 6; 
+      dotColor = '#10b981'; 
+    } else if (myScore < oppScore) {
+      y = 34; 
+      dotColor = '#ef4444'; 
+    }
+
+    return { x, y, dotColor };
+  });
+
+  const pathD = sparklinePoints.length > 0 
+    ? `M ${sparklinePoints.map(p => `${p.x} ${p.y}`).join(' L ')}` 
+    : '';
 
   return (
     <FadeIn>
-      <div className="flex flex-col gap-4 ">
+      <div className="flex flex-col gap-4 select-none">
         
-        {/* БЛОК СОГЛАСОВАНИЯ МАТЧА ДЛЯ FRIENDLY_PWA */}
-        {isPendingFriendly && (
-          <ContainerContent>
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 py-1 w-full">
-              <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-xl bg-surface-level2 border border-surface-border flex items-center justify-center shrink-0">
-                  <Icon name="clock" className="w-5 h-5" style={{ color: activeBrandColor }} />
-                </div>
-                <div className="flex flex-col">
-                  <span className="text-[10px] font-black text-content-muted uppercase tracking-wider leading-none">
-                    {isInitiator ? 'Ожидание подтверждения соперником' : 'Требуется ваше подтверждение'}
-                  </span>
-                  <span className="text-sm font-mono font-black text-content-main mt-1.5 tracking-widest leading-none">
-                    Осталось: {timeLeft || '--:--:--'}
-                  </span>
-                </div>
-              </div>
-
-              {isRoleAllowed && (
-                <div className="flex items-center gap-2 self-end sm:self-auto shrink-0">
-                  {isInitiator ? (
-                    isSubscriptionMissing ? (
-                      <HintPopover status="no_subscription">
-                        <button
-                          type="button"
-                          className="px-4 py-2 bg-danger/10 border border-danger/30 text-danger text-[11px] font-black uppercase tracking-widest rounded-xl opacity-50 cursor-pointer"
-                        >
-                          Отменить вызов
-                        </button>
-                      </HintPopover>
-                    ) : (
-                      <button
-                        type="button"
-                        disabled={isActionLoading}
-                        onClick={async () => {
-                          setIsActionLoading(true);
-                          try {
-                            if (onCancelFriendlyMatch) await onCancelFriendlyMatch(event.event_id || event.id, event.my_team_id);
-                          } catch (err) {
-                            console.error(err);
-                          } finally {
-                            setIsActionLoading(false);
-                          }
-                        }}
-                        className="px-4 py-2 bg-danger/10 hover:bg-danger/15 border border-danger/30 text-danger text-[11px] font-black uppercase tracking-widest rounded-xl transition-all active:scale-95 cursor-pointer flex items-center justify-center min-w-[130px]"
-                      >
-                        {isActionLoading ? (
-                          <div className="w-3 h-3 border-2 border-danger border-t-transparent rounded-full animate-spin" />
-                        ) : (
-                          'Отменить вызов'
-                        )}
-                      </button>
-                    )
-                  ) : (
-                    isSubscriptionMissing ? (
-                      <HintPopover status="no_subscription">
-                        <button
-                          type="button"
-                          className="px-5 py-2 bg-success/10 border border-success/30 text-success text-[11px] font-black uppercase tracking-widest rounded-xl opacity-50 cursor-pointer"
-                        >
-                          Подтвердить матч
-                        </button>
-                      </HintPopover>
-                    ) : (
-                      <button
-                        type="button"
-                        disabled={isActionLoading}
-                        onClick={async () => {
-                          setIsActionLoading(true);
-                          try {
-                            if (onConfirmFriendlyMatch) await onConfirmFriendlyMatch(event.event_id || event.id, event.my_team_id);
-                          } catch (err) {
-                            console.error(err);
-                          } finally {
-                            setIsActionLoading(false);
-                          }
-                        }}
-                        className="px-5 py-2 bg-success/10 hover:bg-success/15 border border-success/30 text-success text-[11px] font-black uppercase tracking-widest rounded-xl transition-all active:scale-95 cursor-pointer flex items-center justify-center min-w-[150px]"
-                      >
-                        {isActionLoading ? (
-                          <div className="w-3 h-3 border-2 border-success border-t-transparent rounded-full animate-spin" />
-                        ) : (
-                          'Подтвердить матч'
-                        )}
-                      </button>
-                    )
-                  )}
-                </div>
-              )}
-            </div>
-          </ContainerContent>
-        )}
-
-        {/* 1. МЕСТО ПРОВЕДЕНИЯ */}
-        <ContainerContent icon="arena">
-          <div className="flex items-center gap-3 py-0.5">
-            <div className="w-9 h-9 rounded-xl bg-surface-level2 border border-surface-border flex items-center justify-center shrink-0">
-              <Icon name="location_pin" className="w-4 h-4" style={{ color: activeBrandColor }} />
-            </div>
-            <span className="text-xs font-bold text-content-main leading-snug">
-              {event.arena_name || 'Локация проведения не назначена'}
-            </span>
-          </div>
-        </ContainerContent>
-
-        {/* 2. ТУРНИР И СТАДИЯ */}
+        {/* БЛОК 1: ТУРНИРНАЯ ИНФОРМАЦИЯ И СУДЕЙСТВО */}
         <ContainerContent>
-          <div className="flex items-center justify-between gap-3 py-0.5 w-full">
+          <div className="flex flex-col w-full text-left gap-4 py-1">
             
-            <div className="flex items-center gap-3 flex-1 min-w-0">
+            <div className="flex items-center gap-3.5">
               {tournamentLogo ? (
                 <img 
                   src={getImageUrl(tournamentLogo)} 
-                  className="w-10 h-10 object-contain rounded-xl bg-surface-level2 p-1 border border-surface-border shrink-0" 
-                  alt="Логотип турнира" 
+                  className="w-11 h-11 object-contain rounded-xl bg-surface-level2 p-1 border border-surface-border shrink-0" 
+                  alt="Турнир" 
                 />
               ) : (
-                <div className="w-10 h-10 rounded-xl bg-surface-level2 border border-surface-border flex items-center justify-center shrink-0">
+                <div className="w-11 h-11 rounded-xl bg-surface-level2 border border-surface-border flex items-center justify-center shrink-0">
                   <Icon name={tournamentIcon} className="w-5 h-5" style={{ color: activeBrandColor }} />
                 </div>
               )}
               
-              <div className="flex flex-col flex-1 min-w-0">
-                <span className="text-xs font-black text-content-main line-clamp-2 break-words leading-tight">
+              <div className="flex flex-col min-w-0 flex-1">
+                {/* Разрешаем перенос длинного названия лиги на 2 строки */}
+                <span className="text-[13px] font-black text-content-main uppercase tracking-tight line-clamp-2 break-words leading-tight">
                   {tournamentValue}
                 </span>
-                {tournamentSubValue && (
-                  <span className="text-[11px] font-semibold text-content-muted truncate mt-1 leading-none">
-                    {tournamentSubValue}
+                <div className="flex items-center gap-2 mt-1 text-[11px] font-semibold text-content-muted">
+                  <span className="truncate">{tournamentSubValue || 'Основной этап'}</span>
+                  <span className="text-surface-border">•</span>
+                  <span className="shrink-0">{seasonValue}</span>
+                </div>
+              </div>
+            </div>
+
+            {hasRefereesAssigned && (
+              <>
+                <div className="h-px bg-surface-level2/60 w-full" />
+                <div className="flex flex-col gap-2.5">
+                  <span className="text-[9px] font-black text-content-subtle uppercase tracking-widest">
+                    Судейская бригада
                   </span>
+                  
+                  <div className="grid grid-cols-2 gap-4 mt-0.5">
+                    {/* Главные судьи */}
+                    {mainRefs.length > 0 && (
+                      <div className="flex flex-col pl-1">
+                        <span className="text-[8px] font-black text-content-subtle uppercase tracking-wider opacity-75">
+                          Главные арбитры
+                        </span>
+                        <div className="flex flex-col gap-1 mt-1.5">
+                          {mainRefs.map((ref, i) => (
+                            <span key={ref.user_id || `main-${i}`} className="text-[12px] font-bold text-content-main tracking-tight leading-none truncate block">
+                              {ref.last_name} {ref.first_name?.[0]}.
+                            </span>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                    
+                    {/* Линейные судьи */}
+                    {linesmenRefs.length > 0 && (
+                      <div className="flex flex-col pl-1">
+                        <span className="text-[8px] font-black text-content-subtle uppercase tracking-wider opacity-75">
+                          Линейные арбитры
+                        </span>
+                        <div className="flex flex-col gap-1 mt-1.5">
+                          {linesmenRefs.map((ref, i) => (
+                            <span key={ref.user_id || `linesman-${i}`} className="text-[12px] font-bold text-content-main tracking-tight leading-none truncate block">
+                              {ref.last_name} {ref.first_name?.[0]}.
+                            </span>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </>
+            )}
+
+          </div>
+        </ContainerContent>
+
+        {/* БЛОК 2: ЭКИПИРОВКА НАШЕЙ КОМАНДЫ И ФИНАНСЫ */}
+        <ContainerContent>
+          <div className="flex flex-col w-full text-left gap-4 py-1">
+            
+            {/* Игровая форма нашей команды */}
+            <div className="flex items-center gap-3.5 min-w-0">
+              <div className="w-11 h-11 flex items-center justify-center relative shrink-0">
+                {myJerseyUrl ? (
+                  <img 
+                    src={getImageUrl(myJerseyUrl)} 
+                    alt="Форма" 
+                    className="w-full h-full object-contain drop-shadow-md"
+                  />
+                ) : (
+                  <div className="w-11 h-11 rounded-xl bg-surface-level2 border border-surface-border flex items-center justify-center">
+                    <Icon name="jersey" className="w-5 h-5 text-content-subtle opacity-40" />
+                  </div>
                 )}
               </div>
-            </div>
-
-            <div className="flex flex-col items-end shrink-0 bg-surface-level2 border border-surface-border0 px-2.5 py-1.5 rounded-xl text-right max-w-[35%] min-w-[65px]">
-              <span className="text-[10px] font-black text-content-main leading-tight truncate w-full">
-                {stageValue}
-              </span>
-              {stageSubValue && (
-                <span className="text-[8px] font-black uppercase tracking-wider mt-1 leading-none truncate w-full" style={{ color: activeBrandColor }}>
-                  {stageSubValue}
+              <div className="flex flex-col min-w-0">
+                <span className="text-[9px] font-black text-content-subtle uppercase tracking-widest leading-none">Наша игровая форма</span>
+                <span className="text-[13px] font-black text-content-main uppercase tracking-tight mt-1.5 leading-none">
+                  {getJerseyLabel(myJerseyType)} комплект
                 </span>
-              )}
+              </div>
+            </div>
+
+            <div className="h-px bg-surface-level2/60 w-full" />
+
+            {/* Взнос за игру с игрока */}
+            <div className="flex items-center justify-between gap-4">
+              <div className="flex items-center gap-3.5">
+                <div className="w-8 h-8 rounded-lg bg-surface-level2 border border-surface-border flex items-center justify-center shrink-0">
+                  <span className="text-sm font-black text-content-muted">₽</span>
+                </div>
+                <div className="flex flex-col">
+                  <span className="text-[9px] font-bold text-content-subtle uppercase tracking-wider leading-none">Стоимость участия</span>
+                  <span className="text-[12px] font-bold text-content-muted mt-1 leading-none">
+                    Взнос с игрока
+                  </span>
+                </div>
+              </div>
+
+              <div className="text-right flex flex-col items-end">
+                {/* Подсветка суммы взноса активным цветом бренда/команбы */}
+                <span 
+                  className="text-[16px] font-black font-mono tracking-tight leading-none"
+                  style={{ color: activeBrandColor }}
+                >
+                  {event.my_fee && Number(event.my_fee) > 0 ? `${Number(event.my_fee).toLocaleString('ru-RU')} ₽` : 'Бесплатно'}
+                </span>
+              </div>
             </div>
 
           </div>
         </ContainerContent>
 
-        {/* 3. ИГРОВАЯ ФОРМА КОМАНД */}
-        <ContainerContent title="Игровая форма команд">
-          <div className="grid grid-cols-2 gap-3 relative mt-0.5">
-            
-            <div className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 z-20 bg-surface-base border border-surface-border text-[9px] font-black text-content-muted uppercase tracking-widest w-6 h-6 rounded-full flex items-center justify-center shadow-sm pointer-events-none">
-              vs
-            </div>
-            
-            {/* Карточка Хозяев */}
-            <div 
-              style={isMyTeamHome && hasTeamColor ? {
-                borderColor: `${event.team_color}80`,
-                boxShadow: `0 8px 25px ${event.team_color}1f`,
-                background: `linear-gradient(to bottom, ${event.team_color}0d, transparent)`
-              } : {}}
-              className={clsx(
-                "flex flex-col items-center p-4 rounded-2xl border text-center relative overflow-hidden transition-all duration-300",
-                isMyTeamHome 
-                  ? (!hasTeamColor ? "bg-gradient-to-b from-brand-glow/15 to-brand-glow/5 border-brand/50 shadow-[0_8px_25px_rgba(var(--color-brand),0.12)] scale-[1.01] z-10" : "scale-[1.01] z-10") 
-                  : "bg-surface-level2/40 border-surface-border shadow-sm"
-              )}
-            >
-              {isMyTeamHome && (
-                <div className="absolute top-0 inset-x-0 h-1" style={{ backgroundColor: activeBrandColor }} />
-              )}
-              
-              <span className="text-[9px] font-black text-content-muted uppercase tracking-widest block mb-1">
-                Хозяева
+        {/* БЛОК 3: ИСТОРИЯ ПРОТИВОСТОЯНИЙ (HEAD-TO-HEAD) */}
+        {h2hData && (
+          <ContainerContent>
+            <div className="flex flex-col w-full text-left gap-4 py-1">
+              <span className="text-[9px] font-black text-content-subtle uppercase tracking-widest">
+                История очных встреч
               </span>
-              <span 
-                className="text-xs font-black line-clamp-1 mb-3 px-1"
-                style={isMyTeamHome ? { color: activeBrandColor } : { color: 'var(--color-content-main)' }}
-              >
-                {homeName}
-              </span>
-              
-              <div className="w-24 h-24 flex items-center justify-center relative my-1">
-                <div className="absolute inset-0 blur-xl rounded-full pointer-events-none" style={{ backgroundColor: brandTintBg }} />
-                {homeJerseyUrl ? (
-                  <img 
-                    src={getImageUrl(homeJerseyUrl)} 
-                    alt={`Форма ${homeName}`} 
-                    className="w-full h-full object-contain drop-shadow-[0_8px_16px_rgba(0,0,0,0.18)] transition-transform duration-300 active:scale-110 relative z-10"
-                  />
-                ) : (
-                  <Icon name="jersey" className="w-12 h-12 text-content-subtle opacity-30 relative z-10" />
-                )}
-              </div>
-              
-              <span 
-                style={isMyTeamHome ? { backgroundColor: brandTintBg, color: activeBrandColor, borderColor: brandTintBorder } : {}}
-                className={clsx(
-                  "text-[10px] font-black uppercase tracking-wider mt-2 px-2 py-0.5 rounded-md border",
-                  !isMyTeamHome && "bg-surface-level3 text-content-subtle border-surface-border",
-                  (isMyTeamHome && !hasTeamColor) && "bg-brand/10 text-brand border-brand/20"
-                )}
-              >
-                {getJerseyLabel(event.home_jersey)}
-              </span>
-            </div>
 
-            {/* Карточка Гостей */}
-            <div 
-              style={!isMyTeamHome && hasTeamColor ? {
-                borderColor: `${event.team_color}80`,
-                boxShadow: `0 8px 25px ${event.team_color}1f`,
-                background: `linear-gradient(to bottom, ${event.team_color}0d, transparent)`
-              } : {}}
-              className={clsx(
-                "flex flex-col items-center p-4 rounded-2xl border text-center relative overflow-hidden transition-all duration-300",
-                !isMyTeamHome 
-                  ? (!hasTeamColor ? "bg-gradient-to-b from-brand-glow/15 to-brand-glow/5 border-brand/50 shadow-[0_8px_25px_rgba(var(--color-brand),0.12)] scale-[1.01] z-10" : "scale-[1.01] z-10") 
-                  : "bg-surface-level2/40 border-surface-border shadow-sm"
-              )}
-            >
-              {!isMyTeamHome && (
-                <div className="absolute top-0 inset-x-0 h-1" style={{ backgroundColor: activeBrandColor }} />
-              )}
-              
-              <span className="text-[9px] font-black text-content-muted uppercase tracking-widest block mb-1">
-                Гости
-              </span>
-              <span 
-                className="text-xs font-black line-clamp-1 mb-3 px-1"
-                style={!isMyTeamHome ? { color: activeBrandColor } : { color: 'var(--color-content-main)' }}
-              >
-                {awayName}
-              </span>
-              
-              <div className="w-24 h-24 flex items-center justify-center relative my-1">
-                <div className="absolute inset-0 blur-xl rounded-full pointer-events-none" style={{ backgroundColor: brandTintBg }} />
-                {awayJerseyUrl ? (
-                  <img 
-                    src={getImageUrl(awayJerseyUrl)} 
-                    alt={`Форма ${awayName}`} 
-                    className="w-full h-full object-contain drop-shadow-[0_8px_16px_rgba(0,0,0,0.18)] transition-transform duration-300 active:scale-110 relative z-10"
-                  />
-                ) : (
-                  <Icon name="jersey" className="w-12 h-12 text-content-subtle opacity-30 relative z-10" />
-                )}
+              <div className="grid grid-cols-4 gap-2 text-center">
+                <div className="bg-surface-level2/50 border border-surface-border rounded-xl p-2 flex flex-col justify-center">
+                  <span className="text-[10px] font-bold text-content-muted uppercase">Игр</span>
+                  <span className="text-md font-black text-content-main mt-0.5 font-mono">{h2hData.summary?.total || 0}</span>
+                </div>
+                <div className="bg-success/5 border border-success/10 rounded-xl p-2 flex flex-col justify-center">
+                  <span className="text-[10px] font-bold text-success uppercase">В</span>
+                  <span className="text-md font-black text-success mt-0.5 font-mono">{h2hData.summary?.wins || 0}</span>
+                </div>
+                <div className="bg-surface-level3 border border-surface-border rounded-xl p-2 flex flex-col justify-center">
+                  <span className="text-[10px] font-bold text-content-muted uppercase">Н</span>
+                  <span className="text-md font-black text-content-muted mt-0.5 font-mono">{h2hData.summary?.draws || 0}</span>
+                </div>
+                <div className="bg-danger/5 border border-danger/10 rounded-xl p-2 flex flex-col justify-center">
+                  <span className="text-[10px] font-bold text-danger uppercase">П</span>
+                  <span className="text-md font-black text-danger mt-0.5 font-mono">{h2hData.summary?.losses || 0}</span>
+                </div>
               </div>
-              
-              <span 
-                style={!isMyTeamHome ? { backgroundColor: brandTintBg, color: activeBrandColor, borderColor: brandTintBorder } : {}}
-                className={clsx(
-                  "text-[10px] font-black uppercase tracking-wider mt-2 px-2 py-0.5 rounded-md border",
-                  isMyTeamHome && "bg-surface-level3 text-content-subtle border-surface-border",
-                  (!isMyTeamHome && !hasTeamColor) && "bg-brand/10 text-brand border-brand/20"
-                )}
-              >
-                {getJerseyLabel(event.away_jersey)}
-              </span>
-            </div>
 
-          </div>
-        </ContainerContent>
+              <div className="flex items-center justify-between p-2.5 bg-surface-level2/40 border border-surface-border/60 rounded-xl text-[12px] font-bold">
+                <span className="text-content-muted font-medium uppercase text-[10px] tracking-wider">Забитые / пропущенные шайбы:</span>
+                <span className="font-mono text-content-main font-black tracking-tight text-[13px] bg-surface-base border border-surface-border px-2.5 py-0.5 rounded-lg">
+                  {goalsScored} : {goalsConceded}
+                </span>
+              </div>
+
+              {/* Линейный график тренда последних 5 игр */}
+              {lastGames.length > 0 ? (
+                <div className="flex flex-col gap-2 mt-1">
+                  <div className="flex justify-between items-center px-1 text-[8px] font-black uppercase tracking-widest text-content-subtle opacity-60">
+                    <span>Форма серии (последние {lastGames.length} игр):</span>
+                    <span className="text-success font-mono">П</span>
+                    <span className="text-content-muted font-mono">Н</span>
+                    <span className="text-danger font-mono">П</span>
+                  </div>
+                  
+                  <div className="w-full bg-surface-level2/30 border border-surface-border/50 rounded-xl p-2 h-14 relative flex items-center justify-center">
+                    <svg viewBox="0 0 200 40" className="w-full h-full overflow-visible">
+                      <line x1="0" y1="6" x2="200" y2="6" stroke="currentColor" className="text-surface-border opacity-30" strokeDasharray="3,3" />
+                      <line x1="0" y1="20" x2="200" y2="20" stroke="currentColor" className="text-surface-border opacity-60" strokeDasharray="2,2" />
+                      <line x1="0" y1="34" x2="200" y2="34" stroke="currentColor" className="text-surface-border opacity-30" strokeDasharray="3,3" />
+                      
+                      {pathD && (
+                        <path 
+                          d={pathD} 
+                          fill="none" 
+                          stroke="var(--color-content-subtle)" 
+                          strokeWidth="1.5" 
+                          className="opacity-40" 
+                          strokeLinecap="round" 
+                          strokeLinejoin="round" 
+                        />
+                      )}
+                      
+                      {sparklinePoints.map((pt, i) => (
+                        <g key={`spark-dot-${i}`}>
+                          <circle 
+                            cx={pt.x} 
+                            cy={pt.y} 
+                            r="4.5" 
+                            fill={pt.dotColor} 
+                            stroke="var(--color-surface-base)" 
+                            strokeWidth="1.5" 
+                            className="shadow-sm" 
+                          />
+                        </g>
+                      ))}
+                    </svg>
+                  </div>
+                </div>
+              ) : (
+                <div className="text-center py-2 text-[10px] font-bold uppercase tracking-wider text-content-subtle opacity-40">
+                  История очных встреч отсутствует
+                </div>
+              )}
+
+            </div>
+          </ContainerContent>
+        )}
         
       </div>
     </FadeIn>

@@ -1,5 +1,6 @@
 import pool from '../config/db.js';
 
+// Получение общей ленты событий (календарь матчей, тренировок и собраний)
 export const getEvents = async (req, res) => {
   try {
     const userId = req.user.id;
@@ -88,6 +89,7 @@ export const getEvents = async (req, res) => {
           
           d.name::varchar AS division_name,
           COALESCE(l.name, ext_tour.name)::varchar AS league_name,
+          l.short_name::varchar AS league_short_name,
           COALESCE(l.logo_url, ext_tour.logo_url)::varchar AS league_logo_url,
           COALESCE(d.logo_url, ext_tour.logo_url)::varchar AS division_logo_url,
           
@@ -186,8 +188,6 @@ export const getEvents = async (req, res) => {
           NULL::timestamptz AS confirm_deadline,
           tt.training_date::timestamptz AS event_date,
           (CASE WHEN tt.training_date < NOW() THEN 'finished' ELSE 'scheduled' END)::varchar AS status,
-          
-          -- ИСПРАВЛЕНО: Если арена системная — берем имя из справочника арен, если ручной ввод — из текстового поля тренировки
           COALESCE(a.name, tt.location)::varchar AS arena_name,
           a.timezone::varchar AS arena_timezone,
           
@@ -211,6 +211,7 @@ export const getEvents = async (req, res) => {
           
           NULL::varchar AS division_name,
           NULL::varchar AS league_name,
+          NULL::varchar AS league_short_name, -- ДОБАВЛЕНО ДЛЯ СИНХРОНИЗАЦИИ UNION
           NULL::varchar AS league_logo_url,
           NULL::varchar AS division_logo_url, 
           NULL::varchar AS stage_type,
@@ -266,8 +267,6 @@ export const getEvents = async (req, res) => {
           NULL::timestamptz AS confirm_deadline,
           tm.meeting_date::timestamptz AS event_date,
           (CASE WHEN tm.meeting_date < NOW() THEN 'finished' ELSE 'scheduled' END)::varchar AS status,
-          
-          -- ИСПРАВЛЕНО: Имя арены или кастомный адрес собрания из таблицы team_meeting
           COALESCE(a.name, tm.location)::varchar AS arena_name,
           a.timezone::varchar AS arena_timezone,
           
@@ -291,6 +290,7 @@ export const getEvents = async (req, res) => {
           
           NULL::varchar AS division_name,
           NULL::varchar AS league_name,
+          NULL::varchar AS league_short_name, -- ДОБАВЛЕНО ДЛЯ СИНХРОНИЗАЦИИ UNION
           NULL::varchar AS league_logo_url,
           NULL::varchar AS division_logo_url, 
           NULL::varchar AS stage_type,
@@ -335,8 +335,6 @@ export const getEvents = async (req, res) => {
           NULL::timestamptz AS confirm_deadline,
           ct.training_date::timestamptz AS event_date,
           (CASE WHEN ct.training_date < NOW() THEN 'finished' ELSE 'scheduled' END)::varchar AS status,
-          
-          -- ИСПРАВЛЕНО: Имя арены или кастомный адрес клубной тренировки из club_training
           COALESCE(a.name, ct.location)::varchar AS arena_name,
           a.timezone::varchar AS arena_timezone,
           
@@ -360,6 +358,7 @@ export const getEvents = async (req, res) => {
           
           NULL::varchar AS division_name,
           NULL::varchar AS league_name,
+          NULL::varchar AS league_short_name, -- ДОБАВЛЕНО ДЛЯ СИНХРОНИЗАЦИИ UNION
           NULL::varchar AS league_logo_url,
           NULL::varchar AS division_logo_url, 
           NULL::varchar AS stage_type,
@@ -401,8 +400,6 @@ export const getEvents = async (req, res) => {
           NULL::timestamptz AS confirm_deadline,
           cm.meeting_date::timestamptz AS event_date,
           (CASE WHEN cm.meeting_date < NOW() THEN 'finished' ELSE 'scheduled' END)::varchar AS status,
-          
-          -- ИСПРАВЛЕНО: Имя арены или кастомный адрес клубного собрания из club_meeting
           COALESCE(a.name, cm.location)::varchar AS arena_name,
           a.timezone::varchar AS arena_timezone,
           
@@ -426,6 +423,7 @@ export const getEvents = async (req, res) => {
           
           NULL::varchar AS division_name,
           NULL::varchar AS league_name,
+          NULL::varchar AS league_short_name, -- ДОБАВЛЕНО ДЛЯ СИНХРОНИЗАЦИИ UNION
           NULL::varchar AS league_logo_url,
           NULL::varchar AS division_logo_url, 
           NULL::varchar AS stage_type,
@@ -482,6 +480,145 @@ export const getEvents = async (req, res) => {
     res.json({ success: true, cards: result.rows });
   } catch (err) {
     console.error('Ошибка получения событий:', err);
+    res.status(500).json({ success: false, error: 'Ошибка сервера' });
+  }
+};
+
+// =============================================================================
+// ПОДГРУЗКА СУДЕЙ МАТЧА (Извлечение eventId из req.params)
+// =============================================================================
+export const getMatchStaff = async (req, res) => {
+  try {
+    const { eventId } = req.params;
+
+    const query = `
+      SELECT 
+        gs.role::varchar,
+        u.id::int AS user_id,
+        u.first_name::varchar,
+        u.last_name::varchar,
+        u.avatar_url::varchar
+      FROM "public"."game_staff" gs
+      JOIN "public"."users" u ON gs.user_id = u.id
+      WHERE gs.game_id = $1 
+        AND gs.role IN ('main-1', 'main-2', 'linesman-1', 'linesman-2')
+      ORDER BY gs.role ASC;
+    `;
+
+    const { rows } = await pool.query(query, [eventId]);
+    res.json({ success: true, staff: rows });
+  } catch (err) {
+    console.error('Ошибка получения судейской бригады матча:', err);
+    res.status(500).json({ success: false, error: 'Ошибка сервера' });
+  }
+};
+
+// =============================================================================
+// ИСТОРИЯ ОЧНЫХ ПРОТИВОСТОЯНИЙ H2H (Извлечение eventId из req.params)
+// =============================================================================
+export const getMatchH2H = async (req, res) => {
+  try {
+    const { eventId } = req.params;
+
+    const gameRes = await pool.query(
+      'SELECT home_team_id, away_team_id, away_external_id FROM "public"."games" WHERE id = $1',
+      [eventId]
+    );
+
+    if (gameRes.rows.length === 0) {
+      return res.status(404).json({ success: false, error: 'Матч не найден' });
+    }
+
+    const { home_team_id, away_team_id, away_external_id } = gameRes.rows[0];
+
+    const myTeamCheck = await pool.query(
+      `SELECT team_id FROM "public"."team_members" 
+       WHERE user_id = $1 AND team_id IN ($2, $3) AND left_at IS NULL LIMIT 1`,
+      [req.user.id, home_team_id, away_team_id]
+    );
+    const myTeamId = myTeamCheck.rows[0]?.team_id || home_team_id;
+
+    let gamesQuery = '';
+    let queryParams = [];
+
+    if (away_external_id) {
+      gamesQuery = `
+        SELECT 
+          g.id::int,
+          g.game_date::timestamptz,
+          g.home_team_id::int,
+          g.away_team_id::int,
+          g.home_score::int,
+          g.away_score::int,
+          g.end_type::varchar,
+          g.status::varchar,
+          COALESCE(l.name, ext_tour.name, 'Товарищеский матч')::varchar AS tournament_name
+        FROM "public"."games" g
+        LEFT JOIN "public"."divisions" d ON g.division_id = d.id
+        LEFT JOIN "public"."seasons" s ON d.season_id = s.id
+        LEFT JOIN "public"."leagues" l ON s.league_id = l.id
+        LEFT JOIN "public"."team_external_tournaments" ext_tour ON g.external_tournament_id = ext_tour.id
+        WHERE g.status IN ('finished', 'live')
+          AND g.home_team_id = $1 AND g.away_external_id = $2
+        ORDER BY g.game_date DESC;
+      `;
+      queryParams = [home_team_id, away_external_id];
+    } else {
+      gamesQuery = `
+        SELECT 
+          g.id::int,
+          g.game_date::timestamptz,
+          g.home_team_id::int,
+          g.away_team_id::int,
+          g.home_score::int,
+          g.away_score::int,
+          g.end_type::varchar,
+          g.status::varchar,
+          COALESCE(l.name, ext_tour.name, 'Товарищеский матч')::varchar AS tournament_name
+        FROM "public"."games" g
+        LEFT JOIN "public"."divisions" d ON g.division_id = d.id
+        LEFT JOIN "public"."seasons" s ON d.season_id = s.id
+        LEFT JOIN "public"."leagues" l ON s.league_id = l.id
+        LEFT JOIN "public"."team_external_tournaments" ext_tour ON g.external_tournament_id = ext_tour.id
+        WHERE g.status IN ('finished', 'live')
+          AND (
+            (g.home_team_id = $1 AND g.away_team_id = $2)
+            OR (g.home_team_id = $2 AND g.away_team_id = $1)
+          )
+        ORDER BY g.game_date DESC;
+      `;
+      queryParams = [home_team_id, away_team_id];
+    }
+
+    const { rows } = await pool.query(gamesQuery, queryParams);
+
+    let total = 0;
+    let wins = 0;
+    let draws = 0;
+    let losses = 0;
+
+    rows.forEach(game => {
+      if (game.status !== 'finished') return;
+      total++;
+      
+      const isHome = String(game.home_team_id) === String(myTeamId);
+      const myScore = isHome ? game.home_score : game.away_score;
+      const oppScore = isHome ? game.away_score : game.home_score;
+      
+      if (myScore > oppScore) wins++;
+      else if (myScore < oppScore) losses++;
+      else draws++;
+    });
+
+    res.json({
+      success: true,
+      h2h: {
+        summary: { total, wins, draws, losses },
+        games: rows
+      }
+    });
+  } catch (err) {
+    console.error('Ошибка получения истории встреч H2H:', err);
     res.status(500).json({ success: false, error: 'Ошибка сервера' });
   }
 };

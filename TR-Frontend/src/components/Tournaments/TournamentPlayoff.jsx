@@ -391,7 +391,8 @@ export function TournamentPlayoff({
 
                   return isMultiMatch ? (
                     <div key={matchup.matchup_id} className="w-full cursor-pointer active:opacity-95">
-                      <HintPopover customContent={renderPopoverContent(matchupGames)}>
+                      {/* Пробрасываем класс w-full для растягивания inline-block поповера */}
+                      <HintPopover className="w-full" customContent={renderPopoverContent(matchupGames)}>
                         {cardLayout}
                       </HintPopover>
                     </div>
