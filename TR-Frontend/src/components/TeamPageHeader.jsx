@@ -14,14 +14,14 @@ export function TeamPageHeader({ selectedTeam, activeTeamDetails, activeBrandCol
   const teamName = activeTeamDetails?.name || selectedTeam?.name;
 
   return (
-    <div className="absolute top-0 left-0 right-0 z-40 bg-transparent pointer-events-none flex flex-col">
+    <div className="absolute top-0 left-0 right-0 z-40 bg-transparent pointer-events-none flex flex-col -mx-4">
       {/* ФИКСИРОВАННАЯ ШАПКА С ЭКОНОМИЧНЫМ ГРАДИЕНТНЫМ ШЛЕЙФОМ */}
       <div className="absolute top-0 left-0 right-0 h-24 bg-gradient-to-b from-surface-border from-80% to-transparent z-10" />
 
       <div className="px-4 pointer-events-auto relative z-20">
-        <div className="bg-surface-base p-4 rounded-3xl flex items-center gap-4 shadow-lg text-left">
+        <div className="bg-surface-base p-4  flex items-center gap-4 shadow-lg text-left">
           {/* ЛОГОТИП КЛУБА */}
-          <div className="w-12 h-12 rounded-2xl flex items-center justify-center overflow-hidden drop-shadow-sm shrink-0 ml-4">
+          <div className="w-12 h-12  flex items-center justify-center overflow-hidden drop-shadow-sm shrink-0 ml-4">
             <img 
               src={getImageUrl(logoUrl)} 
               alt={teamName} 

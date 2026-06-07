@@ -10,6 +10,9 @@ import { MatchInfo } from './MatchInfo';
 import { PageLoader } from '../../../ui/Loader';
 import { FadeIn } from '../../../ui/FadeIn';
 
+import dayjs from 'dayjs';
+import clsx from 'clsx';
+
 // Применяем ленивую загрузку с сохранением именованных экспортов.
 const MatchAttendance = lazy(() => import('./MatchAttendance').then(module => ({ default: module.MatchAttendance })));
 const MatchLines = lazy(() => import('./MatchLines').then(module => ({ default: module.MatchLines })));
@@ -46,6 +49,10 @@ export const EventDetailsMatch = ({ event }) => {
   const matchupHeaderRef = useRef(null);
   const stickyTabsRef = useRef(null);
   const rafRef = useRef(null);
+  
+  // Высокопроизводительные триггеры фиксации состояния скролла
+  const wasCollapsedBeforeRef = useRef(false);
+  const isSwitchingRef = useRef(false);
 
   // Динамическое определение флага включения цветов из localStorage (по дефолту true)
   const isColorsEnabled = localStorage.getItem('tr_use_team_colors') !== 'false';
@@ -127,12 +134,17 @@ export const EventDetailsMatch = ({ event }) => {
     };
   }, []);
 
+  // Переключение вкладок без потери зафиксированного свернутого состояния шапки
   useEffect(() => {
-    if (scrollContainerRef.current) {
-      const currentScroll = scrollContainerRef.current.scrollTop;
-      if (currentScroll > 110) {
-        scrollContainerRef.current.scrollTo({ top: 140, behavior: 'auto' });
-      }
+    if (scrollContainerRef.current && wasCollapsedBeforeRef.current) {
+      isSwitchingRef.current = true;
+      scrollContainerRef.current.scrollTop = 140;
+
+      const timeoutId = setTimeout(() => {
+        isSwitchingRef.current = false;
+      }, 100);
+
+      return () => clearTimeout(timeoutId);
     }
   }, [activeTab]);
 
@@ -144,51 +156,61 @@ export const EventDetailsMatch = ({ event }) => {
   const awayName = isHome ? (event.opponent_name || 'Неизвестно') : event.my_team_name;
   const homeLogo = isHome ? event.my_team_logo_url : event.opponent_logo_url;
   const awayLogo = isHome ? event.opponent_logo_url : event.my_team_logo_url;
+  
   const isFinished = event.status === 'finished';
+  const isLive = event.status === 'live';
+  const isPlayedOrLive = isFinished || isLive;
+  
+  const targetDate = event.game_date || event.event_date;
+  const hasTime = !!targetDate;
+  const formattedTime = hasTime ? dayjs(targetDate).format('HH:mm') : '—';
+  const formattedDateShort = hasTime ? dayjs(targetDate).format('DD.MM') : '—'; 
 
+  const isTech = event.end_type === 'tech' || !!event.is_technical;
+  const isOvertime = event.end_type === 'ot';
+  const isShootout = event.end_type === 'so';
+
+  let homeScoreDisplay = '-';
+  let awayScoreDisplay = '-';
   let matchStatusText = '';
   let matchStatusColor = '';
   let matchStatusStyle = {};
-  let matchScoreText = '-- : --';
-  let matchEndTypeText = '';
 
-  if (isFinished) {
-    const myScore = isHome ? event.home_score : event.away_score;
-    const oppScore = isHome ? event.away_score : event.home_score;
-    
-    const isTech = event.is_technical || event.end_type === 'tech';
-
+  if (isPlayedOrLive) {
     if (isTech) {
-      let homeDisplay = '-';
-      let awayDisplay = '-';
-
-      if (event.home_score > event.away_score) {
-        homeDisplay = '+';
-        awayDisplay = '-';
-      } else if (event.home_score < event.away_score) {
-        homeDisplay = '-';
-        awayDisplay = '+';
+      if (event.is_technical === '+/-') {
+        homeScoreDisplay = '+';
+        awayScoreDisplay = '-';
+      } else if (event.is_technical === '-/+') {
+        homeScoreDisplay = '-';
+        awayScoreDisplay = '+';
+      } else if (event.is_technical === '-/-') {
+        homeScoreDisplay = '-';
+        awayScoreDisplay = '-';
+      } else {
+        if (event.home_score > event.away_score) {
+          homeScoreDisplay = '+';
+          awayScoreDisplay = '-';
+        } else {
+          homeScoreDisplay = '-';
+          awayScoreDisplay = '+';
+        }
       }
 
-      matchScoreText = `${homeDisplay} : ${awayDisplay}`;
-
-      const myDisplay = isHome ? homeDisplay : awayDisplay;
-      const oppDisplay = isHome ? awayDisplay : homeDisplay;
-
+      const myDisplay = isHome ? homeScoreDisplay : awayScoreDisplay;
       if (myDisplay === '+') {
         matchStatusText = 'ПОБЕДА';
         matchStatusColor = 'text-success';
-      } else if (myDisplay === '-' && oppDisplay === '-') {
-        matchStatusText = 'ПОРАЖЕНИЕ';
-        matchStatusColor = 'text-danger';
       } else {
         matchStatusText = 'ПОРАЖЕНИЕ';
         matchStatusColor = 'text-danger';
       }
-      matchEndTypeText = 'ТЕХ';
-
     } else {
-      matchScoreText = `${event.home_score} : ${event.away_score}`;
+      homeScoreDisplay = event.home_score;
+      awayScoreDisplay = event.away_score;
+
+      const myScore = isHome ? event.home_score : event.away_score;
+      const oppScore = isHome ? event.away_score : event.home_score;
 
       if (myScore > oppScore) { 
         matchStatusText = 'ПОБЕДА'; 
@@ -200,19 +222,28 @@ export const EventDetailsMatch = ({ event }) => {
         matchStatusText = 'НИЧЬЯ'; 
         matchStatusStyle = { color: activeBrandColor };
       }
-
-      if (event.end_type === 'ot') matchEndTypeText = 'ОТ';
-      else if (event.end_type === 'so') matchEndTypeText = 'Б';
     }
   }
+
+  const scoreColorClass = (isLive || (isFinished && isTech)) ? "text-red-500" : "text-content-main";
 
   const handleScroll = (e) => {
     const currentScroll = e.target.scrollTop;
 
+    // Защита от авто-клипа скролла браузером при изменении контента вкладок
+    if (isSwitchingRef.current) {
+      if (wasCollapsedBeforeRef.current && currentScroll < 140) {
+        scrollContainerRef.current.scrollTop = 140;
+        return;
+      }
+    }
+
+    if (!isSwitchingRef.current) {
+      wasCollapsedBeforeRef.current = currentScroll > 110;
+    }
+
     if (rafRef.current) cancelAnimationFrame(rafRef.current);
     rafRef.current = requestAnimationFrame(() => {
-      const isStuck = currentScroll > 110;
-
       if (matchupHeaderRef.current) {
         const opacity = Math.max(0, 1 - currentScroll / 80);
         const translateY = currentScroll * 0.1;
@@ -221,6 +252,7 @@ export const EventDetailsMatch = ({ event }) => {
       }
 
       if (stickyTabsRef.current) {
+        const isStuck = currentScroll > 110;
         if (String(isStuck) !== stickyTabsRef.current.dataset.stuck) {
           stickyTabsRef.current.dataset.stuck = isStuck;
           if (isStuck) {
@@ -245,87 +277,127 @@ export const EventDetailsMatch = ({ event }) => {
       className="h-full overflow-y-auto scrollbar-hide relative z-10 snap-y snap-proximity"
     >
       
-      {/* 1. БЛОК ШАПКИ */}
+      {/* 1. БЛОК ШАПКИ С ГЕОМЕТРИЕЙ */}
       <div 
         ref={matchupHeaderRef}
-        className="snap-start bg-surface-base shadow-lg rounded-3xl shrink-0 pt-6 pb-6 will-change-transform z-20 relative mx-4"
+        className={clsx(
+          "snap-start bg-surface-base border px-2 pb-2 pt-6 flex flex-col shadow-md gap-2 relative overflow-hidden select-none mb-1 will-change-transform z-20",
+          isLive ? "border-red-500/30 shadow-md shadow-red-500/5" : "border-surface-border"
+        )}
       >
-        <div className="flex items-start justify-between px-6">
+        <div className="w-full flex items-center justify-between relative">
         
-          {/* Хозяева */}
-          <div className="flex flex-col items-center w-[30%] relative z-10">
-            <div className="w-12 h-12 shrink-0 mb-2 flex items-center justify-center overflow-hidden drop-shadow-md">
+          {/* ХОЗЯЕВА (Левая половина) */}
+          <div className="w-[38%] flex flex-col items-center text-center gap-1.5 min-w-0">
+            <div 
+              className="w-11 h-11 flex items-center justify-center shrink-0 transition-all duration-300"
+              style={isHome ? { filter: `drop-shadow(0 0 12px ${activeBrandColor})` } : {}}
+            >
               {homeLogo ? (
-                <img src={getImageUrl(homeLogo)} alt="Лого" className="w-full h-full object-contain" />
+                <img src={getImageUrl(homeLogo)} alt="" className="w-full h-full object-contain" />
               ) : (
-                <span className="text-[10px] font-black text-content-muted">ЛОГО</span>
+                <span className="text-[9px] font-black text-content-muted">ЛОГО</span>
               )}
             </div>
-            <span className="text-[13px] font-bold text-content-main text-center leading-tight line-clamp-2">
+            <span className="text-[10px] font-bold text-content-main uppercase tracking-tight w-full px-1 break-words leading-tight line-clamp-2 h-7 flex items-center justify-center">
               {homeName}
             </span>
           </div>
 
-          {/* Центр */}
-          <div className="flex flex-col items-center justify-center w-[40%] px-2">
-            {event.status === 'live' ? (
-              <div className="flex flex-col items-center">
-                <span className="text-danger font-black text-2xl tracking-widest animate-pulse">LIVE</span>
-                {(event.video_yt_url || event.video_vk_url) && (
-                  <div className="flex items-center gap-4 mt-3">
-                    {event.video_yt_url && (
-                      <a href={event.video_yt_url} target="_blank" rel="noreferrer" className="text-content-muted hover:text-[#FF0000] transition-colors outline-none">
-                        <svg viewBox="0 0 24 24" fill="currentColor" className="w-7 h-7"><path d="M21.582 6.186a2.665 2.665 0 0 0-1.882-1.892C18.04 3.84 12 3.84 12 3.84s-6.04 0-7.7.454a2.66 2.66 0 0 0-1.88 1.892C1.96 7.848 1.96 12 1.96 12s0 4.152.46 5.814a2.665 2.665 0 0 0 1.882 1.892c1.66.454 7.7.454 7.7.454s6.04 0 7.7-.454a2.665 2.665 0 0 0 1.882-1.892c.46-1.662.46-5.814.46-5.814s0-4.152-.46-5.814zM9.954 15.354V8.646l5.88 3.354-5.88 3.354z"/></svg>
-                      </a>
-                    )}
-                    {event.video_vk_url && (
-                      <a href={event.video_vk_url} target="_blank" rel="noreferrer" className="text-content-muted hover:text-[#0077FF] transition-colors outline-none">
-                        <svg viewBox="0 0 24 24" fill="currentColor" className="w-7 h-7"><path d="M13.162 18.994c.609 0 .858-.406.851-.915-.031-1.917.714-2.949 2.059-1.604 1.488 1.488 1.796 2.519 3.603 2.519h3.2c.808 0 1.126-.26 1.126-.668 0-.863-1.421-2.386-2.625-3.504-1.686-1.543-1.724-1.6-.459-3.27 1.582-2.09 2.62-3.842 2.3-4.56-.316-.718-1.54-.582-1.54-.582l-3.503.018c-.495 0-.759.169-.938.582-1.026 2.68-2.54 5.319-3.642 5.319-.481 0-.737-.306-.737-1.54V6.985c0-.895-.274-1.12-1.084-1.12H8.884c-.456 0-.803.14-.803.49 0 .456.634.606.853 1.95.342 2.052-.081 4.542-.718 4.542-.481 0-1.731-2.457-2.613-5.076-.23-.679-.472-.942-1.096-.942H1.054c-.65 0-.848.337-.848.665 0 .685 1.554 3.738 4.316 7.625 2.56 3.626 5.535 5.875 8.64 5.875z"/></svg>
-                      </a>
-                    )}
-                  </div>
-                )}
-              </div>
-            ) : isFinished ? (
-              <div className="flex flex-col items-center">
-                {matchStatusText && (
-                  <span 
-                    className={`text-[12px] font-black uppercase tracking-widest mb-2 ${matchStatusColor}`}
-                    style={matchStatusStyle}
-                  >
-                    {matchStatusText}
-                  </span>
-                )}
-                <span className="text-3xl font-black text-content-main tracking-tight leading-none">
-                  {matchScoreText}
-                </span>
-                {matchEndTypeText && (
-                  <span className="text-[12px] font-bold uppercase tracking-widest text-content-muted mt-2 text-center">
-                    {matchEndTypeText}
-                  </span>
-                )}
+          {/* ЦЕНТРАЛЬНЫЙ БЛОК */}
+          <div className="flex flex-col items-center justify-center text-center shrink-0 px-1 min-w-[84px]">
+            {isFinished && matchStatusText && (
+              <span 
+                className={clsx("text-[9px] font-black uppercase tracking-widest mb-1.5 leading-none", matchStatusColor)}
+                style={matchStatusStyle}
+              >
+                {matchStatusText}
+              </span>
+            )}
+
+            {isPlayedOrLive ? (
+              <div className="flex items-center gap-1 font-bold font-black text-[26px] tracking-tighter justify-center leading-none">
+                <span className={scoreColorClass}>{homeScoreDisplay}</span>
+                <span className="text-content-subtle text-lg font-bold pb-0.5 px-1">:</span>
+                <span className={scoreColorClass}>{awayScoreDisplay}</span>
               </div>
             ) : (
-              <div className="flex flex-col items-center">
-                <span className="text-2xl font-black text-content-muted tracking-widest">
-                  -- : --
-                </span>
+              <span className="text-[20px] font-black text-content-subtle font-mono tracking-widest opacity-50 leading-none">VS</span>
+            )}
+
+            {isFinished && (isOvertime || isShootout || isTech) && (
+              <span className={clsx(
+                "text-[9px] font-bold uppercase tracking-widest mt-1.5 px-1.5 py-0.5 rounded leading-none border shadow-xs"
+              )}
+              style={isTech ? { color: 'var(--color-danger)', backgroundColor: 'rgba(239, 68, 68, 0.05)', borderColor: 'rgba(239, 68, 68, 0.1)' } : { color: activeBrandColor, backgroundColor: `${activeBrandColor}14`, borderColor: `${activeBrandColor}1a` }}
+              >
+                {isOvertime && 'от'}
+                {isShootout && 'булл'}
+                {isTech && 'тех'}
+              </span>
+            )}
+
+            {isLive && (
+              <div className="flex items-center gap-1 bg-red-500/10 border border-red-500/20 px-1.5 py-0.5 rounded-full animate-pulse mt-1.5">
+                <span className="w-1 h-1 rounded-full bg-red-500" />
+                <span className="text-[9px] font-black text-red-500 uppercase tracking-tight">LIVE</span>
+              </div>
+            )}
+
+            {/* Блок трансляций */}
+            {(event.video_yt_url || event.video_vk_url) && (
+              <div className="flex items-center gap-3 mt-2">
+                {event.video_yt_url && (
+                  <a href={event.video_yt_url} target="_blank" rel="noreferrer" className="text-content-muted hover:text-[#FF0000] transition-colors outline-none">
+                    <svg viewBox="0 0 24 24" fill="currentColor" className="w-5 h-5"><path d="M21.582 6.186a2.665 2.665 0 0 0-1.882-1.892C18.04 3.84 12 3.84 12 3.84s-6.04 0-7.7.454a2.66 2.66 0 0 0-1.88 1.892C1.96 7.848 1.96 12 1.96 12s0 4.152.46 5.814a2.665 2.665 0 0 0 1.882 1.892c1.66.454 7.7.454 7.7.454s6.04 0 7.7-.454a2.665 2.665 0 0 0 1.882-1.892c.46-1.662.46-5.814.46-5.814s0-4.152-.46-5.814zM9.954 15.354V8.646l5.88 3.354-5.88 3.354z"/></svg>
+                  </a>
+                )}
+                {event.video_vk_url && (
+                  <a href={event.video_vk_url} target="_blank" rel="noreferrer" className="text-content-muted hover:text-[#0077FF] transition-colors outline-none">
+                    <svg viewBox="0 0 24 24" fill="currentColor" className="w-5 h-5"><path d="M13.162 18.994c.609 0 .858-.406.851-.915-.031-1.917.714-2.949 2.059-1.604 1.488 1.488 1.796 2.519 3.603 2.519h3.2c.808 0 1.126-.26 1.126-.668 0-.863-1.421-2.386-2.625-3.504-1.686-1.543-1.724-1.6-.459-3.27 1.582-2.09 2.62-3.842 2.3-4.56-.316-.718-1.54-.582-1.54-.582l-3.503.018c-.495 0-.759.169-.938.582-1.026 2.68-2.54 5.319-3.642 5.319-.481 0-.737-.306-.737-1.54V6.985c0-.895-.274-1.12-1.084-1.12H8.884c-.456 0-.803.14-.803.49 0 .456.634.606.853 1.95.342 2.052-.081 4.542-.718 4.542-.481 0-1.731-2.457-2.613-5.076-.23-.679-.472-.942-1.096-.942H1.054c-.65 0-.848.337-.848.665 0 .685 1.554 3.738 4.316 7.625 2.56 3.626 5.535 5.875 8.64 5.875z"/></svg>
+                  </a>
+                )}
               </div>
             )}
           </div>
 
-          {/* Гости */}
-          <div className="flex flex-col items-center w-[30%] relative z-10">
-            <div className="w-12 h-12 shrink-0 mb-2 flex items-center justify-center overflow-hidden drop-shadow-md">
+          {/* ГОСТИ (Правая половина) */}
+          <div className="w-[38%] flex flex-col items-center text-center gap-1.5 min-w-0">
+            <div 
+              className="w-11 h-11 flex items-center justify-center shrink-0 transition-all duration-300"
+              style={!isHome ? { filter: `drop-shadow(0 0 8px ${activeBrandColor})` } : {}}
+            >
               {awayLogo ? (
-                <img src={getImageUrl(awayLogo)} alt="Лого" className="w-full h-full object-contain" />
+                <img src={getImageUrl(awayLogo)} alt="" className="w-full h-full object-contain" />
               ) : (
-                <span className="text-[10px] font-black text-content-muted">ЛОГО</span>
+                <span className="text-[9px] font-black text-content-muted">ЛОГО</span>
               )}
             </div>
-            <span className="text-[13px] font-bold text-content-main text-center leading-tight line-clamp-2">
+            <span className="text-[10px] font-bold text-content-main uppercase tracking-tight w-full px-1 break-words leading-tight line-clamp-2 h-7 flex items-center justify-center">
               {awayName}
             </span>
+          </div>
+
+        </div>
+
+        {/* 2. НИЖНЯЯ СТРОКА С МЕТАДАННЫМИ МАТЧА */}
+        <div className="w-full grid grid-cols-[1fr,auto,1fr] items-center text-[9px] font-bold text-content-muted border-t border-surface-level2/50 pt-1 px-0.5 relative mt-1">
+          <div className="min-w-0" />
+          
+          <div className="flex items-center justify-center gap-3 truncate max-w-[240px] px-2">
+            <span className="font-bold text-content-muted shrink-0">{formattedDateShort}</span>
+            <span className="text-content-muted font-mono shrink-0">•</span>
+            <span className="font-bold text-content-muted shrink-0">{formattedTime}</span>
+            <span className="text-content-muted font-mono shrink-0">•</span>
+            <span className="truncate">{event.arena_name || 'Арена не назначена'}</span>
+          </div>
+          
+          <div className="flex justify-end shrink-0 opacity-60 pr-2">
+            {event.game_number && (
+              <span className="text-content-subtle">
+                №{event.game_number}
+              </span>
+            )}
           </div>
         </div>
       </div>
@@ -345,8 +417,8 @@ export const EventDetailsMatch = ({ event }) => {
         />
       </div>
 
-      {/* 3. КОНТЕНТНАЯ ЧАСТЬ */}
-      <div className="w-full overflow-hidden px-4 min-h-screen pb-[30vh]">
+      {/* 3. КОНТЕНТНАЯ ЗОНА */}
+      <div className="w-full overflow-hidden px-4 min-h-screen pt-4 pb-[30vh]">
         {loading ? (
           <PageLoader />
         ) : (
