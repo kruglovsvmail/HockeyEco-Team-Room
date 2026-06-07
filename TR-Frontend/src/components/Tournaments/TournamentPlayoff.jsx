@@ -5,6 +5,12 @@ import { Icon } from '../../ui/Icon';
 import { HintPopover } from '../../ui/HintPopover';
 import { getImageUrl } from '../../utils/helpers';
 
+const STAGE_OPTIONS = [
+  { value: 'all', label: 'Общая' },
+  { value: 'regular', label: 'Регулярка' },
+  { value: 'playoff', label: 'Плей-офф' }
+];
+
 export function TournamentPlayoff({ 
   bracket, 
   games, 
@@ -17,7 +23,14 @@ export function TournamentPlayoff({
   const { id: bracketId, matchups } = bracket;
 
   const carouselRef = useRef(null);
+  const timeoutRef = useRef(null);
+  
+  // Локальный стейт активного раунда плей-офф
   const [activeRoundId, setActiveRoundId] = useState(null);
+
+  // ЖЕЛЕЗОБЕТОННЫЕ ПРЕДОХРАНИТЕЛИ: Полностью ликвидируют мерцание чипсов и войну систем
+  const isScrollingProgrammatically = useRef(false);
+  const ignoreNextEffect = useRef(false);
 
   // Хелпер сокращения названий раундов для спортивных плейсхолдеров дерева
   const getAbbreviatedRound = (roundName) => {
@@ -97,26 +110,58 @@ export function TournamentPlayoff({
     };
   };
 
-  // Плавный переход карусели раундов при ручном клике по чипсам текущей сетки
-  const handleRoundTabClick = (roundId) => {
-    setActiveRoundId(roundId);
-    const element = document.getElementById(`round-panel-${bracketId}-${roundId}`);
+  // 1. СИНХРОНИЗАЦИЯ ИЗ ЧИПСОВ: Авто-скролл к раунду при ручном клике по табу
+  useEffect(() => {
+    if (!carouselRef.current || !activeRoundId) return;
+
+    // Защитный гвард: Если стейт обновился из handleCarouselScroll (свайп пальцем) — блокируем программный скролл
+    if (ignoreNextEffect.current) {
+      ignoreNextEffect.current = false;
+      return;
+    }
+
+    const element = document.getElementById(`round-panel-${bracketId}-${activeRoundId}`);
     if (element && carouselRef.current) {
       const containerLeft = carouselRef.current.getBoundingClientRect().left;
       const elementLeft = element.getBoundingClientRect().left;
+      
+      // Наглухо отключаем реакцию onScroll на время выполнения плавной анимации перехода
+      isScrollingProgrammatically.current = true;
       carouselRef.current.scrollBy({ left: elementLeft - containerLeft, behavior: 'smooth' });
+
+      if (timeoutRef.current) clearTimeout(timeoutRef.current);
+      timeoutRef.current = setTimeout(() => {
+        isScrollingProgrammatically.current = false;
+      }, 500);
     }
+  }, [activeRoundId, bracketId]);
+
+  // Очистка таймеров при размонтировании
+  useEffect(() => {
+    return () => {
+      if (timeoutRef.current) clearTimeout(timeoutRef.current);
+    };
+  }, []);
+
+  const handleRoundTabClick = (roundId) => {
+    setActiveRoundId(roundId);
   };
 
-  // Синхронизация верхних чипсов при прямом нативном свайпе пальцем по карусели
+  // 2. СИНХРОНИЗАЦИЯ ИЗ СВАЙПА: Подсветка табов при нативном перелистывании экрана пальцем
   const handleCarouselScroll = () => {
+    if (isScrollingProgrammatically.current) return;
     if (!carouselRef.current) return;
+    
     const { scrollLeft, clientWidth } = carouselRef.current;
     if (clientWidth === 0) return;
 
     const targetIdx = Math.round(scrollLeft / clientWidth);
-    if (uniqueRounds[targetIdx] && activeRoundId !== uniqueRounds[targetIdx].id) {
-      setActiveRoundId(uniqueRounds[targetIdx].id);
+    const targetRound = uniqueRounds[targetIdx];
+    
+    if (targetRound && activeRoundId !== targetRound.id) {
+      // Предотвращаем запуск конфликтующего scrollTo внутри useEffect
+      ignoreNextEffect.current = true;
+      setActiveRoundId(targetRound.id);
     }
   };
 
@@ -132,7 +177,6 @@ export function TournamentPlayoff({
 
     return (
       <div className="flex flex-col gap-2.5 w-full text-left">
-
         <div className="flex flex-col max-h-72 overflow-y-auto scrollbar-hide">
           {matchupGames.map((game, idx) => {
             const homeShort = game.home_team_short_name || game.home_team_name?.substring(0, 3);
@@ -142,7 +186,7 @@ export function TournamentPlayoff({
             return (
               <div key={game.id || idx} className="flex flex-col p-2">
                 <div className="flex items-center justify-between text-[11px] font-bold">
-                  <div className="flex items-center gap-3 w-[42%] truncate  pl-3">
+                  <div className="flex items-center gap-3 w-[42%] truncate pl-3">
                     {game.home_team_logo ? (
                       <img src={getImageUrl(game.home_team_logo)} alt="" className="w-5 h-5 object-contain shrink-0" />
                     ) : (
@@ -256,15 +300,11 @@ export function TournamentPlayoff({
                   const isTeam2Winner = matchup.winner_id && matchup.winner_id === matchup.team2_id;
 
                   const cardLayout = (
-                    <div className={clsx(
-                      "w-full bg-surface-base px-4 pb-3 pt-1 flex flex-col shadow-md select-none relative overflow-hidden transition-all rounded-2xl"
-
-                    )}>
-                      
+                    <div className="w-full bg-surface-base px-4 pb-3 pt-1 flex flex-col shadow-md select-none relative overflow-hidden transition-all rounded-2xl">
                       <div className="flex items-center justify-between w-full mb-3 pb-1 border-b border-b-surface-border">
                         <div>
                           {isMultiMatch ? (
-                            <span className="text-[9px] font-bold uppercase tracking-widest text-content-muted ">
+                            <span className="text-[9px] font-bold uppercase tracking-widest text-content-muted">
                               серия до {matchup.wins_needed}-х побед
                             </span>
                           ) : null}
@@ -282,8 +322,7 @@ export function TournamentPlayoff({
                       </div>
 
                       <div className="flex items-center justify-between w-full">
-                        <div className="flex-1 min-w-0 flex flex-col mt-2 gap-3 ">
-                          
+                        <div className="flex-1 min-w-0 flex flex-col mt-2 gap-3">
                           {/* Команда 1 */}
                           <div className="flex items-center justify-between w-full min-w-0 gap-2">
                             <div className="flex items-center gap-2.5 min-w-0 flex-1">
@@ -329,7 +368,6 @@ export function TournamentPlayoff({
                               </span>
                             )}
                           </div>
-
                         </div>
 
                         {/* КУБЫ РЕЗУЛЬТАТОВ */}
@@ -347,7 +385,6 @@ export function TournamentPlayoff({
                             </div>
                           </div>
                         </div>
-
                       </div>
                     </div>
                   );
