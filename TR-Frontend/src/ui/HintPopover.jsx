@@ -4,7 +4,7 @@ import { Icon } from './Icon';
 import { DEADLINES } from '../utils/permissions';
 import clsx from 'clsx';
 
-export function HintPopover({ status, children }) {
+export function HintPopover({ status, customContent, children }) {
   const [isOpen, setIsOpen] = useState(false);
   const [isRendered, setIsRendered] = useState(false);
   const [isExiting, setIsExiting] = useState(false);
@@ -58,8 +58,8 @@ export function HintPopover({ status, children }) {
     if (!triggerRef.current) return;
     
     const rect = triggerRef.current.getBoundingClientRect();
-    const popoverWidth = 210; // Фиксированная базовая ширина плашки
-    const popoverEstimatedHeight = 75; // Примерная высота плашки с текстом и отступами
+    const popoverWidth = customContent ? 260 : 210; // Адаптируем ширину под хоккейную строку счёта только при наличии контента
+    const popoverEstimatedHeight = customContent ? 140 : 75; // Увеличиваем высоту для списка матчей серии
     
     let left = rect.left + rect.width / 2 - popoverWidth / 2;
     let top = 0;
@@ -172,7 +172,10 @@ export function HintPopover({ status, children }) {
   // Рендерим плашку подсказки через React Portal на верхний слой DOM-дерева
   const popoverContent = isRendered && createPortal(
     <div 
-      className="fixed z-[9999] w-[210px] bg-surface-level1 border border-surface-border/60 shadow-2xl rounded-xl p-3 select-none pointer-events-auto will-change-transform"
+      className={clsx(
+        "fixed z-[9999] bg-surface-level1 border border-surface-border/60 shadow-2xl rounded-xl p-3 select-none pointer-events-auto will-change-transform",
+        customContent ? "w-[260px]" : "w-[210px]"
+      )}
       style={{
         top: `${coords.top}px`,
         left: `${coords.left}px`,
@@ -185,23 +188,27 @@ export function HintPopover({ status, children }) {
       {/* Инжектируем изолированные правила стилей для GPU интерполяции */}
       <style>{keyframesStyles}</style>
 
-      <p className="text-[11px] font-semibold text-content-main leading-snug text-center whitespace-normal break-words">
-        {message}
-      </p>
+      {customContent ? (
+        customContent
+      ) : (
+        <p className="text-[11px] font-semibold text-content-main leading-snug text-center whitespace-normal break-words">
+          {message}
+        </p>
+      )}
       
       {/* Динамическая стрелочка, меняющая положение в зависимости от placement */}
       {placement === 'top' ? (
         <div 
           className="absolute -bottom-1.5 w-3 h-3 bg-surface-level1 border-b border-r border-surface-border/60 rotate-45"
           style={{
-            left: `${Math.max(10, Math.min(188, coords.triggerX - coords.left - 6))}px`
+            left: `${Math.max(10, Math.min(customContent ? 238 : 188, coords.triggerX - coords.left - 6))}px`
           }}
         />
       ) : (
         <div 
           className="absolute -top-1.5 w-3 h-3 bg-surface-level1 border-t border-l border-surface-border/60 rotate-45"
           style={{
-            left: `${Math.max(10, Math.min(188, coords.triggerX - coords.left - 6))}px`
+            left: `${Math.max(10, Math.min(customContent ? 238 : 188, coords.triggerX - coords.left - 6))}px`
           }}
         />
       )}
@@ -211,7 +218,7 @@ export function HintPopover({ status, children }) {
 
   return (
     <div 
-      className="inline-flex items-center justify-center relative cursor-pointer" 
+      className="inline-flex items-center justify-center relative cursor-pointer w-full h-full" 
       ref={triggerRef}
       onClick={handleToggle}
     >

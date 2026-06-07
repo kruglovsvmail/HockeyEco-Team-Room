@@ -1,5 +1,6 @@
+// tournamentRoutes.js
 import { Router } from 'express';
-import tournamentController from '../controllers/tournamentController.js'; // Убедитесь, что путь к контроллеру правильный
+import tournamentController from '../controllers/tournamentController.js';
 
 const router = Router();
 

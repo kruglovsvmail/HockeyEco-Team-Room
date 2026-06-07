@@ -41,7 +41,7 @@ class TournamentController {
     }
   }
 
-  // Получение списка всех матчей конкретного дивизиона с учетом хоккейных исходов и настроек серий плей-офф
+  // Получение списка всех матчей конкретного дивизиона с учетом хоккейных исходов и коротких названий команд
   async getDivisionGames(req, res) {
     try {
       const { divisionId } = req.params;
@@ -50,19 +50,23 @@ class TournamentController {
         SELECT 
           g.id,
           g.game_type,
+          g.status,
           g.stage_type,
           g.stage_label,
           g.series_number,
           g.game_date,
-          g.status,
           g.home_score,
           g.away_score,
           g.game_number,
           g.end_type,
           g.is_technical,
+          g.home_team_id,
+          g.away_team_id,
           t_home.name as home_team_name,
+          t_home.short_name as home_team_short_name,
           t_home.logo_url as home_team_logo,
           t_away.name as away_team_name,
+          t_away.short_name as away_team_short_name,
           t_away.logo_url as away_team_logo,
           a.name as arena_name,
           (
@@ -135,7 +139,7 @@ class TournamentController {
     }
   }
 
-  // Получение структуры сеток, раундов и матчапов плей-офф дивизиона
+  // Получение структуры сеток, раундов и серий плей-офф с метаданными происхождения пар
   async getDivisionPlayoffs(req, res) {
     try {
       const { divisionId } = req.params;
@@ -151,14 +155,20 @@ class TournamentController {
           pr.wins_needed,
           pm.id as matchup_id,
           pm.matchup_number,
+          pm.team1_source_type,
+          pm.team1_source_id,
+          pm.team2_source_type,
+          pm.team2_source_id,
           pm.team1_id,
           pm.team2_id,
           pm.team1_wins,
           pm.team2_wins,
           pm.winner_id,
           t1.name as team1_name,
+          t1.short_name as team1_short_name,
           t1.logo_url as team1_logo,
           t2.name as team2_name,
+          t2.short_name as team2_short_name,
           t2.logo_url as team2_logo
         FROM playoff_brackets pb
         JOIN playoff_rounds pr ON pb.id = pr.bracket_id
