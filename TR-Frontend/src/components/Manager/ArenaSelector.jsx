@@ -8,8 +8,8 @@ import { PageLoader } from '../../ui/Loader';
 import { getAuthHeaders } from '../../utils/helpers';
 
 export function ArenaSelector({ data }) {
-  // ИСПРАВЛЕНО: Извлекаем teamId, переданный из контекста главной формы
-  const { onSelect, currentTeamColor, teamId } = data || {};
+  // Извлекаем переданные ID и имя текущей арены для предзаполнения
+  const { onSelect, currentTeamColor, teamId, selectedArenaId, selectedArenaName } = data || {};
 
   const [arenaTab, setArenaTab] = useState('directory'); 
   const [arenaSearch, setArenaSearch] = useState('');
@@ -19,13 +19,25 @@ export function ArenaSelector({ data }) {
   const [customName, setCustomName] = useState('');
   const [customUrl, setCustomUrl] = useState('');
 
+  // Автоматически переключаем на нужный таб и подставляем имя, если это ручной ввод
+  useEffect(() => {
+    if (
+      selectedArenaId === null && 
+      selectedArenaName && 
+      selectedArenaName !== 'Арена не назначена' && 
+      selectedArenaName !== 'Арена не указана'
+    ) {
+      setArenaTab('custom');
+      setCustomName(selectedArenaName);
+    }
+  }, [selectedArenaId, selectedArenaName]);
+
   useEffect(() => {
     if (arenaTab !== 'directory' || !teamId) return;
 
     const fetchArenas = async () => {
       setIsLoading(true);
       try {
-        // ИСПРАВЛЕНО: Добавлен обязательный параметр teamId для прохождения RBAC-проверки бэкенда
         const url = `${import.meta.env.VITE_API_URL}/api/manager/handbooks/arenas?teamId=${teamId}&search=${encodeURIComponent(arenaSearch)}`;
         const res = await fetch(url, { headers: getAuthHeaders() });
         if (res.ok) {
@@ -83,7 +95,8 @@ export function ArenaSelector({ data }) {
                 <button
                   key={arena.id} 
                   type="button"
-                  onClick={() => onSelect({ ...arena, isManual: false })}
+                  // Если арена из справочника, прокидываем её системную таймзону
+                  onClick={() => onSelect({ ...arena, isManual: false, custom_timezone: arena.timezone })}
                   className="w-full p-4 bg-surface-level1 border border-surface-border rounded-2xl text-left flex items-center justify-between outline-none cursor-pointer hover:border-brand/30 transition-all active:scale-[0.99]"
                 >
                   <div className="flex flex-col min-w-0 pr-2 text-left">
@@ -103,13 +116,13 @@ export function ArenaSelector({ data }) {
       ) : (
         <FadeIn key="custom" duration={200} className="flex-1 overflow-y-auto scrollbar-hide text-left flex flex-col gap-4 pt-1">
           <TextInputLP 
-            placeholder="Название места проведения..." 
+            placeholder="Название локации..." 
             value={customName} 
             onChange={setCustomName} 
             activeColor={currentTeamColor} 
           />
           <TextInputLP 
-            placeholder="Ссылка на геопозицию..." 
+            placeholder="Ссылка на геолокацию..." 
             value={customUrl} 
             onChange={setCustomUrl} 
             activeColor={currentTeamColor} 
@@ -125,7 +138,9 @@ export function ArenaSelector({ data }) {
                 id: null,
                 name: customName.trim(),
                 city: 'ОФП/Зал',
-                location_url: customUrl.trim() || null
+                location_url: customUrl.trim() || null,
+                // Захватываем часовой пояс браузера/телефона менеджера
+                custom_timezone: Intl.DateTimeFormat().resolvedOptions().timeZone
               })}
             >
               Подтвердить локацию

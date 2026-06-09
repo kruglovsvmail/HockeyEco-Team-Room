@@ -39,14 +39,14 @@ export const PERMISSIONS = {
 
   // Редактирование игрового профиля (Блок "Игровой профиль" - номер, амплуа, хват)
   EDIT_USER_BLOCK_HOCKEY: {
-    allowedRoles: [ROLES.OWNER, ROLES.TEAM_MANAGER, ROLES.TEAM_ADMIN],
-    requiresSubscription: [ROLES.TEAM_MANAGER, ROLES.TEAM_ADMIN]
-  },
+  allowedRoles: [ROLES.OWNER, ROLES.TEAM_MANAGER], 
+  requiresSubscription: [ROLES.TEAM_MANAGER, ROLES.TEAM_ADMIN]   
+},
 
   // Редактирование базового блока (Блок ФИО, контакты, аватарка пользователя)
   EDIT_USER_BLOCK_BASE: {
-    allowedRoles: [ROLES.OWNER, ROLES.TEAM_MANAGER, ROLES.TEAM_ADMIN],
-    requiresSubscription: [ROLES.TEAM_MANAGER, ROLES.TEAM_ADMIN]
+    allowedRoles: [ROLES.OWNER, ROLES.TEAM_MANAGER],
+    requiresSubscription: [ROLES.TEAM_MANAGER]
   },
 
   // Просмотр конфиденциального виртуального кода игрока
@@ -61,21 +61,21 @@ export const PERMISSIONS = {
 
   // Вкладка "Состав": Добавление участников и их удаление (перевод в архив)
   TEAM_MANAGE_TAB_ALL: {
-    allowedRoles: [ROLES.OWNER, ROLES.CLUB_TOP_MANAGER, ROLES.TEAM_MANAGER, ROLES.TEAM_ADMIN],
-    requiresSubscription: [ROLES.CLUB_TOP_MANAGER, ROLES.TEAM_MANAGER, ROLES.TEAM_ADMIN]
+    allowedRoles: [ROLES.OWNER, ROLES.CLUB_TOP_MANAGER, ROLES.TEAM_MANAGER],
+    requiresSubscription: [ROLES.CLUB_TOP_MANAGER, ROLES.TEAM_MANAGER]
   },
 
   // Вкладка "Ростер": Добавление игроков в заявочный лист турнира и исключение из него
   // Клубный топ-менеджер и Владелец работают БЕЗ подписки, а руководители и админы — ПО подписке.
   TEAM_MANAGE_TAB_ROSTER: {
-    allowedRoles: [ROLES.OWNER, ROLES.CLUB_TOP_MANAGER, ROLES.TEAM_MANAGER, ROLES.TEAM_ADMIN],
+    allowedRoles: [ROLES.OWNER, ROLES.TEAM_MANAGER, ROLES.TEAM_ADMIN],
     requiresSubscription: [ROLES.TEAM_MANAGER, ROLES.TEAM_ADMIN]
   },
 
   // Вкладка "Представители": Управление списком административного и тренерского штаба
   TEAM_MANAGE_TAB_STAFF: {
-    allowedRoles: [ROLES.OWNER, ROLES.CLUB_TOP_MANAGER, ROLES.TEAM_MANAGER, ROLES.TEAM_ADMIN],
-    requiresSubscription: [ROLES.CLUB_TOP_MANAGER, ROLES.TEAM_MANAGER, ROLES.TEAM_ADMIN]
+    allowedRoles: [ROLES.OWNER, ROLES.CLUB_TOP_MANAGER, ROLES.TEAM_MANAGER],
+    requiresSubscription: [ROLES.CLUB_TOP_MANAGER, ROLES.TEAM_MANAGER]
   },
 
   // ==========================================
@@ -98,6 +98,12 @@ export const PERMISSIONS = {
     requiresSubscription: [ROLES.PLAYER]
   },
 
+  // Подтверждение или отмена вызова на товарищеский матч (friendly_pwa)
+  MATCH_CONFIRM_CANCEL: {
+    allowedRoles: [ROLES.OWNER, ROLES.CLUB_TOP_MANAGER, ROLES.TEAM_MANAGER, ROLES.TEAM_ADMIN],
+    requiresSubscription: [ROLES.CLUB_TOP_MANAGER, ROLES.TEAM_MANAGER, ROLES.TEAM_ADMIN]
+  },
+
   // ==========================================
   // 📄 Файл: EventDashboard.jsx
   // ==========================================
@@ -116,11 +122,9 @@ export const PERMISSIONS = {
   // Создание, изменение параметров и удаление самого события (матча, тренировки, собрания)
   EVENTS_MANAGE: {
     allowedRoles: [
-      ROLES.OWNER, ROLES.CLUB_TOP_MANAGER, ROLES.CLUB_ADMIN, 
-      ROLES.TEAM_MANAGER, ROLES.TEAM_ADMIN, 
-      ROLES.HEAD_COACH, ROLES.COACH
+      ROLES.OWNER, ROLES.TEAM_MANAGER
     ],
-    requiresSubscription: [ROLES.CLUB_TOP_MANAGER, ROLES.CLUB_ADMIN, ROLES.TEAM_MANAGER, ROLES.TEAM_ADMIN, ROLES.HEAD_COACH, ROLES.COACH]
+    requiresSubscription: [ROLES.TEAM_MANAGER]
   },
 
   // ==========================================
@@ -129,8 +133,8 @@ export const PERMISSIONS = {
 
   // Управление ручными отметками присутствия игроков и финансовых пометками (₽) менеджером
   ATTENDANCE_MANAGE: {
-    allowedRoles: [ROLES.OWNER, ROLES.CLUB_TOP_MANAGER, ROLES.CLUB_ADMIN, ROLES.TEAM_MANAGER, ROLES.TEAM_ADMIN],
-    requiresSubscription: [ROLES.CLUB_TOP_MANAGER, ROLES.CLUB_ADMIN, ROLES.TEAM_MANAGER, ROLES.TEAM_ADMIN]
+    allowedRoles: [ROLES.OWNER, ROLES.TEAM_MANAGER],
+    requiresSubscription: [ROLES.TEAM_MANAGER]
   },
 
   // ==========================================
@@ -145,14 +149,14 @@ export const PERMISSIONS = {
 
   // Редактирование параметров игрока внутри звеньев (Клик по аватарке -> нижняя шторка номера, Капитана (C) и Ассистента (A))
   LINES_EDIT_PLAYER_PARAMS: {
-    allowedRoles: [ROLES.OWNER, ROLES.CLUB_TOP_MANAGER, ROLES.CLUB_ADMIN, ROLES.TEAM_MANAGER, ROLES.TEAM_ADMIN],
-    requiresSubscription: [ROLES.CLUB_TOP_MANAGER, ROLES.CLUB_ADMIN, ROLES.TEAM_MANAGER, ROLES.TEAM_ADMIN]
+    allowedRoles: [ROLES.OWNER, ROLES.TEAM_MANAGER, ROLES.TEAM_ADMIN],
+    requiresSubscription: [ROLES.TEAM_MANAGER, ROLES.TEAM_ADMIN]
   },
 
   // Отправка официальной электронной заявки состава в лигу (Кнопка отправки)
   ROSTER_SUBMIT: {
-    allowedRoles: [ROLES.OWNER, ROLES.CLUB_TOP_MANAGER, ROLES.CLUB_ADMIN, ROLES.TEAM_MANAGER, ROLES.TEAM_ADMIN],
-    requiresSubscription: [ROLES.CLUB_TOP_MANAGER, ROLES.CLUB_ADMIN, ROLES.TEAM_MANAGER, ROLES.TEAM_ADMIN]
+    allowedRoles: [ROLES.OWNER, ROLES.TEAM_MANAGER, ROLES.TEAM_ADMIN],
+    requiresSubscription: [ROLES.TEAM_MANAGER, ROLES.TEAM_ADMIN]
   },
 
   // ==========================================
@@ -161,8 +165,8 @@ export const PERMISSIONS = {
   
   // Доступ к выпадающему списку команд для создания событий (Добавить событие)
   MGR_CREATE_EVENT: {
-    allowedRoles: [ROLES.OWNER, ROLES.CLUB_TOP_MANAGER, ROLES.TEAM_MANAGER, ROLES.TEAM_ADMIN],
-    requiresSubscription: [ROLES.CLUB_TOP_MANAGER, ROLES.TEAM_MANAGER, ROLES.TEAM_ADMIN]
+    allowedRoles: [],
+    requiresSubscription: []
   },
 
   // Доступ к разделу заявочных кампаний в турниры (Заявки)
@@ -179,7 +183,39 @@ export const PERMISSIONS = {
 
   // Доступ к разделу внутрикомандных реестров (Справочники)
   MGR_HANDBOOKS: {
-    allowedRoles: [ROLES.OWNER, ROLES.CLUB_TOP_MANAGER, ROLES.TEAM_MANAGER, ROLES.TEAM_ADMIN],
-    requiresSubscription: [ROLES.CLUB_TOP_MANAGER, ROLES.TEAM_MANAGER, ROLES.TEAM_ADMIN]
+    allowedRoles: [],
+    requiresSubscription: []
+  },
+
+  // ==========================================
+  // 📄 Файл: MatchInfo.jsx
+  // ==========================================
+
+  // Редактирование медиа-ссылок трансляций матча (Блок 1 - YouTube, VK Видео)
+  MATCH_EDIT_MEDIA: {
+    allowedRoles: [
+      ROLES.OWNER, ROLES.TEAM_MANAGER, ROLES.TEAM_ADMIN
+    ],
+    requiresSubscription: [ROLES.TEAM_MANAGER, ROLES.TEAM_ADMIN]
+  },
+
+  // Редактирование расписания (Блок 2 - Дата, время, выбор Арены из справочника)
+  MATCH_EDIT_SCHEDULE: {
+    allowedRoles: [
+      ROLES.OWNER, ROLES.TEAM_MANAGER, ROLES.TEAM_ADMIN 
+    ],
+    requiresSubscription: [ROLES.TEAM_MANAGER, ROLES.TEAM_ADMIN]
+  },
+
+  // Редактирование игровой формы и взноса с игрока за участие (Блок 3 - Цвет джерси, стоимость)
+  MATCH_EDIT_FINANCES: {
+    allowedRoles: [ROLES.OWNER, ROLES.TEAM_MANAGER, ROLES.TEAM_ADMIN],
+    requiresSubscription: [ROLES.TEAM_MANAGER, ROLES.TEAM_ADMIN]
+  },
+
+  // Полное физическое удаление карточки матча из календаря (Кнопка внизу экрана)
+  MATCH_DELETE: {
+    allowedRoles: [ROLES.OWNER, ROLES.TEAM_MANAGER, ROLES.TEAM_ADMIN],
+    requiresSubscription: [ROLES.TEAM_MANAGER, ROLES.TEAM_ADMIN]
   }
 };

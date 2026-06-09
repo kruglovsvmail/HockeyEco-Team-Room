@@ -32,7 +32,7 @@ export function SchedulePage() {
   const [isFilterOpen, setIsFilterOpen] = useState(false);
   const [isPageReady, setIsPageReady] = useState(false);
 
-  // Состояние активных фильтров для клиентской фильтрации
+  // Состояние active фильтров для клиентской фильтрации
   const [activeFilters, setActiveFilters] = useState({
     teams: {},
     showClub: true
@@ -176,6 +176,17 @@ export function SchedulePage() {
 
   useFocusRevalidate(fetchEvents);
 
+  // ХУК СИНХРОНИЗАЦИИ: Слушает событие успешного сохранения в шторках и тихо обновляет календарь
+  useEffect(() => {
+    const handleEventsUpdated = () => {
+      fetchEvents();
+    };
+    window.addEventListener('tr-events-updated', handleEventsUpdated);
+    return () => {
+      window.removeEventListener('tr-events-updated', handleEventsUpdated);
+    };
+  }, [fetchEvents]);
+
   useLayoutEffect(() => {
     if (scrollRefs.current[1]) {
       scrollRefs.current[1].scrollTop = 0;
@@ -221,7 +232,7 @@ export function SchedulePage() {
   // МЕТОД ПОДТВЕРЖДЕНИЯ МАТЧА ВЫЗЫВАЕМОЙ СТОРОНОЙ
   const handleConfirmFriendlyMatch = async (eventId, teamId) => {
     try {
-      const response = await fetch(`${import.meta.env.VITE_API_URL}/api/events/${eventId}/confirm`, {
+      const response = await fetch(`${import.meta.env.VITE_API_URL}/api/events/${eventId}/confirm?teamId=${teamId}`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -244,7 +255,7 @@ export function SchedulePage() {
   // МЕТОД ОТМЕНЫ ВЫЗОВА ИЛИ ОТКЛОНЕНИЯ МАТЧА
   const handleCancelFriendlyMatch = async (eventId, teamId) => {
     try {
-      const response = await fetch(`${import.meta.env.VITE_API_URL}/api/events/${eventId}/cancel`, {
+      const response = await fetch(`${import.meta.env.VITE_API_URL}/api/events/${eventId}/cancel?teamId=${teamId}`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -411,7 +422,7 @@ export function SchedulePage() {
                 <div 
                   key={slideWeekKey} 
                   ref={el => scrollRefs.current[idx] = el}
-                  className="w-1/3 shrink-0 flex flex-col px-4 h-full overflow-y-auto scrollbar-hide pt-[80px] pb-4"
+                  className="w-1/3 shrink-0 flex flex-col px-4 h-full overflow-y-auto scrollbar-hide pt-[80px] pb-32"
                 >
                   <div>
                     {isLoading && offset === 0 ? (
@@ -474,7 +485,7 @@ export function SchedulePage() {
           </TopSheet>
         </div>
 
-        {/* Шторка Фильтра календаря, успешно перенесенная из Хедера */}
+        {/* Шторка Фильтра календаря */}
         <TopSheet isOpen={isFilterOpen} onClose={() => setIsFilterOpen(false)}>
           <EventFilters 
             user={user}

@@ -613,8 +613,8 @@ export const MatchLines = ({ event, initialAttendees = [], initialDraftLines = [
   };
 
   const renderLineBlock = (lineNum) => (
-    <div key={`line-${lineNum}`} className="w-full flex flex-col items-center pb-2">
-      <div className="flex justify-center gap-4 w-full mb-3">
+    <div key={`line-${lineNum}`} className="w-full flex flex-col items-center pb-2 mt-2 ">
+      <div className="flex justify-center gap-4 w-full mb-4">
         {renderSlot(lineNum, 'LW', 'ЛН')}
         {renderSlot(lineNum, 'C', 'ЦН')}
         {renderSlot(lineNum, 'RW', 'ПН')}
@@ -681,11 +681,113 @@ export const MatchLines = ({ event, initialAttendees = [], initialDraftLines = [
         `}
       </style>
 
-      <div className="flex items-center justify-between w-full px-4 relative">
-        <SectionHeader 
-          showAction={false} 
-          className="m-0"
-        />
+      {/* КНОПКИ УПРАВЛЕНИЯ ПЯТЕРКАМИ С УЧЕТОМ СТАТУСА ТАРИФА ПОДПИСКИ ИЛИ ВРЕМЕННЫХ ДЕДЛАЙНОВ */}
+      <div className="flex justify-start items-center gap-2 py-2 mb-1 w-full bg-transparent flex-wrap">
+        {isEditMode ? (
+          <>
+            <button
+              onClick={(e) => handleHeaderActionClick(e)}
+              disabled={isPublishing}
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[12px] font-semibold border border-surface-border bg-surface-level2 text-red-500 transition-all active:scale-95 hover:bg-surface-border outline-none cursor-pointer select-none"
+            >
+              <Icon name="close" className="w-3.5 h-3.5 shrink-0" strokeWidth={3} />
+              Отмена
+            </button>
+
+            <button
+              onClick={handlePublish}
+              disabled={isPublishing}
+              style={{ backgroundColor: activeBrandColor, borderColor: activeBrandColor }}
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[12px] font-semibold border text-white transition-all active:scale-95 hover:opacity-90 outline-none cursor-pointer select-none shadow-sm"
+            >
+              {isPublishing ? (
+                <div className="w-3.5 h-3.5 rounded-full border-2 border-white border-t-transparent animate-spin shrink-0" />
+              ) : (
+                <Icon name="save" className="w-3.5 h-3.5 shrink-0" strokeWidth={2.5} />
+              )}
+              Сохранить
+            </button>
+          </>
+        ) : (
+          <>
+            {/* Кнопка "Отправить заявку" (Заявка состава на матч) — ОТОБРАЖАЕТСЯ ИСКЛЮЧИТЕЛЬНО ДЛЯ ОФИЦИАЛЬНЫХ МАТЧЕЙ ВНУТРИ ПЛАТФОРМЫ */}
+            {hasAdminAccess && event?.game_type === 'official' && (
+              hasRosterSubmitAccess ? (
+                timeToMatch < DEADLINES.ROSTER_SUBMIT_MINUTES ? (
+                  <HintPopover status="deadline_roster_submit">
+                    <button
+                      type="button"
+                      className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[12px] font-semibold border border-surface-border bg-surface-level2 text-content-main opacity-40 cursor-pointer select-none outline-none"
+                    >
+                      <Icon name="registry" className="w-3.5 h-3.5 shrink-0" />
+                      Отправить заявку
+                    </button>
+                  </HintPopover>
+                ) : (
+                  <button
+                    onClick={(e) => handleSubmitOfficialRoster(e)}
+                    disabled={isPublished}
+                    className={clsx(
+                      "inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[12px] font-semibold border transition-all outline-none select-none",
+                      isPublished
+                        ? "bg-green-500 border-green-500 text-white opacity-50 cursor-not-allowed"
+                        : "bg-surface-level2 border-surface-border text-content-main active:scale-95 hover:bg-surface-border cursor-pointer"
+                    )}
+                  >
+                    <Icon name="registry" className="w-3.5 h-3.5 shrink-0" />
+                    {isPublished ? 'Отправлено' : 'Отправить заявку'}
+                  </button>
+                )
+              ) : (
+                <HintPopover status="no_subscription">
+                  <button
+                    type="button"
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[12px] font-semibold border border-surface-border bg-surface-level2 text-content-main opacity-30 cursor-pointer select-none outline-none"
+                  >
+                    <Icon name="registry" className="w-3.5 h-3.5 shrink-0" />
+                    Отправить заявку
+                  </button>
+                </HintPopover>
+              )
+            )}
+
+            {/* Кнопка "Состав" (Редактирование сочетаний звеньев) */}
+            {hasCoachAccess && !isPublished && (
+              hasLinesManageAccess ? (
+                timeToMatch <= DEADLINES.MIDDLE_EDIT_MINUTES ? (
+                  <HintPopover status="deadline_lines_edit">
+                    <button
+                      type="button"
+                      className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[12px] font-semibold border border-surface-border bg-surface-level2 text-content-main opacity-40 cursor-pointer select-none outline-none"
+                    >
+                      <Icon name="edit" className="w-3.5 h-3.5 shrink-0" />
+                      Состав
+                    </button>
+                  </HintPopover>
+                ) : (
+                  <button
+                    onClick={(e) => handleHeaderActionClick(e)}
+                    style={{ color: activeBrandColor, borderColor: activeBrandColor }}
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[12px] font-semibold border bg-surface-level2 transition-all active:scale-95 hover:opacity-80 outline-none cursor-pointer select-none"
+                  >
+                    <Icon name="edit" className="w-3.5 h-3.5 shrink-0" />
+                    Состав
+                  </button>
+                )
+              ) : (
+                <HintPopover status="no_subscription">
+                  <button
+                    type="button"
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[12px] font-semibold border border-surface-border bg-surface-level2 text-content-main opacity-30 cursor-pointer select-none outline-none"
+                  >
+                    <Icon name="edit" className="w-3.5 h-3.5 shrink-0" />
+                    Состав
+                  </button>
+                </HintPopover>
+              )
+            )}
+          </>
+        )}
       </div>
 
       <div className="-mx-0">
@@ -694,7 +796,7 @@ export const MatchLines = ({ event, initialAttendees = [], initialDraftLines = [
             <ContainerContent title="Доступные игроки" count={unassignedPlayers.length}>
               <div 
                 ref={chipsScrollRef}
-                className="overflow-x-auto scrollbar-hide w-full pb-1"
+                className="overflow-x-auto scrollbar-hide w-full pb-1 "
               >
                 {unassignedPlayers.length > 0 ? (
                   <div className="flex flex-col gap-1 min-w-max">
@@ -725,163 +827,17 @@ export const MatchLines = ({ event, initialAttendees = [], initialDraftLines = [
         </div>
       </div>
 
-      {/* КНОПКИ УПРАВЛЕНИЯ ПЯТЕРКАМИ С УЧЕТОМ СТАТУСА ТАРИФА ПОДПИСКИ ИЛИ ВРЕМЕННЫХ ДЕДЛАЙНОВ */}
-      <div className="flex justify-center items-center gap-8 py-3 my-1 w-full bg-transparent">
-        {isEditMode ? (
-          <>
-            <button
-              onClick={(e) => handleHeaderActionClick(e)}
-              disabled={isPublishing}
-              className="flex flex-col items-center justify-center transition-all active:scale-90 relative outline-none min-w-[72px] hover:scale-105 cursor-pointer"
-            >
-              <div className="w-11 h-11 rounded-full bg-surface-level2 border border-surface-border flex items-center justify-center text-red-500 shadow-sm">
-                <Icon name="close" className="w-4 h-4" strokeWidth={3} />
-              </div>
-              <span className="text-[9px] font-black uppercase tracking-widest text-content-main block text-center select-none mt-1">
-                Отмена
-              </span>
-            </button>
-
-            <button
-              onClick={handlePublish}
-              disabled={isPublishing}
-              className="flex flex-col items-center justify-center transition-all active:scale-90 relative outline-none min-w-[72px] hover:scale-105 cursor-pointer"
-            >
-              <div 
-                style={{ backgroundColor: activeBrandColor }}
-                className="w-11 h-11 rounded-full flex items-center justify-center text-white shadow-md"
-              >
-                {isPublishing ? (
-                  <div className="w-4 h-4 rounded-full border-2 border-white border-t-transparent animate-spin" />
-                ) : (
-                  <Icon name="save" className="w-4 h-4" strokeWidth={2.5} />
-                )}
-              </div>
-              <span className="text-[9px] font-black uppercase tracking-widest text-content-main block text-center select-none mt-1">
-                Сохранить
-              </span>
-            </button>
-          </>
-        ) : (
-          <>
-            {/* Кнопка "В лигу" (Заявка состава на матч) — ОТОБРАЖАЕТСЯ ИСКЛЮЧИТЕЛЬНО ДЛЯ ОФИЦИАЛЬНЫХ МАТЧЕЙ ВНУТРИ ПЛАТФОРМЫ */}
-            {hasAdminAccess && event?.game_type === 'official' && (
-              hasRosterSubmitAccess ? (
-                timeToMatch < DEADLINES.ROSTER_SUBMIT_MINUTES ? (
-                  <HintPopover status="deadline_roster_submit">
-                    <button
-                      type="button"
-                      className="flex flex-col items-center justify-center transition-all relative outline-none min-w-[72px] opacity-40 cursor-pointer"
-                    >
-                      <div className="w-11 h-11 rounded-full flex items-center justify-center shadow-sm border border-surface-border bg-surface-level2 text-content-main">
-                        <Icon name="registry" className="w-4 h-4" />
-                      </div>
-                      <span className="text-[9px] font-black uppercase tracking-widest text-content-main block text-center select-none mt-1">
-                        В лигу
-                      </span>
-                    </button>
-                  </HintPopover>
-                ) : (
-                  <button
-                    onClick={(e) => handleSubmitOfficialRoster(e)}
-                    disabled={isPublished}
-                    className={clsx(
-                      "flex flex-col items-center justify-center transition-all relative outline-none min-w-[72px]",
-                      isPublished ? "opacity-50 cursor-not-allowed" : "active:scale-90 hover:scale-105 cursor-pointer"
-                    )}
-                  >
-                    <div className={clsx(
-                      "w-11 h-11 rounded-full flex items-center justify-center shadow-sm border border-surface-border",
-                      isPublished ? "bg-green-500 text-white" : "bg-surface-level2 text-content-main"
-                    )}>
-                      <Icon name="registry" className="w-4 h-4" />
-                    </div>
-                    <span className="text-[9px] font-black uppercase tracking-widest text-content-main block text-center select-none mt-1">
-                      {isPublished ? 'Отправлено' : 'В лигу'}
-                    </span>
-                  </button>
-                )
-              ) : (
-                <HintPopover status="no_subscription">
-                  <button
-                    type="button"
-                    className="flex flex-col items-center justify-center transition-all relative outline-none min-w-[72px] opacity-30 cursor-pointer"
-                  >
-                    <div className="w-11 h-11 rounded-full flex items-center justify-center shadow-sm border border-surface-border bg-surface-level2 text-content-main">
-                      <Icon name="registry" className="w-4 h-4" />
-                    </div>
-                    <span className="text-[9px] font-black uppercase tracking-widest text-content-main block text-center select-none mt-1">
-                      В лигу
-                    </span>
-                  </button>
-                </HintPopover>
-              )
-            )}
-
-            {/* Кнопка "Состав" (Редактирование сочетаний звеньев) */}
-            {hasCoachAccess && !isPublished && (
-              hasLinesManageAccess ? (
-                timeToMatch <= DEADLINES.MIDDLE_EDIT_MINUTES ? (
-                  <HintPopover status="deadline_lines_edit">
-                    <button
-                      type="button"
-                      className="flex flex-col items-center justify-center transition-all relative outline-none min-w-[72px] opacity-40 cursor-pointer"
-                    >
-                      <div className="w-11 h-11 rounded-full bg-surface-level2 border border-surface-border flex items-center justify-center text-brand shadow-sm">
-                        <Icon name="edit" className="w-4 h-4" />
-                      </div>
-                      <span className="text-[9px] font-black uppercase tracking-widest text-content-main block text-center select-none mt-1">
-                        Состав
-                      </span>
-                    </button>
-                  </HintPopover>
-                ) : (
-                  <button
-                    onClick={(e) => handleHeaderActionClick(e)}
-                    className="flex flex-col items-center justify-center transition-all active:scale-90 relative outline-none min-w-[72px] hover:scale-105 cursor-pointer"
-                  >
-                    <div 
-                      style={{ color: activeBrandColor }}
-                      className="w-11 h-11 rounded-full bg-surface-level2 border border-surface-border flex items-center justify-center text-brand shadow-sm"
-                    >
-                      <Icon name="edit" className="w-4 h-4" />
-                    </div>
-                    <span className="text-[9px] font-black uppercase tracking-widest text-content-main block text-center select-none mt-1">
-                      Состав
-                    </span>
-                  </button>
-                )
-              ) : (
-                <HintPopover status="no_subscription">
-                  <button
-                    type="button"
-                    className="flex flex-col items-center justify-center transition-all relative outline-none min-w-[72px] opacity-30 cursor-pointer"
-                  >
-                    <div className="w-11 h-11 rounded-full bg-surface-level2 border border-surface-border flex items-center justify-center text-brand shadow-sm">
-                      <Icon name="edit" className="w-4 h-4" />
-                    </div>
-                    <span className="text-[9px] font-black uppercase tracking-widest text-content-main block text-center select-none mt-1">
-                      Состав
-                    </span>
-                  </button>
-                </HintPopover>
-              )
-            )}
-          </>
-        )}
-      </div>
-
       {isEditMode ? (
         <div className="relative w-full">
-          <div ref={carouselRef} onScroll={handleCarouselScroll} className="flex overflow-x-auto flex-nowrap snap-x snap-mandatory scrollbar-hide pt-2 w-full">
+          <div ref={carouselRef} onScroll={handleCarouselScroll} className="flex overflow-x-auto flex-nowrap snap-x snap-mandatory scrollbar-hide pt-2 w-full gap-3 px-1">
             {[1, 2, 3, 4].map(lineNum => (
-               <div key={`slide-${lineNum}`} className="min-w-full snap-center snap-always shrink-0 box-border">
+               <div key={`slide-${lineNum}`} className="min-w-[calc(100%-8px)] snap-center snap-always shrink-0 box-border">
                   <ContainerContent title={`Звено #${lineNum}`}>
                     {renderLineBlock(lineNum)}
                   </ContainerContent>
                </div>
             ))}
-            <div className="min-w-full snap-center snap-always shrink-0 box-border">
+            <div className="min-w-[calc(100%-8px)] snap-center snap-always shrink-0 box-border">
                <ContainerContent title="Вратари">
                  {renderGoaliesBlock()}
                </ContainerContent>
@@ -896,8 +852,10 @@ export const MatchLines = ({ event, initialAttendees = [], initialDraftLines = [
                 className="p-2 -m-2 focus:outline-none cursor-pointer" 
               >
                 <div className={clsx(
-                  "h-2 rounded-full transition-all duration-300 ease-out opacity-50",
-                  currentSlide === index ? "w-10 bg-content-muted" : "w-2 border border-content-muted bg-content-muted"
+                  "h-2 rounded-full transition-all duration-300 ease-out",
+                  currentSlide === index
+                    ? "w-8 bg-content-muted opacity-100"
+                    : "w-2 bg-content-subtle opacity-30"
                 )} />
               </button>
             ))}

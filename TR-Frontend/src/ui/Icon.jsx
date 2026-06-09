@@ -32,7 +32,7 @@ export function Icon({ name, className = "w-6 h-6" }) {
     lock: <svg {...baseProps}><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>,
     view: <svg {...baseProps}><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle></svg>,
     view_off: <svg {...baseProps}><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"></path><line x1="1" y1="1" x2="23" y2="23"></line></svg>,
-    swap: <svg {...baseProps}><path d="M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4"></path></svg>,
+    swap: <svg {...baseProps}><path d="M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4"/></svg>,
     chevron_left: <svg {...baseProps}><polyline points="15 18 9 12 15 6"></polyline></svg>,
     chevron_right: <svg {...baseProps}><polyline points="9 18 16 12 9 6"></polyline></svg>,
     calendar: <svg {...baseProps}><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>,
@@ -62,7 +62,21 @@ export function Icon({ name, className = "w-6 h-6" }) {
     upload: <svg {...baseProps}><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>,
 
     // Иконка добавления пользователя (человек + плюс)
-    user_plus: <svg {...baseProps}><path d="M16 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="8" cy="7" r="4"/><line x1="20" y1="8" x2="20" y2="14"/><line x1="17" y1="11" x2="23" y2="11"/></svg>
+    user_plus: <svg {...baseProps}><path d="M16 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="8" cy="7" r="4"/><line x1="20" y1="8" x2="20" y2="14"/><line x1="17" y1="11" x2="23" y2="11"/></svg>,
+
+    // Иконки стриминговых медиаплатформ (уменьшенные и аккуратные)
+    live_yt: (
+      <svg className={className} viewBox="0 0 28 28" fill="none">
+        <rect x="2" y="2" width="24" height="24" rx="6" fill="#FF0000"/>
+        <path d="M18.5 14L11.5 18.0415L11.5 9.95855L18.5 14Z" fill="white"/>
+      </svg>
+    ),
+    live_vk: (
+      <svg className={className} viewBox="0 0 28 28" fill="none">
+        <rect x="2" y="2" width="24" height="24" rx="6" fill="#0077FF"/>
+        <path d="M14.91 18.3c.4 0 .56-.27.56-.6v-1.28c0-1.3.47-1.99 1.36-1.07.98 1.01 1.19 1.7 2.38 1.7h2.12c.54 0 .75-.18.75-.46 0-.57-.94-1.59-1.74-2.33-.87-.8-1.04-.93-.41-1.7 1.25-1.53 2.1-2.93 1.94-3.64-.13-.51-.97-.43-.97-.43h-2.12c-.37 0-.56.1-.71.46-.86 2.06-2.13 4.14-3.05 4.14-.41 0-.5-.18-.5-.65V9.44c0-.66-.19-.8-.85-.8H11.37c-.38 0-.66.1-.66.38a1.2 1.2 0 0 0 .8.88c.38.74.38 2.01.38 2.01s.03 2.08-.34 2.08c-.28 0-.96-.82-1.63-2.02a11.17 11.17 0 0 1-1.67-3.23c-.15-.36-.45-.48-.91-.48H5.34c-.6 0-.75.31-.75.64 0 .5.94 2.8 2.3 4.88 1.54 2.36 3.8 3.51 3.8 3.51h2.12c.39.01.46-.22.46-.57v-1.03c.01.01.02.01 1.64.01z" fill="white"/>
+      </svg>
+    )
   };
 
   return icons[name] || null;

@@ -1,5 +1,11 @@
 import pool from '../config/db.js';
 
+// Вспомогательная функция безопасного извлечения ID контекстной команды для проверки прав
+const getTeamIdFromRequest = (req) => {
+  if (!req) return null;
+  return Number(req.body?.teamId || req.query?.teamId || req.params?.teamId);
+};
+
 // Получение общей ленты событий (календарь матчей, тренировок и собраний)
 export const getEvents = async (req, res) => {
   try {
@@ -54,7 +60,7 @@ export const getEvents = async (req, res) => {
       ),
 
       -- ==========================================
-      -- БЛОК 1: МАТЧИ (games)
+      -- БЛОК 1: МАТЧИ (games) — ДОБАВЛЕНЫ ПОЛЯ ЛОКАЦИИ И ID АРЕНЫ
       -- ==========================================
       games_cte AS (
         SELECT 
@@ -65,8 +71,11 @@ export const getEvents = async (req, res) => {
           g.confirm_deadline::timestamptz AS confirm_deadline,
           g.game_date::timestamptz AS event_date,
           g.status::varchar AS status,
-          a.name::varchar AS arena_name,
-          a.timezone::varchar AS arena_timezone,
+          COALESCE(a.name, g.location, 'Арена не назначена')::varchar AS arena_name,
+          COALESCE(a.timezone, g.custom_timezone, 'Europe/Moscow')::varchar AS arena_timezone,
+          g.arena_id::int AS arena_id,
+          g.location::varchar AS location,
+          g.location_url::varchar AS location_url,
           
           ut.team_id::int AS my_team_id,
           g.home_team_id::int AS home_team_id,
@@ -90,7 +99,7 @@ export const getEvents = async (req, res) => {
           d.name::varchar AS division_name,
           COALESCE(l.name, ext_tour.name)::varchar AS league_name,
           l.short_name::varchar AS league_short_name,
-          COALESCE(l.logo_url, ext_tour.logo_url)::varchar AS league_logo_url,
+          l.logo_url::varchar AS league_logo_url,
           COALESCE(d.logo_url, ext_tour.logo_url)::varchar AS division_logo_url,
           
           g.stage_type::varchar AS stage_type,
@@ -188,8 +197,11 @@ export const getEvents = async (req, res) => {
           NULL::timestamptz AS confirm_deadline,
           tt.training_date::timestamptz AS event_date,
           (CASE WHEN tt.training_date < NOW() THEN 'finished' ELSE 'scheduled' END)::varchar AS status,
-          COALESCE(a.name, tt.location)::varchar AS arena_name,
-          a.timezone::varchar AS arena_timezone,
+          COALESCE(a.name, tt.location, 'Локация не указана')::varchar AS arena_name,
+          COALESCE(a.timezone, tt.custom_timezone, 'Europe/Moscow')::varchar AS arena_timezone,
+          tt.arena_id::int AS arena_id,
+          tt.location::varchar AS location,
+          tt.location_url::varchar AS location_url,
           
           ut.team_id::int AS my_team_id,
           NULL::int AS home_team_id,
@@ -211,7 +223,7 @@ export const getEvents = async (req, res) => {
           
           NULL::varchar AS division_name,
           NULL::varchar AS league_name,
-          NULL::varchar AS league_short_name, -- ДОБАВЛЕНО ДЛЯ СИНХРОНИЗАЦИИ UNION
+          NULL::varchar AS league_short_name,
           NULL::varchar AS league_logo_url,
           NULL::varchar AS division_logo_url, 
           NULL::varchar AS stage_type,
@@ -267,8 +279,11 @@ export const getEvents = async (req, res) => {
           NULL::timestamptz AS confirm_deadline,
           tm.meeting_date::timestamptz AS event_date,
           (CASE WHEN tm.meeting_date < NOW() THEN 'finished' ELSE 'scheduled' END)::varchar AS status,
-          COALESCE(a.name, tm.location)::varchar AS arena_name,
-          a.timezone::varchar AS arena_timezone,
+          COALESCE(a.name, tm.location, 'Локация не указана')::varchar AS arena_name,
+          COALESCE(a.timezone, tm.custom_timezone, 'Europe/Moscow')::varchar AS arena_timezone,
+          tm.arena_id::int AS arena_id,
+          tm.location::varchar AS location,
+          tm.location_url::varchar AS location_url,
           
           ut.team_id::int AS my_team_id,
           NULL::int AS home_team_id,
@@ -290,7 +305,7 @@ export const getEvents = async (req, res) => {
           
           NULL::varchar AS division_name,
           NULL::varchar AS league_name,
-          NULL::varchar AS league_short_name, -- ДОБАВЛЕНО ДЛЯ СИНХРОНИЗАЦИИ UNION
+          NULL::varchar AS league_short_name,
           NULL::varchar AS league_logo_url,
           NULL::varchar AS division_logo_url, 
           NULL::varchar AS stage_type,
@@ -335,8 +350,11 @@ export const getEvents = async (req, res) => {
           NULL::timestamptz AS confirm_deadline,
           ct.training_date::timestamptz AS event_date,
           (CASE WHEN ct.training_date < NOW() THEN 'finished' ELSE 'scheduled' END)::varchar AS status,
-          COALESCE(a.name, ct.location)::varchar AS arena_name,
-          a.timezone::varchar AS arena_timezone,
+          COALESCE(a.name, ct.location, 'Локация не указана')::varchar AS arena_name,
+          COALESCE(a.timezone, ct.custom_timezone, 'Europe/Moscow')::varchar AS arena_timezone,
+          ct.arena_id::int AS arena_id,
+          ct.location::varchar AS location,
+          ct.location_url::varchar AS location_url,
           
           NULL::int AS my_team_id,
           NULL::int AS home_team_id,
@@ -358,7 +376,7 @@ export const getEvents = async (req, res) => {
           
           NULL::varchar AS division_name,
           NULL::varchar AS league_name,
-          NULL::varchar AS league_short_name, -- ДОБАВЛЕНО ДЛЯ СИНХРОНИЗАЦИИ UNION
+          NULL::varchar AS league_short_name,
           NULL::varchar AS league_logo_url,
           NULL::varchar AS division_logo_url, 
           NULL::varchar AS stage_type,
@@ -400,8 +418,11 @@ export const getEvents = async (req, res) => {
           NULL::timestamptz AS confirm_deadline,
           cm.meeting_date::timestamptz AS event_date,
           (CASE WHEN cm.meeting_date < NOW() THEN 'finished' ELSE 'scheduled' END)::varchar AS status,
-          COALESCE(a.name, cm.location)::varchar AS arena_name,
-          a.timezone::varchar AS arena_timezone,
+          COALESCE(a.name, cm.location, 'Локация не указана')::varchar AS arena_name,
+          COALESCE(a.timezone, cm.custom_timezone, 'Europe/Moscow')::varchar AS arena_timezone,
+          cm.arena_id::int AS arena_id,
+          cm.location::varchar AS location,
+          cm.location_url::varchar AS location_url,
           
           NULL::int AS my_team_id,
           NULL::int AS home_team_id,
@@ -423,7 +444,7 @@ export const getEvents = async (req, res) => {
           
           NULL::varchar AS division_name,
           NULL::varchar AS league_name,
-          NULL::varchar AS league_short_name, -- ДОБАВЛЕНО ДЛЯ СИНХРОНИЗАЦИИ UNION
+          NULL::varchar AS league_short_name,
           NULL::varchar AS league_logo_url,
           NULL::varchar AS division_logo_url, 
           NULL::varchar AS stage_type,
@@ -485,7 +506,7 @@ export const getEvents = async (req, res) => {
 };
 
 // =============================================================================
-// ПОДГРУЗКА СУДЕЙ МАТЧА (Извлечение eventId из req.params)
+// ПОДГРУЗКА СУДЕЙ МАТЧА
 // =============================================================================
 export const getMatchStaff = async (req, res) => {
   try {
@@ -514,7 +535,7 @@ export const getMatchStaff = async (req, res) => {
 };
 
 // =============================================================================
-// ИСТОРИЯ ОЧНЫХ ПРОТИВОСТОЯНИЙ H2H (Извлечение eventId из req.params)
+// ИСТОРИЯ ОЧНЫХ ПРОТИВОСТОЯНИЙ H2H
 // =============================================================================
 export const getMatchH2H = async (req, res) => {
   try {
@@ -620,5 +641,309 @@ export const getMatchH2H = async (req, res) => {
   } catch (err) {
     console.error('Ошибка получения истории встреч H2H:', err);
     res.status(500).json({ success: false, error: 'Ошибка сервера' });
+  }
+};
+
+// =============================================================================
+// БЛОК ОБНОВЛЕНИЯ МЕДИА-ССЫЛОК (Блок 1)
+// =============================================================================
+export const updateMatchMedia = async (req, res) => {
+  try {
+    const { eventId } = req.params;
+    const { video_yt_url, video_vk_url } = req.body;
+    const teamId = getTeamIdFromRequest(req);
+
+    if (!teamId) {
+      return res.status(400).json({ success: false, error: 'Параметр teamId обязателен' });
+    }
+
+    const gameRes = await pool.query(
+      'SELECT game_type, status, initiator_team_id FROM "public"."games" WHERE id = $1',
+      [eventId]
+    );
+
+    if (gameRes.rowCount === 0) {
+      return res.status(404).json({ success: false, error: 'Матч не найден' });
+    }
+
+    const game = gameRes.rows[0];
+
+    if (game.game_type === 'official') {
+      return res.status(400).json({ success: false, error: 'Официальные матчи лиги не поддерживают ручное редактирование медиа-ссылок' });
+    }
+
+    if (game.game_type === 'friendly_pwa' && Number(game.initiator_team_id) !== teamId) {
+      return res.status(400).json({ success: false, error: 'Медиа-ссылки товарищеского матча может менять только команда-инициатор' });
+    }
+
+    await pool.query(
+      `UPDATE "public"."games" 
+       SET video_yt_url = $1, video_vk_url = $2, updated_at = NOW() 
+       WHERE id = $3`,
+      [video_yt_url || null, video_vk_url || null, eventId]
+    );
+
+    res.json({ success: true, message: 'Ссылки на трансляции успешно обновлены' });
+  } catch (err) {
+    console.error('Ошибка обновления медиа-ссылок матча:', err);
+    res.status(500).json({ success: false, error: 'Ошибка сервера' });
+  }
+};
+
+// =============================================================================
+// БЛОК ОБНОВЛЕНИЯ РАСПИСАНИЯ: ДАТА, ВРЕМЯ, ЛОКАЦИЯ С УЧЕТОМ КАСТОМНЫХ ПОЛЕЙ
+// =============================================================================
+export const updateMatchSchedule = async (req, res) => {
+  try {
+    const { eventId } = req.params;
+    // Принимаем новые поля ручного ввода локации и её геопозиции
+    const { date, time, arena_id, location, location_url, custom_timezone } = req.body; 
+    const teamId = getTeamIdFromRequest(req);
+
+    if (!teamId) {
+      return res.status(400).json({ success: false, error: 'Параметр teamId обязателен' });
+    }
+
+    const gameRes = await pool.query(
+      'SELECT game_type, status, initiator_team_id, arena_id, custom_timezone, location, location_url FROM "public"."games" WHERE id = $1',
+      [eventId]
+    );
+
+    if (gameRes.rowCount === 0) {
+      return res.status(404).json({ success: false, error: 'Матч не найден' });
+    }
+
+    const game = gameRes.rows[0];
+
+    if (game.game_type === 'official') {
+      return res.status(400).json({ success: false, error: 'Запрещено менять дату, время или локацию официального матча' });
+    }
+
+    // Разделяем контекст: ручной ввод (isManual) или выбор из справочника арен
+    const finalArenaId = arena_id !== undefined ? arena_id : game.arena_id;
+    const isManual = !finalArenaId;
+
+    const finalLocation = isManual ? (location !== undefined ? location : game.location) : null;
+    const finalLocationUrl = isManual ? (location_url !== undefined ? location_url : game.location_url) : null;
+    const finalCustomTz = isManual ? (custom_timezone || game.custom_timezone || 'Europe/Moscow') : null;
+
+    let arenaTz = 'Europe/Moscow'; 
+
+    if (!isManual) {
+      const arenaRes = await pool.query('SELECT timezone FROM "public"."arenas" WHERE id = $1', [finalArenaId]);
+      if (arenaRes.rowCount > 0) {
+        arenaTz = arenaRes.rows[0].timezone;
+      }
+    } else {
+      arenaTz = finalCustomTz;
+    }
+
+    if (game.game_type === 'friendly_pwa') {
+      if (Number(game.initiator_team_id) !== teamId) {
+        return res.status(400).json({ success: false, error: 'Изменение расписания доступно только команде-инициатору' });
+      }
+      if (game.status !== 'pending') {
+        return res.status(400).json({ success: false, error: 'Нельзя изменить расписание матча после подтверждения соперником' });
+      }
+      if (!time) {
+        return res.status(400).json({ success: false, error: 'Необходимо указать новое время матча' });
+      }
+
+      // Обновляем все поля локации
+      await pool.query(
+        `UPDATE "public"."games" 
+         SET game_date = (((game_date AT TIME ZONE $1)::date + $2::time)::timestamp AT TIME ZONE $1),
+             arena_id = $3,
+             location = $4,
+             location_url = $5,
+             custom_timezone = $6,
+             updated_at = NOW() 
+         WHERE id = $7`,
+        [arenaTz, `${time}:00`, finalArenaId, finalLocation, finalLocationUrl, finalCustomTz, eventId]
+      );
+    } else if (game.game_type === 'friendly_ext' || game.game_type === 'tournament_ext') {
+      if (!date || !time) {
+        return res.status(400).json({ success: false, error: 'Для внешних матчей обязательны и дата, и время' });
+      }
+      const fullTimestamp = `${date} ${time}:00`;
+
+      // Обновляем все поля локации
+      await pool.query(
+        `UPDATE "public"."games" 
+         SET game_date = $1::timestamp AT TIME ZONE $2,
+             arena_id = $3,
+             location = $4,
+             location_url = $5,
+             custom_timezone = $6,
+             updated_at = NOW() 
+         WHERE id = $7`,
+        [fullTimestamp, arenaTz, finalArenaId, finalLocation, finalLocationUrl, finalCustomTz, eventId]
+      );
+    } else {
+      return res.status(400).json({ success: false, error: 'Неподдерживаемый тип матча для изменения расписания' });
+    }
+
+    res.json({ success: true, message: 'Параметры расписания успешно сохранены' });
+  } catch (err) {
+    console.error('Ошибка обновления расписания матча:', err);
+    res.status(500).json({ success: false, error: 'Ошибка сервера' });
+  }
+};
+
+// =============================================================================
+// БЛОК ОБНОВЛЕНИЯ ДЖЕРСИ И СТОИМОСТИ УЧАСТИЯ (Блок 3) — С УЧЕТОМ ПРАВ СЛУЧАЯ FRIENDLY_PWA
+// =============================================================================
+export const updateMatchFinances = async (req, res) => {
+  try {
+    const { eventId } = req.params;
+    const { player_fee, home_jersey_type, away_jersey_type } = req.body;
+    const teamId = getTeamIdFromRequest(req);
+
+    if (!teamId) {
+      return res.status(400).json({ success: false, error: 'Параметр teamId обязателен' });
+    }
+
+    const gameRes = await pool.query(
+      'SELECT game_type, status, initiator_team_id, home_team_id, away_team_id FROM "public"."games" WHERE id = $1',
+      [eventId]
+    );
+
+    if (gameRes.rowCount === 0) {
+      return res.status(404).json({ success: false, error: 'Матч не найден' });
+    }
+
+    const game = gameRes.rows[0];
+    const isHome = Number(game.home_team_id) === teamId;
+    const isAway = Number(game.away_team_id) === teamId;
+
+    if (!isHome && !isAway) {
+      return res.status(403).json({ success: false, error: 'Ваша команда не является участником этого матча' });
+    }
+
+    const feeColumn = isHome ? 'home_player_fee' : 'away_player_fee';
+
+    if (game.game_type === 'official') {
+      await pool.query(
+        `UPDATE "public"."games" SET ${feeColumn} = $1, updated_at = NOW() WHERE id = $2`,
+        [player_fee !== undefined ? player_fee : null, eventId]
+      );
+      return res.json({ success: true, message: 'Стоимость участия для игроков вашей команды успешно обновлена' });
+    }
+
+    if (game.game_type === 'friendly_pwa') {
+      const isInitiator = Number(game.initiator_team_id) === teamId;
+
+      // Если редактирует команда-соперник (которую вызвали), разрешаем ей менять ТОЛЬКО свой взнос
+      if (!isInitiator) {
+        await pool.query(
+          `UPDATE "public"."games" SET ${feeColumn} = $1, updated_at = NOW() WHERE id = $2`,
+          [player_fee !== undefined ? player_fee : null, eventId]
+        );
+        return res.json({ success: true, message: 'Стоимость участия для вашей команды успешно обновлена' });
+      }
+
+      // Если редактирует команда-инициатор, она сохраняет право менять комплекты формы
+      if (game.status === 'pending') {
+        await pool.query(
+          `UPDATE "public"."games" 
+           SET ${feeColumn} = $1, 
+               home_jersey_type = $2, 
+               away_jersey_type = $3, 
+               updated_at = NOW() 
+           WHERE id = $4`,
+          [player_fee !== undefined ? player_fee : null, home_jersey_type || null, away_jersey_type || null, eventId]
+        );
+      } else {
+        await pool.query(
+          `UPDATE "public"."games" SET ${feeColumn} = $1, updated_at = NOW() WHERE id = $2`,
+          [player_fee !== undefined ? player_fee : null, eventId]
+        );
+      }
+      return res.json({ success: true, message: 'Финансово-экипировочные параметры успешно сохранены' });
+    }
+
+    if (game.game_type === 'friendly_ext' || game.game_type === 'tournament_ext') {
+      await pool.query(
+        `UPDATE "public"."games" 
+         SET ${feeColumn} = $1, 
+             home_jersey_type = $2, 
+             away_jersey_type = $3, 
+             updated_at = NOW() 
+         WHERE id = $4`,
+        [player_fee !== undefined ? player_fee : null, home_jersey_type || null, away_jersey_type || null, eventId]
+      );
+      return res.json({ success: true, message: 'Параметры внешнего матча успешно изменены' });
+    }
+
+    res.status(400).json({ success: false, error: 'Неизвестный тип игры' });
+  } catch (err) {
+    console.error('Ошибка обновления финансов и формы матча:', err);
+    res.status(500).json({ success: false, error: 'Ошибка сервера' });
+  }
+};
+
+// =============================================================================
+// ПОЛНОЕ УДАЛЕНИЕ МАТЧА ИЗ КАЛЕНДАРЯ
+// =============================================================================
+export const deleteMatch = async (req, res) => {
+  try {
+    const { eventId } = req.params;
+    const teamId = getTeamIdFromRequest(req);
+
+    if (!teamId) {
+      return res.status(400).json({ success: false, error: 'Параметр teamId обязателен' });
+    }
+
+    // Сразу же на входе жестко приводим eventId к числу, исключая любые text/integer конфликты СУБД
+    const numericId = Number(eventId);
+
+    if (isNaN(numericId)) {
+      return res.status(400).json({ success: false, error: 'Некорректный формат идентификатора матча' });
+    }
+
+    const gameRes = await pool.query(
+      'SELECT game_type, status, initiator_team_id FROM "public"."games" WHERE id = $1',
+      [numericId]
+    );
+
+    if (gameRes.rowCount === 0) {
+      return res.status(404).json({ success: false, error: 'Матч не найден' });
+    }
+
+    const game = gameRes.rows[0];
+
+    if (game.game_type === 'official') {
+      return res.status(400).json({ success: false, error: 'Запрещено удалять официальные календарные матчи лиги' });
+    }
+
+    if (game.game_type === 'friendly_pwa') {
+      if (Number(game.initiator_team_id) !== teamId) {
+        return res.status(400).json({ success: false, error: 'Только команда-инициатор может удалить этот вызов' });
+      }
+      if (game.status !== 'pending') {
+        return res.status(400).json({ success: false, error: 'Нельзя удалить уже подтвержденный соперником товарищеский матч' });
+      }
+    }
+
+    // Атомарная очистка матча (Каскад ON DELETE CASCADE в вашей БД сам удалит всё остальное)
+    const client = await pool.connect();
+    try {
+      await client.query('BEGIN');
+      await client.query('DELETE FROM "public"."games" WHERE id = $1', [numericId]);
+      await client.query('COMMIT');
+    } catch (txErr) {
+      await client.query('ROLLBACK');
+      throw txErr;
+    } finally {
+      client.release();
+    }
+
+    res.json({ success: true, message: 'Матч успешно удален из расписания календаря' });
+  } catch (err) {
+    console.error('Ошибка удаления матча из базы данных:', err);
+    res.status(500).json({ 
+      success: false, 
+      error: `Ошибка бэкенда СУБД: ${err.message || 'Неизвестная ошибка'}` 
+    });
   }
 };

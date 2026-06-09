@@ -46,7 +46,7 @@ export function UpdatePromptModal({ isOpen, onUpdate, onLater }) {
   return (
     <div className="fixed inset-0 z-[200] flex items-center justify-center p-4 animate-fade-in">
       {/* Мягкое размытие заднего фона всего приложения */}
-      <div className="absolute inset-0 bg-overlay backdrop-blur-sm" onClick={onLater} />
+      <div className="absolute inset-0 bg-overlay backdrop-blur-md" onClick={onLater} />
       
       {/* Карточка модального окна */}
       <div className="bg-surface-level1 border border-surface-border rounded-3xl w-full max-w-sm p-6 shadow-2xl relative z-10 flex flex-col gap-5 animate-scale-in text-left">
@@ -92,14 +92,7 @@ export function UpdatePromptModal({ isOpen, onUpdate, onLater }) {
         </div>
 
         {/* Кнопки управления */}
-        <div className="flex gap-3 w-full pt-2 border-t border-surface-level2">
-          <ButtonLP 
-            variant="outline" 
-            onClick={onLater} 
-            className="flex-1 !h-11 !text-[11px] !font-black !uppercase !tracking-widest"
-          >
-            Позже
-          </ButtonLP>
+        <div className="flex gap-3 w-full pt-5 border-t border-surface-level2">
           
           <ButtonLP 
             variant="primary" 

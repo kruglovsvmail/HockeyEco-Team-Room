@@ -1,5 +1,3 @@
-/********** ФАЙЛ: TR-Frontend\src\ui\SegmentedControl.jsx **********/
-
 import React from 'react';
 import clsx from 'clsx';
 import { getContrastTextColor } from '../utils/helpers';
@@ -37,6 +35,7 @@ export const SegmentedControl = ({ options, value, onChange, className, activeCo
         return (
           <button
             key={option.value}
+            type="button" // ИСПРАВЛЕНО: предотвращает автоматическую отправку формы при клике
             onClick={() => onChange(option.value)}
             className={clsx(
               "relative z-10 flex-1 py-2 text-[11px] font-black uppercase tracking-widest transition-colors duration-500 outline-none",

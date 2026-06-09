@@ -451,13 +451,13 @@ export function ProfilePage() {
               >
                 {isEditContacts ? (
                   <div className="space-y-3 pt-1">
-                    <TextInputLP label="Электронная почта" value={email} onChange={setEmail} placeholder="example@mail.ru" />
-                    <TextInputLP label="Номер телефона" value={phone} onChange={setPhone} placeholder="+7 (999) 000-0000" />
+                    <TextInputLP label="Почта" value={email} onChange={setEmail} placeholder="example@mail.ru" />
+                    <TextInputLP label="Телефон" value={phone} onChange={setPhone} placeholder="+7 (999) 000-0000" />
                   </div>
                 ) : (
                   <div className="flex flex-col">
-                    <InfoRow label="Электронная почта" value={email} />
-                    <InfoRow label="Номер телефона" value={formatPhoneNumber(phone)} />
+                    <InfoRow label="Почта" value={email} />
+                    <InfoRow label="Телефон" value={formatPhoneNumber(phone)} />
                   </div>
                 )}
               </CustomBlock>
@@ -523,9 +523,9 @@ export function ProfilePage() {
             <button 
               type="button"
               onClick={handleLogout} 
-              className="w-full py-4 rounded-xl border border-danger text-danger bg-danger-muted font-bold uppercase tracking-widest text-xs transition-all outline-none shadow-sm hover:bg-danger/10 active:scale-[0.99] cursor-pointer"
+              className="w-full py-3 bg-white text-danger font-bold text-sm transition-all rounded-2xl active:scale-[0.98] flex items-center justify-center gap-2"
             >
-              Выйти
+              Выйти из аккаунта
             </button>
           </div>
 

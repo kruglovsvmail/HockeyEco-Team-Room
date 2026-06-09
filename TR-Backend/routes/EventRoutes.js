@@ -1,5 +1,13 @@
 import express from 'express';
-import { getEvents, getMatchStaff, getMatchH2H } from '../controllers/EventInfoController.js';
+import { 
+  getEvents, 
+  getMatchStaff, 
+  getMatchH2H,
+  updateMatchMedia,
+  updateMatchSchedule,
+  updateMatchFinances,
+  deleteMatch
+} from '../controllers/EventInfoController.js';
 import { 
   toggleEventAttendance, 
   getEventAttendance, 
@@ -35,10 +43,10 @@ router.post('/:eventId/attendance', verifyToken, requireTeamPermission('INTERNAL
 router.put('/:eventId/attendance-tag', verifyToken, requireTeamPermission('ATTENDANCE_MANAGE'), toggleEventAttendanceTag);
 
 // Подтвердить товарищеский матч friendly_pwa вызываемой стороной
-router.post('/:eventId/confirm', verifyToken, requireTeamPermission('MATCH_CONFIRM_CANCEL'), confirmFriendlyMatch);
+router.post('/:eventId/confirm', verifyToken, confirmFriendlyMatch);
 
 // Отменить вызов или отклонить товарищеский матч friendly_pwa
-router.post('/:eventId/cancel', verifyToken, requireTeamPermission('MATCH_CONFIRM_CANCEL'), cancelFriendlyMatch);
+router.post('/:eventId/cancel', verifyToken, cancelFriendlyMatch);
 
 // Получить опубликованные пятерки на матч (черновик)
 router.get('/:eventId/lines', verifyToken, requireTeamPermission('INTERNAL_VIEW'), getMatchLines);
@@ -51,5 +59,21 @@ router.put('/:eventId/line-player', verifyToken, requireTeamPermission('LINES_ED
 
 // Отправить официальную электронную заявку состава в лигу
 router.post('/:eventId/submit-roster', verifyToken, requireTeamPermission('ROSTER_SUBMIT'), submitMatchRoster);
+
+// ==========================================
+// ⚙️ РЕДАКТИРОВАНИЕ И УДАЛЕНИЕ ДЕТАЛЕЙ МАТЧА
+// ==========================================
+
+// Обновить медиа-ссылки трансляций матча (Блок 1 - YouTube, VK Видео)
+router.put('/:eventId/media', verifyToken, requireTeamPermission('MATCH_EDIT_MEDIA'), updateMatchMedia);
+
+// Обновить параметры расписания (Блок 2 - Дата, время, локация/арена)
+router.put('/:eventId/schedule', verifyToken, requireTeamPermission('MATCH_EDIT_SCHEDULE'), updateMatchSchedule);
+
+// Обновить параметры игровой формы и финансового взноса (Блок 3 - Комплекты джерси, стоимость для игрока)
+router.put('/:eventId/finances', verifyToken, requireTeamPermission('MATCH_EDIT_FINANCES'), updateMatchFinances);
+
+// Полное физическое удаление карточки матча из календаря
+router.delete('/:eventId', verifyToken, requireTeamPermission('MATCH_DELETE'), deleteMatch);
 
 export default router;

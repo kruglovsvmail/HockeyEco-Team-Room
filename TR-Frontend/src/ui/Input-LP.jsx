@@ -3,9 +3,9 @@ import { Icon } from './Icon';
 import { twMerge } from 'tailwind-merge';
 import { IMaskInput, IMask } from 'react-imask';
 
-const baseWrapperStyles = "border-b border-surface-border focus-within:border-brand transition-colors duration-300 py-0 relative group";
-const baseLabelStyles = "text-[10px] text-content-muted uppercase tracking-widest font-bold block mb-1 group-focus-within:text-brand transition-colors";
-const baseInputStyles = "w-full py-2 bg-transparent outline-none text-content-main placeholder-content-subtle text-lg transition-all";
+const baseWrapperStyles = "border-b border-content-subtle focus-within:border-brand transition-colors duration-300 py-0 relative group";
+const baseLabelStyles = "text-[10px] text-content-subtle uppercase tracking-widest font-bold block  group-focus-within:text-brand transition-colors";
+const baseInputStyles = "w-full pt-2 pb-0.5 bg-transparent outline-none text-content-main placeholder-content-subtle placeholder:opacity-60 placeholder:italic placeholder:font-normal  text-lg transition-all";
 
 export function PhoneInputLP({ value, onChange, disabled, error, className, label = "", placeholder = "000 000 00 00", activeColor }) {
   const [isFocused, setIsFocused] = useState(false);
@@ -41,7 +41,7 @@ export function PhoneInputLP({ value, onChange, disabled, error, className, labe
         </label>
       )}
       <div className="flex items-center gap-2">
-        <span className="text-content-main text-lg select-none">+7</span>
+        <span className="text-content-main text-[17px] select-none -mb-1.5">+7</span>
         <input
           type="tel"
           value={value}
@@ -243,6 +243,115 @@ export function TextInputLP({ value, onChange, disabled, error, className, label
             )}
           />
         )}
+      </div>
+      {typeof error === 'string' && error !== '' && (
+        <span className="absolute top-full left-0 mt-1 text-[10px] text-danger font-bold uppercase tracking-widest pointer-events-none transition-opacity duration-300">
+          {error}
+        </span>
+      )}
+    </div>
+  );
+}
+
+// Нативный пикер даты — всегда открывает системный календарь.
+// Нативная иконка скрыта через [&::-webkit-calendar-picker-indicator]:opacity-0,
+// поверх неё рендерится своя Icon с activeColor (pointer-events-none, клик проходит насквозь к инпуту).
+export function NativeDateInputLP({ value, onChange, disabled, error, className, label, activeColor }) {
+  const [isFocused, setIsFocused] = useState(false);
+
+  const wrapperStyle = isFocused && activeColor ? { borderColor: activeColor } : {};
+  const labelStyle = isFocused && activeColor ? { color: activeColor } : {};
+  const iconColor = activeColor || 'var(--color-content-subtle)';
+
+  return (
+    <div
+      style={wrapperStyle}
+      className={twMerge(baseWrapperStyles, error && "border-danger focus-within:border-danger", className)}
+    >
+      {label && (
+        <label
+          style={labelStyle}
+          className={twMerge(baseLabelStyles, error && "text-danger group-focus-within:text-danger")}
+        >
+          {label}
+        </label>
+      )}
+      <div className="relative">
+        <input
+          type="date"
+          value={value}
+          onChange={(e) => onChange(e.target.value)}
+          onFocus={() => setIsFocused(true)}
+          onBlur={() => setIsFocused(false)}
+          disabled={disabled}
+          autoComplete="nope"
+          className={twMerge(
+            baseInputStyles,
+            "h-11 py-0 text-sm pr-8",
+            "[&::-webkit-calendar-picker-indicator]:opacity-0 [&::-webkit-calendar-picker-indicator]:absolute [&::-webkit-calendar-picker-indicator]:inset-0 [&::-webkit-calendar-picker-indicator]:w-full [&::-webkit-calendar-picker-indicator]:cursor-pointer"
+          )}
+        />
+        {/* Кастомная иконка поверх нативного триггера */}
+        <span
+          className="absolute right-0 top-1/2 -translate-y-1/2 pointer-events-none flex items-center"
+          style={{ color: iconColor }}
+        >
+          <Icon name="calendar" className="w-4 h-4" />
+        </span>
+      </div>
+      {typeof error === 'string' && error !== '' && (
+        <span className="absolute top-full left-0 mt-1 text-[10px] text-danger font-bold uppercase tracking-widest pointer-events-none transition-opacity duration-300">
+          {error}
+        </span>
+      )}
+    </div>
+  );
+}
+
+// Нативный пикер времени — всегда открывает системный тайм-пикер.
+// Та же схема: нативная иконка скрыта, своя Icon с activeColor сверху.
+export function NativeTimeInputLP({ value, onChange, disabled, error, className, label, activeColor }) {
+  const [isFocused, setIsFocused] = useState(false);
+
+  const wrapperStyle = isFocused && activeColor ? { borderColor: activeColor } : {};
+  const labelStyle = isFocused && activeColor ? { color: activeColor } : {};
+  const iconColor = activeColor || 'var(--color-content-subtle)';
+
+  return (
+    <div
+      style={wrapperStyle}
+      className={twMerge(baseWrapperStyles, error && "border-danger focus-within:border-danger", className)}
+    >
+      {label && (
+        <label
+          style={labelStyle}
+          className={twMerge(baseLabelStyles, error && "text-danger group-focus-within:text-danger")}
+        >
+          {label}
+        </label>
+      )}
+      <div className="relative">
+        <input
+          type="time"
+          value={value}
+          onChange={(e) => onChange(e.target.value)}
+          onFocus={() => setIsFocused(true)}
+          onBlur={() => setIsFocused(false)}
+          disabled={disabled}
+          autoComplete="nope"
+          className={twMerge(
+            baseInputStyles,
+            "h-11 py-0 text-sm pr-8",
+            "[&::-webkit-calendar-picker-indicator]:opacity-0 [&::-webkit-calendar-picker-indicator]:absolute [&::-webkit-calendar-picker-indicator]:inset-0 [&::-webkit-calendar-picker-indicator]:w-full [&::-webkit-calendar-picker-indicator]:cursor-pointer"
+          )}
+        />
+        {/* Кастомная иконка поверх нативного триггера */}
+        <span
+          className="absolute right-0 top-1/2 -translate-y-1/2 pointer-events-none flex items-center"
+          style={{ color: iconColor }}
+        >
+          <Icon name="clock" className="w-4 h-4" />
+        </span>
       </div>
       {typeof error === 'string' && error !== '' && (
         <span className="absolute top-full left-0 mt-1 text-[10px] text-danger font-bold uppercase tracking-widest pointer-events-none transition-opacity duration-300">

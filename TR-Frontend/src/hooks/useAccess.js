@@ -10,7 +10,7 @@ export function useAccess(customUser = null, customTeam = null) {
 
   const user = customUser || context.user || null;
   const selectedTeam = customTeam || context.selectedTeam || null;
-  
+
   /**
    * Гранулярная проверка прав доступа по конкретному действию и ID команды
    * @param {string} action - Ключ правила из permissions.js (например, 'LINES_MANAGE')
@@ -18,7 +18,7 @@ export function useAccess(customUser = null, customTeam = null) {
    */
   const checkAccess = useCallback((action, teamId = null) => {
     if (!user) return false;
-    
+
     // Глобальный суперадмин системы всегда имеет полный беспрепятственный доступ
     if (user.globalRole === ROLES.GLOBAL_ADMIN || user.global_role === ROLES.GLOBAL_ADMIN) {
       return true;
@@ -29,45 +29,58 @@ export function useAccess(customUser = null, customTeam = null) {
     if (!permission) return false;
 
     // Определяем целевой ID команды: из аргумента функции или из контекста страницы
-    const targetTeamId = teamId || selectedTeam?.id || selectedTeam?.team_id || null;
+    const targetTeamId = String(teamId || selectedTeam?.id || selectedTeam?.team_id || '');
     if (!targetTeamId) return false;
-
-    // Достаем данные допусков по конкретной команде из In-Memory матрицы
-    const matrix = user.accessMatrix || user.access_matrix || {};
-    const teamAccess = matrix[targetTeamId];
 
     let currentUserRoles = [];
     let hasSubscription = false;
 
+    // --- Источник 1: accessMatrix из user (заполняется при логине/обновлении профиля) ---
+    const matrix = user.accessMatrix || user.access_matrix || {};
+    const teamAccess = matrix[targetTeamId] || matrix[Number(targetTeamId)];
+
     if (teamAccess) {
-      // Идеальный сценарий: берем готовые роли и статус подписки из матрицы доступов
       currentUserRoles = teamAccess.roles || [];
       hasSubscription = teamAccess.has_subscription || teamAccess.hasSubscription || false;
     } else {
-      // Резервный фолбек: если матрица еще не обновилась, но команда совпадает с выбранной
-      const isCurrentContext = String(selectedTeam?.id) === String(targetTeamId);
-      if (isCurrentContext && selectedTeam?.user_role) {
-        currentUserRoles = selectedTeam.user_role.split(',').map(r => r.trim()).filter(Boolean);
-      } else if (isCurrentContext && selectedTeam) {
-        currentUserRoles = [ROLES.PLAYER];
+      // --- Источник 2: данные из selectedTeam, обогащённые getMyTeams ---
+      const isCurrentContext = String(selectedTeam?.id) === targetTeamId;
+
+      if (isCurrentContext && selectedTeam) {
+        // user_roles — массив (новый формат getMyTeams)
+        if (Array.isArray(selectedTeam.user_roles) && selectedTeam.user_roles.length > 0) {
+          currentUserRoles = selectedTeam.user_roles;
+        }
+        // user_role — строка (обратная совместимость)
+        else if (selectedTeam.user_role) {
+          currentUserRoles = selectedTeam.user_role.split(',').map(r => r.trim()).filter(Boolean);
+        }
+        // is_owner — явный флаг владельца
+        if (selectedTeam.is_owner && !currentUserRoles.includes(ROLES.OWNER)) {
+          currentUserRoles = [ROLES.OWNER, ...currentUserRoles];
+        }
+
+        // Статус подписки из команды (проставляется в getMyTeams)
+        hasSubscription = selectedTeam.has_subscription || false;
+
+        // Резервно: подписка из объекта пользователя
+        if (!hasSubscription) {
+          const subExpires = user.subscriptionExpiresAt || user.subscription_expires_at;
+          hasSubscription = subExpires ? new Date(subExpires) > new Date() : false;
+        }
       }
-      
-      // Вычисляем статус личной подписки пользователя на основе даты окончания
-      const subExpires = user.subscriptionExpiresAt || user.subscription_expires_at;
-      hasSubscription = subExpires ? new Date(subExpires) > new Date() : false;
     }
 
-    // Если у пользователя нет ролей в команде, но он числится в ней — по умолчанию даем базовую роль игрока
-    if (currentUserRoles.length === 0) {
-      currentUserRoles.push(ROLES.PLAYER);
-    }
+    // Если ролей нет совсем — доступ закрыт.
+    // НЕ добавляем PLAYER по умолчанию: отсутствие ролей ≠ игрок.
+    if (currentUserRoles.length === 0) return false;
 
     // Атомарный анализ пересечения ролей для текущего действия
     return currentUserRoles.some(role => {
-      // Если роль в принципе не входит в список разрешенных — отсекаем её
+      // Если роль в принципе не входит в список разрешённых — отсекаем
       if (!permission.allowedRoles.includes(role)) return false;
 
-      // Вычисляем, требует ли конкретно эта роль наличие подписки для данного действия
+      // Вычисляем, требует ли конкретно эта роль наличие подписки
       let roleRequiresSub = false;
       if (permission.requiresSubscription === true) {
         roleRequiresSub = true;
@@ -75,12 +88,9 @@ export function useAccess(customUser = null, customTeam = null) {
         roleRequiresSub = permission.requiresSubscription.includes(role);
       }
 
-      // Если для роли подписка обязательна, а у пользователя её нет — блокируем действие по этой роли
-      if (roleRequiresSub && !hasSubscription) {
-        return false;
-      }
+      // Если для роли подписка обязательна, а у пользователя её нет — блокируем
+      if (roleRequiresSub && !hasSubscription) return false;
 
-      // Если роль совпала и прошла фильтр подписки — доступ открыт
       return true;
     });
   }, [user, selectedTeam]);

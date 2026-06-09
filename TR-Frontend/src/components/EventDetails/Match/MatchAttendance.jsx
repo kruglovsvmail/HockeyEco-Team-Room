@@ -42,6 +42,7 @@ export const MatchAttendance = ({ event, initialAttendees = [], initialTeamRoste
   
   const [animatingInId, setAnimatingInId] = useState(null);
   const [animatingOutId, setAnimatingOutId] = useState(null);
+  const [savingPlayerId, setSavingPlayerId] = useState(null);
 
   const pressTimer = useRef(null);
 
@@ -125,21 +126,7 @@ export const MatchAttendance = ({ event, initialAttendees = [], initialTeamRoste
   }, [attendees]);
 
   const handleMarkUser = async (playerObj) => {
-    const newAttendee = {
-      id: playerObj.user_id,
-      first_name: playerObj.first_name,
-      last_name: playerObj.last_name,
-      team_photo: playerObj.team_photo,
-      avatar_url: playerObj.avatar_url,
-      position: playerObj.position,
-      has_pay_tag: false
-    };
-
-    setAttendees(prev => [...prev, newAttendee]);
-    setAnimatingInId(newAttendee.id);
-    setIsSheetOpen(false);
-
-    setTimeout(() => setAnimatingInId(null), 300);
+    setSavingPlayerId(playerObj.user_id);
 
     try {
       const apiUrl = import.meta.env.VITE_API_URL || '';
@@ -153,10 +140,28 @@ export const MatchAttendance = ({ event, initialAttendees = [], initialTeamRoste
           targetUserId: playerObj.user_id
         })
       });
-      refreshData(); 
+
+      const newAttendee = {
+        id: playerObj.user_id,
+        first_name: playerObj.first_name,
+        last_name: playerObj.last_name,
+        team_photo: playerObj.team_photo,
+        avatar_url: playerObj.avatar_url,
+        position: playerObj.position,
+        has_pay_tag: false
+      };
+
+      setAttendees(prev => [...prev, newAttendee]);
+      setAnimatingInId(newAttendee.id);
+      setTimeout(() => setAnimatingInId(null), 300);
+
+      setIsSheetOpen(false);
+      refreshData();
     } catch (err) {
       console.error('Ошибка при отметке игрока:', err);
-      refreshData(); 
+      refreshData();
+    } finally {
+      setSavingPlayerId(null);
     }
   };
 
@@ -497,18 +502,12 @@ export const MatchAttendance = ({ event, initialAttendees = [], initialTeamRoste
           `}
         </style>
 
-        <div className="flex items-center justify-between w-full px-4">
-          <SectionHeader 
-            showAction={false}
-            className="m-0"
-          />
-        </div>
 
-        <div className="flex flex-col gap-4 w-full">
+        <div className="flex flex-col gap-3 w-full">
           {/* Контейнер вратарей */}
           <ContainerContent title="Вратари" count={goalies.length} action={goalieAddButton}>
             {goalies.length > 0 ? (
-              <div className="grid grid-cols-[repeat(auto-fill,minmax(94px,1fr))] gap-y-5 gap-x-2 justify-items-center">
+              <div className="grid grid-cols-[repeat(auto-fill,minmax(94px,1fr))] gap-y-5 gap-x-2 justify-items-center mt-2">
                 {goalies.map((attendeeUser, idx) => renderAttendeeCard(attendeeUser, idx))}
               </div>
             ) : (
@@ -521,7 +520,7 @@ export const MatchAttendance = ({ event, initialAttendees = [], initialTeamRoste
           {/* Контейнер полевых игроков */}
           <ContainerContent title="Полевые игроки" count={skaters.length} action={skaterAddButton}>
             {skaters.length > 0 ? (
-              <div className="grid grid-cols-[repeat(auto-fill,minmax(94px,1fr))] gap-y-5 gap-x-2 justify-items-center">
+              <div className="grid grid-cols-[repeat(auto-fill,minmax(94px,1fr))] gap-y-5 gap-x-2 justify-items-center mt-2">
                 {skaters.map((attendeeUser, idx) => renderAttendeeCard(attendeeUser, idx))}
               </div>
             ) : (
@@ -572,8 +571,10 @@ export const MatchAttendance = ({ event, initialAttendees = [], initialTeamRoste
                         <ButtonLP
                           onClick={() => handleMarkUser(player)}
                           variant="primary"
-                          className="!w-auto !py-1.5 !px-3 !text-[10px] ml-2 shrink-0"
+                          className="!w-auto !py-1.5 !px-3 !text-[10px] ml-2 shrink-0 normal-case"
                           activeColor={hasTeamColor ? event.team_color : null}
+                          isLoading={savingPlayerId === player.user_id}
+                          disabled={savingPlayerId !== null}
                         >
                           Добавить
                         </ButtonLP>

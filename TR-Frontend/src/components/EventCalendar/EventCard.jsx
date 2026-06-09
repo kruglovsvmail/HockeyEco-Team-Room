@@ -212,10 +212,7 @@ const EventCard = ({
 
       {/* СЕРАЯ ПОЛОСА С ТАЙМЕРОМ ДЛЯ FRIENDLY_PWA В СТАТУСЕ PENDING */}
       {isMatch && event.game_type === 'friendly_pwa' && event.status === 'pending' && (
-        <div 
-          className="w-full bg-surface-level2 px-5 py-2 mt-4 flex items-center justify-between gap-3 select-none"
-          onClick={(e) => e.stopPropagation()}
-        >
+        <div className="w-full bg-surface-level2 px-5 py-2 mt-4 flex items-center justify-between gap-3 select-none">
           <div className="flex flex-col text-left">
             <span className="text-[8px] font-bold text-content-muted uppercase tracking-wider">
               {isInitiator ? 'Ожидает подтверждения:' : 'До подтверждения осталось:'}
@@ -226,7 +223,7 @@ const EventCard = ({
           </div>
 
           {isRoleAllowed && (
-            <div className="flex items-center shrink-0" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center shrink-0">
               {isInitiator ? (
                 isSubscriptionMissing ? (
                   <HintPopover status="no_subscription">
@@ -241,23 +238,25 @@ const EventCard = ({
                   <button
                     type="button"
                     disabled={isActionLoading}
-                    onClick={async () => {
+                    onClick={async (e) => {
+                      e.stopPropagation(); // Изолируем клик прямо в кнопке
                       setIsActionLoading(true);
                       try {
-                        if (onCancelFriendlyMatch) await onCancelFriendlyMatch(event.event_id, event.my_team_id);
+                        if (onCancelFriendlyMatch) {
+                          // Попробуй поменять на event.id, если event.event_id будет падать
+                          await onCancelFriendlyMatch(event.event_id || event.id, event.my_team_id);
+                        } else {
+                          alert("Критическая ошибка: Пропс onCancelFriendlyMatch не передан в карточку родителем!");
+                        }
                       } catch (err) {
-                        console.error(err);
+                        alert(`Ошибка при отмене матча: ${err.message}`);
                       } finally {
                         setIsActionLoading(false);
                       }
                     }}
                     className="px-2 py-2 text-danger text-[10px] font-black uppercase tracking-widest rounded-xl transition-all active:scale-95 cursor-pointer flex items-center justify-center min-w-[75px]"
                   >
-                    {isActionLoading ? (
-                      <div className="w-3 h-3 rounded-full animate-spin" />
-                    ) : (
-                      'Отменить'
-                    )}
+                    {isActionLoading ? <div className="w-3 h-3 rounded-full animate-spin" /> : 'Отменить'}
                   </button>
                 )
               ) : (
@@ -265,7 +264,7 @@ const EventCard = ({
                   <HintPopover status="no_subscription">
                     <button
                       type="button"
-                      className="px-2 py-2 btext-success text-[10px] font-black uppercase tracking-widest rounded-xl opacity-50 cursor-pointer"
+                      className="px-2 py-2 text-success text-[10px] font-black uppercase tracking-widest rounded-xl opacity-50 cursor-pointer"
                     >
                       Подтвердить
                     </button>
@@ -274,23 +273,25 @@ const EventCard = ({
                   <button
                     type="button"
                     disabled={isActionLoading}
-                    onClick={async () => {
+                    onClick={async (e) => {
+                      e.stopPropagation(); // Изолируем клик прямо в кнопке
                       setIsActionLoading(true);
                       try {
-                        if (onConfirmFriendlyMatch) await onConfirmFriendlyMatch(event.event_id, event.my_team_id);
+                        if (onConfirmFriendlyMatch) {
+                          // Попробуй поменять на event.id, если event.event_id будет падать
+                          await onConfirmFriendlyMatch(event.event_id || event.id, event.my_team_id);
+                        } else {
+                          alert("Критическая ошибка: Пропс onConfirmFriendlyMatch не передан в карточку родителем!");
+                        }
                       } catch (err) {
-                        console.error(err);
+                        alert(`Ошибка при подтверждении матча: ${err.message}`);
                       } finally {
                         setIsActionLoading(false);
                       }
                     }}
                     className="px-2 py-2 text-success text-[10px] font-black uppercase tracking-widest rounded-xl transition-all active:scale-95 cursor-pointer flex items-center justify-center min-w-[95px]"
                   >
-                    {isActionLoading ? (
-                      <div className="w-3 h-3 border-2 border-success border-t-transparent rounded-full animate-spin" />
-                    ) : (
-                      'Подтвердить'
-                    )}
+                    {isActionLoading ? <div className="w-3 h-3 border-2 border-success border-t-transparent rounded-full animate-spin" /> : 'Подтвердить'}
                   </button>
                 )
               )}
@@ -298,7 +299,7 @@ const EventCard = ({
           )}
         </div>
       )}
-
+      
       {/* 3. КОМАНДЫ: Логотип и Соперник */}
       {shouldRenderTeamsBlock && (
         <div className="flex w-full px-5 mb-4 mt-4 items-end">

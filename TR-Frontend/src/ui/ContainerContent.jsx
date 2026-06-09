@@ -58,7 +58,7 @@ export function ContainerContent({
       {title && (
         <div 
           className={clsx(
-            "flex items-center justify-between border-b border-surface-border pt-1 pl-4 pr-1 pb-3 select-none",
+            "flex items-center justify-between border-b border-surface-border pt-1 pl-4 pr-1 pb-2 select-none",
             collapsible && "cursor-pointer active:opacity-80 transition-opacity"
           )}
           onClick={() => collapsible && setIsExpanded(!isExpanded)}

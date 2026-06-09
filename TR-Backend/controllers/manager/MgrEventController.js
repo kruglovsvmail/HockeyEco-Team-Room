@@ -14,7 +14,7 @@ async function checkPermissionInternal(userId, teamId, permissionKey, client = p
   if (userRes.rows.length === 0) return false;
   const { global_role, subscription_expires_at } = userRes.rows[0];
 
-  // Суперпользователь (Главный админ платформы HockeyEco) обходит любые заслоны
+  // Суперпользователь (Главный admin платформы) обходит любые заслоны
   if (global_role === 'admin') return true;
 
   const permission = PERMISSIONS[permissionKey];
@@ -38,9 +38,18 @@ async function checkPermissionInternal(userId, teamId, permissionKey, client = p
     `, [userId, teamId]);
     
     trRes.rows.forEach(r => userRoles.push(r.role));
+
+    // Клубные роли (top_manager, club_admin) — необходимы для проверки MGR_CREATE_EVENT
+    const crRes = await client.query(`
+      SELECT cr.role FROM club_roles cr
+      JOIN teams t ON t.club_id = cr.club_id
+      JOIN club_members cm ON cm.club_id = cr.club_id AND cm.user_id = cr.user_id
+      WHERE cr.user_id = $1 AND t.id = $2 AND cr.left_at IS NULL AND cm.left_at IS NULL
+    `, [userId, teamId]);
+
+    crRes.rows.forEach(r => userRoles.push(r.role));
   }
 
-  // Полное соответствие структуре allowedRoles и requiresSubscription из permissions.js
   return permission.allowedRoles.some(role => {
     if (!userRoles.includes(role)) return false;
 
@@ -60,10 +69,18 @@ async function checkPermissionInternal(userId, teamId, permissionKey, client = p
 }
 
 /**
- * Вспомогательный конвертер строк формата PWA (дд.мм.гггг + чч:мм) в ISO Timestamp для PostgreSQL
+ * Вспомогательный конвертер строк формата PWA в ISO Timestamp для PostgreSQL
+ * ИСПРАВЛЕНО: Поддерживает форматы YYYY-MM-DD (с дефисами) и DD.MM.YYYY (с точками)
  */
 const parseDateTime = (dateStr, timeStr) => {
   if (!dateStr || !timeStr) return null;
+
+  // Если дата уже передана в международном формате YYYY-MM-DD
+  if (dateStr.includes('-')) {
+    return `${dateStr}T${timeStr}:00`;
+  }
+
+  // Если дата передана в старом формате DD.MM.YYYY
   const [d, m, y] = dateStr.split('.');
   return `${y}-${m}-${d}T${timeStr}:00`;
 };
@@ -111,15 +128,17 @@ export const createEvent = async (req, res) => {
     }
 
     const eventTimestamp = parseDateTime(eventDate, eventTime);
+    
+    // Извлекаем таймзону. Теперь проверяем и custom_timezone, пришедшую от устройства
+    const arenaTz = selectedArena?.timezone || selectedArena?.arena_timezone || selectedArena?.custom_timezone || 'Europe/Moscow';
+    const customTz = selectedArena?.custom_timezone || null;
+    
     const cost = isFree ? 0 : parseInt(feeAmount) || 0;
 
     // Разделение контекста локации (Системная ледовая арена ИЛИ Кастомный зал/ОФП/кафе)
     const isManualArena = selectedArena.isManual === true;
     const arenaId = isManualArena ? null : selectedArena.id;
     const locationName = isManualArena ? selectedArena.name : null;
-    
-    // КРИТИЧЕСКОЕ ИСПРАВЛЕНИЕ: База данных констрейнтом (location_check) требует, чтобы при отсутствии arena_id 
-    // поля location и location_url СТРОГО были NOT NULL. Поэтому при пустой ссылке передаем пустую строку '', обходя ошибку 23514.
     const locationUrl = isManualArena ? (selectedArena.location_url || '') : null;
 
     // ==========================================
@@ -127,12 +146,12 @@ export const createEvent = async (req, res) => {
     // ==========================================
     if (eventType === 'training') {
       const insertQuery = `
-        INSERT INTO "public"."team_training" (team_id, training_date, arena_id, location, location_url, title, cost)
-        VALUES ($1, $2, $3, $4, $5, $6, $7)
+        INSERT INTO "public"."team_training" (team_id, training_date, arena_id, location, location_url, title, cost, custom_timezone)
+        VALUES ($1, $2::timestamp AT TIME ZONE $3, $4, $5, $6, $7, $8, $9)
         RETURNING id;
       `;
       const result = await pool.query(insertQuery, [
-        teamId, eventTimestamp, arenaId, locationName, locationUrl, eventTitle || 'Командная тренировка', cost
+        teamId, eventTimestamp, arenaTz, arenaId, locationName, locationUrl, eventTitle || 'Командная тренировка', cost, customTz
       ]);
       return res.json({ success: true, message: 'Тренировка успешно добавлена в календарь', eventId: result.rows[0].id });
     }
@@ -142,18 +161,18 @@ export const createEvent = async (req, res) => {
     // ==========================================
     if (eventType === 'meeting') {
       const insertQuery = `
-        INSERT INTO "public"."team_meeting" (team_id, meeting_date, arena_id, location, location_url, title, cost)
-        VALUES ($1, $2, $3, $4, $5, $6, $7)
+        INSERT INTO "public"."team_meeting" (team_id, meeting_date, arena_id, location, location_url, title, cost, custom_timezone)
+        VALUES ($1, $2::timestamp AT TIME ZONE $3, $4, $5, $6, $7, $8, $9)
         RETURNING id;
       `;
       const result = await pool.query(insertQuery, [
-        teamId, eventTimestamp, arenaId, locationName, locationUrl, eventTitle || 'Командное собрание', cost
+        teamId, eventTimestamp, arenaTz, arenaId, locationName, locationUrl, eventTitle || 'Командное собрание', cost, customTz
       ]);
       return res.json({ success: true, message: 'Собрание успешно запланировано', eventId: result.rows[0].id });
     }
 
     // ==========================================
-    // СЦЕНАРИЙ 3: СОЗДАНИЕ ИГРЫ (МАТЧА)
+    // СЦЕНАРИЙ 3: СОЗДАНИЕ ИГРЫ (МАТЧА) — ИСПРАВЛЕНО СОХРАНЕНИЕ РУЧНОЙ ЛОКАЦИИ
     // ==========================================
     if (eventType === 'match') {
       let gameType = '';
@@ -164,7 +183,6 @@ export const createEvent = async (req, res) => {
       let confirmDeadline = null;
       let stageLabel = null;
 
-      // Подветка А: Товарищеские встречи
       if (matchType === 'friendly') {
         if (!selectedOpponent) {
           return res.status(400).json({ success: false, error: 'Команда соперника обязательна для проведения игры' });
@@ -182,7 +200,6 @@ export const createEvent = async (req, res) => {
         }
         stageLabel = 'Товарищеский матч';
       } 
-      // Подветка Б: Сторонние кубки и турниры (Новая архитектура без дивизионов)
       else if (matchType === 'tournament_ext') {
         if (!selectedExtTournament || !selectedExtOpponent) {
           return res.status(400).json({ success: false, error: 'Необходимо указать сторонний турнир и соперника по сетке' });
@@ -200,14 +217,16 @@ export const createEvent = async (req, res) => {
         }
       }
 
+      // Добавлено сохранение полей custom_timezone ($20), location ($21) и location_url ($22) в таблицу games
       const insertGameQuery = `
         INSERT INTO "public"."games" (
           game_type, home_team_id, away_team_id, away_external_id, 
           external_tournament_id, game_date, arena_id, status, 
           confirm_deadline, home_jersey_type, away_jersey_type, 
           home_player_fee, video_yt_url, video_vk_url, 
-          stage_type, stage_label, series_number, initiator_team_id
-        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18)
+          stage_type, stage_label, series_number, initiator_team_id,
+          custom_timezone, location, location_url
+        ) VALUES ($1, $2, $3, $4, $5, $6::timestamp AT TIME ZONE $19, $7, $8, $9::timestamp AT TIME ZONE $19, $10, $11, $12, $13, $14, $15, $16, $17, $18, $20, $21, $22)
         RETURNING id;
       `;
 
@@ -219,10 +238,10 @@ export const createEvent = async (req, res) => {
         awayTeamId,
         awayExternalId,
         externalTournamentId,
-        eventTimestamp,
+        eventTimestamp, // $6
         arenaId,
         status,
-        confirmDeadline,
+        confirmDeadline, // $9
         myJerseyType,
         complementaryJersey,
         cost, 
@@ -231,7 +250,11 @@ export const createEvent = async (req, res) => {
         stageType || 'friendly',
         stageLabel,
         seriesNumber ? parseInt(seriesNumber) : null,
-        gameType === 'friendly_pwa' ? teamId : null
+        gameType === 'friendly_pwa' ? teamId : null,
+        arenaTz, // $19
+        customTz, // $20
+        locationName, // $21
+        locationUrl   // $22
       ]);
 
       // ИНИЦИАЛИЗАЦИЯ ТАЙМЕРА МАТЧА

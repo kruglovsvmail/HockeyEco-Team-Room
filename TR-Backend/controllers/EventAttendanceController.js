@@ -1,6 +1,12 @@
 import pool from '../config/db.js';
 import { PERMISSIONS } from '../utils/permissions.js';
 
+// Вспомогательная функция безопасного извлечения ID контекстной команды для проверки прав
+const getTeamIdFromRequest = (req) => {
+  if (!req) return null;
+  return Number(req.body?.teamId || req.query?.teamId || req.params?.teamId);
+};
+
 /**
  * Внутренняя функция для проверки гранулярных прав доступа и подписки
  */
@@ -400,11 +406,14 @@ export const toggleEventAttendanceTag = async (req, res) => {
   }
 };
 
+// МЕТОД ПОДТВЕРЖДЕНИЯ МАТЧА FRIENDLY_PWA — ПОЛНОСТЬЮ ИСПРАВЛЕН
 export const confirmFriendlyMatch = async (req, res) => {
   try {
     const userId = req.user.id;
     const { eventId } = req.params;
-    const { teamId } = req.body;
+    
+    // Безопасное чтение ID из query параметров URL (?teamId=5)
+    const teamId = getTeamIdFromRequest(req);
 
     if (!teamId) {
       return res.status(400).json({ success: false, error: 'teamId обязателен' });
@@ -459,11 +468,14 @@ export const confirmFriendlyMatch = async (req, res) => {
   }
 };
 
+// МЕТОД ОТМЕНЫ МАТЧА FRIENDLY_PWA — ПОЛНОСТЬЮ ИСПРАВЛЕН
 export const cancelFriendlyMatch = async (req, res) => {
   try {
     const userId = req.user.id;
     const { eventId } = req.params;
-    const { teamId } = req.body;
+    
+    // Безопасное чтение ID из query параметров URL (?teamId=5)
+    const teamId = getTeamIdFromRequest(req);
 
     if (!teamId) {
       return res.status(400).json({ success: false, error: 'teamId обязателен' });

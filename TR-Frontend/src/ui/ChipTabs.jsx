@@ -26,7 +26,7 @@ export const ChipTabs = ({ tabs, activeTab, onChange, className = '', activeColo
             onClick={() => onChange(tab.id)}
             style={dynamicStyle}
             className={clsx(
-              "relative overflow-hidden whitespace-nowrap px-4 py-2 shadow-sm rounded-full text-[12px] font-bold uppercase tracking-widest outline-none shrink-0 transition-all duration-200 active:scale-[0.98]",
+              "relative overflow-hidden whitespace-nowrap px-4 py-2 shadow-md rounded-full text-[12px] font-bold uppercase tracking-widest outline-none shrink-0 transition-all duration-200 active:scale-[0.98]",
               
               // Для дефолтного бренда добавляем глянец через before-элемент с твоими оффсетами
               isActive && !activeColor && "bg-brand text-surface-level1 before:absolute before:inset-0 before:bg-gradient-to-b before:from-white/25 before:to-transparent before:via-white/25 before:from-[40%] before:to-[70%]",

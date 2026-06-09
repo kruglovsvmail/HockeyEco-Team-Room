@@ -162,7 +162,7 @@ export function HandbooksPage() {
               />
             </div>
             <div className="transition-colors duration-300 mb-1">
-              <TextInputLP placeholder="Начните ввод для фильтрации..." value={searchQuery} onChange={setSearchQuery} activeColor={activeBrandColor} />
+              <TextInputLP placeholder="Начните ввод..." value={searchQuery} onChange={setSearchQuery} activeColor={activeBrandColor} />
             </div>
           </div>
 

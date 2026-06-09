@@ -9,6 +9,7 @@ import { CheckboxLP } from '../../ui/Checkbox-LP';
 import { Icon } from '../../ui/Icon';
 import { useAccess } from '../../hooks/useAccess';
 import { HintPopover } from '../../ui/HintPopover';
+import { Toast } from '../../ui/Toast';
 
 // Форматирование телефонных номеров по маске +7 (000) 000-00-00
 const formatPhoneNumber = (phoneStr) => {
@@ -35,11 +36,21 @@ const InfoRow = ({ label, value, highlight = false, activeBrandColor }) => (
 );
 
 // Кастомный матовый блок карточки с адаптивным брендированием и сквозной Portal-проверкой подписок
-const CustomBlock = ({ title, icon, isEditing, isManager, hasAccess = true, popoverStatus = "no_subscription", onAction, activeBrandColor, children }) => {
+const CustomBlock = ({ title, icon, isEditing, isManager, hasAccess = true, popoverStatus = "no_subscription", onAction, activeBrandColor, isSaving, children }) => {
   const accentColor = activeBrandColor || 'var(--color-brand)';
   
   return (
-    <div className="flex flex-col p-4 bg-surface-level1 border border-surface-border rounded-2xl shadow-sm mb-3">
+    <div className="flex flex-col p-4 bg-surface-level1 border border-surface-border rounded-2xl shadow-sm mb-3 relative">
+
+      {/* Оверлей сохранения — как в ProfilePage */}
+      {isSaving && (
+        <div className="absolute inset-0 bg-surface-base/40 backdrop-blur-[1px] z-20 flex items-center justify-center animate-fade-in rounded-2xl">
+          <div className="flex items-center gap-2 px-3 py-1.5 bg-surface-level1 border border-surface-border rounded-xl shadow-md">
+            <div className="w-3.5 h-3.5 border-2 border-t-transparent rounded-full animate-spin" style={{ borderColor: accentColor, borderTopColor: 'transparent' }} />
+            <span className="text-[10px] font-bold uppercase tracking-wider text-content-muted">Сохранение...</span>
+          </div>
+        </div>
+      )}
       <div className="flex items-center justify-between mb-2 border-b border-surface-border pb-1.5">
         <div className="flex items-center gap-2">
           {icon && <Icon name={icon} className="w-3.5 h-3.5" style={{ color: accentColor }} />}
@@ -87,6 +98,17 @@ export const UserDetails = ({ data }) => {
 
   // Ошибки лимитов ассистентов
   const [assistantError, setAssistantError] = useState('');
+
+  // Состояние лоадера сохранения конкретного блока (как в ProfilePage)
+  const [savingBlock, setSavingBlock] = useState(null);
+
+  // Состояние Toast-уведомления
+  const [toast, setToast] = useState({ isOpen: false, message: '', type: 'success' });
+
+  // Хелпер вызова тоста
+  const triggerToast = (message, type = 'success') => {
+    setToast({ isOpen: true, message, type });
+  };
 
   const [formData, setFormData] = useState({
     roles: '',
@@ -138,11 +160,13 @@ export const UserDetails = ({ data }) => {
 
   // Рассчитываем гранулярные права на редактирование разделов по подписке
   const hasHeaderBlockAccess = checkAccess('EDIT_USER_BLOCK_BASE', teamId);
-  const hasRolesBlockAccess = checkAccess('EDIT_USER_BLOCK_ROLES', teamId); // Заменено на EDIT_USER_BLOCK_ROLES
-  const hasGameBlockAccess = checkAccess('TEAM_MANAGE_TAB_ROSTER', teamId);
+  const hasRolesBlockAccess = checkAccess('EDIT_USER_BLOCK_ROLES', teamId);
+  const hasHockeyBlockAccess = checkAccess('EDIT_USER_BLOCK_HOCKEY', teamId);
 
-  // Вычисляем финальный допуск игрового профиля: подписка + обязательное нахождение в ростере
-  const hasGameBlockAccessFinal = isUserInRoster && hasGameBlockAccess;
+  // Финальный допуск игрового профиля: право по EDIT_USER_BLOCK_HOCKEY + игрок физически в ростере.
+  // Намеренно не используем отдельный TEAM_MANAGE_TAB_ROSTER — у него другой набор ролей,
+  // что приводило к потухшему карандашу у ролей из allowedRoles (например HEAD_COACH).
+  const hasGameBlockAccessFinal = isUserInRoster && hasHockeyBlockAccess;
   const gameBlockPopoverStatus = isUserInRoster ? "no_subscription" : "not_in_roster";
 
   const AVAILABLE_ROLES = [
@@ -195,10 +219,12 @@ export const UserDetails = ({ data }) => {
     return exists ? `Номер уже занят: ${exists.last_name || exists.lastName || ''}` : '';
   }, [formData.jersey_number, currentRoster, userId]);
 
-  const saveFieldToDB = async (updatedFields) => {
+  const saveFieldToDB = async (updatedFields, blockKey = null) => {
     const safeJerseyNumber = updatedFields.jerseyNumber !== undefined
       ? (updatedFields.jerseyNumber === '' ? null : parseInt(updatedFields.jerseyNumber, 10))
       : undefined;
+
+    if (blockKey) setSavingBlock(blockKey);
 
     try {
       const res = await fetch(`${import.meta.env.VITE_API_URL}/api/teams/${teamId}/members/${profile.member_id}/details`, {
@@ -219,10 +245,13 @@ export const UserDetails = ({ data }) => {
           setAssistantError(errorData.error || 'Ошибка сохранения');
           setFormData(prev => ({ ...prev, is_assistant: !updatedFields.isAssistant }));
         }
+        triggerToast(errorData.error || 'Ошибка сохранения', 'danger');
         return;
       }
 
       setAssistantError('');
+      triggerToast('Данные успешно сохранены', 'success');
+
       fetch(`${import.meta.env.VITE_API_URL}/api/teams/${teamId}/members/${userId}`, {
         headers: getAuthHeaders()
       })
@@ -245,6 +274,9 @@ export const UserDetails = ({ data }) => {
         });
     } catch (err) {
       console.error('Ошибка автосейва:', err);
+      triggerToast('Ошибка соединения с сервером', 'danger');
+    } finally {
+      if (blockKey) setSavingBlock(null);
     }
   };
 
@@ -295,17 +327,30 @@ export const UserDetails = ({ data }) => {
       is_captain: nextVal,
       is_assistant: nextVal ? false : prev.is_assistant 
     }));
-    saveFieldToDB({ isCaptain: nextVal });
+    saveFieldToDB({ isCaptain: nextVal }, 'header');
   };
 
   const handleToggleAssistantCheckbox = () => {
     const nextVal = !formData.is_assistant;
+
+    // Клиентская проверка лимита: не более 2 ассистентов в ростере
+    if (nextVal) {
+      const assistantCount = currentRoster.filter(
+        p => p.is_assistant && p.user_id !== userId
+      ).length;
+      if (assistantCount >= 2) {
+        setAssistantError('В команде уже 2 ассистента — сначала снимите нашивку с другого игрока');
+        return;
+      }
+    }
+
+    setAssistantError('');
     setFormData(prev => ({ 
       ...prev, 
       is_assistant: nextVal,
       is_captain: nextVal ? false : prev.is_captain 
     }));
-    saveFieldToDB({ isAssistant: nextVal });
+    saveFieldToDB({ isAssistant: nextVal }, 'header');
   };
 
   const handleToggleRoleCheckbox = (roleId) => {
@@ -319,18 +364,18 @@ export const UserDetails = ({ data }) => {
     }
     const updatedRolesString = currentRolesArray.join(', ');
     setFormData(prev => ({ ...prev, roles: updatedRolesString }));
-    saveFieldToDB({ roles: updatedRolesString });
+    saveFieldToDB({ roles: updatedRolesString }, 'roles');
   };
 
   const handleSelectPositionCheckbox = (posId) => {
     setFormData(prev => ({ ...prev, position: posId }));
-    saveFieldToDB({ position: posId });
+    saveFieldToDB({ position: posId }, 'game');
   };
 
   const handleToggleEditGame = () => {
     if (isEditGame) {
       if (!jerseyError) {
-        saveFieldToDB({ jerseyNumber: formData.jersey_number });
+        saveFieldToDB({ jerseyNumber: formData.jersey_number }, 'game');
       }
       setIsEditingGame(false);
     } else {
@@ -358,24 +403,23 @@ export const UserDetails = ({ data }) => {
         
         {/* КАРТОЧКА ШАПКИ ИГРОКА */}
         <div className="flex flex-col p-4 mb-3 bg-surface-level1 border border-surface-border rounded-2xl shadow-sm relative">
-          {showAdminControls && (
-            hasHeaderBlockAccess ? (
-              <button 
-                onClick={() => setIsEditingHeader(!isEditHeader)} 
-                className="absolute top-4 right-4 text-content-subtle hover:text-brand transition-colors p-0.5 z-20 outline-none cursor-pointer flex items-center justify-center"
-                style={activeBrandColor ? { color: activeBrandColor } : {}}
-              >
-                <Icon name={isEditHeader ? "close" : "edit"} className="w-4 h-4" />
-              </button>
-            ) : (
-              <div className="absolute top-4 right-4 z-20 flex items-center justify-center">
-                <HintPopover status="no_subscription">
-                  <div className="text-content-subtle opacity-30 p-0.5" style={activeBrandColor ? { color: activeBrandColor } : {}}>
-                    <Icon name="edit" className="w-4 h-4" />
-                  </div>
-                </HintPopover>
+          {/* Оверлей сохранения шапки */}
+          {savingBlock === 'header' && (
+            <div className="absolute inset-0 bg-surface-base/40 backdrop-blur-[1px] z-20 flex items-center justify-center animate-fade-in rounded-2xl">
+              <div className="flex items-center gap-2 px-3 py-1.5 bg-surface-level1 border border-surface-border rounded-xl shadow-md">
+                <div className="w-3.5 h-3.5 border-2 border-t-transparent rounded-full animate-spin" style={{ borderColor: activeBrandColor || 'var(--color-brand)', borderTopColor: 'transparent' }} />
+                <span className="text-[10px] font-bold uppercase tracking-wider text-content-muted">Сохранение...</span>
               </div>
-            )
+            </div>
+          )}
+          {hasHeaderBlockAccess && (
+            <button 
+              onClick={() => setIsEditingHeader(!isEditHeader)} 
+              className="absolute top-4 right-4 text-content-subtle hover:text-brand transition-colors p-0.5 z-20 outline-none cursor-pointer flex items-center justify-center"
+              style={activeBrandColor ? { color: activeBrandColor } : {}}
+            >
+              <Icon name={isEditHeader ? "close" : "edit"} className="w-4 h-4" />
+            </button>
           )}
 
           <div className="flex items-center gap-4 w-full pr-1">
@@ -386,18 +430,11 @@ export const UserDetails = ({ data }) => {
                 <div className="absolute inset-0 flex flex-col items-center justify-center p-1 bg-black/60 rounded-[20px] transition-all">
                   <button 
                     onClick={() => document.getElementById('member-photo-file-input').click()}
-                    className="text-[9px] bg-success font-black text-white px-1.5 py-3.5 uppercase tracking-wider w-[200px] text-center outline-none cursor-pointer"
+                    className="text-[9px] font-bold text-white px-1.5 py-3.5 uppercase tracking-wider w-[200px] text-center outline-none cursor-pointer"
                   >
                     Заменить
                   </button>
-                  {profile.team_photo_url && (
-                    <button 
-                      onClick={handlePhotoDelete}
-                      className="text-[9px] font-black text-white bg-danger px-1.5 py-3.5 uppercase tracking-wider w-[200px] text-center outline-none cursor-pointer"
-                    >
-                      Удалить
-                    </button>
-                  )}
+
                 </div>
               )}
               <input type="file" id="member-photo-file-input" className="hidden" accept="image/*" onChange={handlePhotoUpload} />
@@ -452,6 +489,7 @@ export const UserDetails = ({ data }) => {
           popoverStatus="no_subscription"
           onAction={() => setIsEditingRoles(!isEditRoles)}
           activeBrandColor={activeBrandColor}
+          isSaving={savingBlock === 'roles'}
         >
           {isEditRoles && hasRolesBlockAccess ? (
             <div className="flex flex-col gap-2.5 pt-1">
@@ -486,11 +524,12 @@ export const UserDetails = ({ data }) => {
           title="Игровой профиль" 
           icon="jersey"
           isEditing={isEditGame}
-          isManager={showAdminControls}
+          isManager={hasHockeyBlockAccess}
           hasAccess={hasGameBlockAccessFinal}
           popoverStatus={gameBlockPopoverStatus}
           onAction={handleToggleEditGame}
           activeBrandColor={activeBrandColor}
+          isSaving={savingBlock === 'game'}
         >
           {isEditGame && hasGameBlockAccessFinal ? (
             <div className="flex flex-col gap-3 pt-1">
@@ -556,6 +595,13 @@ export const UserDetails = ({ data }) => {
           </div>
         )}
       </div>
+
+      <Toast 
+        isOpen={toast.isOpen} 
+        message={toast.message} 
+        type={toast.type} 
+        onClose={() => setToast(prev => ({ ...prev, isOpen: false }))} 
+      />
     </FadeIn>
   );
 };

@@ -356,7 +356,7 @@ export const MyTeamPage = () => {
         selectedTeam={selectedTeam}
         activeTeamDetails={activeTeamDetails}
         activeBrandColor={activeBrandColor}
-        onEditClick={isManagerOrCoach ? handleEditTeamProfileClick : null}
+        onEditClick={checkAccess('TEAM_EDIT_PROFILE') ? handleEditTeamProfileClick : null}
       />
 
       <div 
@@ -398,7 +398,7 @@ export const MyTeamPage = () => {
                   {activeTab === 'all' && (
                     <TeamAllMembers 
                       members={teamData.members || []} onPersonClick={handlePersonClick} isEditMode={isEditMode}
-                      setIsEditMode={setIsEditMode} hasManageAccess={hasAllTabManageAccess} isManager={isManagerOrCoach} onExcludeClick={handleExcludeClick} animatingOutId={animatingOutId}
+                      setIsEditMode={setIsEditMode} hasManageAccess={hasAllTabManageAccess} isManager={hasAllTabManageAccess} onExcludeClick={handleExcludeClick} animatingOutId={animatingOutId}
                       activeBrandColor={hasTeamColor ? activeBrandColor : null}
                       onAddClick={() => {
                         setSearchPhone('');
@@ -415,7 +415,7 @@ export const MyTeamPage = () => {
                   {activeTab === 'roster' && (
                     <TeamRosterPlayers 
                       roster={teamData.roster || []} onPersonClick={handlePersonClick} isEditMode={isEditMode}
-                      setIsEditMode={setIsEditMode} hasManageAccess={hasRosterTabManageAccess} isManager={isManagerOrCoach} onExcludeClick={handleExcludeClick} animatingOutId={animatingOutId}
+                      setIsEditMode={setIsEditMode} hasManageAccess={hasRosterTabManageAccess} isManager={hasRosterTabManageAccess} onExcludeClick={handleExcludeClick} animatingOutId={animatingOutId}
                       activeBrandColor={hasTeamColor ? activeBrandColor : null}
                       onAddClick={handleOpenRosterSheet}
                     />

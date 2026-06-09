@@ -20,7 +20,7 @@ export function TournamentPageHeader({
       <div className="px-4 pointer-events-auto relative z-20 bg-surface-border">
         <button 
           onClick={onClick}
-          className="w-full bg-surface-base p-4 flex items-center shadow-lg text-left outline-none active:scale-[0.98] transition-all border border-surface-border"
+          className="w-full bg-surface-base p-4 flex items-center text-left outline-none active:scale-[0.98] transition-all border border-surface-border"
         >
           <div className="w-[20%] shrink-0 flex items-center justify-center">
             <div className="w-14 h-14 flex items-center justify-center overflow-hidden">
@@ -67,7 +67,7 @@ export function TournamentPageHeader({
       </div>
 
       {/* 2. НИЖНИЙ БЛОК: Переключатель табов*/}
-      <div className="relative pointer-events-auto bg-surface-border border-b border-white/40 shadow-md pt-3 pb-3 px-4 mx-4">
+      <div className="relative pointer-events-auto bg-surface-border  shadow-md pt-3 pb-3 px-4 mx-4">
         <SegmentedControl 
           options={tabs} 
           value={activeTab} 

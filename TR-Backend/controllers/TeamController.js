@@ -73,18 +73,78 @@ async function checkPermissionInternal(userId, teamId, permissionKey, client = p
 export const getMyTeams = async (req, res) => {
     try {
         const userId = req.user.id;
-        const query = `
+
+        // 1. Базовый список команд пользователя
+        const teamsQuery = `
             SELECT DISTINCT t.id, t.name, t.short_name, t.logo_url, t.city, t.description,
                             t.jersey_dark_url, t.jersey_light_url, t.color_home_1, t.color_home_2,
-                            t.color_away_1, t.color_away_2
+                            t.color_away_1, t.color_away_2, t.owner_id
             FROM teams t
             LEFT JOIN team_members tm ON tm.team_id = t.id AND tm.left_at IS NULL
             LEFT JOIN club_members cm ON cm.club_id = t.club_id AND cm.left_at IS NULL
             WHERE (tm.user_id = $1 OR cm.user_id = $1 OR t.owner_id = $1)
             ORDER BY t.name
         `;
-        const { rows } = await pool.query(query, [userId]);
-        res.json({ teams: rows });
+        const { rows: teams } = await pool.query(teamsQuery, [userId]);
+
+        if (teams.length === 0) {
+            return res.json({ teams: [] });
+        }
+
+        const teamIds = teams.map(t => t.id);
+
+        // 2. Роли пользователя в командах (team_roles)
+        const teamRolesRes = await pool.query(`
+            SELECT tm.team_id, tr.role
+            FROM team_roles tr
+            JOIN team_members tm ON tr.member_id = tm.id
+            WHERE tm.user_id = $1 AND tm.team_id = ANY($2) AND tr.left_at IS NULL AND tm.left_at IS NULL
+        `, [userId, teamIds]);
+
+        // 3. Роли пользователя через клуб (club_roles → команды клуба)
+        const clubRolesRes = await pool.query(`
+            SELECT t.id AS team_id, cr.role
+            FROM club_roles cr
+            JOIN teams t ON t.club_id = cr.club_id
+            JOIN club_members cm ON cm.club_id = cr.club_id AND cm.user_id = cr.user_id
+            WHERE cr.user_id = $1 AND t.id = ANY($2) AND cr.left_at IS NULL AND cm.left_at IS NULL
+        `, [userId, teamIds]);
+
+        // 4. Статус подписки пользователя
+        const subRes = await pool.query(
+            'SELECT subscription_expires_at FROM users WHERE id = $1',
+            [userId]
+        );
+        const subExpires = subRes.rows[0]?.subscription_expires_at;
+        const hasSubscription = subExpires ? new Date(subExpires) > new Date() : false;
+
+        // 5. Склеиваем роли в карту по team_id
+        const rolesByTeam = {};
+        for (const { team_id, role } of teamRolesRes.rows) {
+            if (!rolesByTeam[team_id]) rolesByTeam[team_id] = new Set();
+            rolesByTeam[team_id].add(role);
+        }
+        for (const { team_id, role } of clubRolesRes.rows) {
+            if (!rolesByTeam[team_id]) rolesByTeam[team_id] = new Set();
+            rolesByTeam[team_id].add(role);
+        }
+
+        // 6. Собираем итоговый массив команд с ролями
+        const enrichedTeams = teams.map(team => {
+            const isOwner = team.owner_id === userId;
+            const roles = Array.from(rolesByTeam[team.id] || []);
+            if (isOwner) roles.unshift('owner');
+
+            return {
+                ...team,
+                user_role: roles.join(','),       // строка для обратной совместимости с фолбеком
+                user_roles: roles,                 // массив для accessMatrix
+                has_subscription: hasSubscription,
+                is_owner: isOwner,
+            };
+        });
+
+        res.json({ teams: enrichedTeams });
     } catch (error) {
         console.error('[Get My Teams Error]:', error);
         res.status(500).json({ error: 'Internal server error' });

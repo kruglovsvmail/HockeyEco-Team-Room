@@ -5,7 +5,7 @@ import { useAccess } from '../../hooks/useAccess';
 import { SubscriptionStub } from '../../ui/SubscriptionStub';
 import { SegmentedControl } from '../../ui/SegmentedControl';
 import { ContainerContent } from '../../ui/ContainerContent';
-import { TextInputLP, DateMaskInputLP } from '../../ui/Input-LP';
+import { TextInputLP, NativeDateInputLP, NativeTimeInputLP } from '../../ui/Input-LP';
 import { CheckboxLP } from '../../ui/Checkbox-LP';
 import { ButtonLP } from '../../ui/Button-LP';
 import { FadeIn } from '../../ui/FadeIn';
@@ -165,8 +165,12 @@ export function CreateEventPage() {
       });
       if (res.ok) {
         const json = await res.json();
-        if (json.success) navigate(-1);
-        else alert(json.error || 'Не удалось запланировать событие');
+        if (json.success) {
+          // Гарантированный редирект в расписание команды вместо ненадежного navigate(-1)
+          navigate(`/manager/teams/${selectedTeam.id}/schedule`);
+        } else {
+          alert(json.error || 'Не удалось запланировать событие');
+        }
       } else {
         alert('Ошибка при связи с сервером');
       }
@@ -176,7 +180,7 @@ export function CreateEventPage() {
       setIsLoading(false);
     }
   };
-
+  
   return (
     <FadeIn 
       className="h-full relative overflow-hidden flex flex-col bg-surface-border transition-colors duration-300"
@@ -214,10 +218,10 @@ export function CreateEventPage() {
           {/* ИСПРАВЛЕНО: Каждая карточка теперь принудительно расправляется на w-full flex flex-col */}
           <FadeIn key={`base-info-${eventType}-${matchType}`} duration={250} delay={100} className="w-full flex flex-col">
             <ContainerContent title="Основная информация" collapsible={true} defaultExpanded={false} activeBrandColor={hasTeamColor ? activeBrandColor : null}>
-              <div className="flex flex-col gap-4 text-left py-1 px-3">
-                <div className="grid grid-cols-2 gap-3">
-                  <DateMaskInputLP label="Дата проведения" placeholder="дд.мм.гггг" value={eventDate} onChange={setEventDate} activeColor={hasTeamColor ? activeBrandColor : null} />
-                  <TextInputLP label="Время начала" placeholder="00:00" value={eventTime} onChange={(val) => setEventTime(val.replace(/[^0-9:]/g, ''))} activeColor={hasTeamColor ? activeBrandColor : null} />
+              <div className="flex flex-col gap-8 text-left py-1 px-3">
+                <div className="grid grid-cols-2 gap-12">
+                  <NativeDateInputLP label="Дата" value={eventDate} onChange={setEventDate} activeColor={hasTeamColor ? activeBrandColor : null} />
+                  <NativeTimeInputLP label="Время" value={eventTime} onChange={setEventTime} activeColor={hasTeamColor ? activeBrandColor : null} />
                 </div>
                 <div className="flex flex-col gap-1.5">
                   <span className="text-[10px] font-bold text-content-muted uppercase tracking-wider pl-1">Место проведения</span>
@@ -295,8 +299,8 @@ export function CreateEventPage() {
                 <FadeIn key="deadline-panel" duration={250} delay={200} className="w-full flex flex-col">
                   <ContainerContent title="Дедлайн подтверждения вызова" collapsible={true} defaultExpanded={false} activeBrandColor={hasTeamColor ? activeBrandColor : null}>
                     <div className="grid grid-cols-2 gap-3 text-left py-1 px-3">
-                      <DateMaskInputLP label="Дата дедлайна" placeholder="дд.мм.гггг" value={deadlineDate} onChange={setDeadlineDate} activeColor={hasTeamColor ? activeBrandColor : null} />
-                      <TextInputLP label="Время дедлайна" placeholder="19:30" value={deadlineTime} onChange={(val) => setDeadlineTime(val.replace(/[^0-9:]/g, ''))} activeColor={hasTeamColor ? activeBrandColor : null} />
+                      <NativeDateInputLP label="Дата дедлайна" value={deadlineDate} onChange={setDeadlineDate} activeColor={hasTeamColor ? activeBrandColor : null} />
+                      <NativeTimeInputLP label="Время дедлайна" value={deadlineTime} onChange={setDeadlineTime} activeColor={hasTeamColor ? activeBrandColor : null} />
                     </div>
                   </ContainerContent>
                 </FadeIn>
@@ -332,9 +336,9 @@ export function CreateEventPage() {
 
               {/* ИСПРАВЛЕНО: Добавлен flex-col */}
               <FadeIn key={`media-panel-${matchType}`} duration={250} delay={300} className="w-full flex flex-col">
-                <ContainerContent title="Медиа и трансляция" collapsible={true} defaultExpanded={false} activeBrandColor={hasTeamColor ? activeBrandColor : null}>
+                <ContainerContent title="Ссылки на трансляции" collapsible={true} defaultExpanded={false} activeBrandColor={hasTeamColor ? activeBrandColor : null}>
                   <div className="flex flex-col gap-4 text-left py-1 px-3">
-                    <TextInputLP label="Ссылка на YouTube трансляцию" value={videoYtUrl} onChange={setVideoYtUrl} activeColor={hasTeamColor ? activeBrandColor : null} />
+                    <TextInputLP label="Ссылка на YouTube" value={videoYtUrl} onChange={setVideoYtUrl} activeColor={hasTeamColor ? activeBrandColor : null} />
                     <TextInputLP label="Ссылка на VK Видео" value={videoVkUrl} onChange={setVideoVkUrl} activeColor={hasTeamColor ? activeBrandColor : null} />
                   </div>
                 </ContainerContent>
@@ -354,8 +358,16 @@ export function CreateEventPage() {
           )}
 
           <div className="mt-4">
-            <ButtonLP type="submit" variant="primary" isLoading={isLoading} disabled={!isFormValid} activeColor={hasTeamColor ? activeBrandColor : null}>Создать событие</ButtonLP>
-          </div>
+  <ButtonLP 
+    type="submit" 
+    variant="primary" 
+    isLoading={isLoading} 
+    disabled={!isFormValid || isLoading} /* Жестко блокируем кнопку, пока идет отправка первого запроса */
+    activeColor={hasTeamColor ? activeBrandColor : null}
+  >
+    Создать событие
+  </ButtonLP>
+</div>
         </div>
       </form>
     </FadeIn>

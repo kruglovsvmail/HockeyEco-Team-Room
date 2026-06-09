@@ -144,7 +144,7 @@ export const TeamAllMembers = ({
   );
 
   return (
-    <div className="flex flex-col gap-6">
+    <div className="flex flex-col gap-3">
       {/* Секция активного состава */}
       <ContainerContent title="Общий состав" count={activeMembers.length} action={addButton}>
         {activeMembers.length > 0 ? (
