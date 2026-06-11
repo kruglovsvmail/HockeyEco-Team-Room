@@ -571,7 +571,7 @@ export const UserDetails = ({ data }) => {
         </CustomBlock>
 
         {/* БЛОК 4: ЛИЧНАЯ ИНФОРМАЦИЯ */}
-        <CustomBlock title="Личная информация" icon="calendar" isEditing={false} isManager={showAdminControls} onAction={null} activeBrandColor={activeBrandColor}>
+        <CustomBlock title="Личная информация" icon="roster" isEditing={false} isManager={showAdminControls} onAction={null} activeBrandColor={activeBrandColor}>
           <InfoRow label="Номер тел." value={formatPhoneNumber(profile.phone)} />
           <InfoRow label="Дата рожд." value={profile.birth_date ? dayjs(profile.birth_date).format('DD.MM.YYYY') : null} />
           <InfoRow label="Возраст" value={age ? `${age} лет` : null} />

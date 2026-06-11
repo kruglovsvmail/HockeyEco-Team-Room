@@ -77,36 +77,37 @@
 
   /* --- ТЕМHАЯ ТЕМА --- */
   html.dark {
-    --color-brand: #38bdf8;
-    --color-brand-hover: #0284c7;
-    --color-brand-dark: #0369a1;
-    --color-brand-glow: rgba(56, 189, 248, 0.15);
+    --color-brand: #60a5fa;
+    --color-brand-hover: #3b82f6;
+    --color-brand-dark: #2563eb;
+    --color-brand-glow: rgba(208, 229, 253, 0.15);
     --color-brand-opacity: color-mix(in srgb, var(--color-brand) 15%, transparent);
 
-    --color-surface-base: #0f172a;       /* Slate 900 */
-    --color-surface-level1: #1e293b;     /* Slate 800 */
-    --color-surface-level2: #334155;     /* Slate 700 */
-    --color-surface-level3: #475569;     /* Slate 600 */
-    --color-surface-border: #334155;     /* Броня карточек */
+    /* Нейтрально-тёплые серые — без синевы */
+    --color-surface-base: #242424;       /* почти чёрный, чуть тёплый */
+    --color-surface-level1: #1f1f1d;     /* карточки */
+    --color-surface-level2: #2c2c29;     /* вторичные поверхности */
+    --color-surface-level3: #3a3a36;     /* третичные */
+    --color-surface-border: #2e2e2b;     /* границы */
 
-    --color-sheet-bg: #1e293b;
-    --color-sheet-border: rgba(255, 255, 255, 0.1);
+    --color-sheet-bg: #1f1f1d;
+    --color-sheet-border: rgba(255, 255, 255, 0.08);
 
-    --color-overlay: rgba(0, 0, 0, 0.7);
+    --color-overlay: rgba(0, 0, 0, 0.72);
 
-    --color-content: #f8fafc;            /* Slate 50 */
-    --color-content-main: #f1f5f9;       /* Slate 100 */
-    --color-content-muted: #94a3b8;      /* Slate 400 */
-    --color-content-subtle: #64748b;     /* Slate 500 */
-    --color-content-dark: #0f172a;
+    --color-content: #f5f5f3;            /* почти белый, слегка тёплый */
+    --color-content-main: #e8e8e4;       /* основной текст */
+    --color-content-muted: #9c9c96;      /* приглушённый */
+    --color-content-subtle: #636360;     /* совсем тихий */
+    --color-content-dark: #161614;
 
     --color-danger: #ef4444;
-    --color-danger-muted: #451a1a;
+    --color-danger-muted: #3b1a1a;
     --color-success: #10b981;
-    --color-success-muted: #064e3b;
+    --color-success-muted: #063d2e;
 
-    --shadow-brand-glow: 0 8px 32px rgba(56, 189, 248, 0.15);
-    --shadow-sheet-top: 0 -8px 32px rgba(0, 0, 0, 0.4);
+    --shadow-brand-glow: 0 8px 32px rgba(96, 165, 250, 0.12);
+    --shadow-sheet-top: 0 -8px 32px rgba(0, 0, 0, 0.45);
   }
 }
 

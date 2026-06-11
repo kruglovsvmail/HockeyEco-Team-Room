@@ -11,18 +11,15 @@ export function UpdatePromptModal({ isOpen, onUpdate, onLater }) {
     setIsUpdating(true);
     setTimeout(() => {
       onUpdate();
-    }, 1500);
+    }, 3000);
   };
 
   useEffect(() => {
-    // Если модалка закрыта — ничего не делаем
     if (!isOpen) return;
 
     let isMounted = true;
     setIsLoading(true);
 
-    // Делаем фоновый запрос к статической ноде на сервере.
-    // Флаг t=${Date.now()} гарантирует обход кэша Service Worker и браузера (Cache Busting)
     fetch(`/version.json?t=${Date.now()}`)
       .then((res) => {
         if (!res.ok) throw new Error('Не удалось получить актуальный манифест версии');
@@ -35,7 +32,6 @@ export function UpdatePromptModal({ isOpen, onUpdate, onLater }) {
       })
       .catch((err) => {
         console.error('Ошибка чтения свежего чейнджлога с сервера:', err);
-        // Безопасный фолбэк на случай проблем со связью, чтобы модалка не осталась пустой
         if (isMounted) {
           setChangelog(["Доступна новая версия с исправлениями стабильности и производительности интерфейса."]);
         }
@@ -53,13 +49,11 @@ export function UpdatePromptModal({ isOpen, onUpdate, onLater }) {
 
   return (
     <div className="fixed inset-0 z-[200] flex items-center justify-center p-4 animate-fade-in">
-      {/* Мягкое размытие заднего фона всего приложения */}
-      <div className="absolute inset-0 bg-overlay backdrop-blur-md" onClick={onLater} />
+      {/* Оверлей без onClick — окно закрывается только кнопкой */}
+      <div className="absolute inset-0 bg-overlay backdrop-blur-md" />
       
-      {/* Карточка модального окна */}
       <div className="bg-surface-level1 border border-surface-border rounded-3xl w-full max-w-sm p-6 shadow-2xl relative z-10 flex flex-col gap-5 animate-scale-in text-left">
         
-        {/* Иконка и Заголовок */}
         <div className="flex items-center gap-3 border-b border-surface-level2 pb-3">
           <div className="w-10 h-10 rounded-xl bg-brand/10 text-brand flex items-center justify-center shrink-0">
             <Icon name="refresh" className="w-5 h-5" strokeWidth={2.5} />
@@ -74,14 +68,12 @@ export function UpdatePromptModal({ isOpen, onUpdate, onLater }) {
           </div>
         </div>
 
-        {/* Список изменений (Changelog) */}
         <div className="flex flex-col gap-2.5 max-h-[30vh] overflow-y-auto scrollbar-hide py-1">
           <span className="text-[10px] font-black text-brand uppercase tracking-widest block">
             Что нового:
           </span>
           
           {isLoading ? (
-            // Аккуратный скелетон-анимация на время ультра-быстрой загрузки JSON файла
             <div className="py-2 flex flex-col gap-2 animate-pulse">
               <div className="h-3 bg-surface-level2 rounded w-3/4" />
               <div className="h-3 bg-surface-level2 rounded w-5/6" />
@@ -99,9 +91,7 @@ export function UpdatePromptModal({ isOpen, onUpdate, onLater }) {
           )}
         </div>
 
-        {/* Кнопки управления */}
         <div className="flex gap-3 w-full pt-5 border-t border-surface-level2">
-          
           <ButtonLP 
             variant="primary" 
             onClick={handleUpdate}

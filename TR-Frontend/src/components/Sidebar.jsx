@@ -203,7 +203,7 @@ export function Sidebar({ user, teams = [], selectedTeam, onTeamChange, onClose 
                     : 'text-content-main hover:text-brand'
                 )}
               >
-                <Icon name="registry" className="w-5 h-5" />
+                <Icon name="divisions" className="w-5 h-5" />
                 <span className="text-sm tracking-wider">Турниры / Лиги</span>
               </button>
             ) : null
@@ -217,7 +217,7 @@ export function Sidebar({ user, teams = [], selectedTeam, onTeamChange, onClose 
                 )}
               >
                 <div className="flex items-center gap-4">
-                  <Icon name="registry" className="w-5 h-5" />
+                  <Icon name="divisions" className="w-5 h-5" />
                   <span className="text-sm tracking-wider">Турниры / Лиги</span>
                 </div>
                 <div className={clsx("transition-transform duration-200", isTournamentsExpanded && "rotate-180")}>

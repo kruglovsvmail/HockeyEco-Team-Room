@@ -65,10 +65,11 @@ export function Icon({ name, className = "w-6 h-6" }) {
     user_plus: <svg {...baseProps}><path d="M16 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="8" cy="7" r="4"/><line x1="20" y1="8" x2="20" y2="14"/><line x1="17" y1="11" x2="23" y2="11"/></svg>,
 
     // Универсальная иконка трансляции (антенна + сигнал)
-    live_stream: <svg {...baseProps}><rect x="1" y="9" width="16" height="12" rx="2"/><circle cx="9" cy="15" r="3"/><polygon points="17,11 23,8 23,22 17,19"/><rect x="5" y="6" width="7" height="3" rx="1"/></svg>,
+    live_stream: <svg {...baseProps}><rect x="1" y="5" width="15" height="15" rx="2"/><polygon points="16,8 22,5 22,20 16,17"/></svg>,
 
     // Иконка поделиться (системный шер)
     share: <svg {...baseProps}><path d="M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8"/><polyline points="16 6 12 2 8 6"/><line x1="12" y1="2" x2="12" y2="15"/></svg>,
+    currency: <svg {...baseProps}><rect x="2" y="7" width="20" height="14" rx="2"/><path d="M16 7V5a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v2"/><circle cx="16" cy="14" r="1" fill="currentColor" stroke="none"/></svg>,
   };
 
   return icons[name] || null;

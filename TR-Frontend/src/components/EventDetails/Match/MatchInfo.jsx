@@ -453,8 +453,8 @@ export const MatchInfo = ({ event, referees = [], h2hData = null }) => {
             </div>
 
             {canExpandLeague && (
-              <div className={clsx("grid transition-all duration-300 ease-in-out overflow-hidden", isLeagueExpanded ? "grid-rows-[1fr] mt-3 pt-3 border-t border-surface-level2" : "grid-rows-[0fr]")}>
-                <div className="overflow-hidden flex flex-col gap-5">
+              <div className={clsx("grid transition-all duration-300 ease-in-out overflow-hidden", isLeagueExpanded ? "grid-rows-[1fr] mt-3" : "grid-rows-[0fr]")}>
+                <div className="overflow-hidden flex flex-col gap-5"><div className={clsx("border-t border-surface-level2 mb-3 pt-3 transition-opacity duration-150", isLeagueExpanded ? "opacity-100 delay-200" : "opacity-0")} />
                   {hasRefereesAssigned && (
                     <div className="grid grid-cols-2 gap-4">
                       {mainRefs.length > 0 && (
@@ -492,7 +492,7 @@ export const MatchInfo = ({ event, referees = [], h2hData = null }) => {
                           <div className="flex items-center justify-between gap-2" onClick={(e) => e.stopPropagation()}>
                             <a href={localEvent.video_yt_url} target="_blank" rel="noopener noreferrer" className="flex items-center gap-2.5 group outline-none min-w-0">
                               <div className="w-8 h-8 rounded-lg bg-surface-level2 flex items-center justify-center shrink-0 group-hover:bg-surface-level3 transition-colors">
-                                <Icon name="live_stream" className="w-4 h-4 text-content-muted group-hover:text-brand transition-colors" />
+                                <Icon name="live_stream" className="w-5 h-5" style={{ color: activeBrandColor }} />
                               </div>
                               <span className="text-[12px] font-bold text-content-main truncate">Трансляция 1</span>
                             </a>
@@ -501,7 +501,7 @@ export const MatchInfo = ({ event, referees = [], h2hData = null }) => {
                               onClick={(e) => handleShare(e, localEvent.video_yt_url)}
                               className="w-8 h-8 rounded-lg bg-surface-level2 flex items-center justify-center shrink-0 hover:bg-surface-level3 active:scale-90 transition-all cursor-pointer"
                             >
-                              <Icon name="share" className="w-4 h-4 text-content-muted" />
+                              <Icon name="share" className="w-5 h-5" style={{ color: activeBrandColor }} />
                             </button>
                           </div>
                         )}
@@ -509,7 +509,7 @@ export const MatchInfo = ({ event, referees = [], h2hData = null }) => {
                           <div className="flex items-center justify-between gap-2" onClick={(e) => e.stopPropagation()}>
                             <a href={localEvent.video_vk_url} target="_blank" rel="noopener noreferrer" className="flex items-center gap-2.5 group outline-none min-w-0">
                               <div className="w-8 h-8 rounded-lg bg-surface-level2 flex items-center justify-center shrink-0 group-hover:bg-surface-level3 transition-colors">
-                                <Icon name="live_stream" className="w-4 h-4 text-content-muted group-hover:text-brand transition-colors" />
+                                <Icon name="live_stream" className="w-5 h-5" style={{ color: activeBrandColor }} />
                               </div>
                               <span className="text-[12px] font-bold text-content-main truncate">Трансляция 2</span>
                             </a>
@@ -518,7 +518,7 @@ export const MatchInfo = ({ event, referees = [], h2hData = null }) => {
                               onClick={(e) => handleShare(e, localEvent.video_vk_url)}
                               className="w-8 h-8 rounded-lg bg-surface-level2 flex items-center justify-center shrink-0 hover:bg-surface-level3 active:scale-90 transition-all cursor-pointer"
                             >
-                              <Icon name="share" className="w-4 h-4 text-content-muted" />
+                              <Icon name="share" className="w-5 h-5" style={{ color: activeBrandColor }} />
                             </button>
                           </div>
                         )}
@@ -648,7 +648,7 @@ export const MatchInfo = ({ event, referees = [], h2hData = null }) => {
             <div className="flex items-center justify-between gap-4 mt-4 pr-1">
               <div className="flex items-center gap-4">
                 <div className="w-10 h-10 rounded-xl bg-surface-level2  flex items-center justify-center shrink-0">
-                  <span className="text-[22px] font-normal text-content-muted">₽</span>
+                  <Icon name="currency" className="w-5 h-5" style={{ color: activeBrandColor }} />
                 </div>
                 <div className="flex flex-col">
                   <span className="text-[9px] font-medium text-content-subtle uppercase tracking-wider">Стоимость участия</span>
