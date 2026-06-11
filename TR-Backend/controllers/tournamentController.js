@@ -456,9 +456,9 @@ class TournamentController {
             COUNT(DISTINCT gg.game_id)                            AS games_played,
             COALESCE(gga.ga, 0)                                   AS goals_against,
             COALESCE(gsa.sa, 0)                                   AS shots_against,
-            GREATEST(COALESCE(gsa.sa, 0) - COALESCE(gga.ga, 0), 0) AS saves,
-            CASE WHEN COALESCE(gsa.sa, 0) > 0
-                 THEN ROUND((GREATEST(COALESCE(gsa.sa,0) - COALESCE(gga.ga,0), 0))::numeric / gsa.sa * 100, 2)
+            COALESCE(gsa.sa, 0)                                   AS saves,
+            CASE WHEN (COALESCE(gsa.sa, 0) + COALESCE(gga.ga, 0)) > 0
+                 THEN ROUND(COALESCE(gsa.sa,0)::numeric / (COALESCE(gsa.sa,0) + COALESCE(gga.ga,0)) * 100, 2)
                  ELSE 0.00 END                                    AS save_percent,
             CASE WHEN COALESCE(gm.total_secs, 0) > 0
                  -- КН нормируется на регламентную длину матча дивизиона
