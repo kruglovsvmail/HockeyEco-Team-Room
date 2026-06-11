@@ -378,17 +378,10 @@ class TournamentController {
             WHERE gr.is_in_lineup = true AND gr.position_in_line = 'G'
           ),
           GoalsAbsTime AS (
+            -- time_seconds хранится от начала матча, конвертация не нужна
             SELECT ge.id AS event_id, ge.game_id, ge.team_id AS scoring_team_id,
                    vg.home_team_id, vg.away_team_id,
-                   ge.time_seconds + CASE ge.period
-                     WHEN '1'  THEN 0
-                     WHEN '2'  THEN     vg.period_length * 60
-                     WHEN '3'  THEN 2 * vg.period_length * 60
-                     WHEN '4'  THEN 3 * vg.period_length * 60
-                     WHEN '5'  THEN 4 * vg.period_length * 60
-                     WHEN 'OT' THEN vg.periods_count * vg.period_length * 60
-                     ELSE           vg.periods_count * vg.period_length * 60
-                   END AS abs_time
+                   ge.time_seconds AS abs_time
             FROM game_events ge
             JOIN ValidGames vg ON ge.game_id = vg.id
             WHERE ge.event_type = 'goal' AND ge.goal_strength <> 'ps'

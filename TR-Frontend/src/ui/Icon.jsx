@@ -15,8 +15,8 @@ export function Icon({ name, className = "w-6 h-6" }) {
     // Навигация, локации и разделы
     location_pin: <svg {...baseProps}><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"></path><circle cx="12" cy="10" r="3"></circle></svg>,
     jersey: <svg {...baseProps}><path d="M20 5 L14 3 L12 4.5 L10 3 L4 5 L2 7 L2 18 L6 18 L6 8 L6 21 L18 21 L18 8 L18 18 L22 18 L22 7 L20 5 Z"></path></svg>,
-    handshake: <svg {...baseProps}><path d="M8 9l5 5v7h-4v-4m6-4l-5-5M14 9l5-5m-5 5h4"></path><circle cx="12" cy="12" r="10"></circle></svg>,
-    shield_alert: <svg {...baseProps}><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>,
+    handshake: <svg {...baseProps}><circle cx="12" cy="12" r="10"/><line x1="9" y1="10" x2="9" y2="10" strokeWidth="3" strokeLinecap="round"/><line x1="15" y1="10" x2="15" y2="10" strokeWidth="3" strokeLinecap="round"/><path d="M8 15 Q12 19 16 15"/></svg>,
+    shield_alert: <svg {...baseProps}><rect x="4" y="11" width="16" height="12" rx="2"/><path d="M7 11 V7 a5 5 0 0 1 10 0 v4"/><circle cx="12" cy="17" r="2" fill="currentColor" stroke="none"/><line x1="12" y1="19" x2="12" y2="21" strokeWidth="2"/></svg>,
     matches: <svg {...baseProps}><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/><path d="M8 14h.01"/><path d="M12 14h.01"/><path d="M16 14h.01"/><path d="M8 18h.01"/><path d="M12 18h.01"/><path d="M16 18h.01"/></svg>,
     roster: <svg {...baseProps}><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg>,
     team: <svg {...baseProps}><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><circle cx="12" cy="10" r="3"/></svg>,
@@ -55,7 +55,7 @@ export function Icon({ name, className = "w-6 h-6" }) {
     stop: <svg {...baseProps} strokeWidth="2.5"><path d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /><path d="M9 10a1 1 0 011-1h4a1 1 0 011 1v4a1 1 0 01-1 1h-4a1 1 0 01-1-1v-4z" /></svg>,
     refresh: <svg {...baseProps} strokeWidth="2.5"><path d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" /></svg>,
     trophy: <svg {...baseProps}><path d="M5 3v4M3 5h4M6 17v4m-2-2h4m5-16l2.286 6.857L21 12l-5.714 2.143L13 21l-2.286-6.857L5 12l5.714-2.143L13 3z" /></svg>,
-    puck: <svg {...baseProps} fill="currentColor" stroke="none"><ellipse cx="12" cy="7" rx="9" ry="4"></ellipse><path d="M3 7v10c0 2.21 4.03 4 9 4s9-1.79 9-4V7"></path></svg>,
+    puck: <svg {...baseProps}><ellipse cx="12" cy="8" rx="9" ry="3"/><line x1="3" y1="8" x2="3" y2="14"/><line x1="21" y1="8" x2="21" y2="14"/><path d="M3 14 Q3 17 12 17 Q21 17 21 14"/></svg>,
     whistle: <svg {...baseProps}><path d="M12 4H8v4c0 4.42 3.58 8 8 8a4 4 0 1 0 0-8h-2V4h-2z"/><circle cx="16" cy="12" r="1"/><path d="M21 4l-3 3"/></svg>,
     
     // Новая иконка загрузки/аплоада файлов в PWA-профили
@@ -65,13 +65,7 @@ export function Icon({ name, className = "w-6 h-6" }) {
     user_plus: <svg {...baseProps}><path d="M16 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="8" cy="7" r="4"/><line x1="20" y1="8" x2="20" y2="14"/><line x1="17" y1="11" x2="23" y2="11"/></svg>,
 
     // Универсальная иконка трансляции (антенна + сигнал)
-    live_stream: (
-      <svg {...baseProps}>
-        <path d="M5.636 5.636a9 9 0 1 0 12.728 0"/>
-        <path d="M8.464 8.464a5 5 0 1 0 7.072 0"/>
-        <circle cx="12" cy="12" r="1" fill="currentColor" stroke="none"/>
-      </svg>
-    ),
+    live_stream: <svg {...baseProps}><rect x="1" y="9" width="16" height="12" rx="2"/><circle cx="9" cy="15" r="3"/><polygon points="17,11 23,8 23,22 17,19"/><rect x="5" y="6" width="7" height="3" rx="1"/></svg>,
 
     // Иконка поделиться (системный шер)
     share: <svg {...baseProps}><path d="M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8"/><polyline points="16 6 12 2 8 6"/><line x1="12" y1="2" x2="12" y2="15"/></svg>,
