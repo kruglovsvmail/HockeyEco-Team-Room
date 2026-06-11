@@ -330,8 +330,9 @@ export const regCheckPhone = async (req, res) => {
 
     const result = await pool.query(`SELECT id, virtual_code FROM users WHERE phone = $1`, [phone]);
     
+    // Если пользователь не найден — регистрация новых не разрешена
     if (result.rows.length === 0) {
-      return res.json({ success: true, status: 'new' });
+      return res.status(404).json({ success: false, error: 'Пользователь с таким номером не найден. Обратитесь к руководителю команды.' });
     }
     
     const user = result.rows[0];

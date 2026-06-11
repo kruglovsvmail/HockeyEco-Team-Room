@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useNavigate, Navigate } from 'react-router-dom';
 import clsx from 'clsx';
 import { Share, PlusSquare, Download, AlertCircle } from 'lucide-react';
-import { PhoneInputLP, PasswordInputLP, EmailInputLP, TextInputLP, DateMaskInputLP } from '../ui/Input-LP';
+import { PhoneInputLP, PasswordInputLP, EmailInputLP, TextInputLP } from '../ui/Input-LP';
 import { ButtonLP } from '../ui/Button-LP';
 import { CheckboxLP } from '../ui/Checkbox-LP';
 import { BottomSheet } from '../ui/BottomSheet';
@@ -33,7 +33,6 @@ export default function LoginPage() {
   const [regData, setRegData] = useState({ firstName: '', lastName: '', middleName: '', email: '', birthDate: '' });
   const [regError, setRegError] = useState('');
   const [isRegLoading, setIsRegLoading] = useState(false);
-  const [regType, setRegType] = useState(null); // 'new' или 'virtual'
 
   // PWA states
   const [deferredPrompt, setDeferredPrompt] = useState(null);
@@ -247,7 +246,6 @@ export default function LoginPage() {
     setRegCode('');
     setRegData({ firstName: '', lastName: '', middleName: '', email: '', birthDate: '' });
     setRegError('');
-    setRegType(null);
   };
 
   const handleRegCheckPhone = async () => {
@@ -272,8 +270,8 @@ export default function LoginPage() {
         throw new Error('Этот номер телефона уже зарегистрирован.');
       }
 
-      setRegType(data.status); // 'new' | 'virtual'
-      setRegStep(data.status === 'virtual' ? 2 : 3);
+      // Только виртуальный аккаунт — переход к вводу секретного кода
+      setRegStep(2);
     } catch (err) {
       setRegError(err.message);
     } finally {
@@ -353,12 +351,12 @@ export default function LoginPage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           phone: cleanPhone,
-          virtualCode: regType === 'virtual' ? regCode : null,
+          virtualCode: regCode,
           firstName: regData.firstName,
           lastName: regData.lastName,
           middleName: regData.middleName,
           email: regData.email,
-          birthDate: finalBirthDate // Передаем перевернутую дату
+          birthDate: finalBirthDate
         }),
       });
       const data = await response.json();
@@ -537,7 +535,7 @@ export default function LoginPage() {
         )}>
           <ButtonLP variant="outline" onClick={() => setActiveSheet('reg')}
             className="tracking-widest">
-            Создать аккаунт
+            Активировать аккаунт
           </ButtonLP>
           <ButtonLP 
             variant="text" 
@@ -624,8 +622,8 @@ export default function LoginPage() {
         {/* Шаг 1: Проверка телефона */}
         {regStep === 1 && (
           <div>
-            <h2 className="text-xl font-bold text-content-main mb-2">Создать аккаунт</h2>
-            <p className="text-content-muted text-sm mb-6">Введите номер телефона для регистрации.</p>
+            <h2 className="text-xl font-bold text-content-main mb-2">Акктивация аккаунта</h2>
+            <p className="text-content-muted text-sm mb-6">Введите номер телефона, который есть в базе вашей команды.</p>
             
             <PhoneInputLP 
               value={regPhone} 
@@ -659,10 +657,14 @@ export default function LoginPage() {
               disabled={isRegLoading} 
             />
             
+            <p className="text-[11px] text-content-subtle leading-relaxed mt-6 mb-6">
+              Вводя секретный код, вы подтверждаете своё согласие на обработку персональных данных (ФИО, номер телефона, дата рождения) в рамках платформы <span className="font-semibold">HockeyEco</span> в соответствии с&nbsp;ФЗ&#8209;152 «О персональных данных».
+            </p>
+
             <ButtonLP 
               onClick={handleRegVerifyCode} 
               isLoading={isRegLoading} 
-              className="mt-24 mb-12"
+              className="mb-12"
             >
               Подтвердить
             </ButtonLP>
@@ -673,10 +675,10 @@ export default function LoginPage() {
         {regStep === 3 && (
           <form onSubmit={handleRegisterSubmit}>
             <h2 className="text-xl font-bold text-content-main mb-2">
-              {regType === 'virtual' ? `Привет, ${regData.firstName}! ` : 'Заполнение данных'}
+              Привет, {regData.firstName}!
             </h2>
             <p className="text-content-muted text-sm mb-6">
-              {regType === 'virtual' ? 'Проверьте и дополните ваши данные.' : 'Введите ваши данные для создания профиля.'}
+              Проверьте и дополните ваши данные.
             </p>
             
             <div className="space-y-4">
@@ -701,16 +703,6 @@ export default function LoginPage() {
                   onChange={v => setRegData({...regData, middleName: v})} 
                   disabled={isRegLoading}
                 />
-                
-                {/* НОВОЕ ПОЛЕ С МАСКОЙ */}
-                <DateMaskInputLP 
-                  label=""
-                  placeholder="Дата рождения (дд.мм.гггг)" 
-                  value={regData.birthDate} 
-                  onChange={v => setRegData({...regData, birthDate: v})} 
-                  disabled={isRegLoading}
-                />
-
                 <EmailInputLP 
                   label=""
                   value={regData.email} 
@@ -721,13 +713,17 @@ export default function LoginPage() {
             </div>
 
             {regError && <div className="text-danger font-medium text-sm mt-4">{regError}</div>}
+
+            <p className="text-[11px] text-content-subtle leading-relaxed mt-6 mb-6">
+              Нажимая «Подтвердить аккаунт», вы даёте согласие на обработку персональных данных (ФИО, номер телефона, дата рождения) в рамках платформы <span className="font-semibold">HockeyEco</span> в соответствии с&nbsp;ФЗ&#8209;152 «О персональных данных».
+            </p>
             
             <ButtonLP 
               type="submit" 
               isLoading={isRegLoading} 
-              className="mt-24 mb-12"
+              className="mb-12"
             >
-              Зарегистрироваться
+              Подтвердить аккаунт
             </ButtonLP>
           </form>
         )}
