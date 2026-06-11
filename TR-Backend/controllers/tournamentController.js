@@ -363,15 +363,12 @@ class TournamentController {
               AND g.is_technical IS NULL AND g.stage_type = $2
           ),
           DivisionReg AS (
+            -- Итоговая нормировочная длина матча в секундах (для расчёта КН)
             SELECT
               CASE WHEN $2 = 'playoff'
-                   THEN COALESCE(d.playoff_periods_count, 3)
-                   ELSE COALESCE(d.reg_periods_count,     3)
-              END AS norm_periods,
-              CASE WHEN $2 = 'playoff'
-                   THEN COALESCE(d.playoff_period_length, 20)
-                   ELSE COALESCE(d.reg_period_length,     20)
-              END AS norm_period_length
+                   THEN COALESCE(d.playoff_periods_count, 3) * COALESCE(d.playoff_period_length, 20) * 60
+                   ELSE COALESCE(d.reg_periods_count,     3) * COALESCE(d.reg_period_length,     20) * 60
+              END AS norm_seconds
             FROM divisions d WHERE d.id = $1
           ),
           GoalieGames AS (
@@ -475,7 +472,7 @@ class TournamentController {
                  -- для stageType='regular' берём reg_*, для 'playoff' — playoff_*
                  THEN ROUND(
                      COALESCE(gga.ga,0)::numeric / gm.total_secs
-                     * (dr.norm_periods * dr.norm_period_length * 60), 2
+                     * dr.norm_seconds, 2
                  )
                  ELSE 0.00 END                                    AS goals_against_average,
             COALESCE(sho.total_sho, 0)                           AS shutouts,
@@ -490,7 +487,7 @@ class TournamentController {
           LEFT JOIN GoalieMinutesAgg gm ON gm.player_id = gg.player_id
           LEFT JOIN ShutoutsAgg  sho   ON sho.player_id = gg.player_id
           GROUP BY u.id, u.first_name, u.last_name, tm.photo_url, t.name, t.logo_url,
-                   gga.ga, gsa.sa, gm.total_secs, sho.total_sho
+                   gga.ga, gsa.sa, gm.total_secs, sho.total_sho, dr.norm_seconds
           HAVING COUNT(DISTINCT gg.game_id) > 0
           ORDER BY save_percent DESC, goals_against_average ASC
         `;

@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useRef } from 'react';
 import { Icon } from '../../../ui/Icon';
 import { getImageUrl, getAuthHeaders } from '../../../utils/helpers';
 import { ContainerContent } from '../../../ui/ContainerContent';
@@ -26,6 +26,7 @@ export const MatchInfo = ({ event, referees = [], h2hData = null }) => {
   // Внедряем локальный стейт для динамического обновления данных без перезагрузки страницы
   const [localEvent, setLocalEvent] = useState(event);
   const [isLeagueExpanded, setIsLeagueExpanded] = useState(false);
+  const isSharingRef = useRef(false);
 
   // Стейты открытия управляющих шторок BottomSheet
   const [isMediaOpen, setIsMediaOpen] = useState(false);
@@ -350,6 +351,23 @@ export const MatchInfo = ({ event, referees = [], h2hData = null }) => {
     }
   };
 
+  const handleShare = async (e, url) => {
+    e.stopPropagation();
+    if (isSharingRef.current) return;
+    isSharingRef.current = true;
+    try {
+      if (navigator.share) {
+        await navigator.share({ url });
+      } else {
+        await navigator.clipboard?.writeText(url);
+      }
+    } catch (err) {
+      if (err?.name !== 'AbortError') console.error(err);
+    } finally {
+      isSharingRef.current = false;
+    }
+  };
+
   return (
     <FadeIn>
       <div className="flex flex-col gap-3 select-none antialiased relative">
@@ -469,22 +487,40 @@ export const MatchInfo = ({ event, referees = [], h2hData = null }) => {
                   {hasLiveStreams && (
                     <div className={clsx("flex flex-col gap-3", hasRefereesAssigned && "pt-4 border-t border-surface-level2")}>
                       <span className="text-[9px] font-medium text-content-subtle uppercase tracking-wide">Трансляции:</span>
-                      <div className="flex items-center gap-6 pl-1">
+                      <div className="flex flex-col gap-2 pl-1">
                         {localEvent.video_yt_url && (
-                          <a href={localEvent.video_yt_url} target="_blank" rel="noopener noreferrer" className="flex items-center gap-2.5 group outline-none" onClick={(e) => e.stopPropagation()}>
-                            <Icon name="live_yt" className="w-8 h-8 group-hover:scale-110" />
-                            <div className="flex flex-col">
-                              <span className="text-[12px] font-bold text-content-main group-hover:text-[#FF0000]">YouTube</span>
-                            </div>
-                          </a>
+                          <div className="flex items-center justify-between gap-2" onClick={(e) => e.stopPropagation()}>
+                            <a href={localEvent.video_yt_url} target="_blank" rel="noopener noreferrer" className="flex items-center gap-2.5 group outline-none min-w-0">
+                              <div className="w-8 h-8 rounded-lg bg-surface-level2 flex items-center justify-center shrink-0 group-hover:bg-surface-level3 transition-colors">
+                                <Icon name="live_stream" className="w-4 h-4 text-content-muted group-hover:text-brand transition-colors" />
+                              </div>
+                              <span className="text-[12px] font-bold text-content-main truncate">Трансляция 1</span>
+                            </a>
+                            <button
+                              type="button"
+                              onClick={(e) => handleShare(e, localEvent.video_yt_url)}
+                              className="w-8 h-8 rounded-lg bg-surface-level2 flex items-center justify-center shrink-0 hover:bg-surface-level3 active:scale-90 transition-all cursor-pointer"
+                            >
+                              <Icon name="share" className="w-4 h-4 text-content-muted" />
+                            </button>
+                          </div>
                         )}
                         {localEvent.video_vk_url && (
-                          <a href={localEvent.video_vk_url} target="_blank" rel="noopener noreferrer" className="flex items-center gap-2.5 group outline-none" onClick={(e) => e.stopPropagation()}>
-                            <Icon name="live_vk" className="w-8 h-8 group-hover:scale-110" />
-                            <div className="flex flex-col">
-                              <span className="text-[12px] font-bold text-content-main group-hover:text-[#0077FF]">VK Video</span>
-                            </div>
-                          </a>
+                          <div className="flex items-center justify-between gap-2" onClick={(e) => e.stopPropagation()}>
+                            <a href={localEvent.video_vk_url} target="_blank" rel="noopener noreferrer" className="flex items-center gap-2.5 group outline-none min-w-0">
+                              <div className="w-8 h-8 rounded-lg bg-surface-level2 flex items-center justify-center shrink-0 group-hover:bg-surface-level3 transition-colors">
+                                <Icon name="live_stream" className="w-4 h-4 text-content-muted group-hover:text-brand transition-colors" />
+                              </div>
+                              <span className="text-[12px] font-bold text-content-main truncate">Трансляция 2</span>
+                            </a>
+                            <button
+                              type="button"
+                              onClick={(e) => handleShare(e, localEvent.video_vk_url)}
+                              className="w-8 h-8 rounded-lg bg-surface-level2 flex items-center justify-center shrink-0 hover:bg-surface-level3 active:scale-90 transition-all cursor-pointer"
+                            >
+                              <Icon name="share" className="w-4 h-4 text-content-muted" />
+                            </button>
+                          </div>
                         )}
                       </div>
                     </div>

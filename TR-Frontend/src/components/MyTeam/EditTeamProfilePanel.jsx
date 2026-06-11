@@ -17,10 +17,6 @@ export function EditTeamProfilePanel({ teamId, onRefresh, activeBrandColor, onCl
   const [jerseyDarkFile, setJerseyDarkFile] = useState(null);
   const [jerseyLightFile, setJerseyLightFile] = useState(null);
 
-  const [deleteLogo, setDeleteLogo] = useState(false);
-  const [deleteJerseyDark, setDeleteJerseyDark] = useState(false);
-  const [deleteJerseyLight, setDeleteJerseyLight] = useState(false);
-
   const [isSaving, setIsSaving] = useState(false);
   const [errorMessage, setErrorMessage] = useState('');
 
@@ -67,9 +63,6 @@ export function EditTeamProfilePanel({ teamId, onRefresh, activeBrandColor, onCl
       setLogoFile(null);
       setJerseyDarkFile(null);
       setJerseyLightFile(null);
-      setDeleteLogo(false);
-      setDeleteJerseyDark(false);
-      setDeleteJerseyLight(false);
       setErrorMessage('');
     }
   }, [teamId]);
@@ -91,13 +84,9 @@ export function EditTeamProfilePanel({ teamId, onRefresh, activeBrandColor, onCl
     bodyData.append('color_away_1', formData.color_away_1);
     bodyData.append('color_away_2', formData.color_away_2);
 
-    bodyData.append('delete_logo', deleteLogo ? 'true' : 'false');
-    bodyData.append('delete_jersey_dark', deleteJerseyDark ? 'true' : 'false');
-    bodyData.append('delete_jersey_light', deleteJerseyLight ? 'true' : 'false');
-
-    if (logoFile && !deleteLogo) bodyData.append('logo', logoFile);
-    if (jerseyDarkFile && !deleteJerseyDark) bodyData.append('jersey_dark', jerseyDarkFile);
-    if (jerseyLightFile && !deleteJerseyLight) bodyData.append('jersey_light', jerseyLightFile);
+    if (logoFile) bodyData.append('logo', logoFile);
+    if (jerseyDarkFile) bodyData.append('jersey_dark', jerseyDarkFile);
+    if (jerseyLightFile) bodyData.append('jersey_light', jerseyLightFile);
 
     try {
       const res = await fetch(`${import.meta.env.VITE_API_URL}/api/teams/${teamId}/profile`, {
@@ -137,29 +126,30 @@ export function EditTeamProfilePanel({ teamId, onRefresh, activeBrandColor, onCl
         onSubmit={handleSaveProfile} 
         className="flex-1 flex flex-col gap-4 overflow-y-auto scrollbar-hide p-4 pb-32"
       >
-        {/* ВЕРХНИЙ БЛОК: ЛОГОТИП + ТЕКСТОВЫЙ БЛОК НАЗВАНИЙ И ГОРОДА */}
-        <div className="grid grid-cols-[90px_1fr] gap-3 items-center w-full bg-surface-level1 p-4 rounded-2xl border border-surface-border shadow-sm">
-          
-          {/* Аскетичный квадрат логотипа */}
-          <ImageUploaderLP 
-            currentImageUrl={deleteLogo ? null : formData.logo_url} 
-            onChange={(file) => { setLogoFile(file); setDeleteLogo(false); }} 
-            onDelete={() => { setLogoFile(null); setDeleteLogo(true); }}
-            sizeClass="w-[84px] h-[84px]"
+        {/* ВЕРХНИЙ БЛОК: НАЗВАНИЕ → ЛОГОТИП + АББР/ГОРОД */}
+        <div className="flex flex-col gap-3 w-full bg-surface-level1 p-4 rounded-2xl border border-surface-border shadow-sm">
+
+          {/* Строка 1: Полное название во всю ширину */}
+          <TextInputLP 
+            placeholder="Название команды"
+            value={formData.name}
+            onChange={val => setFormData(prev => ({ ...prev, name: val }))}
+            activeColor={dynamicBrandColor}
+            size="lg"
+            textAlign="center"
           />
 
-          {/* Текстовые поля с адаптивными размерами */}
-          <div className="flex flex-col gap-2 w-full">
-            <TextInputLP 
-              placeholder="Название команды"
-              value={formData.name}
-              onChange={val => setFormData(prev => ({ ...prev, name: val }))}
-              activeColor={dynamicBrandColor}
-              size="lg"
+          {/* Строка 2: Логотип слева + аббревиатура и город справа */}
+          <div className="grid grid-cols-[84px_1fr] gap-3 items-center">
+            <ImageUploaderLP 
+              currentImageUrl={formData.logo_url} 
+              onChange={(file) => setLogoFile(file)} 
+              showDelete={false}
+              sizeClass="w-[84px] h-[84px]"
             />
 
-            {/* Аббревиатура (макс 4 знака) + Поле города */}
-            <div className="grid grid-cols-[80px_1fr] gap-2">
+            <div className="flex flex-col gap-2 w-full">
+              {/* Аббревиатура — жёстко ограничена шириной под 4 символа */}
               <TextInputLP 
                 maxLength={4}
                 placeholder="АББР"
@@ -167,6 +157,7 @@ export function EditTeamProfilePanel({ teamId, onRefresh, activeBrandColor, onCl
                 onChange={val => setFormData(prev => ({ ...prev, short_name: val.toUpperCase() }))}
                 activeColor={dynamicBrandColor}
                 size="sm"
+                className="w-[72px]"
               />
               <TextInputLP 
                 placeholder="Город"
@@ -192,67 +183,91 @@ export function EditTeamProfilePanel({ teamId, onRefresh, activeBrandColor, onCl
           />
         </div>
 
-        {/* ОБЪЕДИНЕННЫЙ В ОДНУ СТРОКУ БЛОК С ФОРМОЙ И ВЫБОРОМ ЦВЕТА */}
-        <div className="grid grid-cols-2 gap-2 w-full">
-          
-          {/* ЛЕВАЯ ПОЛОВИНА: ДОМАШНИЙ КОМПЛЕКТ */}
-          <div className="flex flex-col p-3 bg-surface-level1 rounded-2xl justify-between min-h-[120px] shadow-sm">
+        {/* БЛОК ФОРМ И ЦВЕТОВ — вертикально: домашняя сверху, гостевая снизу */}
+        <div className="flex flex-col gap-2 w-full">
+
+          {/* ДОМАШНИЙ КОМПЛЕКТ */}
+          <div className="flex flex-col p-3 bg-surface-level1 rounded-2xl shadow-sm border border-surface-border">
             <span className="text-[10px] font-black text-content-muted uppercase tracking-widest block px-0.5 mb-3 select-none">
               Домашняя
             </span>
-            <div className="flex items-center justify-between gap-2 w-full">
+            <div className="flex items-center gap-3 w-full">
               <ImageUploaderLP 
-                currentImageUrl={deleteJerseyDark ? null : formData.jersey_dark_url} 
-                onChange={(file) => { setJerseyDarkFile(file); setDeleteJerseyDark(false); }} 
-                onDelete={() => { setJerseyDarkFile(null); setDeleteJerseyDark(true); }}
-                sizeClass="w-16 h-16"
+                currentImageUrl={formData.jersey_dark_url} 
+                onChange={(file) => setJerseyDarkFile(file)} 
+                showDelete={false}
+                sizeClass="w-20 h-20 shrink-0"
               />
-              
-              {/* Вертикальный стек из двух кругов цвета хозяев */}
-              <div className="flex flex-col gap-1 shrink-0 justify-center">
-                <input 
-                  type="color" 
-                  value={formData.color_home_1} 
-                  onChange={e => setFormData(prev => ({ ...prev, color_home_1: e.target.value }))} 
-                  className="w-[28px] h-[28px] rounded-full cursor-pointer border border-surface-border0 bg-transparent p-0 overflow-hidden appearance-none [&::-webkit-color-swatch-wrapper]:p-0 [&::-webkit-color-swatch]:border-0 [&::-webkit-color-swatch]:rounded-full transition-transform active:scale-90" 
-                />
-                <input 
-                  type="color" 
-                  value={formData.color_home_2} 
-                  onChange={e => setFormData(prev => ({ ...prev, color_home_2: e.target.value }))} 
-                  className="w-[28px] h-[28px] rounded-full cursor-pointer border border-surface-border0 bg-transparent p-0 overflow-hidden appearance-none [&::-webkit-color-swatch-wrapper]:p-0 [&::-webkit-color-swatch]:border-0 [&::-webkit-color-swatch]:rounded-full transition-transform active:scale-90" 
-                />
+
+              {/* Два цвета горизонтально с подписями */}
+              <div className="flex gap-5 flex-1">
+                <div className="flex flex-col items-center gap-1">
+                  <input 
+                    type="color" 
+                    value={formData.color_home_1} 
+                    onChange={e => setFormData(prev => ({ ...prev, color_home_1: e.target.value }))} 
+                    className="w-8 h-8 rounded-full cursor-pointer border border-surface-border bg-transparent p-0 overflow-hidden appearance-none [&::-webkit-color-swatch-wrapper]:p-0 [&::-webkit-color-swatch]:border-0 [&::-webkit-color-swatch]:rounded-full transition-transform active:scale-90" 
+                  />
+                  <div className="flex flex-col items-center leading-none">
+                    <span className="text-[10px] font-black text-brand uppercase tracking-tight select-none mb-1">Акцентный</span>
+                    <span className="text-[9px] font-medium text-content-subtle select-none">(интерфейса)</span>
+                  </div>
+                </div>
+                <div className="flex flex-col items-center gap-1">
+                  <input 
+                    type="color" 
+                    value={formData.color_home_2} 
+                    onChange={e => setFormData(prev => ({ ...prev, color_home_2: e.target.value }))} 
+                    className="w-8 h-8 rounded-full cursor-pointer border border-surface-border bg-transparent p-0 overflow-hidden appearance-none [&::-webkit-color-swatch-wrapper]:p-0 [&::-webkit-color-swatch]:border-0 [&::-webkit-color-swatch]:rounded-full transition-transform active:scale-90" 
+                  />
+                  <div className="flex flex-col items-center leading-none">
+                    <span className="text-[10px] font-black text-content-muted uppercase tracking-tight select-none mb-1">Основной</span>
+                    <span className="text-[9px] font-medium text-content-subtle select-none">на джерси</span>
+                  </div>
+                </div>
               </div>
             </div>
           </div>
 
-          {/* ПРАВАЯ ПОЛОВИНА: ГОСТЕВОЙ КОМПЛЕКТ */}
-          <div className="flex flex-col p-3 bg-surface-level1 rounded-2xl justify-between min-h-[120px] shadow-sm">
+          {/* ГОСТЕВОЙ КОМПЛЕКТ */}
+          <div className="flex flex-col p-3 bg-surface-level1 rounded-2xl shadow-sm border border-surface-border">
             <span className="text-[10px] font-black text-content-muted uppercase tracking-widest block px-0.5 mb-3 select-none">
               Гостевая
             </span>
-            <div className="flex items-center justify-between gap-2 w-full">
+            <div className="flex items-center gap-3 w-full">
               <ImageUploaderLP 
-                currentImageUrl={deleteJerseyLight ? null : formData.jersey_light_url} 
-                onChange={(file) => { setJerseyLightFile(file); setDeleteJerseyLight(false); }} 
-                onDelete={() => { setJerseyLightFile(null); setDeleteJerseyLight(true); }}
-                sizeClass="w-16 h-16"
+                currentImageUrl={formData.jersey_light_url} 
+                onChange={(file) => setJerseyLightFile(file)} 
+                showDelete={false}
+                sizeClass="w-20 h-20 shrink-0"
               />
-              
-              {/* Вертикальный стек из двух кругов цвета гостей */}
-              <div className="flex flex-col gap-1 shrink-0 justify-center">
-                <input 
-                  type="color" 
-                  value={formData.color_away_1} 
-                  onChange={e => setFormData(prev => ({ ...prev, color_away_1: e.target.value }))} 
-                  className="w-[28px] h-[28px] rounded-full cursor-pointer border border-surface-border0 bg-transparent p-0 overflow-hidden appearance-none [&::-webkit-color-swatch-wrapper]:p-0 [&::-webkit-color-swatch]:border-0 [&::-webkit-color-swatch]:rounded-full transition-transform active:scale-90" 
-                />
-                <input 
-                  type="color" 
-                  value={formData.color_away_2} 
-                  onChange={e => setFormData(prev => ({ ...prev, color_away_2: e.target.value }))} 
-                  className="w-[28px] h-[28px] rounded-full cursor-pointer border border-surface-border0 bg-transparent p-0 overflow-hidden appearance-none [&::-webkit-color-swatch-wrapper]:p-0 [&::-webkit-color-swatch]:border-0 [&::-webkit-color-swatch]:rounded-full transition-transform active:scale-90" 
-                />
+
+              {/* Два цвета горизонтально с подписями */}
+              <div className="flex gap-5 flex-1">
+                <div className="flex flex-col items-center gap-1">
+                  <input 
+                    type="color" 
+                    value={formData.color_away_1} 
+                    onChange={e => setFormData(prev => ({ ...prev, color_away_1: e.target.value }))} 
+                    className="w-8 h-8 rounded-full cursor-pointer border border-surface-border bg-transparent p-0 overflow-hidden appearance-none [&::-webkit-color-swatch-wrapper]:p-0 [&::-webkit-color-swatch]:border-0 [&::-webkit-color-swatch]:rounded-full transition-transform active:scale-90" 
+                  />
+                  <div className="flex flex-col items-center leading-none">
+                    <span className="text-[10px] font-black text-content-muted uppercase tracking-tight select-none mb-1">Акцентный</span>
+                    <span className="text-[9px] font-medium text-content-subtle select-none">&nbsp;</span>
+                  </div>
+                </div>
+                <div className="flex flex-col items-center gap-1">
+                  <input 
+                    type="color" 
+                    value={formData.color_away_2} 
+                    onChange={e => setFormData(prev => ({ ...prev, color_away_2: e.target.value }))} 
+                    className="w-8 h-8 rounded-full cursor-pointer border border-surface-border bg-transparent p-0 overflow-hidden appearance-none [&::-webkit-color-swatch-wrapper]:p-0 [&::-webkit-color-swatch]:border-0 [&::-webkit-color-swatch]:rounded-full transition-transform active:scale-90" 
+                  />
+                  <div className="flex flex-col items-center leading-none">
+                    <span className="text-[10px] font-black text-content-muted uppercase tracking-tight select-none mb-1">Основной</span>
+                    <span className="text-[9px] font-medium text-content-subtle select-none">на джерси</span>
+                  </div>
+                </div>
               </div>
             </div>
           </div>

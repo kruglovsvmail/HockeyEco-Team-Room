@@ -162,7 +162,7 @@ export function EmailInputLP({ value, onChange, disabled, error, className, labe
   );
 }
 
-export function TextInputLP({ value, onChange, disabled, error, className, label, placeholder, type = "text", activeColor, size = "md", rows = 4, maxLength }) {
+export function TextInputLP({ value, onChange, disabled, error, className, label, placeholder, type = "text", activeColor, size = "md", rows = 4, maxLength, textAlign = "left" }) {
   const [currentType, setCurrentType] = useState(type === 'date' && !value ? 'text' : type);
   const [isFocused, setIsFocused] = useState(false);
 
@@ -218,6 +218,7 @@ export function TextInputLP({ value, onChange, disabled, error, className, label
             maxLength={maxLength}
             rows={rows}
             autoComplete="nope"
+            style={{ textAlign }}
             className={twMerge(
               baseInputStyles,
               "resize-none leading-normal py-1",
@@ -236,6 +237,7 @@ export function TextInputLP({ value, onChange, disabled, error, className, label
             placeholder={placeholder}
             maxLength={maxLength}
             autoComplete="nope"
+            style={{ textAlign }}
             className={twMerge(
               baseInputStyles,
               isSm ? "text-xs py-1 placeholder:text-[11px]" : "text-lg",

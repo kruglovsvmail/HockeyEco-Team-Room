@@ -5,6 +5,14 @@ import { ButtonLP } from '../ui/Button-LP';
 export function UpdatePromptModal({ isOpen, onUpdate, onLater }) {
   const [changelog, setChangelog] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [isUpdating, setIsUpdating] = useState(false);
+
+  const handleUpdate = () => {
+    setIsUpdating(true);
+    setTimeout(() => {
+      onUpdate();
+    }, 1500);
+  };
 
   useEffect(() => {
     // Если модалка закрыта — ничего не делаем
@@ -96,10 +104,12 @@ export function UpdatePromptModal({ isOpen, onUpdate, onLater }) {
           
           <ButtonLP 
             variant="primary" 
-            onClick={onUpdate} 
+            onClick={handleUpdate}
+            isLoading={isUpdating}
+            disabled={isUpdating}
             className="flex-1 !h-11 !text-[11px] !font-black !uppercase !tracking-widest shadow-md"
           >
-            Обновить
+            {isUpdating ? 'Обновление...' : 'Обновить'}
           </ButtonLP>
         </div>
 
