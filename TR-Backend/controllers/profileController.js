@@ -66,33 +66,33 @@ class ProfileController {
         }
       }
 
-      // ИСПРАВЛЕНО: В тело запроса и массив аргументов добавлен рост (height)
+      // Все поля обёрнуты в COALESCE — блок, не передающий поле, не затирает его NULL-ом
       const query = `
         UPDATE users
-        SET email = COALESCE($1, email),
-            phone = COALESCE($2, phone),
-            first_name = COALESCE($3, first_name),
-            last_name = COALESCE($4, last_name),
+        SET email       = COALESCE($1, email),
+            phone       = COALESCE($2, phone),
+            first_name  = COALESCE($3, first_name),
+            last_name   = COALESCE($4, last_name),
             middle_name = COALESCE($5, middle_name),
-            birth_date = $6,
-            height = $7,
-            weight = $8,
-            grip = COALESCE($9, grip),
-            updated_at = NOW()
+            birth_date  = COALESCE($6, birth_date),
+            height      = COALESCE($7, height),
+            weight      = COALESCE($8, weight),
+            grip        = COALESCE($9, grip),
+            updated_at  = NOW()
         WHERE id = $10
       `;
 
       await pool.query(query, [
-        email, 
-        phone, 
-        first_name, 
-        last_name, 
-        middle_name, 
-        birth_date, 
-        height, // $7
-        weight, // $8
-        grip,   // $9
-        userId  // $10
+        email       ?? null,
+        phone       ?? null,
+        first_name  ?? null,
+        last_name   ?? null,
+        middle_name ?? null,
+        birth_date  ?? null,
+        height      ?? null,
+        weight      ?? null,
+        grip        ?? null,
+        userId
       ]);
 
       return res.json({ success: true, message: 'Профиль успешно обновлен' });

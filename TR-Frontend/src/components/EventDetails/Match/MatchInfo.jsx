@@ -49,7 +49,11 @@ export const MatchInfo = ({ event, referees = [], h2hData = null }) => {
   const [customTimezone, setCustomTimezone] = useState(localEvent?.arena_timezone || null);
   const [locationUrl, setLocationUrl] = useState(localEvent?.location_url || '');
 
-  const [playerFee, setPlayerFee] = useState(localEvent?.my_fee ? String(Math.round(Number(localEvent.my_fee))) : '0');
+  // playerFee: '' = NULL (не назначен), '0' = бесплатно, '500' = конкретная сумма
+  const rawFee = localEvent?.my_fee;
+  const [playerFee, setPlayerFee] = useState(
+    rawFee === null || rawFee === undefined ? '' : String(Math.round(Number(rawFee)))
+  );
   const [homeJersey, setHomeJersey] = useState(localEvent?.home_jersey_type || localEvent?.home_jersey || 'light');
   const [awayJersey, setAwayJersey] = useState(localEvent?.away_jersey_type || localEvent?.away_jersey || 'dark');
 
@@ -308,12 +312,12 @@ export const MatchInfo = ({ event, referees = [], h2hData = null }) => {
       const response = await fetch(`${import.meta.env.VITE_API_URL}/api/events/${localEvent.event_id || localEvent.id}/finances`, {
         method: 'PUT',
         headers: { ...getAuthHeaders(), 'Content-Type': 'application/json' },
-        body: JSON.stringify({ player_fee: playerFee ? Number(playerFee) : 0, home_jersey_type: homeJersey, away_jersey_type: awayJersey, teamId: localEvent.my_team_id })
+        body: JSON.stringify({ player_fee: playerFee === '' ? null : Number(playerFee), home_jersey_type: homeJersey, away_jersey_type: awayJersey, teamId: localEvent.my_team_id })
       });
       if (response.ok) {
         setLocalEvent(prev => ({
           ...prev,
-          my_fee: playerFee,
+          my_fee: playerFee === '' ? null : Number(playerFee),
           home_jersey_type: homeJersey,
           away_jersey_type: awayJersey
         }));
@@ -658,7 +662,11 @@ export const MatchInfo = ({ event, referees = [], h2hData = null }) => {
 
               <div className="text-right">
                 <span className="text-[18px] font-bold tracking-tight" style={{ color: activeBrandColor }}>
-                  {localEvent.my_fee && Number(localEvent.my_fee) > 0 ? `${Number(localEvent.my_fee).toLocaleString('ru-RU')} ₽` : 'Бесплатно'}
+                  {localEvent.my_fee === null || localEvent.my_fee === undefined
+                    ? <span className="text-content-subtle text-[12px] font-semibold italic">Ещё не назначен</span>
+                    : Number(localEvent.my_fee) === 0
+                    ? 'Бесплатно'
+                    : `${Number(localEvent.my_fee).toLocaleString('ru-RU')} ₽`}
                 </span>
               </div>
             </div>

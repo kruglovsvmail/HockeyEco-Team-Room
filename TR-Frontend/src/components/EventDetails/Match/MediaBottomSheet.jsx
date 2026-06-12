@@ -37,9 +37,9 @@ export const MediaBottomSheet = ({
           )}
         </div>
 
-        <div className={clsx("flex flex-col gap-5 transition-opacity duration-200", isMediaDisabled && "opacity-40 pointer-events-none")}>
+        <div className={clsx("flex flex-col gap-5 transition-opacity duration-200", isMediaDisabled && "opacity-30 pointer-events-none")}>
           <TextInputLP 
-            label="Ссылка на YouTube" 
+            label="Ссылка 1" 
             placeholder="https://youtube.com/live/..." 
             value={ytUrl} 
             onChange={setYtUrl} 
@@ -48,7 +48,7 @@ export const MediaBottomSheet = ({
           />
 
           <TextInputLP 
-            label="Ссылка на VK Video" 
+            label="Ссылка 2" 
             placeholder="https://vk.com/video..." 
             value={vkUrl} 
             onChange={setVkUrl} 

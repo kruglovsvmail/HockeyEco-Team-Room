@@ -1,8 +1,8 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { removeToken, getAuthHeaders, getImageUrl } from '../utils/helpers';
 import { useFocusRevalidate } from '../hooks/useFocusRevalidate';
-import { TextInputLP } from '../ui/Input-LP';
+import { TextInputLP, PhoneInputLP, PasswordInputLP } from '../ui/Input-LP';
 import { ButtonLP } from '../ui/Button-LP';
 import { SegmentedControl } from '../ui/SegmentedControl';
 import { FadeIn, StaggerContainer } from '../ui/FadeIn'; // Импортируем оба компонента анимации
@@ -113,33 +113,76 @@ export function ProfilePage() {
   const [isEditPassword, setIsEditPassword] = useState(false);
   const [isEditPin, setIsEditPin] = useState(false);
 
+  // Черновики блоков — независимые копии значений на время редактирования.
+  // Благодаря ним сохранение одного блока не затирает несохранённые правки другого.
+  const [draftPersonal, setDraftPersonal] = useState({ firstName: '', lastName: '', middleName: '', birthDate: '' });
+  const [draftHockey, setDraftHockey] = useState({ height: '', weight: '', grip: 'left' });
+  const [draftContacts, setDraftContacts] = useState({ email: '', phone: '' });
+
+  // Ref-флаги режимов редактирования — всегда актуальны внутри async-функций (нет stale closure).
+  const editingRef = useRef({ personal: false, hockey: false, contacts: false });
+
   // Хелпер вызова тоста
   const triggerToast = (message, type = 'success') => {
     setToast({ isOpen: true, message, type });
   };
 
-  // Загрузка первичных параметров пользователя
-  const loadProfileData = async () => {
+  // Нормализация телефона из базы в формат PhoneInputLP (10 цифр, маска "XXX XXX XX XX")
+  const normalizePhoneForInput = (raw) => {
+    const digits = String(raw || '').replace(/\D/g, '');
+    const d = digits.length >= 10 ? digits.slice(-10) : digits;
+    let f = '';
+    if (d.length > 0) f += d.substring(0, 3);
+    if (d.length >= 4) f += ` ${d.substring(3, 6)}`;
+    if (d.length >= 7) f += ` ${d.substring(6, 8)}`;
+    if (d.length >= 9) f += ` ${d.substring(8, 10)}`;
+    return f;
+  };
+
+  // Загрузка данных профиля с сервера.
+  // useCallback без зависимостей — функция стабильна, editingRef читается по ссылке (всегда актуален).
+  const loadProfileData = useCallback(async () => {
     try {
       const res = await fetch(`${import.meta.env.VITE_API_URL}/api/profile`, {
         headers: getAuthHeaders(),
       });
       const json = await res.json();
-      
+
       if (json.success && json.user) {
         const u = json.user;
-        setEmail(u.email || '');
-        setPhone(u.phone || '');
-        setFirstName(u.first_name || '');
-        setLastName(u.last_name || '');
-        setMiddleName(u.middle_name || '');
-        setHeight(u.height ? String(u.height) : '');
-        setWeight(u.weight ? String(u.weight) : '');
-        setGrip(u.grip === 'right' ? 'right' : 'left');
+
+        const serverEmail      = u.email || '';
+        const serverFirstName  = u.first_name || '';
+        const serverLastName   = u.last_name || '';
+        const serverMiddleName = u.middle_name || '';
+        const serverBirthDate  = u.birth_date ? u.birth_date.split('T')[0] : '';
+        const serverHeight     = u.height ? String(u.height) : '';
+        const serverWeight     = u.weight ? String(u.weight) : '';
+        const serverGrip       = u.grip === 'right' ? 'right' : 'left';
+        const serverPhone      = normalizePhoneForInput(u.phone);
+
+        // Стейты просмотра обновляем всегда — они нужны для InfoRow
+        setEmail(serverEmail);
+        setPhone(serverPhone);
+        setFirstName(serverFirstName);
+        setLastName(serverLastName);
+        setMiddleName(serverMiddleName);
+        setBirthDate(serverBirthDate);
+        setHeight(serverHeight);
+        setWeight(serverWeight);
+        setGrip(serverGrip);
         setAvatarUrl(u.avatar_url || '');
-        
-        if (u.birth_date) {
-          setBirthDate(u.birth_date.split('T')[0]);
+
+        // Черновики обновляем только для блоков, НЕ открытых на редактирование.
+        // editingRef.current читается здесь напрямую — нет stale closure.
+        if (!editingRef.current.personal) {
+          setDraftPersonal({ firstName: serverFirstName, lastName: serverLastName, middleName: serverMiddleName, birthDate: serverBirthDate });
+        }
+        if (!editingRef.current.hockey) {
+          setDraftHockey({ height: serverHeight, weight: serverWeight, grip: serverGrip });
+        }
+        if (!editingRef.current.contacts) {
+          setDraftContacts({ email: serverEmail, phone: serverPhone });
         }
       }
     } catch (err) {
@@ -148,7 +191,7 @@ export function ProfilePage() {
     } finally {
       setLoading(false);
     }
-  };
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     loadProfileData();
@@ -351,23 +394,26 @@ export function ProfilePage() {
                 isSaving={savingBlock === 'personal'}
                 onAction={() => {
                   if (isEditPersonal) {
-                    handleSaveBlock('personal', { first_name: firstName, last_name: lastName, middle_name: middleName, birth_date: birthDate || null });
+                    editingRef.current.personal = false;
+                    handleSaveBlock('personal', { first_name: draftPersonal.firstName, last_name: draftPersonal.lastName, middle_name: draftPersonal.middleName, birth_date: draftPersonal.birthDate || null });
                   } else {
+                    setDraftPersonal({ firstName, lastName, middleName, birthDate });
+                    editingRef.current.personal = true;
                     setIsEditPersonal(true);
                   }
                 }}
               >
                 {isEditPersonal ? (
                   <div className="space-y-3 pt-1">
-                    <TextInputLP label="Фамилия" value={lastName} onChange={setLastName} placeholder="Введите фамилию" />
-                    <TextInputLP label="Имя" value={firstName} onChange={setFirstName} placeholder="Введите имя" />
-                    <TextInputLP label="Отчество" value={middleName} onChange={setMiddleName} placeholder="Введите отчество" />
+                    <TextInputLP label="Фамилия" value={draftPersonal.lastName} onChange={(v) => setDraftPersonal(p => ({ ...p, lastName: v }))} placeholder="Введите фамилию" />
+                    <TextInputLP label="Имя" value={draftPersonal.firstName} onChange={(v) => setDraftPersonal(p => ({ ...p, firstName: v }))} placeholder="Введите имя" />
+                    <TextInputLP label="Отчество" value={draftPersonal.middleName} onChange={(v) => setDraftPersonal(p => ({ ...p, middleName: v }))} placeholder="Введите отчество" />
                     <div className="flex flex-col gap-1.5">
                       <span className="text-[10px] font-bold text-content-muted uppercase tracking-wider pl-1">Дата рождения</span>
                       <input 
                         type="date" 
-                        value={birthDate} 
-                        onChange={(e) => setBirthDate(e.target.value)}
+                        value={draftPersonal.birthDate} 
+                        onChange={(e) => setDraftPersonal(p => ({ ...p, birthDate: e.target.value }))}
                         className="w-full p-4 bg-surface-level2 border border-surface-border rounded-xl text-sm font-bold text-content-main outline-none focus:border-brand/40 transition-colors"
                       />
                     </div>
@@ -390,12 +436,15 @@ export function ProfilePage() {
                 isSaving={savingBlock === 'hockey'}
                 onAction={() => {
                   if (isEditHockey) {
+                    editingRef.current.hockey = false;
                     handleSaveBlock('hockey', { 
-                      height: height ? parseInt(height, 10) : null, 
-                      weight: weight ? parseInt(weight, 10) : null, 
-                      grip 
+                      height: draftHockey.height ? parseInt(draftHockey.height, 10) : null, 
+                      weight: draftHockey.weight ? parseInt(draftHockey.weight, 10) : null, 
+                      grip: draftHockey.grip
                     });
                   } else {
+                    setDraftHockey({ height, weight, grip });
+                    editingRef.current.hockey = true;
                     setIsEditHockey(true);
                   }
                 }}
@@ -404,14 +453,14 @@ export function ProfilePage() {
                   <div className="space-y-3 pt-1">
                     <TextInputLP 
                       label="Текущий рост (см)" 
-                      value={height} 
-                      onChange={(val) => setHeight(val.replace(/\D/g, ''))} 
+                      value={draftHockey.height} 
+                      onChange={(val) => setDraftHockey(p => ({ ...p, height: val.replace(/\D/g, '') }))} 
                       placeholder="Например: 182" 
                     />
                     <TextInputLP 
                       label="Текущий вес (кг)" 
-                      value={weight} 
-                      onChange={(val) => setWeight(val.replace(/\D/g, ''))} 
+                      value={draftHockey.weight} 
+                      onChange={(val) => setDraftHockey(p => ({ ...p, weight: val.replace(/\D/g, '') }))} 
                       placeholder="Например: 85" 
                     />
                     <div className="flex flex-col gap-1.5">
@@ -421,8 +470,8 @@ export function ProfilePage() {
                           { value: 'left', label: 'Левый хват (L)' },
                           { value: 'right', label: 'Правый хват (R)' }
                         ]} 
-                        value={grip} 
-                        onChange={setGrip} 
+                        value={draftHockey.grip} 
+                        onChange={(v) => setDraftHockey(p => ({ ...p, grip: v }))} 
                       />
                     </div>
                   </div>
@@ -443,16 +492,21 @@ export function ProfilePage() {
                 isSaving={savingBlock === 'contacts'}
                 onAction={() => {
                   if (isEditContacts) {
-                    handleSaveBlock('contacts', { email, phone });
+                    // Нормализуем телефон обратно: убираем пробелы, шлём только 10 цифр с префиксом 7
+                    editingRef.current.contacts = false;
+                    const cleanPhone = draftContacts.phone.replace(/\D/g, '');
+                    handleSaveBlock('contacts', { email: draftContacts.email, phone: cleanPhone ? `7${cleanPhone}` : undefined });
                   } else {
+                    setDraftContacts({ email, phone });
+                    editingRef.current.contacts = true;
                     setIsEditContacts(true);
                   }
                 }}
               >
                 {isEditContacts ? (
                   <div className="space-y-3 pt-1">
-                    <TextInputLP label="Почта" value={email} onChange={setEmail} placeholder="example@mail.ru" />
-                    <TextInputLP label="Телефон" value={phone} onChange={setPhone} placeholder="+7 (999) 000-0000" />
+                    <TextInputLP label="Почта" value={draftContacts.email} onChange={(v) => setDraftContacts(p => ({ ...p, email: v }))} placeholder="example@mail.ru" />
+                    <PhoneInputLP label="Телефон" value={draftContacts.phone} onChange={(v) => setDraftContacts(p => ({ ...p, phone: v }))} placeholder="900 000 00 00" />
                   </div>
                 ) : (
                   <div className="flex flex-col">
@@ -474,8 +528,8 @@ export function ProfilePage() {
               >
                 {isEditPassword ? (
                   <form onSubmit={handleChangePassword} className="space-y-6 pt-2 pb-2">
-                    <TextInputLP type="password" value={oldPassword} onChange={setOldPassword} placeholder="Текущий пароль..." />
-                    <TextInputLP type="password" value={newPassword} onChange={setNewPassword} placeholder="Новый пароль..." />
+                    <PasswordInputLP label="Текущий пароль" value={oldPassword} onChange={setOldPassword} placeholder="••••••••" />
+                    <PasswordInputLP label="Новый пароль" value={newPassword} onChange={setNewPassword} placeholder="••••••••" />
                     <ButtonLP type="submit" variant="primary" className="!py-2.5 !h-11 text-xs" disabled={!oldPassword || !newPassword}>
                       Обновить пароль
                     </ButtonLP>
@@ -497,13 +551,11 @@ export function ProfilePage() {
               >
                 {isEditPin ? (
                   <form onSubmit={handleSavePin} className="space-y-3 pt-1">
-                    <TextInputLP 
-                      type="password"
-                      maxLength={4}
-                      label="Четырехзначный ПИН-код" 
-                      value={pinCode} 
-                      onChange={(val) => setPinCode(val.replace(/\D/g, ''))} 
-                      placeholder="Например: 1717" 
+                    <PasswordInputLP
+                      label="Четырехзначный ПИН-код"
+                      value={pinCode}
+                      onChange={(val) => setPinCode(val.replace(/\D/g, '').slice(0, 4))}
+                      placeholder="1717"
                     />
                     <ButtonLP type="submit" variant="primary" className="!py-2.5 !h-11 text-xs" disabled={pinCode.length !== 4}>
                       Установить ПИН-код подписи

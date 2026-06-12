@@ -646,7 +646,7 @@ export const searchUserByPhone = async (req, res) => {
              (tm.id IS NOT NULL AND tm.left_at IS NULL) as is_already_in_team,
              (tm.id IS NOT NULL AND tm.left_at IS NOT NULL) as is_archived_in_team
       FROM users u
-      LEFT JOIN team_members tm ON tm.team_id = t.id AND tm.team_id = $1
+      LEFT JOIN team_members tm ON tm.user_id = u.id AND tm.team_id = $1
       WHERE right(regexp_replace(u.phone, '\\D', '', 'g'), 10) = $2
       LIMIT 1
     `;

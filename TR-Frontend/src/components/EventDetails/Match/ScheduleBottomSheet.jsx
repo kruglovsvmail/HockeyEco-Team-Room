@@ -73,15 +73,17 @@ export const ScheduleBottomSheet = ({
                     Дата
                   </span>
                   {isDateDisabled && (
-                    <HintPopover 
-                      customContent={
-                        <p className="text-[11px] font-semibold text-content-main text-center leading-snug">
-                          {event?.game_type === 'official' 
-                            ? 'Запрещено менять дату официального матча лиги' 
-                            : 'В PWA-матчах дата фиксирована, можно менять только время'}
-                        </p>
-                      }
-                    />
+                    <span className="text-content-muted opacity-100">
+                      <HintPopover 
+                        customContent={
+                          <p className="text-[11px] font-semibold text-content-main text-center leading-snug">
+                            {event?.game_type === 'official' 
+                              ? 'Запрещено менять дату официального матча лиги' 
+                              : 'В PWA-матчах дата фиксирована, можно менять только время'}
+                          </p>
+                        }
+                      />
+                    </span>
                   )}
                 </div>
 
@@ -90,17 +92,19 @@ export const ScheduleBottomSheet = ({
                     Время
                   </span>
                   {isTimeDisabled && (
-                    <HintPopover 
-                      customContent={
-                        <p className="text-[11px] font-semibold text-content-main text-center leading-snug">
-                          {event?.game_type === 'official' 
-                            ? 'Запрещено менять время официального матча' 
-                            : Number(event?.initiator_team_id) !== Number(event?.my_team_id)
-                              ? 'Только инициатор может менять время начала'
-                              : 'Нельзя изменить время после подтверждения матча соперником'}
-                        </p>
-                      }
-                    />
+                    <span className="text-content-muted opacity-100">
+                      <HintPopover 
+                        customContent={
+                          <p className="text-[11px] font-semibold text-content-main text-center leading-snug">
+                            {event?.game_type === 'official' 
+                              ? 'Запрещено менять время официального матча' 
+                              : Number(event?.initiator_team_id) !== Number(event?.my_team_id)
+                                ? 'Только инициатор может менять время начала'
+                                : 'Нельзя изменить время после подтверждения матча соперником'}
+                          </p>
+                        }
+                      />
+                    </span>
                   )}
                 </div>
               </div>
@@ -134,15 +138,17 @@ export const ScheduleBottomSheet = ({
                   Локация матча
                 </span>
                 {isArenaDisabled && (
-                  <HintPopover 
-                    customContent={
-                      <p className="text-[11px] font-semibold text-content-main text-center leading-snug">
-                        {event?.game_type === 'official' 
-                          ? 'Локация официального матча регламентируется лигой' 
-                          : 'Локация заблокирована (матч подтвержден или вы не инициатор)'}
-                      </p>
-                    }
-                  />
+                  <span className="text-content-muted opacity-100">
+                    <HintPopover 
+                      customContent={
+                        <p className="text-[11px] font-semibold text-content-main text-center leading-snug">
+                          {event?.game_type === 'official' 
+                            ? 'Локация официального матча регламентируется лигой' 
+                            : 'Локация заблокирована (матч подтвержден или вы не инициатор)'}
+                        </p>
+                      }
+                    />
+                  </span>
                 )}
               </div>
               

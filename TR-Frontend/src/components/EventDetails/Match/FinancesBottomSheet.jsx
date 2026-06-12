@@ -39,21 +39,23 @@ export const FinancesBottomSheet = ({
         {/* Выбор цвета джерси комплектов команд */}
         <div className="flex flex-col gap-3 relative border-t border-surface-level2/60 pt-4 mt-1">
           <div className="flex items-center gap-2">
-            <h4 className={clsx("text-xs font-black text-content-main uppercase tracking-wide", isJerseyDisabled && "opacity-40")}>Комплекты игровой формы</h4>
+            <h4 className={clsx("text-xs font-black text-content-main uppercase tracking-wide", isJerseyDisabled && "opacity-30")}>Комплекты игровой формы</h4>
             {isJerseyDisabled && (
-              <HintPopover 
-                customContent={
-                  <p className="text-[11px] font-semibold text-content-main text-center leading-snug">
-                    {event?.game_type === 'official' 
-                      ? 'Комплекты формы официального матча регламентируются лигой' 
-                      : 'Форма заблокирована (матч подтвержден или вы не инициатор)'}
-                  </p>
-                }
-              />
+              <span className="text-content-muted opacity-100">
+                <HintPopover 
+                  customContent={
+                    <p className="text-[11px] font-semibold text-content-main text-center leading-snug">
+                      {event?.game_type === 'official' 
+                        ? 'Комплекты формы официального матча регламентируются лигой' 
+                        : 'Форма заблокирована (матч подтвержден или вы не инициатор)'}
+                    </p>
+                  }
+                />
+              </span>
             )}
           </div>
 
-          <div className={clsx("flex flex-col gap-3 transition-opacity duration-200", isJerseyDisabled && "opacity-40 pointer-events-none")}>
+          <div className={clsx("flex flex-col gap-3 transition-opacity duration-200", isJerseyDisabled && "opacity-30 pointer-events-none")}>
             {/* джерси Хозяев */}
             <div className="flex flex-col gap-2 mt-1">
               <span className="text-[10px] text-content-muted font-bold uppercase tracking-wider">Форма команды ХОЗЯЕВА</span>
