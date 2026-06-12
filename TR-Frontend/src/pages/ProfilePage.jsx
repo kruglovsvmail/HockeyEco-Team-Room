@@ -495,7 +495,7 @@ export function ProfilePage() {
                     // Нормализуем телефон обратно: убираем пробелы, шлём только 10 цифр с префиксом 7
                     editingRef.current.contacts = false;
                     const cleanPhone = draftContacts.phone.replace(/\D/g, '');
-                    handleSaveBlock('contacts', { email: draftContacts.email, phone: cleanPhone ? `7${cleanPhone}` : undefined });
+                    handleSaveBlock('contacts', { email: draftContacts.email, phone: cleanPhone ? `+7${cleanPhone}` : undefined });
                   } else {
                     setDraftContacts({ email, phone });
                     editingRef.current.contacts = true;
