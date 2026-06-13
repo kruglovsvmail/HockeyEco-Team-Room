@@ -31,25 +31,15 @@ const getTeamIdFromContext = async (req) => {
     return req.params.id;
   }
 
-  if (req.params?.gameId || req.body?.gameId) {
-    const gameId = req.params?.gameId || req.body?.gameId;
+  // /:eventId и /:gameId — оба параметра указывают на games.id
+  const matchId = req.params?.eventId || req.params?.gameId || req.body?.eventId || req.body?.gameId;
+  if (matchId) {
     const res = await pool.query(
-      'SELECT home_team_id, away_team_id FROM games WHERE id = $1', 
-      [gameId]
+      'SELECT home_team_id, away_team_id FROM games WHERE id = $1',
+      [matchId]
     );
     if (res.rows.length > 0) {
-      return [res.rows[0].home_team_id, res.rows[0].away_team_id]; 
-    }
-  }
-
-  if (req.params?.eventId || req.body?.eventId) {
-    const eventId = req.params?.eventId || req.body?.eventId;
-    const res = await pool.query(
-      'SELECT my_team_id FROM events WHERE event_id = $1', 
-      [eventId]
-    );
-    if (res.rows.length > 0) {
-      return res.rows[0].my_team_id;
+      return [res.rows[0].home_team_id, res.rows[0].away_team_id];
     }
   }
 

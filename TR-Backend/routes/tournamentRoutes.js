@@ -18,7 +18,4 @@ router.get('/division/:divisionId/playoffs', tournamentController.getDivisionPla
 // Получение динамической статистики полевых игроков и вратарей по этапам
 router.get('/division/:divisionId/stats', tournamentController.getDivisionStats);
 
-// Таймлайн событий матча (ленивая загрузка для аккордеона TournamentCardGame)
-router.get('/games/:gameId/timeline', tournamentController.getGameTimeline.bind(tournamentController));
-
 export default router;

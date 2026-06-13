@@ -97,10 +97,10 @@ export const EventDetailsMatch = ({ event }) => {
       // Загружаем абсолютно все данные параллельно
       const [attRes, linesRes, rosterRes, staffRes, h2hRes] = await Promise.all([
         fetch(`${apiUrl}/api/events/${event.event_id}/attendance?eventType=${event.event_type}&teamId=${event.my_team_id}`, { headers }),
-        fetch(`${apiUrl}/api/events/${event.event_id}/lines?teamId=${event.my_team_id}`, { headers }),
+        fetch(`${apiUrl}/api/matches/${event.event_id}/lines?teamId=${event.my_team_id}`, { headers }),
         fetch(`${apiUrl}/api/events/${event.event_id}/available-roster?teamId=${event.my_team_id}`, { headers }),
-        fetch(`${apiUrl}/api/events/${event.event_id}/staff?teamId=${event.my_team_id}`, { headers }),
-        fetch(`${apiUrl}/api/events/${event.event_id}/h2h?teamId=${event.my_team_id}`, { headers })
+        fetch(`${apiUrl}/api/matches/${event.event_id}/staff?teamId=${event.my_team_id}`, { headers }),
+        fetch(`${apiUrl}/api/matches/${event.event_id}/h2h?teamId=${event.my_team_id}`, { headers })
       ]);
 
       const attData = await attRes.json();

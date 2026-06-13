@@ -35,6 +35,9 @@ import { EditTeamProfilePanel } from './components/MyTeam/EditTeamProfilePanel';
 // Добавлен импорт новой боковой панели для отображения и выбора турниров
 import { TournamentListPanel } from './components/Tournaments/TournamentListPanel';
 
+// ДОБАВЛЕНО: Панель деталей матча турнира (статистика + ход матча)
+import { TournamentDetailsMatch } from './components/Tournaments/TournamentDetailsMatch';
+
 dayjs.extend(utc);
 dayjs.extend(timezone);
 dayjs.locale('ru');
@@ -298,7 +301,7 @@ function TeamLayoutContent() {
       <aside 
         className={clsx(
           "fixed inset-y-0 left-0 z-40 h-full bg-surface-level1 transition-transform duration-300 ease-[cubic-bezier(0.32,0.72,0,1)] flex-shrink-0",
-          "w-[80%] md:w-[var(--sidebar-w)] md:static md:translate-x-0 md:shadow-xl style-change-hardware",
+          "w-[90%] md:w-[var(--sidebar-w)] md:static md:translate-x-0 md:shadow-xl style-change-hardware",
           isSidebarOpen ? "translate-x-0" : "-translate-x-full"
         )} 
         style={{ willChange: 'transform' }}
@@ -316,8 +319,8 @@ function TeamLayoutContent() {
 
       <div className={clsx(
         "flex flex-col flex-1 w-full h-full min-w-0 transition-transform duration-300 ease-[cubic-bezier(0.32,0.72,0,1)] z-30 relative",
-        isSidebarOpen ? "translate-x-[80%] shadow-2xl md:translate-x-0 md:shadow-none" : "",
-        rightPanel.isOpen ? "-translate-x-[80%] md:translate-x-0" : "",
+        isSidebarOpen ? "translate-x-[90%] shadow-2xl md:translate-x-0 md:shadow-none" : "",
+        rightPanel.isOpen ? "-translate-x-[90%] md:translate-x-0" : "",
         fullPagePanel.isOpen ? "-translate-x-[30%] opacity-50 md:translate-x-0 md:opacity-100" : ""
       )}>
         <Header 
@@ -355,7 +358,7 @@ function TeamLayoutContent() {
       />
 
       <div className={clsx(
-        "fixed top-0 right-0 w-[80%] h-full z-[40] bg-surface-level2 shadow-[-15px_0_30px_rgba(0,0,0,0.1)] flex flex-col overflow-hidden transition-all duration-300 ease-[cubic-bezier(0.32,0.72,0,1)] flex-shrink-0",
+        "fixed top-0 right-0 w-[90%] h-full z-[40] bg-surface-level2 shadow-[-15px_0_30px_rgba(0,0,0,0.1)] flex flex-col overflow-hidden transition-all duration-300 ease-[cubic-bezier(0.32,0.72,0,1)] flex-shrink-0",
         "md:static md:w-[var(--right-w)] md:translate-x-0 md:shadow-3xl",
         (rightPanel.isOpen || fullPagePanel.isOpen) ? "translate-x-0" : "translate-x-full"
       )}>
@@ -407,6 +410,11 @@ function TeamLayoutContent() {
                     {/* ДОБАВЛЕНО: Регистрация боковой панели выбора лиг и турниров */}
                     {rightPanel.type === 'tournamentSelector' && (
                       <TournamentListPanel {...rightPanel.data} />
+                    )}
+
+                    {/* ДОБАВЛЕНО: Панель деталей матча турнира (статистика + ход матча) */}
+                    {rightPanel.type === 'gameDetails' && (
+                      <TournamentDetailsMatch {...rightPanel.data} />
                     )}
                   </FadeIn>
                 )}

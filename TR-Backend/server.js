@@ -6,10 +6,11 @@ import 'dotenv/config';
 
 import pool from './config/db.js';
 import authRoutes from './routes/authRoutes.js';
-import EventRoutes from './routes/EventRoutes.js'; 
+import EventRoutes from './routes/eventRoutes.js'; 
 import teamRoutes from './routes/teamRoutes.js';
 import profileRouter from './routes/profileRouter.js';
 import tournamentRoutes from './routes/tournamentRoutes.js'; // Импорт роутера турниров
+import matchRoutes from './routes/matchRoutes.js';         // Универсальный роутер матчей
 
 // Импорт новых роутов управления командой
 import mgrEventRoutes from './routes/manager/mgrEventRoutes.js';
@@ -47,6 +48,7 @@ app.use('/api/auth', authRoutes);
 app.use('/api/events', EventRoutes); 
 app.use('/api/teams', teamRoutes);
 app.use('/api/tournaments', tournamentRoutes); // Регистрация эндпоинта турниров
+app.use('/api/matches', matchRoutes);           // Регистрация эндпоинта матчей
 app.use(profileRouter);
 
 // Новые эндпоинты раздела Руководства

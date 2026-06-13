@@ -180,6 +180,15 @@ export function TournamentsPage() {
     }, 'Выбор турнира');
   };
 
+  // ── ОТКРЫТИЕ ПРАВОЙ ПАНЕЛИ С ДЕТАЛЯМИ МАТЧА ──
+  const handleGameClick = useCallback((game) => {
+    openRightPanel('gameDetails', {
+      game,
+      activeBrandColor,
+      hasTeamColor
+    }, 'Матч');
+  }, [openRightPanel, activeBrandColor, hasTeamColor]);
+
   const groupGamesByStageAndSeries = () => {
     const regular = {};
     const playoff = {};
@@ -255,19 +264,25 @@ export function TournamentsPage() {
                     ) : (
                       <>
                         {Object.entries(regular).map(([stageName, tours]) => (
-                          <div key={stageName} className="flex flex-col gap-2">
+                          <div key={stageName} className="flex flex-col gap-6">
                             {Object.keys(regular).length > 1 && (
                               <div className="text-[12px] font-black uppercase tracking-[0.15em] text-content-main pt-4 pl-6">
                                 {stageName}
                               </div>
                             )}
                             {Object.entries(tours).map(([tourNum, stageGames]) => (
-                              <div key={tourNum} className="flex flex-col gap-2.5">
-                                <div className="text-center text-[10px] font-black uppercase tracking-[0.2em] text-content-muted opacity-70">
+                              <div key={tourNum} className="flex flex-col gap-2">
+                                <div className="text-center text-[12px] font-black uppercase tracking-[0.2em] text-content-main">
                                   Тур №{tourNum}
                                 </div>
                                 <div className="flex flex-col gap-2">
-                                  {stageGames.map((game) => <TournamentCardGame key={game.id} game={game} />)}
+                                  {stageGames.map((game) => (
+                                    <TournamentCardGame
+                                      key={game.id}
+                                      game={game}
+                                      onGameClick={handleGameClick}
+                                    />
+                                  ))}
                                 </div>
                               </div>
                             ))}
@@ -284,12 +299,18 @@ export function TournamentsPage() {
                               return (
                                 <div key={matchNum} className="flex flex-col gap-2.5">
                                   {winsNeeded !== 1 && (
-                                    <div className="text-center text-[10px] font-black uppercase tracking-[0.2em] text-content-muted opacity-70">
+                                    <div className="text-center text-[12px] font-black uppercase tracking-[0.2em] text-content-main">
                                       Серия №{matchNum}
                                     </div>
                                   )}
                                   <div className="flex flex-col gap-2">
-                                    {stageGames.map((game) => <TournamentCardGame key={game.id} game={game} />)}
+                                    {stageGames.map((game) => (
+                                      <TournamentCardGame
+                                        key={game.id}
+                                        game={game}
+                                        onGameClick={handleGameClick}
+                                      />
+                                    ))}
                                   </div>
                                 </div>
                               );
