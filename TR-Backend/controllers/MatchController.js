@@ -28,6 +28,7 @@ class MatchController {
           scorer.first_name AS scorer_first,
           scorer.last_name  AS scorer_last,
           gr_scorer.jersey_number AS scorer_number,
+          COALESCE(tm_scorer.photo_url, scorer.avatar_url) AS scorer_photo,
 
           -- Ассистент 1
           a1.id         AS assist1_id,
@@ -45,7 +46,8 @@ class MatchController {
           pp.id         AS penalty_player_id,
           pp.first_name AS penalty_first,
           pp.last_name  AS penalty_last,
-          gr_pp.jersey_number AS penalty_number
+          gr_pp.jersey_number AS penalty_number,
+          COALESCE(tm_pp.photo_url, pp.avatar_url) AS penalty_photo
 
         FROM game_events ge
         JOIN games g ON ge.game_id = g.id
@@ -54,6 +56,10 @@ class MatchController {
         LEFT JOIN game_rosters gr_scorer
                ON gr_scorer.game_id = ge.game_id
               AND gr_scorer.player_id = ge.scorer_id
+        LEFT JOIN team_members tm_scorer
+               ON tm_scorer.user_id = ge.scorer_id
+              AND tm_scorer.team_id = ge.team_id
+              AND tm_scorer.left_at IS NULL
 
         LEFT JOIN users a1 ON ge.assist1_id = a1.id
         LEFT JOIN game_rosters gr_a1
@@ -69,6 +75,10 @@ class MatchController {
         LEFT JOIN game_rosters gr_pp
                ON gr_pp.game_id = ge.game_id
               AND gr_pp.player_id = ge.penalty_player_id
+        LEFT JOIN team_members tm_pp
+               ON tm_pp.user_id = ge.penalty_player_id
+              AND tm_pp.team_id = ge.team_id
+              AND tm_pp.left_at IS NULL
 
         WHERE ge.game_id = $1
           AND ge.event_type IN ('goal', 'penalty', 'shootout_goal', 'shootout_miss')

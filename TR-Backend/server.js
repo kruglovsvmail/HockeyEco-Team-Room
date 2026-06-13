@@ -6,7 +6,7 @@ import 'dotenv/config';
 
 import pool from './config/db.js';
 import authRoutes from './routes/authRoutes.js';
-import EventRoutes from './routes/eventRoutes.js'; 
+import EventRoutes from './routes/EventRoutes.js'; 
 import teamRoutes from './routes/teamRoutes.js';
 import profileRouter from './routes/profileRouter.js';
 import tournamentRoutes from './routes/tournamentRoutes.js'; // Импорт роутера турниров

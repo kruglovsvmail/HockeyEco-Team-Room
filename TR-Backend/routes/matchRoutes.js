@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import matchController from '../controllers/MatchController.js';
+import matchController from '../controllers/matchController.js';
 import { getMatchLines, saveMatchLines, submitMatchRoster, updateLinePlayer } from '../controllers/MatchLinesController.js';
 import { verifyToken, requireTeamPermission } from '../middleware/auth.js';
 
