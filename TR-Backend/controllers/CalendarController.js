@@ -1,0 +1,535 @@
+import pool from '../config/db.js';
+import { promoteExpiredMatchesToNoResult } from '../utils/matchStatus.js';
+
+export const getEvents = async (req, res) => {
+  try {
+    const userId = req.user.id;
+    const { startDate, endDate } = req.query;
+
+    // =========================================================================
+    // АВТОМАТИЧЕСКОЕ ОБСЛУЖИВАНИЕ FRIENDLY_PWA-МАТЧЕЙ (БЕЗ ВНЕШНИХ ПЛАНИРОВЩИКОВ)
+    // =========================================================================
+    // Шаг 1: матчи с истёкшим дедлайном подтверждения → cancelled
+    await pool.query(`
+      UPDATE "public"."games"
+      SET "status" = 'cancelled',
+          "updated_at" = NOW()
+      WHERE "game_type" = 'friendly_pwa'
+        AND "status" = 'pending'
+        AND "confirm_deadline" < NOW()
+    `);
+
+    // Шаг 2: отменённые friendly_pwa-матчи, у которых уже прошло время матча,
+    // удаляем физически из БД — карточка-«покойник» больше не нужна.
+    await pool.query(`
+      DELETE FROM "public"."games"
+      WHERE "game_type" = 'friendly_pwa'
+        AND "status" = 'cancelled'
+        AND "game_date" < NOW()
+    `);
+
+    // Шаг 3: неофициальные матчи, у которых прошёл game_date, но результаты ещё
+    // не вносились — переводим в finished_no_result (ленивая смена статуса).
+    await promoteExpiredMatchesToNoResult();
+
+    const dateFilter = startDate && endDate 
+      ? `AND event_date BETWEEN $2 AND $3` 
+      : ``;
+
+    const query = `
+      WITH user_context AS (
+        SELECT 
+          (SELECT count(*) FROM team_members WHERE user_id = $1 AND left_at IS NULL) as active_teams,
+          (SELECT count(*) FROM club_members WHERE user_id = $1 AND left_at IS NULL) as active_clubs,
+          (SELECT (subscription_expires_at IS NOT NULL AND subscription_expires_at > NOW()) FROM users WHERE id = $1) as has_subscription
+      ),
+      user_teams AS (
+        SELECT team_id FROM team_members WHERE user_id = $1 AND left_at IS NULL
+        UNION
+        SELECT t.id FROM clubs c 
+        JOIN club_members cm ON c.id = cm.club_id 
+        JOIN teams t ON t.club_id = c.id 
+        WHERE cm.user_id = $1 AND cm.left_at IS NULL
+        UNION
+        -- Владелец команды (teams.owner_id) видит события своей команды,
+        -- даже если он не состоит в team_members и не привязан к клубу команды.
+        SELECT t.id FROM teams t WHERE t.owner_id = $1
+      ),
+      user_clubs AS (
+        SELECT club_id FROM club_members WHERE user_id = $1 AND left_at IS NULL
+      ),
+      user_team_roles AS (
+        SELECT t.id as team_id, 'owner'::varchar as role FROM teams t WHERE t.owner_id = $1
+        UNION
+        SELECT tm.team_id, tr.role::varchar FROM team_roles tr 
+        JOIN team_members tm ON tr.member_id = tm.id 
+        WHERE tm.user_id = $1 AND tr.left_at IS NULL AND tm.left_at IS NULL
+        UNION
+        SELECT t.id as team_id, cr.role::varchar FROM club_roles cr
+        JOIN teams t ON t.club_id = cr.club_id
+        JOIN club_members cm ON cm.club_id = cr.club_id AND cm.user_id = cr.user_id
+        WHERE cr.user_id = $1 AND cr.left_at IS NULL AND cm.left_at IS NULL
+      ),
+
+      -- ==========================================
+      -- БЛОК 1: МАТЧИ (games) — ДОБАВЛЕНЫ ПОЛЯ ЛОКАЦИИ И ID АРЕНЫ
+      -- ==========================================
+      games_cte AS (
+        SELECT 
+          g.id::int AS event_id,
+          'match'::varchar AS event_type,
+          g.game_type::varchar AS game_type,
+          g.initiator_team_id::int AS initiator_team_id,
+          g.confirm_deadline::timestamptz AS confirm_deadline,
+          g.game_date::timestamptz AS event_date,
+          g.status::varchar AS status,
+          COALESCE(a.name, g.location, 'Арена не назначена')::varchar AS arena_name,
+          COALESCE(a.timezone, g.custom_timezone, 'Europe/Moscow')::varchar AS arena_timezone,
+          g.arena_id::int AS arena_id,
+          g.location::varchar AS location,
+          g.location_url::varchar AS location_url,
+          
+          ut.team_id::int AS my_team_id,
+          g.home_team_id::int AS home_team_id,
+          
+          my_team.name::varchar AS my_team_name,
+          my_team.logo_url::varchar AS my_team_logo_url,
+          
+          my_team.color_home_1::varchar AS team_color,
+          
+          (CASE WHEN g.home_team_id = ut.team_id THEN g.away_team_id ELSE g.home_team_id END)::int AS opponent_team_id,
+          COALESCE(opp_team.name, ext_opp.name)::varchar AS opponent_name,
+          COALESCE(opp_team.logo_url, ext_opp.logo_url)::varchar AS opponent_logo_url,
+          
+          (CASE WHEN g.home_team_id = ut.team_id THEN g.home_player_fee ELSE g.away_player_fee END)::numeric AS my_fee,
+          g.home_score::int AS home_score,
+          g.away_score::int AS away_score,
+          
+          (g.is_technical::text IN ('true', 't', '1', 'yes', 'y'))::boolean AS is_technical,
+          g.end_type::varchar AS end_type,
+          
+          d.name::varchar AS division_name,
+          COALESCE(l.name, ext_tour.name)::varchar AS league_name,
+          l.short_name::varchar AS league_short_name,
+          l.logo_url::varchar AS league_logo_url,
+          COALESCE(d.logo_url, ext_tour.logo_url)::varchar AS division_logo_url,
+          s.name::varchar AS season_name,
+          
+          g.stage_type::varchar AS stage_type,
+          g.stage_label::varchar AS stage_label,
+          g.series_number::int AS series_number,
+          (
+            SELECT pr.wins_needed
+            FROM playoff_brackets pb
+            JOIN playoff_rounds pr ON pb.id = pr.bracket_id
+            WHERE pb.division_id = g.division_id AND pr.name = g.stage_label
+            LIMIT 1
+          )::int AS wins_needed,
+
+          g.home_jersey_type::varchar AS home_jersey,
+          g.away_jersey_type::varchar AS away_jersey,
+          
+          g.video_yt_url::varchar AS video_yt_url,
+          g.video_vk_url::varchar AS video_vk_url,
+
+          COALESCE(tt_my.custom_jersey_dark_url, my_team.jersey_dark_url, '/default/jersey_dark.webp')::varchar AS my_team_jersey_dark_url,
+          COALESCE(tt_my.custom_jersey_light_url, my_team.jersey_light_url, '/default/jersey_light.webp')::varchar AS my_team_jersey_light_url,
+          COALESCE(tt_opp.custom_jersey_dark_url, opp_team.jersey_dark_url, '/default/jersey_dark.webp')::varchar AS opponent_jersey_dark_url,
+          COALESCE(tt_opp.custom_jersey_light_url, opp_team.jersey_light_url, '/default/jersey_light.webp')::varchar AS opponent_jersey_light_url,
+
+          (CASE 
+            WHEN (SELECT active_clubs FROM user_context) = 0 AND (SELECT active_teams FROM user_context) = 1 THEN false 
+            ELSE true 
+          END)::boolean AS show_team_context,
+
+          (EXISTS (SELECT 1 FROM team_game_attendance tga WHERE tga.game_id = g.id AND tga.user_id = $1 AND tga.team_id = ut.team_id))::boolean AS is_attending,
+          
+          (CASE 
+            WHEN g.game_type = 'official' THEN
+              CASE 
+                WHEN NOT EXISTS (
+                  SELECT 1 FROM team_members WHERE user_id = $1 AND team_id = ut.team_id AND left_at IS NULL
+                ) THEN 'not_in_team'
+                
+                WHEN EXISTS (
+                  SELECT 1 FROM disqualifications dq 
+                  JOIN tournament_rosters tr_dq ON dq.tournament_roster_id = tr_dq.id
+                  JOIN tournament_teams tt_dq ON tr_dq.tournament_team_id = tt_dq.id
+                  WHERE tr_dq.player_id = $1 AND tt_dq.division_id = g.division_id AND dq.status = 'active' AND tr_dq.period_end IS NULL
+                ) THEN 'disqualified'
+                
+                ELSE COALESCE(
+                  (SELECT CASE 
+                            WHEN tr.period_end IS NOT NULL THEN 'unregistered'
+                            WHEN tr.application_status != 'approved' THEN 'not_approved'
+                            WHEN NOT (SELECT has_subscription FROM user_context) THEN 'no_subscription'
+                            ELSE 'allowed'
+                          END
+                   FROM tournament_rosters tr
+                   JOIN tournament_teams tt ON tr.tournament_team_id = tt.id
+                   WHERE tt.division_id = g.division_id AND tt.team_id = ut.team_id AND tr.player_id = $1 AND tr.period_end IS NULL
+                   ORDER BY tr.period_end NULLS FIRST LIMIT 1),
+                  'not_in_tournament'
+                )
+              END
+            ELSE
+              COALESCE(
+                (SELECT CASE 
+                          WHEN tr.left_at IS NOT NULL THEN 'unregistered' 
+                          WHEN NOT (SELECT has_subscription FROM user_context) THEN 'no_subscription'
+                          ELSE 'allowed' 
+                        END
+                 FROM team_rosters tr JOIN team_members tm ON tr.member_id = tm.id
+                 WHERE tm.user_id = $1 AND tm.team_id = ut.team_id AND tm.left_at IS NULL ORDER BY tr.left_at NULLS FIRST LIMIT 1),
+                'not_in_team'
+              )
+          END)::varchar AS toggle_status,
+          COALESCE(
+            (SELECT role FROM user_team_roles WHERE team_id = ut.team_id AND role IN ('owner', 'team_manager', 'team_admin') LIMIT 1),
+            'player'
+          )::varchar AS user_role,
+          (SELECT has_subscription FROM user_context)::boolean AS has_subscription
+
+        FROM user_teams ut
+        JOIN games g ON (g.home_team_id = ut.team_id OR g.away_team_id = ut.team_id)
+        LEFT JOIN arenas a ON g.arena_id = a.id
+        LEFT JOIN divisions d ON g.division_id = d.id
+        LEFT JOIN seasons s ON d.season_id = s.id
+        LEFT JOIN leagues l ON s.league_id = l.id
+        LEFT JOIN teams my_team ON my_team.id = ut.team_id
+        LEFT JOIN teams opp_team ON opp_team.id = CASE WHEN g.home_team_id = ut.team_id THEN g.away_team_id ELSE g.home_team_id END
+        LEFT JOIN external_opponents ext_opp ON g.away_external_id = ext_opp.id
+        LEFT JOIN tournament_teams tt_my ON tt_my.division_id = g.division_id AND tt_my.team_id = ut.team_id
+        LEFT JOIN tournament_teams tt_opp ON tt_opp.division_id = g.division_id AND tt_opp.team_id = CASE WHEN g.home_team_id = ut.team_id THEN g.away_team_id ELSE g.home_team_id END
+        LEFT JOIN team_external_tournaments ext_tour ON g.external_tournament_id = ext_tour.id
+        -- Cancelled-матчи friendly_pwa остаются в выдаче до прохода game_date
+        -- (их рисуем как «Матч отменён»). Авто-удаление выше зачищает после game_date.
+      ),
+
+      -- ==========================================
+      -- БЛОК 2: ТРЕНИРОВКИ КОМАНДЫ (team_training)
+      -- ==========================================
+      team_trainings_cte AS (
+        SELECT 
+          tt.id::int AS event_id,
+          'team_training'::varchar AS event_type,
+          NULL::varchar AS game_type,
+          NULL::int AS initiator_team_id,
+          NULL::timestamptz AS confirm_deadline,
+          tt.training_date::timestamptz AS event_date,
+          (CASE WHEN tt.training_date < NOW() THEN 'finished' ELSE 'scheduled' END)::varchar AS status,
+          COALESCE(a.name, tt.location, 'Локация не указана')::varchar AS arena_name,
+          COALESCE(a.timezone, tt.custom_timezone, 'Europe/Moscow')::varchar AS arena_timezone,
+          tt.arena_id::int AS arena_id,
+          tt.location::varchar AS location,
+          tt.location_url::varchar AS location_url,
+          
+          ut.team_id::int AS my_team_id,
+          NULL::int AS home_team_id,
+          
+          my_team.name::varchar AS my_team_name,
+          my_team.logo_url::varchar AS my_team_logo_url,
+          
+          my_team.color_home_1::varchar AS team_color,
+          
+          NULL::int AS opponent_team_id, 
+          NULL::varchar AS opponent_name,
+          NULL::varchar AS opponent_logo_url,
+          
+          tt.cost::numeric AS my_fee,
+          NULL::int AS home_score, 
+          NULL::int AS away_score, 
+          false::boolean AS is_technical, 
+          NULL::varchar AS end_type,
+          
+          NULL::varchar AS division_name,
+          NULL::varchar AS league_name,
+          NULL::varchar AS league_short_name,
+          NULL::varchar AS league_logo_url,
+          NULL::varchar AS division_logo_url, 
+          NULL::varchar AS season_name,
+          NULL::varchar AS stage_type,
+          NULL::varchar AS stage_label,
+          NULL::int AS series_number,
+          NULL::int AS wins_needed,
+          
+          NULL::varchar AS home_jersey,
+          NULL::varchar AS away_jersey,
+          
+          NULL::varchar AS video_yt_url,
+          NULL::varchar AS video_vk_url,
+          
+          COALESCE(my_team.jersey_dark_url, '/default/jersey_dark.webp')::varchar AS my_team_jersey_dark_url,
+          COALESCE(my_team.jersey_light_url, '/default/jersey_light.webp')::varchar AS my_team_jersey_light_url,
+          '/default/jersey_dark.webp'::varchar AS opponent_jersey_dark_url,
+          '/default/jersey_light.webp'::varchar AS opponent_jersey_light_url,
+
+          (CASE WHEN (SELECT active_clubs FROM user_context) = 0 AND (SELECT active_teams FROM user_context) = 1 THEN false ELSE true END)::boolean AS show_team_context,
+          
+          (EXISTS (SELECT 1 FROM team_training_attendance tta WHERE tta.team_training_id = tt.id AND tta.user_id = $1))::boolean AS is_attending,
+          
+          (COALESCE(
+            (SELECT CASE 
+                      WHEN tr.left_at IS NOT NULL THEN 'unregistered' 
+                      WHEN NOT (SELECT has_subscription FROM user_context) THEN 'no_subscription'
+                      ELSE 'allowed' 
+                    END
+             FROM team_rosters tr JOIN team_members tm ON tr.member_id = tm.id
+             WHERE tm.user_id = $1 AND tm.team_id = ut.team_id AND tm.left_at IS NULL ORDER BY tr.left_at NULLS FIRST LIMIT 1),
+            'not_in_team'
+          ))::varchar AS toggle_status,
+          COALESCE(
+            (SELECT role FROM user_team_roles WHERE team_id = ut.team_id AND role IN ('owner', 'team_manager', 'team_admin') LIMIT 1),
+            'player'
+          )::varchar AS user_role,
+          (SELECT has_subscription FROM user_context)::boolean AS has_subscription
+
+        FROM user_teams ut
+        JOIN team_training tt ON tt.team_id = ut.team_id
+        LEFT JOIN arenas a ON tt.arena_id = a.id
+        LEFT JOIN teams my_team ON my_team.id = ut.team_id
+      ),
+
+      -- ==========================================
+      -- БЛОК 3: СОБРАНИЯ КОМАНДЫ (team_meeting)
+      -- ==========================================
+      team_meetings_cte AS (
+        SELECT 
+          tm.id::int AS event_id,
+          'team_meeting'::varchar AS event_type,
+          NULL::varchar AS game_type,
+          NULL::int AS initiator_team_id,
+          NULL::timestamptz AS confirm_deadline,
+          tm.meeting_date::timestamptz AS event_date,
+          (CASE WHEN tm.meeting_date < NOW() THEN 'finished' ELSE 'scheduled' END)::varchar AS status,
+          COALESCE(a.name, tm.location, 'Локация не указана')::varchar AS arena_name,
+          COALESCE(a.timezone, tm.custom_timezone, 'Europe/Moscow')::varchar AS arena_timezone,
+          tm.arena_id::int AS arena_id,
+          tm.location::varchar AS location,
+          tm.location_url::varchar AS location_url,
+          
+          ut.team_id::int AS my_team_id,
+          NULL::int AS home_team_id,
+          
+          my_team.name::varchar AS my_team_name,
+          my_team.logo_url::varchar AS my_team_logo_url,
+          
+          my_team.color_home_1::varchar AS team_color,
+          
+          NULL::int AS opponent_team_id, 
+          NULL::varchar AS opponent_name,
+          NULL::varchar AS opponent_logo_url,
+          
+          tm.cost::numeric AS my_fee, 
+          NULL::int AS home_score, 
+          NULL::int AS away_score, 
+          false::boolean AS is_technical, 
+          NULL::varchar AS end_type,
+          
+          NULL::varchar AS division_name,
+          NULL::varchar AS league_name,
+          NULL::varchar AS league_short_name,
+          NULL::varchar AS league_logo_url,
+          NULL::varchar AS division_logo_url, 
+          NULL::varchar AS season_name,
+          NULL::varchar AS stage_type,
+          NULL::varchar AS stage_label,
+          NULL::int AS series_number,
+          NULL::int AS wins_needed,
+          
+          NULL::varchar AS home_jersey,
+          NULL::varchar AS away_jersey,
+          
+          NULL::varchar AS video_yt_url,
+          NULL::varchar AS video_vk_url,
+          
+          COALESCE(my_team.jersey_dark_url, '/default/jersey_dark.webp')::varchar AS my_team_jersey_dark_url,
+          COALESCE(my_team.jersey_light_url, '/default/jersey_light.webp')::varchar AS my_team_jersey_light_url,
+          '/default/jersey_dark.webp'::varchar AS opponent_jersey_dark_url,
+          '/default/jersey_light.webp'::varchar AS opponent_jersey_light_url,
+
+          (CASE WHEN (SELECT active_clubs FROM user_context) = 0 AND (SELECT active_teams FROM user_context) = 1 THEN false ELSE true END)::boolean AS show_team_context,
+          (EXISTS (SELECT 1 FROM team_meeting_attendance tma WHERE tma.team_meeting_id = tm.id AND tma.user_id = $1))::boolean AS is_attending,
+          (CASE WHEN NOT (SELECT has_subscription FROM user_context) THEN 'no_subscription' ELSE 'allowed' END)::varchar AS toggle_status,
+          COALESCE(
+            (SELECT role FROM user_team_roles WHERE team_id = ut.team_id AND role IN ('owner', 'team_manager', 'team_admin') LIMIT 1),
+            'player'
+          )::varchar AS user_role,
+          (SELECT has_subscription FROM user_context)::boolean AS has_subscription
+
+        FROM user_teams ut
+        JOIN team_meeting tm ON tm.team_id = ut.team_id
+        LEFT JOIN arenas a ON tm.arena_id = a.id
+        LEFT JOIN teams my_team ON my_team.id = ut.team_id
+      ),
+
+      -- ==========================================
+      -- БЛОК 4: КЛУБНЫЕ ТРЕНИРОВКИ (club_training)
+      -- ==========================================
+      club_trainings_cte AS (
+        SELECT 
+          ct.id::int AS event_id,
+          'club_training'::varchar AS event_type,
+          NULL::varchar AS game_type,
+          NULL::int AS initiator_team_id,
+          NULL::timestamptz AS confirm_deadline,
+          ct.training_date::timestamptz AS event_date,
+          (CASE WHEN ct.training_date < NOW() THEN 'finished' ELSE 'scheduled' END)::varchar AS status,
+          COALESCE(a.name, ct.location, 'Локация не указана')::varchar AS arena_name,
+          COALESCE(a.timezone, ct.custom_timezone, 'Europe/Moscow')::varchar AS arena_timezone,
+          ct.arena_id::int AS arena_id,
+          ct.location::varchar AS location,
+          ct.location_url::varchar AS location_url,
+          
+          NULL::int AS my_team_id,
+          NULL::int AS home_team_id,
+          
+          c.name::varchar AS my_team_name,
+          c.logo_url::varchar AS my_team_logo_url,
+          
+          NULL::varchar AS team_color,
+          
+          NULL::int AS opponent_team_id, 
+          NULL::varchar AS opponent_name,
+          NULL::varchar AS opponent_logo_url,
+          
+          ct.cost::numeric AS my_fee, 
+          NULL::int AS home_score, 
+          NULL::int AS away_score, 
+          false::boolean AS is_technical, 
+          NULL::varchar AS end_type,
+          
+          NULL::varchar AS division_name,
+          NULL::varchar AS league_name,
+          NULL::varchar AS league_short_name,
+          NULL::varchar AS league_logo_url,
+          NULL::varchar AS division_logo_url, 
+          NULL::varchar AS season_name,
+          NULL::varchar AS stage_type,
+          NULL::varchar AS stage_label,
+          NULL::int AS series_number,
+          NULL::int AS wins_needed,
+          
+          NULL::varchar AS home_jersey,
+          NULL::varchar AS away_jersey,
+          
+          NULL::varchar AS video_yt_url,
+          NULL::varchar AS video_vk_url,
+          
+          '/default/jersey_dark.webp'::varchar AS my_team_jersey_dark_url,
+          '/default/jersey_light.webp'::varchar AS my_team_jersey_light_url,
+          '/default/jersey_dark.webp'::varchar AS opponent_jersey_dark_url,
+          '/default/jersey_light.webp'::varchar AS opponent_jersey_light_url,
+
+          false::boolean AS show_team_context, 
+          (EXISTS (SELECT 1 FROM club_training_attendance cta WHERE cta.club_training_id = ct.id AND cta.user_id = $1))::boolean AS is_attending,
+          (CASE WHEN NOT (SELECT has_subscription FROM user_context) THEN 'no_subscription' ELSE 'allowed' END)::varchar AS toggle_status,
+          'player'::varchar AS user_role,
+          (SELECT has_subscription FROM user_context)::boolean AS has_subscription
+
+        FROM user_clubs uc
+        JOIN club_training ct ON ct.club_id = uc.club_id
+        LEFT JOIN arenas a ON ct.arena_id = a.id
+        LEFT JOIN clubs c ON c.id = uc.club_id
+      ),
+
+      -- ==========================================
+      -- БЛОК 5: КЛУБНЫЕ СОБРАНИЯ (club_meeting)
+      -- ==========================================
+      club_meetings_cte AS (
+        SELECT 
+          cm.id::int AS event_id,
+          'club_meeting'::varchar AS event_type,
+          NULL::varchar AS game_type,
+          NULL::int AS initiator_team_id,
+          NULL::timestamptz AS confirm_deadline,
+          cm.meeting_date::timestamptz AS event_date,
+          (CASE WHEN cm.meeting_date < NOW() THEN 'finished' ELSE 'scheduled' END)::varchar AS status,
+          COALESCE(a.name, cm.location, 'Локация не указана')::varchar AS arena_name,
+          COALESCE(a.timezone, cm.custom_timezone, 'Europe/Moscow')::varchar AS arena_timezone,
+          cm.arena_id::int AS arena_id,
+          cm.location::varchar AS location,
+          cm.location_url::varchar AS location_url,
+          
+          NULL::int AS my_team_id,
+          NULL::int AS home_team_id,
+          
+          c.name::varchar AS my_team_name,
+          c.logo_url::varchar AS my_team_logo_url,
+          
+          NULL::varchar AS team_color,
+          
+          NULL::int AS opponent_team_id, 
+          NULL::varchar AS opponent_name,
+          NULL::varchar AS opponent_logo_url,
+          
+          cm.cost::numeric AS my_fee, 
+          NULL::int AS home_score, 
+          NULL::int AS away_score, 
+          false::boolean AS is_technical, 
+          NULL::varchar AS end_type,
+          
+          NULL::varchar AS division_name,
+          NULL::varchar AS league_name,
+          NULL::varchar AS league_short_name,
+          NULL::varchar AS league_logo_url,
+          NULL::varchar AS division_logo_url, 
+          NULL::varchar AS season_name,
+          NULL::varchar AS stage_type,
+          NULL::varchar AS stage_label,
+          NULL::int AS series_number,
+          NULL::int AS wins_needed,
+          
+          NULL::varchar AS home_jersey,
+          NULL::varchar AS away_jersey,
+          
+          NULL::varchar AS video_yt_url,
+          NULL::varchar AS video_vk_url,
+          
+          '/default/jersey_dark.webp'::varchar AS my_team_jersey_dark_url,
+          '/default/jersey_light.webp'::varchar AS my_team_jersey_light_url,
+          '/default/jersey_dark.webp'::varchar AS opponent_jersey_dark_url,
+          '/default/jersey_light.webp'::varchar AS opponent_jersey_light_url,
+
+          false::boolean AS show_team_context,
+          (EXISTS (SELECT 1 FROM club_meeting_attendance cma WHERE cma.club_meeting_id = cm.id AND cma.user_id = $1))::boolean AS is_attending,
+          (CASE WHEN NOT (SELECT has_subscription FROM user_context) THEN 'no_subscription' ELSE 'allowed' END)::varchar AS toggle_status,
+          'player'::varchar AS user_role,
+          (SELECT has_subscription FROM user_context)::boolean AS has_subscription
+
+        FROM user_clubs uc
+        JOIN club_meeting cm ON cm.club_id = uc.club_id
+        LEFT JOIN arenas a ON cm.arena_id = a.id
+        LEFT JOIN clubs c ON c.id = uc.club_id
+      )
+
+      -- ==========================================
+      -- ФИНАЛЬНАЯ СКЛЕЙКА (UNION ALL)
+      -- ==========================================
+      SELECT * FROM (
+        SELECT * FROM games_cte
+        UNION ALL
+        SELECT * FROM team_trainings_cte
+        UNION ALL
+        SELECT * FROM team_meetings_cte
+        UNION ALL
+        SELECT * FROM club_trainings_cte
+        UNION ALL
+        SELECT * FROM club_meetings_cte
+      ) AS all_events
+      WHERE 1=1 ${startDate && endDate ? dateFilter : ''}
+      ORDER BY event_date ASC;
+    `;
+
+    const queryParams = [userId];
+    if (startDate && endDate) {
+      queryParams.push(startDate, endDate);
+    }
+
+    const result = await pool.query(query, queryParams);
+    res.json({ success: true, cards: result.rows });
+  } catch (err) {
+    console.error('Ошибка получения событий:', err);
+    res.status(500).json({ success: false, error: 'Ошибка сервера' });
+  }
+};

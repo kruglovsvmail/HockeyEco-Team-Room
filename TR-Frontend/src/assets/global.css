@@ -1,0 +1,158 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    /* --- АКЦЕНТНЫЕ ЦВЕТА (БРЕНД) --- */
+    --color-brand: #1794dd;
+    --color-brand-hover: #1e679b;
+    --color-brand-dark: #267ec2;
+    --color-brand-glow: #ffffff;
+    --color-brand-opacity: color-mix(in srgb, var(--color-brand) 10%, transparent);
+
+    /* --- СТАТИЧНЫЕ ПОВЕРХНОСТИ (ГЛОБАЛЬНЫЕ) --- */
+    --color-surface-base: #f3f4f6ff; /* Фон разных плашек */
+    --color-surface-level1: #ffffffff; /* Фон блоков */
+    --color-surface-level2: #e5e7ebff;
+    --color-surface-level3: #e7e7e7;
+    --color-surface-border: #e2e4e7;  /* Основной фон */
+
+    /* --- ВСПЛЫВАЮЩИЕ ЭЛЕМЕНТЫ (ШТОРКИ, МОДАЛКИ) --- */
+    --color-sheet-bg: #ffffff;
+    --color-sheet-border: #0000002c;
+
+    /* --- ОВЕРЛЕИ (ЗАТЕМНЕНИЕ ФОНА) --- */
+    --color-overlay: #00000040;
+
+    /* --- ТИПОГРАФИКА И КОНТЕНТ --- */
+    --color-content: #111827ff;
+    --color-content-main: #1f2937ff;
+    --color-content-muted: #6b7280ff;
+    --color-content-subtle: #9ca3afff;
+    --color-content-dark: #ffffffff;
+
+    /* --- СИСТЕМНЫЕ СТАТУСЫ --- */
+    --color-danger: #dc2626ff;
+    --color-danger-muted: #f9b7b7;
+    --color-success: #109d1c;
+    --color-success-muted: #8cd78c; 
+
+    /* --- РАЗМЫТИЕ И СТЕКЛОМОРФИЗМ (BLUR) --- */
+    --blur-ambient: 100px;
+    --backdrop-blur-overlay: 3px;
+    --backdrop-blur-sheet: 24px;
+
+    /* --- ТЕHИ --- */
+    --shadow-brand-glow: 0 8px 30px rgba(74, 176, 197, 0.25);
+    --shadow-sheet-top: 0 -8px 32px rgba(0, 0, 0, 0.08);
+    
+    --shadow-sm: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
+    --shadow-default: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+    --shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.05), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+    --shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
+    --shadow-xl: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04);
+
+    /* --- СКРУГЛЕНИЯ --- */
+    --radius-none: 0px;
+    --radius-sm: 0.125rem;
+    --radius-default: 0.25rem;   
+    --radius-md: 0.375rem;
+    --radius-lg: 0.5rem;         
+    --radius-xl: 0.75rem;
+    --radius-2xl: 1rem;          
+    --radius-3xl: 1rem;
+    --radius-full: 9999px;
+
+    /* --- РАЗМЕРЫ ШРИФТОВ И МЕЖСТРОЧНЫЙ ИНТЕРВАЛ --- */
+    --fs-xs: 0.75rem; --lh-xs: 1rem;       
+    --fs-sm: 0.875rem; --lh-sm: 1.25rem;
+    --fs-base: 1rem; --lh-base: 1.5rem;
+    --fs-lg: 1.125rem; --lh-lg: 1.75rem;
+    --fs-xl: 1.25rem; --lh-xl: 1.75rem;
+    --fs-2xl: 1.5rem; --lh-2xl: 2rem;
+    --fs-3xl: 1.875rem; --lh-3xl: 2.25rem;
+    --fs-4xl: 2.25rem; --lh-4xl: 2.5rem;
+  }
+
+  /* --- ТЕМHАЯ ТЕМА --- */
+  html.dark {
+    --color-brand: #60a5fa;
+    --color-brand-hover: #3b82f6;
+    --color-brand-dark: #2563eb;
+    --color-brand-glow: #6464648a;
+    --color-brand-opacity: color-mix(in srgb, var(--color-brand) 15%, transparent);
+
+    /* Нейтрально-тёплые серые — без синевы */
+    --color-surface-base: #242424;       /* почти чёрный, чуть тёплый */
+    --color-surface-level1: #1f1f1d;     /* карточки */
+    --color-surface-level2: #2c2c29;     /* вторичные поверхности */
+    --color-surface-level3: #3a3a36;     /* третичные */
+    --color-surface-border: #2e2e2b;     /* границы */
+
+    --color-sheet-bg: #1f1f1d;
+    --color-sheet-border: rgba(255, 255, 255, 0.08);
+
+    --color-overlay: rgba(0, 0, 0, 0.5);
+
+    --color-content: #f5f5f3;            /* почти белый, слегка тёплый */
+    --color-content-main: #e8e8e4;       /* основной текст */
+    --color-content-muted: #9c9c96;      /* приглушённый */
+    --color-content-subtle: #636360;     /* совсем тихий */
+    --color-content-dark: #161614;
+
+    --color-danger: #b74d4d;
+    --color-danger-muted: #3b1a1a;
+    --color-success: #519b60;
+    --color-success-muted: #063d2e;
+
+    --shadow-brand-glow: 0 8px 32px rgba(96, 165, 250, 0.12);
+    --shadow-sheet-top: 0 -8px 32px rgba(0, 0, 0, 0.45);
+  }
+}
+
+/* --- ГЛОБАЛЬНЫЕ ПРАВИЛА ОТОБРАЖЕНИЯ --- */
+
+html, body {
+  position: fixed;
+  width: 100%;
+  height: 100vh;
+  overflow: hidden;
+  overscroll-behavior: none; 
+  background-color: var(--color-surface-base);
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-touch-callout: none;
+  transition: background-color 0.3s ease;
+}
+
+#root {
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+}
+
+input, textarea, [contenteditable="true"] {
+  -webkit-user-select: auto;
+  user-select: auto;
+}
+
+/* Аппаратная оптимизация слоев PWA шторок */
+.will-change-sheet {
+  will-change: transform, opacity;
+  transform: translateZ(0);
+}
+
+.scrollbar-hide::-webkit-scrollbar {
+  display: none;
+}
+.scrollbar-hide {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+.bg-noise {
+  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noiseFilter'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.8' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noiseFilter)'/%3E%3C/svg%3E");
+  opacity: 0.04;
+  pointer-events: none; 
+}

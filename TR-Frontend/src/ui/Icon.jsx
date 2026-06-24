@@ -1,0 +1,92 @@
+import React from 'react';
+
+export function Icon({ name, className = "w-6 h-6", style, strokeWidth }) {
+  const baseProps = {
+    viewBox: "0 0 24 24",
+    fill: "none",
+    stroke: "currentColor",
+    className,
+    style,
+    strokeWidth: strokeWidth || "2",
+    strokeLinecap: "round",
+    strokeLinejoin: "round"
+  };
+
+  const icons = {
+    // Навигация, локации и разделы
+    location_pin: <svg {...baseProps}><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"></path><circle cx="12" cy="10" r="3"></circle></svg>,
+    jersey: <svg {...baseProps}><path d="M20 5 L14 3 L12 4.5 L10 3 L4 5 L2 7 L2 18 L6 18 L6 8 L6 21 L18 21 L18 8 L18 18 L22 18 L22 7 L20 5 Z"></path></svg>,
+    jersey_filled: <svg {...baseProps} fill="currentColor" stroke="none"><path d="M20 5 L14 3 L12 4.5 L10 3 L4 5 L2 7 L2 18 L6 18 L6 8 L6 21 L18 21 L18 8 L18 18 L22 18 L22 7 L20 5 Z"></path></svg>,
+    handshake: <svg {...baseProps}><circle cx="12" cy="12" r="10"/><line x1="9" y1="10" x2="9" y2="10" strokeWidth="3" strokeLinecap="round"/><line x1="15" y1="10" x2="15" y2="10" strokeWidth="3" strokeLinecap="round"/><path d="M8 15 Q12 19 16 15"/></svg>,
+    shield_alert: <svg {...baseProps}><rect x="4" y="11" width="16" height="12" rx="2"/><path d="M7 11 V7 a5 5 0 0 1 10 0 v4"/><circle cx="12" cy="17" r="2" fill="currentColor" stroke="none"/><line x1="12" y1="19" x2="12" y2="21" strokeWidth="2"/></svg>,
+    bell: <svg {...baseProps}><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>,
+    matches: <svg {...baseProps}><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/><path d="M8 14h.01"/><path d="M12 14h.01"/><path d="M16 14h.01"/><path d="M8 18h.01"/><path d="M12 18h.01"/><path d="M16 18h.01"/></svg>,
+    roster: <svg {...baseProps}><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg>,
+    team: <svg {...baseProps}><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><circle cx="12" cy="10" r="3"/></svg>,
+    player: <svg {...baseProps}><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>,
+    settings: <svg {...baseProps}><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>,
+    chevron: <svg {...baseProps}><polyline points="6 9 12 15 18 9"></polyline></svg>,
+    standings: <svg {...baseProps}><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><path d="M3 9h18"/><path d="M3 15h18"/><path d="M9 3v18"/></svg>,
+    transfers: <svg {...baseProps}><path d="M7 21V3"/><path d="m3 7 4-4 4 4"/><path d="M17 3v18"/><path d="m21 17-4 4-4-4"/></svg>,
+    handbook: <svg {...baseProps}><path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"/><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"/></svg>,
+    divisions: <svg {...baseProps}><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><path d="M12 2v20"/></svg>,
+    disqualifications: <svg {...baseProps}><circle cx="12" cy="12" r="10" /><rect x="6" y="10.5" width="12" height="3" fill="currentColor" stroke="none" /></svg>,
+    registry: <svg {...baseProps}><ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M21 12c0 1.66-4 3-9 3s-9-1.34-9-3"/><path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5"/></svg>,
+    lock: <svg {...baseProps}><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>,
+    view: <svg {...baseProps}><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle></svg>,
+    view_off: <svg {...baseProps}><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"></path><line x1="1" y1="1" x2="23" y2="23"></line></svg>,
+    swap: <svg {...baseProps}><path d="M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4"/></svg>,
+    chevron_left: <svg {...baseProps}><polyline points="15 18 9 12 15 6"></polyline></svg>,
+    chevron_right: <svg {...baseProps}><polyline points="9 18 16 12 9 6"></polyline></svg>,
+    calendar: <svg {...baseProps}><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>,
+    filter: <svg {...baseProps}><polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"></polygon></svg>,
+    clock: <svg {...baseProps}><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>,
+    arena: <svg {...baseProps}><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg>,
+    download: <svg {...baseProps}><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>,
+    edit: <svg {...baseProps}><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path></svg>,
+    delete: <svg {...baseProps}><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>,
+    save: <svg {...baseProps} strokeWidth="3"><path d="M5 13l4 4L19 7"></path></svg>,
+    plus: <svg {...baseProps} strokeWidth="3"><path d="M12 4v16m8-8H4"></path></svg>,
+    minus: <svg {...baseProps} strokeWidth="3"><path d="M20 12H4"></path></svg>,
+    close: <svg {...baseProps} strokeWidth="3"><path d="M18 6L6 18M6 6l12 12"></path></svg>,
+    users: <svg {...baseProps}>
+  <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/>
+  <circle cx="9" cy="7" r="4"/>
+  <path d="M22 21v-2a4 4 0 0 0-3-3.87"/>
+  <path d="M16 3.13a4 4 0 0 1 0 7.75"/>
+</svg>,
+    gear: <svg {...baseProps}><path d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"></path><path d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path></svg>,
+    
+    // Результативные хоккейные действия и судейство
+    shootout_goal: <svg {...baseProps}><ellipse cx="10" cy="10" rx="7" ry="2.5"></ellipse><path d="M3 10v5c0 1.38 3.13 2.5 7 2.5 1.15 0 2.23-.13 3.18-.36"></path><polyline points="14 17 17 20 23 13"></polyline></svg>,
+    shootout_miss: <svg {...baseProps}><ellipse cx="10" cy="10" rx="7" ry="2.5"></ellipse><path d="M3 10v5c0 1.38 3.13 2.5 7 2.5 1.15 0 2.23-.13 3.18-.36"></path><line x1="16" y1="14" x2="22" y2="20"></line><line x1="22" y1="14" x2="16" y2="20"></line></svg>,
+    play: <svg {...baseProps} strokeWidth="2.5"><path d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z" /><path strokeWidth="2" d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>,
+    stop: <svg {...baseProps} strokeWidth="2.5"><path d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /><path d="M9 10a1 1 0 011-1h4a1 1 0 011 1v4a1 1 0 01-1 1h-4a1 1 0 01-1-1v-4z" /></svg>,
+    refresh: <svg {...baseProps} strokeWidth="2.5"><path d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" /></svg>,
+    trophy: <svg {...baseProps}><path d="M5 3v4M3 5h4M6 17v4m-2-2h4m5-16l2.286 6.857L21 12l-5.714 2.143L13 21l-2.286-6.857L5 12l5.714-2.143L13 3z" /></svg>,
+    puck: <svg {...baseProps}><ellipse cx="12" cy="8" rx="9" ry="3"/><line x1="3" y1="8" x2="3" y2="14"/><line x1="21" y1="8" x2="21" y2="14"/><path d="M3 14 Q3 17 12 17 Q21 17 21 14"/></svg>,
+    whistle: <svg {...baseProps}><path d="M6.75 16.75C7.91667 17.9167 9.33333 18.5 11 18.5C12.6667 18.5 14.0833 17.9167 15.25 16.75C16.4167 15.5833 17 14.1667 17 12.5V10.5H22V6.5H11C10.2 6.5 9.44583 6.65 8.7375 6.95C8.02917 7.25 7.4 7.65 6.85 8.15C6.46667 8.53333 5.58 9.72 5.1 11.4C5.06667 11.5833 5.04167 11.7667 5.025 11.95C5.00833 12.1333 5 12.3167 5 12.5C5 14.1667 5.58333 15.5833 6.75 16.75ZM13.6527 12.3473C13.6527 13.08 13.3937 13.7052 12.8758 14.2231C12.3579 14.741 11.7326 15 11 15C10.2674 15 9.64208 14.741 9.12418 14.2231C8.60627 13.7052 8.34732 13.08 8.34732 12.3473C8.34732 11.6147 8.60627 10.9894 9.12418 10.4715C9.64208 9.95359 10.2674 9.69464 11 9.69464C11.7326 9.69464 12.3579 9.95359 12.8758 10.4715C13.3937 10.9894 13.6527 11.6147 13.6527 12.3473Z"/><path d="M4.8 11.475C4.91667 11.4583 5.01667 11.4333 5.1 11.4C5.58 9.72 6.46667 8.53333 6.85 8.15C6.66667 7.66667 6.35417 7.27083 5.9125 6.9625C5.47083 6.65417 4.975 6.5 4.425 6.5C3.725 6.5 3.14583 6.74167 2.6875 7.225C2.22917 7.70833 2 8.3 2 9C2 9.7 2.24167 10.2917 2.725 10.775C3.20833 11.2583 3.8 11.5 4.5 11.5C4.58333 11.5 4.68333 11.4917 4.8 11.475Z"/></svg>,
+
+    // Иконка секундомера/таймера (тема тренировок)
+    stopwatch: <svg {...baseProps}><line x1="10" y1="2" x2="14" y2="2"/><line x1="12" y1="2" x2="12" y2="5"/><circle cx="12" cy="14" r="8"/><polyline points="12 10 12 14 15 16"/></svg>,
+
+    training_activity: <svg {...baseProps}><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg>,
+    training_weights: <svg {...baseProps}><path d="M6 6v12"/><path d="M18 6v12"/><path d="M6 12h12"/><path d="M4 8v8"/><path d="M20 8v8"/></svg>,
+    training_running: <svg viewBox="0 -960 960 960" fill="currentColor" className={className}><path d="m216-160-42-42 408-408H440v80h-60v-140h223q14 0 27 5t23 15l120 119q29 29 67 44t80 17v60q-52-2-100-19.5T736-484l-46-46-114 114 86 86-244 141-30-52 176-102-82-82-266 265Zm-96-280v-60h200v60H120ZM40-570v-60h200v60H40Zm750-80q-29 0-49.5-20.5T720-720q0-29 20.5-49.5T790-790q29 0 49.5 20.5T860-720q0 29-20.5 49.5T790-650Zm-670-50v-60h200v60H120Z"/></svg>,
+    
+    // Новая иконка загрузки/аплоада файлов в PWA-профили
+    upload: <svg {...baseProps}><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>,
+
+    // Иконка добавления пользователя (человек + плюс)
+    user_plus: <svg {...baseProps}><path d="M16 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="8" cy="7" r="4"/><line x1="20" y1="8" x2="20" y2="14"/><line x1="17" y1="11" x2="23" y2="11"/></svg>,
+
+    // Универсальная иконка трансляции (антенна + сигнал)
+    live_stream: <svg {...baseProps}><rect x="1" y="5" width="15" height="15" rx="2"/><polygon points="16,8 22,5 22,20 16,17"/></svg>,
+
+    // Иконка поделиться (системный шер)
+    share: <svg {...baseProps}><path d="M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8"/><polyline points="16 6 12 2 8 6"/><line x1="12" y1="2" x2="12" y2="15"/></svg>,
+    currency: <svg {...baseProps}><rect x="2" y="7" width="20" height="14" rx="2"/><path d="M16 7V5a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v2"/><circle cx="16" cy="14" r="1" fill="currentColor" stroke="none"/></svg>,
+  };
+
+  return icons[name] || null;
+}
