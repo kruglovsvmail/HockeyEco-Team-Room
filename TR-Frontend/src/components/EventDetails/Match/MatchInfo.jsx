@@ -251,7 +251,7 @@ export const MatchInfo = ({
               {isPlayedOrLive ? (
                 <div className="flex items-center gap-1 font-black text-[28px] tracking-tighter justify-center leading-none">
                   <span className={scoreColorClass}>{homeScoreDisplay}</span>
-                  <span className="text-content-subtle text-[18px] font-bold pb-0.5 px-1">:</span>
+                  <span className="text-content-subtle text-[28px] font-bold pb-0.5 px-1">:</span>
                   <span className={scoreColorClass}>{awayScoreDisplay}</span>
                 </div>
               ) : (

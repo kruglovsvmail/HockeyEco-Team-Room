@@ -47,7 +47,7 @@ export function TournamentCardGame({ game }) {
           <div className="w-11 h-11 flex items-center justify-center shrink-0">
             <img src={getImageUrl(game.home_team_logo)} alt="" className="w-full h-full object-contain" />
           </div>
-          <span className="text-[10px] font-bold text-content-main uppercase tracking-tight w-full px-1 break-words leading-tight line-clamp-2 h-7 flex items-center justify-center">
+          <span className="text-[12px] font-bold text-content-main uppercase tracking-tight w-full px-1 break-words leading-tight line-clamp-2 h-7 flex items-center justify-center">
             {game.home_team_name || 'Хозяева'}
           </span>
         </div>
@@ -66,7 +66,7 @@ export function TournamentCardGame({ game }) {
 
           {isFinished && (isOvertime || isShootout || isTech) && (
             <span className={clsx(
-              'text-[10px] font-bold uppercase tracking-widest mt-1.5 px-1.5 py-0.5 rounded leading-none border shadow-xs',
+              'text-[12px] font-bold uppercase tracking-widest mt-1.5 px-1.5 py-0.5 rounded leading-none border shadow-xs',
               isTech ? 'text-red-500 bg-red-500/5 border-red-500/10' : 'text-brand bg-brand-opacity border-brand/10'
             )}>
               {isOvertime && 'от'}
@@ -88,14 +88,14 @@ export function TournamentCardGame({ game }) {
           <div className="w-11 h-11 flex items-center justify-center shrink-0">
             <img src={getImageUrl(game.away_team_logo)} alt="" className="w-full h-full object-contain" />
           </div>
-          <span className="text-[10px] font-bold text-content-main uppercase tracking-tight w-full px-1 break-words leading-tight line-clamp-2 h-7 flex items-center justify-center">
+          <span className="text-[12px] font-bold text-content-main uppercase tracking-tight w-full px-1 break-words leading-tight line-clamp-2 h-7 flex items-center justify-center">
             {game.away_team_name || 'Гости'}
           </span>
         </div>
       </div>
 
       {/* ── НИЖНЯЯ СТРОКА: метаданные ── */}
-      <div className="w-full grid grid-cols-[1fr,auto,1fr] items-center text-[10px] font-bold text-content-muted border-t border-surface-level2 pt-2 px-0.5 relative">
+      <div className="w-full grid grid-cols-[1fr,auto,1fr] items-center text-[12px] font-bold text-content-muted border-t border-surface-level2 pt-2 px-0.5 relative">
         <div className="min-w-0" />
         <div className="flex items-center justify-center gap-3 truncate max-w-[240px] px-2">
           <span className="font-bold text-content-muted shrink-0">{formattedDateShort}</span>

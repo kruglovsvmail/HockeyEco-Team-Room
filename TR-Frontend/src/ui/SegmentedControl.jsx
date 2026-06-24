@@ -38,7 +38,7 @@ export const SegmentedControl = ({ options, value, onChange, className, activeCo
             type="button" // ИСПРАВЛЕНО: предотвращает автоматическую отправку формы при клике
             onClick={() => onChange(option.value)}
             className={clsx(
-              "relative z-10 flex-1 py-2 text-[10px] font-black uppercase tracking-widest transition-colors duration-500 outline-none",
+              "relative z-10 flex-1 py-2 text-[12px] font-bold uppercase tracking-widest transition-colors duration-500 outline-none",
               isActive ? clsx(contrastClass, "drop-shadow-sm") : "text-content-muted hover:text-content-main"
             )}
           >

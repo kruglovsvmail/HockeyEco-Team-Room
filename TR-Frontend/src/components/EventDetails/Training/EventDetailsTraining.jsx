@@ -315,7 +315,7 @@ export const EventDetailsTraining = ({ event }) => {
         <div className="flex items-center w-full px-5">
           <div className="w-[70%] pr-2 flex items-center gap-2 flex-wrap">
             <span
-              className="text-[30px] font-black uppercase tracking-tight leading-none"
+              className="text-[30px] font-black uppercase leading-none"
               style={{ color: activeBrandColor }}
             >
               Тренировка
@@ -334,7 +334,7 @@ export const EventDetailsTraining = ({ event }) => {
             )}
           </div>
           <div className="w-[30%] flex justify-end items-center gap-2">
-            <span className="text-[30px] font-black text-content-main tracking-tight leading-none">
+            <span className="text-[30px] font-black text-content-main leading-none">
               {timeDisplay}
             </span>
           </div>
@@ -398,7 +398,7 @@ export const EventDetailsTraining = ({ event }) => {
           <div className="shrink-0 w-[80px]">
             <div className="w-full aspect-square rounded-xl bg-surface-border flex flex-col items-center justify-center gap-0 overflow-hidden">
               <Icon name="training_activity" className="w-12 h-12 text-content-muted" />
-              <span className="text-[10px] text-content-muted font-normal uppercase text-center px-1.5 w-full">
+              <span className="text-[8px] opacity-60 text-content-muted font-normal uppercase text-center px-1.5 w-full">
                 {localEvent?.my_team_name || ''}
               </span>
             </div>

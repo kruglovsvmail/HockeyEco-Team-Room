@@ -219,14 +219,14 @@ export const EventDetailsMatch = ({ event, user: userProp, selectedTeam: selecte
         <div className="flex items-center w-full px-5">
           <div className="w-[70%] pr-2">
             <span
-              className="text-[30px] font-black uppercase tracking-tight leading-none"
+              className="text-[30px] font-black uppercase leading-none"
               style={{ color: activeBrandColor }}
             >
               МАТЧ
             </span>
           </div>
           <div className="w-[30%] flex justify-end items-center gap-2">
-            <span className="text-[30px] font-black text-content-main tracking-tight leading-none">
+            <span className="text-[30px] font-black text-content-main leading-none">
               {timeDisplay}
             </span>
           </div>

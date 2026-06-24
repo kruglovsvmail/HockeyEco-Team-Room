@@ -70,7 +70,7 @@ export function SettingsPage() {
         <SegmentedControl 
           options={[
             { value: 'appearance', label: 'Внешний вид' },
-            { value: 'notifications', label: 'Пуш-уведомления' }
+            { value: 'notifications', label: 'Уведомления' }
           ]} 
           value={activeSubTab} 
           onChange={setActiveSubTab} 
