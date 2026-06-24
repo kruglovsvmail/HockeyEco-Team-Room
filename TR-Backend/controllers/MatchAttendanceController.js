@@ -139,7 +139,7 @@ export const toggleMatchAttendance = async (req, res) => {
     }
 
     (async () => {
-      const [name, info] = await Promise.all([getUserName(targetId), getMatchInfo(eventId)]);
+      const [name, info] = await Promise.all([getUserName(targetId), getMatchInfo(eventId, teamId)]);
       sendPushToTeamExcept(teamId, targetId, 'attendance', {
         title: isAttending ? 'Новая отметка' : 'Снятие отметки',
         body: isAttending

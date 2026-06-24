@@ -735,16 +735,7 @@ export const publishMatchResults = async (req, res) => {
       return res.status(400).json({ success: false, error: 'Невозможно опубликовать матч в текущем статусе' });
     }
 
-    // Push: протокол опубликован (группа «Турниры и лиги»)
     const { home_score, away_score } = upd.rows[0];
-    getMatchInfo(gameId).then(info => {
-      sendPushToTeamExcept(teamId, req.user?.id, 'tournaments', {
-        title: 'Протокол опубликован',
-        body: `Результат матча: ${info.homeName} ${home_score} : ${away_score} ${info.opponent}`,
-        url: `/event/match/${gameId}`,
-        tag: `protocol-${gameId}`,
-      });
-    }).catch(() => {});
 
     res.json({
       success: true,

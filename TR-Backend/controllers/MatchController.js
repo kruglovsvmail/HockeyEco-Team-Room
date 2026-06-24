@@ -175,8 +175,8 @@ export const updateMatchMedia = async (req, res) => {
     }
 
     await pool.query(
-      `UPDATE "public"."games" 
-       SET video_yt_url = $1, video_vk_url = $2, updated_at = NOW() 
+      `UPDATE "public"."games"
+       SET video_yt_url = $1, video_vk_url = $2
        WHERE id = $3`,
       [video_yt_url || null, video_vk_url || null, eventId]
     );
@@ -281,7 +281,7 @@ export const updateMatchSchedule = async (req, res) => {
       return res.status(400).json({ success: false, error: 'Неподдерживаемый тип матча для изменения расписания' });
     }
 
-    getMatchInfo(eventId).then(info => {
+    getMatchInfo(eventId, teamId).then(info => {
       sendPushToTeamExcept(teamId, req.user.id, 'schedule', {
         title: 'Матч изменён',
         body: `Новое расписание: ${info.text}`,
@@ -335,7 +335,7 @@ export const updateMatchFinances = async (req, res) => {
 
     const sendMatchFeeNotification = () => {
       if (oldMatchFee === newMatchFee) return;
-      getMatchInfo(eventId).then(info => {
+      getMatchInfo(eventId, teamId).then(info => {
         sendPushToTeamExcept(teamId, req.user.id, 'schedule', {
           title: 'Изменение стоимости',
           body: formatFeeChange(oldMatchFee, newMatchFee, `матча ${info.text}`),
@@ -452,7 +452,7 @@ export const deleteMatch = async (req, res) => {
       }
     }
 
-    const eventInfo = await getMatchInfo(numericId);
+    const eventInfo = await getMatchInfo(numericId, teamId);
 
     const client = await pool.connect();
     try {

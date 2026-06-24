@@ -26,7 +26,7 @@ function formatDateRu(date, tz) {
   }
 }
 
-export async function getMatchInfo(eventId) {
+export async function getMatchInfo(eventId, teamId = null) {
   const { rows } = await pool.query(
     `SELECT g.game_date, g.home_team_id, g.away_team_id, g.custom_timezone,
             COALESCE(a.name, g.location, 'Место не указано') AS arena,
@@ -43,10 +43,11 @@ export async function getMatchInfo(eventId) {
   if (!rows[0]) return { text: '', date: '', arena: '' };
   const r = rows[0];
   const tz = r.custom_timezone || r.arena_tz || 'Europe/Moscow';
-  const opponent = r.away_name || r.ext_opponent_name || 'Соперник';
+  const awayName = r.away_name || r.ext_opponent_name || 'Соперник';
   const homeName = r.home_name || 'Хозяева';
   const dateStr = formatDateRu(r.game_date, tz);
-  return { text: `против ${opponent}, ${dateStr}, ${r.arena}`, date: dateStr, arena: r.arena, opponent, homeName };
+  const opponent = teamId && String(teamId) === String(r.away_team_id) ? homeName : awayName;
+  return { text: `против ${opponent}, ${dateStr}, ${r.arena}`, date: dateStr, arena: r.arena, opponent, homeName, awayName };
 }
 
 export async function getTrainingInfo(eventId, eventType) {
@@ -429,6 +430,7 @@ export async function pollLmsGames() {
     const { rows: games } = await pool.query(`
       SELECT g.id, g.game_date, g.home_team_id, g.away_team_id, g.arena_id, g.status,
              g.push_processed_at, g.created_at, g.updated_at, g.custom_timezone,
+             g.push_game_date, g.push_arena_id,
              COALESCE(a.name, g.location, 'Место не указано') AS arena_name,
              a.timezone AS arena_tz,
              ht.name AS home_name, at_t.name AS away_name
@@ -440,6 +442,7 @@ export async function pollLmsGames() {
         AND g.home_team_id IS NOT NULL
         AND g.away_team_id IS NOT NULL
         AND (g.push_processed_at IS NULL OR g.updated_at > g.push_processed_at)
+        AND (g.game_date > NOW() - INTERVAL '2 hours')
       LIMIT 30
     `);
 
@@ -484,40 +487,49 @@ export async function pollLmsGames() {
           await scheduleMatchDeadlines(g.id, tid, g.game_date, null);
         }
       } else {
-        // Изменение матча (дата/время/арена)
-        for (const tid of teamIds) {
-          const oppName = tid === g.home_team_id ? opponent : homeName;
-          sendPushToTeam(tid, 'schedule', {
-            title: 'Матч изменён',
-            body: `Новое расписание: против ${oppName}, ${dateStr}, ${g.arena_name}`,
-            url: `/event/match/${g.id}`,
-            tag: `event-update-${g.id}`,
-          }).catch(() => {});
-        }
+        // Шлём «Матч изменён» только если реально сменились дата/время или арена
+        const hasSnapshot = g.push_game_date !== null;
+        const dateChanged = hasSnapshot && String(g.game_date) !== String(g.push_game_date);
+        const arenaChanged = hasSnapshot && String(g.arena_id || '') !== String(g.push_arena_id || '');
 
-        // Пересчитываем send_at во всех отложенных уведомлениях этого матча
-        if (g.game_date) {
-          const gameTime = new Date(g.game_date).getTime();
-          const reminder24 = new Date(gameTime - 24 * 60 * 60 * 1000);
-          const deadline2h = new Date(gameTime - 2 * 60 * 60 * 1000);
+        if (dateChanged || arenaChanged) {
+          for (const tid of teamIds) {
+            const oppName = tid === g.home_team_id ? opponent : homeName;
+            sendPushToTeam(tid, 'schedule', {
+              title: 'Матч изменён',
+              body: `Новое расписание: против ${oppName}, ${dateStr}, ${g.arena_name}`,
+              url: `/event/match/${g.id}`,
+              tag: `event-update-${g.id}`,
+            }).catch(() => {});
+          }
 
-          await pool.query(
-            `UPDATE scheduled_notifications SET send_at = $1,
-               payload = jsonb_set(payload, '{body}', to_jsonb($3::text))
-             WHERE event_id = $2 AND type = 'event_reminder_24h' AND sent = false`,
-            [reminder24, g.id, `против ${g.away_name || 'Соперник'}, ${dateStr}, ${g.arena_name}`]
-          );
+          // Пересчитываем send_at во всех отложенных уведомлениях этого матча
+          if (g.game_date) {
+            const gameTime = new Date(g.game_date).getTime();
+            const reminder24 = new Date(gameTime - 24 * 60 * 60 * 1000);
+            const deadline2h = new Date(gameTime - 2 * 60 * 60 * 1000);
 
-          await pool.query(
-            `UPDATE scheduled_notifications SET send_at = $1
-             WHERE event_id = $2 AND type IN ('roster_deadline', 'lines_deadline') AND sent = false`,
-            [deadline2h, g.id]
-          );
+            await pool.query(
+              `UPDATE scheduled_notifications SET send_at = $1,
+                 payload = jsonb_set(payload, '{body}', to_jsonb($3::text))
+               WHERE event_id = $2 AND type = 'event_reminder_24h' AND sent = false`,
+              [reminder24, g.id, `против ${g.away_name || 'Соперник'}, ${dateStr}, ${g.arena_name}`]
+            );
+
+            await pool.query(
+              `UPDATE scheduled_notifications SET send_at = $1
+               WHERE event_id = $2 AND type IN ('roster_deadline', 'lines_deadline') AND sent = false`,
+              [deadline2h, g.id]
+            );
+          }
         }
       }
 
-      // Ставим метку — обработано
-      await pool.query('UPDATE games SET push_processed_at = NOW() WHERE id = $1', [g.id]);
+      // Ставим метку — обработано + запоминаем текущие дату и арену для сравнения
+      await pool.query(
+        'UPDATE games SET push_processed_at = NOW(), push_game_date = game_date, push_arena_id = arena_id WHERE id = $1',
+        [g.id]
+      );
     }
   } catch (err) {
     console.error('Ошибка поллинга LMS-матчей:', err.message);

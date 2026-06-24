@@ -202,7 +202,7 @@ export const saveMatchLines = async (req, res) => {
 
     await client.query('COMMIT');
 
-    getMatchInfo(eventId).then(info => {
+    getMatchInfo(eventId, teamId).then(info => {
       sendPushToTeamExcept(teamId, req.user.id, 'lines', {
         title: 'Состав на матч обновлён',
         body: info.text,

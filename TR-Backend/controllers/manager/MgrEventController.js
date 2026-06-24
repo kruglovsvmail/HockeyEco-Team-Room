@@ -323,7 +323,7 @@ export const createEvent = async (req, res) => {
 
       // Push: новый матч (расписание) + напоминание за 24ч
       const matchPushTitle = gameType === 'friendly_pwa' ? 'Товарищеский матч' : 'Новый матч';
-      getMatchInfo(newGameId).then(info => {
+      getMatchInfo(newGameId, teamId).then(info => {
         sendPushToTeamExcept(teamId, req.user.id, 'schedule', {
           title: matchPushTitle,
           body: info.text,
@@ -334,14 +334,14 @@ export const createEvent = async (req, res) => {
       if (eventTimestamp) {
         const sendAt = new Date(new Date(eventTimestamp).getTime() - 24 * 60 * 60 * 1000);
         if (sendAt > new Date()) {
-          getMatchInfo(newGameId).then(info => {
+          getMatchInfo(newGameId, teamId).then(info => {
             scheduleNotification({ type: 'event_reminder_24h', teamId, eventId: newGameId, sendAt, payload: { title: 'Матч через 24 часа', body: info.text, url: `/event/match/${newGameId}`, tag: `reminder-${newGameId}` } });
           }).catch(() => {});
         }
       }
       // Push: если friendly_pwa — уведомить сопернику о вызове
       if (gameType === 'friendly_pwa' && awayTeamId) {
-        getMatchInfo(newGameId).then(info => {
+        getMatchInfo(newGameId, awayTeamId).then(info => {
           sendPushToTeamExcept(awayTeamId, req.user.id, 'friendly', {
             title: 'Вызов на товарищеский матч',
             body: info.text,
