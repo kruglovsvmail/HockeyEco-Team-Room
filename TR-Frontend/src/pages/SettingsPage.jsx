@@ -2,7 +2,6 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { useFocusRevalidate } from '../hooks/useFocusRevalidate';
 import { usePushSubscription } from '../hooks/usePushSubscription';
 import { getAuthHeaders, getImageUrl } from '../utils/helpers';
-import { CheckboxLP } from '../ui/Checkbox-LP';
 import { SegmentedControl } from '../ui/SegmentedControl';
 import { FadeIn, StaggerContainer } from '../ui/FadeIn';
 import { Icon } from '../ui/Icon';
@@ -87,31 +86,27 @@ export function SettingsPage() {
             <>
               {/* БЛОК 1: НАСТРОЙКА ЦВЕТОВОЙ ПАЛИТРЫ КОМАНД */}
               <SettingsBlock title="Персонализация" icon="jersey">
-                <div className="flex flex-col text-left">
-                  <CheckboxLP 
-                    checked={useTeamColors} 
-                    onChange={handleToggleColors} 
-                    label="Цветовое кодирование команд" 
-                    className="py-1"
-                  />
-                  <p className="text-[10px] text-content-muted font-medium leading-relaxed pl-8 pt-0.5">
-                    При включении этого параметра элементы календаря (челки карт, время проведения матчей, тактические иконки, и др.) будут автоматически адаптироваться под официальный брендовый цвет ваших хоккейных команд, загруженные из базы данных.
-                  </p>
+                <div className="flex items-center justify-between">
+                  <div className="flex flex-col flex-1 min-w-0">
+                    <span className="text-[18px] font-bold text-content-main">Цветовое кодирование</span>
+                    <span className="text-[12px] text-content-muted pr-4 mt-0.5">
+                      Элементы адаптируются под брендовыt цвета ваших команд
+                    </span>
+                  </div>
+                  <Toggle checked={useTeamColors} onChange={handleToggleColors} />
                 </div>
               </SettingsBlock>
 
               {/* БЛОК 2: НАСТРОЙКА ТЕМЫ ОФОРМЛЕНИЯ ПРИЛОЖЕНИЯ */}
               <SettingsBlock title="Тема интерфейса" icon="gear">
-                <div className="flex flex-col text-left">
-                  <CheckboxLP 
-                    checked={isDarkMode} 
-                    onChange={handleToggleTheme} 
-                    label="Темная тема оформления" 
-                    className="py-1"
-                  />
-                  <p className="text-[10px] text-content-muted font-medium leading-relaxed pl-8 pt-0.5">
-                    Переключает интерфейс личного кабинета HockeyEco в ночной режим. Снижает нагрузку на зрение для комфортной работы со статистикой, составами пятерок и расписанием при слабом освещении.
-                  </p>
+                <div className="flex items-center justify-between">
+                  <div className="flex flex-col flex-1 min-w-0">
+                    <span className="text-[18px] font-bold text-content-main">Тёмная тема</span>
+                    <span className="text-[12px] text-content-muted pr-4 mt-0.5">
+                      Ночной режим для комфортной работы при слабом освещении
+                    </span>
+                  </div>
+                  <Toggle checked={isDarkMode} onChange={handleToggleTheme} />
                 </div>
               </SettingsBlock>
             </>
@@ -251,7 +246,7 @@ function NotificationSettings() {
                 <span className="text-md font-bold text-content-main">
                   {isSubscribed ? 'Уведомления включены' : 'Включить уведомления'}
                 </span>
-                <span className="text-[10px] text-content-muted pr-4 mt-0.5">
+                <span className="text-[12px] text-content-muted pr-4 mt-0.5">
                   {isSubscribed ? 'Это устройство получает пуш-уведомления' : 'Разрешите получение уведомлений на этом устройстве'}
                 </span>
               </>
@@ -325,7 +320,7 @@ function NotificationSettings() {
                         <Icon name={group.icon} className="w-4 h-4 text-content-muted shrink-0" />
                         <div className="flex flex-col min-w-0">
                           <span className="text-[18px] font-semibold text-content-main">{group.label}</span>
-                          <span className="text-[10px] text-content-muted leading-tight mt-0.5 pr-6">{group.description}</span>
+                          <span className="text-[12px] text-content-muted leading-tight mt-0.5 pr-6">{group.description}</span>
                         </div>
                       </div>
                       <Toggle

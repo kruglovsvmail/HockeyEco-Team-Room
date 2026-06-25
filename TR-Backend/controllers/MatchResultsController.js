@@ -639,39 +639,25 @@ export const saveRegulation = async (req, res) => {
     for (const ev of events) {
       if (ev.period === 'SO') continue;
 
-      let total;
-      if (ev.period === 'OT') {
-        total = oldRegularSec + Number(ev.time_seconds);
-      } else {
-        const idx = parseInt(ev.period, 10) || 1;
-        total = (idx - 1) * oldPlSec + Number(ev.time_seconds);
-      }
+      const total = Number(ev.time_seconds) || 0;
 
-      let newPeriod, newTimeSec;
+      let newPeriod;
       if (total <= newRegularSec) {
-        // Влезает в регулярные периоды
         let idx = Math.max(1, Math.min(periods_count, Math.ceil(total / newPlSec)));
         if (total === 0) idx = 1;
         newPeriod = String(idx);
-        newTimeSec = total - (idx - 1) * newPlSec;
       } else if (hasOt && total <= newTotalSec) {
         newPeriod = 'OT';
-        newTimeSec = total - newRegularSec;
       } else {
-        // Вылетело за конец — клипуем к концу ОТ (если есть) или концу последнего периода
-        if (hasOt) {
-          newPeriod = 'OT';
-          newTimeSec = newOtSec;
-        } else {
-          newPeriod = String(periods_count);
-          newTimeSec = newPlSec;
-        }
+        newPeriod = hasOt ? 'OT' : String(periods_count);
       }
 
-      await client.query(
-        'UPDATE "public"."game_events" SET period = $1, time_seconds = $2 WHERE id = $3',
-        [newPeriod, newTimeSec, ev.id]
-      );
+      if (newPeriod !== ev.period) {
+        await client.query(
+          'UPDATE "public"."game_events" SET period = $1 WHERE id = $2',
+          [newPeriod, ev.id]
+        );
+      }
     }
 
     // UPSERT game_timers

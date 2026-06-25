@@ -76,7 +76,7 @@ const EventBlock = ({
 
 // Текст подсказки в HintPopover
 const HintText = ({ text }) => (
-  <p className="text-[10px] font-semibold text-content-main text-center leading-snug">{text}</p>
+  <p className="text-[14px] font-semibold text-content-main text-center leading-snug">{text}</p>
 );
 
 // Обёртка для заблокированного поля редактирования.
@@ -706,7 +706,7 @@ export const EditEventPanel = ({ data, onClose }) => {
 // Внутренний хелпер вывода строки данных
 const InfoRow = ({ label, value }) => (
   <div className="flex items-center justify-between py-1.5">
-    <span className="text-[10px] font-bold text-content-muted uppercase tracking-wider">{label}</span>
+    <span className="text-[12px] font-bold text-content-muted uppercase tracking-wider">{label}</span>
     <span className="text-[14px] font-bold text-content-main text-right truncate ml-2">{value || '—'}</span>
   </div>
 );

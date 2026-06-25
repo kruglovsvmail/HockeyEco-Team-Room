@@ -713,7 +713,7 @@ export const TrainingLines = ({ event, initialAttendees = [], initialStaffMember
 
       {/* КНОПКИ УПРАВЛЕНИЯ */}
       {(isEditMode || hasCoachAccess || (hasShareRoleAccess && draftLines.length > 0)) && (
-        <div className="flex justify-center items-center gap-1 pb-2 mb-4 w-full bg-transparent flex-wrap ">
+        <div className="flex justify-center items-center gap-2.5 pb-2 mb-4 w-full bg-transparent flex-wrap ">
           {isEditMode ? (
             <>
               <button onClick={handleHeaderActionClick} disabled={isPublishing}

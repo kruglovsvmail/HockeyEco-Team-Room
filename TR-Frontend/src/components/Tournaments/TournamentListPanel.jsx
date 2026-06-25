@@ -47,7 +47,7 @@ export function TournamentListPanel({ teamId, activeTournamentId, onSelect, hasT
                 key={t.tournament_team_id}
                 onClick={() => onSelect(t)}
                 className={clsx(
-                  "flex items-center gap-4 p-4 rounded-3xl border transition-all text-left outline-none active:scale-95",
+                  "flex items-center gap-4 p-3 rounded-3xl border transition-all text-left outline-none active:scale-95",
                   isActive 
                     ? "bg-brand-opacity border-brand" 
                     : "bg-surface-level1 border-surface-border hover:border-brand/30"
@@ -63,14 +63,14 @@ export function TournamentListPanel({ teamId, activeTournamentId, onSelect, hasT
                 </div>
                 <div className="flex flex-col min-w-0 flex-1">
                   <span 
-                    className="text-[10px] font-black uppercase tracking-wide text-content-main"
+                    className="text-[14px] font-black uppercase tracking-wide text-content-main"
                    >
                     {t.league_name}
                   </span>
-                  <h4 className="text-[10px] font-semibold text-content-muted truncate leading-tight">
+                  <h4 className="text-[14px] font-semibold text-content-muted truncate leading-tight">
                     {t.division_name}
                   </h4>
-                  <span className="text-[10px] font-bold text-content-muted mt-1">
+                  <span className="text-[14px] font-bold text-content-muted mt-1">
                     {t.season_name}
                   </span>
                 </div>

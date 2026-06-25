@@ -26,7 +26,7 @@ const formatPhoneNumber = (phoneStr) => {
 // Унифицированная строка вывода информации с динамической подкраской бренда хоккейной команды
 const InfoRow = ({ label, value, highlight = false, activeBrandColor }) => (
   <div className="flex items-center justify-between py-2.5 border-b border-surface-border last:border-0">
-    <span className="text-[10px] font-bold text-content-muted uppercase tracking-wider">{label}</span>
+    <span className="text-[12px] font-bold text-content-muted uppercase tracking-wider">{label}</span>
     <span 
       className={`text-[14px] font-black ${highlight ? '' : 'text-content-main'}`}
       style={highlight ? { color: activeBrandColor || 'var(--color-brand)' } : {}}
@@ -451,15 +451,15 @@ export const UserDetails = ({ data }) => {
 
             <div className="flex flex-col text-left flex-1 min-w-0">
               <span 
-                className="text-[8px] font-black uppercase tracking-widest mb-1 block"
+                className="text-[10px] font-black uppercase tracking-widest mb-1 block"
                 style={{ color: profile.roster_id ? 'var(--color-success)' : 'var(--color-content-subtle)' }}
               >
                 {profile.roster_id ? 'В ростере' : 'Не в ростере'}
               </span>
               
               <h2 className="text-[18px] font-black text-content-main uppercase truncate leading-tight">{profile.last_name}</h2>
-              <h3 className="text-[10px] font-bold text-content-muted mt-0.5 capitalize">{profile.first_name}</h3>
-              {profile.middle_name && <h4 className="text-[10px] font-medium text-content-muted truncate opacity-60">{profile.middle_name}</h4>}
+              <h3 className="text-[12px] font-bold text-content-muted mt-0.5 capitalize">{profile.first_name}</h3>
+              {profile.middle_name && <h4 className="text-[12px] font-medium text-content-muted truncate opacity-60">{profile.middle_name}</h4>}
               
               {!isEditHeader && (profile.is_captain || profile.is_assistant) && (
                 <div 

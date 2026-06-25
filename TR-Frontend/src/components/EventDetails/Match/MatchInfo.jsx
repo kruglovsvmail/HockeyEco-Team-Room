@@ -222,75 +222,83 @@ export const MatchInfo = ({
             БЛОК 0: ПРОТИВОСТОЯНИЕ 
         ══════════════════════════════════════════════ */}
         <ContainerContent title="Противостояние">
-          <div className="w-full flex items-center justify-between relative py-3 px-1">
+          <div className="w-full flex flex-col items-center py-3 px-1">
 
-            {/* Хозяева */}
-            <div className="w-[38%] flex flex-col items-center text-center gap-4 min-w-0">
-              <div
-                className="w-14 h-14 flex items-center justify-center shrink-0"
-              >
-                {homeLogo ? (
-                  <img src={getImageUrl(homeLogo)} alt="" className="w-full h-full object-contain" />
+            {/* Ряд 1: Логотипы + центральная колонка (статус сверху, счёт снизу) */}
+            <div className="w-full flex items-stretch justify-between">
+
+              {/* Хозяева — логотип */}
+              <div className="w-[38%] flex justify-center">
+                <div className="w-14 h-14 flex items-center justify-center shrink-0">
+                  {homeLogo ? (
+                    <img src={getImageUrl(homeLogo)} alt="" className="w-full h-full object-contain" />
+                  ) : (
+                    <span className="text-[10px] font-black bg-white/10 border border-surface-border rounded-2xl py-2 px-4 text-content-muted">НЕТ ЛОГО</span>
+                  )}
+                </div>
+              </div>
+
+              {/* Центр: статус по верху логотипов, счёт/VS по низу */}
+              <div className="flex flex-col items-center justify-between shrink-0 min-w-[84px] h-14">
+                {isFinished && matchStatusText ? (
+                  <span className={clsx('text-[12px] font-bold uppercase tracking-wide leading-none pt-0.5', matchStatusColor)} style={matchStatusStyle}>
+                    {matchStatusText}
+                  </span>
+                ) : isLive ? (
+                  <div className="flex items-center gap-1 bg-red-500/10 px-1.5 py-0.5 rounded-full animate-pulse">
+                    <span className="w-1 h-1 rounded-full bg-red-500" />
+                    <span className="text-[10px] font-black text-red-500 uppercase tracking-tight">LIVE</span>
+                  </div>
                 ) : (
-                  <span className="text-[10px] font-black bg-white/10 border border-surface-border rounded-2xl py-2 px-4 text-content-muted">НЕТ ЛОГО</span>
+                  <span />
+                )}
+
+                {isPlayedOrLive ? (
+                  <div className="flex items-center gap-1 font-black text-[28px] tracking-tighter justify-center leading-none">
+                    <span className={scoreColorClass}>{homeScoreDisplay}</span>
+                    <span className="text-content-subtle text-[28px] font-bold pb-0.5 px-1">:</span>
+                    <span className={scoreColorClass}>{awayScoreDisplay}</span>
+                  </div>
+                ) : (
+                  <span className="text-[28px] font-black text-content-subtle font-mono tracking-widest opacity-50 leading-none">VS</span>
                 )}
               </div>
-              <span className="text-[14px] font-bold text-content-main uppercase tracking-tight w-full px-1 break-words leading-tight line-clamp-2 h-7 flex items-center justify-center">
+
+              {/* Гости — логотип */}
+              <div className="w-[38%] flex justify-center">
+                <div className="w-14 h-14 flex items-center justify-center shrink-0">
+                  {awayLogo ? (
+                    <img src={getImageUrl(awayLogo)} alt="" className="w-full h-full object-contain" />
+                  ) : (
+                    <span className="text-[10px] font-black bg-white/10 border border-surface-border rounded-2xl py-2 px-4 text-content-muted">НЕТ ЛОГО</span>
+                  )}
+                </div>
+              </div>
+
+            </div>
+
+            {/* Ряд 2: Названия команд + бейдж окончания по центру */}
+            <div className="w-full flex items-start justify-between mt-4">
+              <span className="w-[38%] text-[14px] font-bold text-content-main uppercase tracking-tight px-1 break-words leading-tight line-clamp-2 h-7 flex items-center justify-center text-center">
                 {homeName}
               </span>
-            </div>
 
-            {/* Центр: счёт / VS */}
-            <div className="flex flex-col items-center justify-center text-center shrink-0 px-1 min-w-[84px]">
-              {isFinished && matchStatusText && (
-                <span className={clsx('text-[14px] font-black uppercase tracking-wide mb-1.5 leading-none', matchStatusColor)} style={matchStatusStyle}>
-                  {matchStatusText}
-                </span>
-              )}
-
-              {isPlayedOrLive ? (
-                <div className="flex items-center gap-1 font-black text-[28px] tracking-tighter justify-center leading-none">
-                  <span className={scoreColorClass}>{homeScoreDisplay}</span>
-                  <span className="text-content-subtle text-[28px] font-bold pb-0.5 px-1">:</span>
-                  <span className={scoreColorClass}>{awayScoreDisplay}</span>
-                </div>
-              ) : (
-                <span className="text-[28px] font-black text-content-subtle font-mono tracking-widest opacity-50 leading-none">VS</span>
-              )}
-
-              {isFinished && (isOvertime || isShootout || isTech) && (
-                <span
-                  className="text-[10px] font-bold uppercase tracking-widest mt-1.5 px-1.5 py-0.5 rounded leading-none shadow-xs"
-                  style={isTech
-                    ? { color: 'var(--color-danger)', backgroundColor: 'rgba(239, 68, 68, 0.05)', borderColor: 'rgba(239, 68, 68, 0.1)' }
-                    : { color: activeBrandColor, backgroundColor: `${activeBrandColor}14`, borderColor: `${activeBrandColor}1a` }}
-                >
-                  {isOvertime && 'от'}
-                  {isShootout && 'булл'}
-                  {isTech && 'тех'}
-                </span>
-              )}
-
-              {isLive && (
-                <div className="flex items-center gap-1 bg-red-500/10 px-1.5 py-0.5 rounded-full animate-pulse mt-1.5">
-                  <span className="w-1 h-1 rounded-full bg-red-500" />
-                  <span className="text-[10px] font-black text-red-500 uppercase tracking-tight">LIVE</span>
-                </div>
-              )}
-            </div>
-
-            {/* Гости */}
-            <div
-              className="w-[38%] flex flex-col items-center text-center gap-4 min-w-0"
-            >
-              <div className="w-14 h-14 flex items-center justify-center shrink-0">
-                {awayLogo ? (
-                  <img src={getImageUrl(awayLogo)} alt="" className="w-full h-full object-contain" />
-                ) : (
-                  <span className="text-[10px] font-black bg-white/10 border border-surface-border rounded-2xl py-2 px-4 text-content-muted">НЕТ ЛОГО</span>
+              <div className="shrink-0 min-w-[84px] flex items-start justify-center">
+                {isFinished && (isOvertime || isShootout || isTech) && (
+                  <span
+                    className="text-[10px] font-bold uppercase tracking-widest px-1.5 py-0.5 rounded leading-none shadow-xs"
+                    style={isTech
+                      ? { color: 'var(--color-danger)', backgroundColor: 'rgba(239, 68, 68, 0.05)', borderColor: 'rgba(239, 68, 68, 0.1)' }
+                      : { color: activeBrandColor, backgroundColor: `${activeBrandColor}14`, borderColor: `${activeBrandColor}1a` }}
+                  >
+                    {isOvertime && 'от'}
+                    {isShootout && 'булл'}
+                    {isTech && 'тех'}
+                  </span>
                 )}
               </div>
-              <span className="text-[14px] font-bold text-content-main uppercase tracking-tight w-full px-1 break-words leading-tight line-clamp-2 h-7 flex items-center justify-center">
+
+              <span className="w-[38%] text-[14px] font-bold text-content-main uppercase tracking-tight px-1 break-words leading-tight line-clamp-2 h-7 flex items-center justify-center text-center">
                 {awayName}
               </span>
             </div>
@@ -315,11 +323,11 @@ export const MatchInfo = ({
                 <div
                   key={row.label}
                   className={clsx(
-                    'flex items-center justify-between gap-3 py-2.5',
+                    'flex items-center justify-between gap-3 py-3',
                     idx !== arr.length - 1 && 'border-b border-surface-level2'
                   )}
                 >
-                  <div className="flex items-center gap-2 text-content-muted min-w-0">
+                  <div className="flex items-center gap-2 text-content-muted min-w-0 pl-2">
                     <Icon name={row.icon} className="w-4 h-4 shrink-0" />
                     <span className="text-[14px] font-medium truncate">{row.label}</span>
                   </div>
@@ -430,7 +438,7 @@ export const MatchInfo = ({
                       <span className="text-danger">П</span>
                     </div>
                   </div>
-                  <div className="w-full bg-surface-level2/20 border border-surface-border/40 rounded-xl p-2 h-14 relative flex items-center justify-center">
+                  <div className="w-full rounded-xl p-2 h-14 relative flex items-center justify-center">
                     <svg viewBox="0 0 200 40" className="w-full h-full overflow-visible">
                       <line x1="0" y1="6"  x2="200" y2="6"  stroke="currentColor" className="text-surface-border opacity-20" strokeDasharray="3,3" />
                       <line x1="0" y1="20" x2="200" y2="20" stroke="currentColor" className="text-surface-border opacity-40" strokeDasharray="2,2" />

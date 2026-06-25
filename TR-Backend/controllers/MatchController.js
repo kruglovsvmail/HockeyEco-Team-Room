@@ -559,11 +559,13 @@ export const getMatchStats = async (req, res) => {
         GROUP BY conceding_team_id
       ),
       empty_net_goals_scored AS (
-        -- Голы в пустые ворота (на момент гола в журнале у соперника NULL-вратарь).
+        -- Голы в пустые ворота С БРОСКА (на момент гола в журнале у соперника NULL-вратарь).
         -- Засчитываются в SOG атакующей команды как +1 бросок в створ ворот.
+        -- Голы без броска (закатили, рикошет) в SOG не идут.
         SELECT scoring_team_id AS team_id, COUNT(*)::int AS empty_net_goals
         FROM goal_to_goalie
         WHERE conceding_goalie_id IS NULL
+          AND from_shot = true
         GROUP BY scoring_team_id
       )
       SELECT

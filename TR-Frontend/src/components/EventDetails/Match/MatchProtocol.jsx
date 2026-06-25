@@ -14,7 +14,7 @@ import { useAccess } from '../../../hooks/useAccess';
 import { MatchEventSheet } from './MatchEventSheet';
 import { ShotsSheet } from './ShotsSheet';
 import { GoalieChangeSheet } from './GoalieChangeSheet';
-import { decodeGoalieLog, encodeGoalieLog, removeGoalieChange, periodKeyForTime, absoluteSeconds } from './goalieLogModel';
+import { decodeGoalieLog, encodeGoalieLog, removeGoalieChange, periodKeyForTime } from './goalieLogModel';
 
 const PERIOD_ORDER = ['1', '2', '3', 'OT', 'SO'];
 const PERIOD_LABELS = { '1': '1-й период', '2': '2-й период', '3': '3-й период', OT: 'Овертайм', SO: 'Серия бросков' };
@@ -791,7 +791,7 @@ export const MatchProtocol = ({ event, user, selectedTeam, openRightPanel }) => 
     periods.forEach(p => map.set(p.period, {
       period: p.period,
       label: p.label,
-      events: p.events.map(ev => ({ ...ev, display_seconds: absoluteSeconds(ev.period ?? p.period, ev.time_seconds, regulation) })),
+      events: p.events.map(ev => ({ ...ev, display_seconds: ev.time_seconds })),
     }));
     goalieFeedItems.forEach(it => {
       if (!map.has(it.period)) map.set(it.period, { period: it.period, label: PERIOD_LABELS[it.period] || it.period, events: [] });

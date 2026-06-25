@@ -8,7 +8,7 @@ import { FadeIn } from '../../ui/FadeIn';
 
 const STAGE_OPTIONS = [
   { value: 'all', label: 'Общая' },
-  { value: 'regular', label: 'Регулярка' },
+  { value: 'regular', label: 'Регуляр.' },
   { value: 'playoff', label: 'Плей-офф' }
 ];
 
@@ -167,10 +167,10 @@ export function TournamentStat({
                 className="w-[200%] flex items-start h-full absolute left-0 top-0.5 transition-transform duration-300 ease-[cubic-bezier(0.32,0.72,0,1)] will-change-transform"
                 style={{ transform: `translateX(-${isGoaliesActive ? 50 : 0}%)` }}
               >
-                <div className="w-1/2 shrink-0 text-center text-[10px] font-bold uppercase tracking-wider text-content-main truncate">
+                <div className="w-1/2 shrink-0 text-center text-[12px] font-bold uppercase tracking-wider text-content-main truncate">
                   Полевые игроки
                 </div>
-                <div className="w-1/2 shrink-0 text-center text-[10px] font-bold uppercase tracking-wider text-content-main truncate">
+                <div className="w-1/2 shrink-0 text-center text-[12px] font-bold uppercase tracking-wider text-content-main truncate">
                   Вратари
                 </div>
               </div>
@@ -194,7 +194,7 @@ export function TournamentStat({
           <button
             type="button"
             onClick={() => setIsDropdownOpen(!isDropdownOpen)}
-            className="w-full h-full px-4 flex items-center justify-between text-[10px] font-bold uppercase tracking-widest text-content-main outline-none active:opacity-75 transition-opacity"
+            className="w-full h-full px-4 flex items-center justify-between text-[12px] font-bold uppercase tracking-widest text-content-main outline-none active:opacity-75 transition-opacity"
           >
             <span className="truncate">{selectedStage.label}</span>
             <Icon name="chevron_left" className={clsx("w-4 h-4 transition-transform duration-200 text-content-muted shrink-0", isDropdownOpen ? "rotate-90" : "-rotate-90")} />
@@ -260,7 +260,7 @@ export function TournamentStat({
                       </div>
                       <div className="flex flex-col min-w-0 leading-tight gap-0.5">
                         <span className="text-[14px] font-normal text-content-main truncate">{row.last_name}</span>
-                        <span className="text-[10px] text-content-muted font-normal truncate">{row.first_name}</span>
+                        <span className="text-[12px] text-content-muted font-normal truncate">{row.first_name}</span>
                       </div>
                     </div>
                   </div>
@@ -340,8 +340,8 @@ export function TournamentStat({
                         )}
                       </div>
                       <div className="flex flex-col min-w-0 leading-tight gap-0.5">
-                        <span className="text-[18px] font-normal text-content-main truncate">{row.last_name}</span>
-                        <span className="text-[10px] text-content-muted font-normal truncate">{row.first_name}</span>
+                        <span className="text-[14px] font-normal text-content-main truncate">{row.last_name}</span>
+                        <span className="text-[12px] text-content-muted font-normal truncate">{row.first_name}</span>
                       </div>
                     </div>
                   </div>

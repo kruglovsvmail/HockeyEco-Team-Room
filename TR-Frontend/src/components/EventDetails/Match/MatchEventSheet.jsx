@@ -39,22 +39,11 @@ function totalToPeriod(totalSec, reg) {
   if (totalSec <= regSec) {
     let idx = Math.max(1, Math.min(pc, Math.ceil(totalSec / plSec) || 1));
     if (totalSec === 0) idx = 1;
-    return { period: String(idx), time_seconds: totalSec - (idx - 1) * plSec };
+    return { period: String(idx), time_seconds: totalSec };
   }
-  if (otSec > 0 && totalSec <= regSec + otSec) return { period: 'OT', time_seconds: totalSec - regSec };
-  if (otSec > 0) return { period: 'OT', time_seconds: otSec };
-  return { period: String(pc), time_seconds: plSec };
-}
-
-function periodToTotal(period, time_seconds, reg) {
-  const plSec = (reg?.period_length || 20) * 60;
-  const otSec = (reg?.ot_length     || 0)  * 60;
-  const pc    =  reg?.periods_count || 3;
-  const t = Number(time_seconds) || 0;
-  if (period === 'OT') return pc * plSec + t;
-  if (period === 'SO') return pc * plSec + otSec + t;
-  const idx = parseInt(period, 10) || 1;
-  return (idx - 1) * plSec + t;
+  if (otSec > 0 && totalSec <= regSec + otSec) return { period: 'OT', time_seconds: totalSec };
+  if (otSec > 0) return { period: 'OT', time_seconds: regSec + otSec };
+  return { period: String(pc), time_seconds: regSec };
 }
 
 // ─────────────────────────── Кнопка-номер игрока ───────────────────────────
@@ -185,7 +174,7 @@ export function MatchEventSheet({
     if (!isOpen) return;
     setActiveChip('scorer');
     if (isEdit && existingEvent) {
-      const total = periodToTotal(existingEvent.period, existingEvent.time_seconds, regulation);
+      const total = Number(existingEvent.time_seconds) || 0;
       setMinutes(pad2(Math.floor(total / 60)));
       setSeconds(pad2(total % 60));
       if (existingEvent.event_type === 'penalty') {

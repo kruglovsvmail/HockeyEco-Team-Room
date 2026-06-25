@@ -14,7 +14,7 @@ export function TournamentTable({ standings, expandedTeams, onToggleTeam }) {
 
   return (
     <div className="flex flex-col gap-2">
-      <div className="text-center text-[14px] font-black uppercase tracking-[0.2em] text-content-muted">
+      <div className="text-center text-[18px] font-bold uppercase tracking-[0.1em] text-content-muted">
         Турнирная таблица
       </div>
     <div className="bg-surface-level1 rounded-2xl overflow-hidden shadow-md pb-4">
@@ -42,12 +42,12 @@ export function TournamentTable({ standings, expandedTeams, onToggleTeam }) {
               <div className="text-center text-[14px] font-mono text-content-muted mr-5">{row.rank}</div>
               <div className="flex items-center gap-4 min-w-0">
                 <img src={getImageUrl(row.team_logo)} alt="" className="w-6 h-6 object-contain shrink-0" />
-                <span className="leading-tight text-[10px] text-content-main uppercase font-bold truncate">
+                <span className="leading-tight text-[14px] text-content-main uppercase font-bold truncate">
                   {row.team_name}
                 </span>
               </div>
-              <div className="text-center text-content-muted text-[14px]">{row.games_played}</div>
-              <div className="text-center font-black text-brand text-[14px]">{row.points}</div>
+              <div className="text-center text-content-muted text-[18px]">{row.games_played}</div>
+              <div className="text-center font-black text-brand text-[18px]">{row.points}</div>
             </div>
 
             <div className={clsx(
@@ -57,7 +57,7 @@ export function TournamentTable({ standings, expandedTeams, onToggleTeam }) {
               <div className="overflow-hidden">
                 <div className="flex flex-col">
                   <div className="w-full bg-surface-base overflow-hidden px-1">
-                    <div className="grid grid-cols-6 text-center bg-surface-base border-t border-surface-level2 py-2 text-[10px] font-normal uppercase tracking-wider text-content-muted">
+                    <div className="grid grid-cols-6 text-center bg-surface-base border-t border-surface-level2 py-2 text-[12px] font-normal uppercase tracking-wider text-content-muted">
                       <div>В</div>
                       <div>ВО/ВБ</div>
                       <div>Н</div>
@@ -65,7 +65,7 @@ export function TournamentTable({ standings, expandedTeams, onToggleTeam }) {
                       <div>ПО/ПБ</div>
                       <div>РШ</div>
                     </div>
-                    <div className="grid grid-cols-6 text-center pt-1 pb-3 text-[10px] font-bold text-content-main">
+                    <div className="grid grid-cols-6 text-center pt-1 pb-3 text-[12px] font-bold text-content-main">
                       <div>{row.wins_reg}</div>
                       <div className="text-content-main">{row.wins_ot}</div>
                       <div>{row.draws}</div>
@@ -80,9 +80,9 @@ export function TournamentTable({ standings, expandedTeams, onToggleTeam }) {
                     </div>
                   </div>
                   
-                  <div className="flex justify-between bg-surface-base items-center px-8 py-3 text-[10px] font-normal text-content-muted">
+                  <div className="flex justify-between bg-surface-base items-center px-8 py-3 text-[12px] font-normal text-content-muted">
                     <span>Всего заброшено / пропущено:</span>
-                    <span className="font-mono text-content-muted text-[10px]">
+                    <span className="font-mono text-content-muted text-[12px]">
                       {row.goals_for} — {row.goals_against}
                     </span>
                   </div>

@@ -177,7 +177,7 @@ const PlayerCell = ({ player, idx }) => (
       </div>
       <div className="flex flex-col min-w-0 leading-tight gap-0.5">
         <span className="text-[14px] font-normal text-content-main truncate">{player.last_name}</span>
-        <span className="text-[10px] text-content-muted font-normal truncate">{player.first_name}</span>
+        <span className="text-[12px] text-content-muted font-normal truncate">{player.first_name}</span>
       </div>
     </div>
   </div>

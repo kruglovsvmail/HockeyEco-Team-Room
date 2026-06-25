@@ -758,7 +758,7 @@ export const MatchLines = ({ event, initialAttendees = [], initialDraftLines = [
 
       {/* КНОПКИ УПРАВЛЕНИЯ ПЯТЕРКАМИ С УЧЕТОМ СТАТУСА ТАРИФА ПОДПИСКИ ИЛИ ВРЕМЕННЫХ ДЕДЛАЙНОВ */}
       {(isEditMode || hasCoachAccess || hasAdminAccess || (hasShareRoleAccess && draftLines.length > 0)) && (
-        <div className="flex justify-center items-center gap-1 pb-2 mb-4 w-full bg-transparent flex-wrap">
+        <div className="flex justify-center items-center gap-2.5 pb-2 mb-4 w-full bg-transparent flex-wrap">
           {isEditMode ? (
             <>
               <button
