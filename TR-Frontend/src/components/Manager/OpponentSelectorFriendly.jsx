@@ -183,7 +183,7 @@ export function OpponentSelectorFriendly({ data }) {
               activeColor={currentTeamColor} 
               onClick={() => setIsNewOpponentSheetOpen(true)}
             >
-              Создать нового соперника
+              + Новый соперник
             </ButtonLP>
           </div>
         </FadeIn>

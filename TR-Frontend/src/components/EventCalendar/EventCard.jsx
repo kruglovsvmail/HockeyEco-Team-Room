@@ -191,15 +191,15 @@ const EventCard = ({
       <div className={(isFinished || isNoResult) ? 'opacity-60 grayscale transition-all duration-300' : ''}>
 
       {/* 1. ШАПКА: Локация и Челка Даты */}
-      <div className="flex justify-between items-stretch w-full h-[32px]">
-        <div className="flex items-center gap-1 pl-4 flex-1 overflow-hidden text-left">
+      <div className="flex justify-between items-stretch w-full h-[28px]">
+        <div className="flex items-center gap-1 pl-4 pt-1 flex-1 overflow-hidden text-left">
           <Icon name="location_pin" className="w-3 h-3 shrink-0" style={{ color: activeBrandColor }} />
-          <span className="text-[14px] font-bold text-content-muted uppercase tracking-widest truncate">
+          <span className="text-[12px] font-bold text-content-muted uppercase tracking-widest truncate">
             {event.arena_name || 'Арена не указана'}
           </span>
         </div>
 
-        <div className="relative w-[40%] shrink-0 flex items-center drop-shadow-md justify-center rounded-tr-3xl overflow-hidden">
+        <div className="relative w-[42%] shrink-0 flex items-center drop-shadow-md justify-center rounded-tr-3xl overflow-hidden">
           <svg 
             className="absolute inset-0 w-full h-full" 
             viewBox="0 0 140 38" 
@@ -209,7 +209,7 @@ const EventCard = ({
           >
             <path d="M0 0 H140 V38 H24 Q16 38 13.5 32 L0 0 Z" />
           </svg>
-          <span className={`relative z-10 text-[14px] font-black uppercase tracking-widest drop-shadow-sm ${contrastTextColor}`}>
+          <span className={`relative z-10 text-[12px] font-bold uppercase tracking-widest drop-shadow-sm ${contrastTextColor}`}>
             {displayDateStr}
           </span>
         </div>
@@ -218,12 +218,12 @@ const EventCard = ({
       {/* 2. ЦЕНТР: Тип события и Время */}
       <div className="flex justify-between items-end px-5 mt-4">
         <div className="flex items-center gap-2">
-          <h2 className="text-[28px] font-black text-content-main leading-none uppercase tracking-wide">
+          <h2 className="text-[30px] font-bold text-content-main leading-none uppercase tracking-wide">
             {eventTitle}
           </h2>
           {renderMatchIcon()}
         </div>
-        <div className="text-[28px] font-black tracking-tight leading-none" style={{ color: activeBrandColor }}>
+        <div className="text-[30px] font-black tracking-tight leading-none" style={{ color: activeBrandColor }}>
           {eventDate.format('HH:mm')}
         </div>
       </div>
@@ -326,27 +326,27 @@ const EventCard = ({
           {event.show_team_context ? (
             <>
               <div className="w-[50%] flex items-center gap-3 text-left">
-                <div className="w-10 h-10 shrink-0 overflow-hidden drop-shadow-lg flex items-center justify-center">
+                <div className="w-7 h-7 shrink-0 overflow-hidden drop-shadow-lg flex items-center justify-center">
                   {event.my_team_logo_url ? (
                     <img src={getImageUrl(event.my_team_logo_url)} alt="Лого" className="w-full h-full object-cover" />
                   ) : (
                     <span className="text-[10px] font-bold text-content-muted">ЛОГО</span>
                   )}
                 </div>
-                <span className="text-[14px] font-black text-content-muted uppercase tracking-wide leading-tight line-clamp-2 break-words">
+                <span className="text-[14px] font-bold text-content-muted uppercase leading-tight line-clamp-2 break-words">
                   {event.my_team_name}
                 </span>
               </div>
 
-              <div className="w-[10%] shrink-0"></div>
+              <div className="w-[2%] shrink-0"></div>
 
-              <div className="w-[40%] flex justify-end">
+              <div className="w-[48%] flex justify-end">
                 {isMatch && event.opponent_name && (
                   <div className="flex flex-col items-end justify-center text-right w-full">
-                    <span className="text-[14px] italic text-content-subtle leading-tight mb-0.5">
+                    <span className="text-[12px] italic text-content-subtle leading-tight mb-0.5">
                       соперник:
                     </span>
-                    <span className="text-[14px] font-bold text-content-muted leading-tight line-clamp-2 break-words text-right ">
+                    <span className="text-[14px] font-bold text-content-muted uppercase leading-tight line-clamp-2 break-words text-right ">
                       {event.opponent_name}
                     </span>
                   </div>
@@ -357,10 +357,10 @@ const EventCard = ({
             <div className="w-full flex items-center">
               {isMatch && event.opponent_name && (
                 <div className="flex flex-col items-start justify-center text-left w-full">
-                  <span className="text-[10px] italic text-content-subtle leading-tight mb-[4px]">
+                  <span className="text-[12px] italic text-content-subtle leading-tight mb-[4px]">
                     соперник:
                   </span>
-                  <span className="text-[14px] font-bold text-content-muted leading-tight line-clamp-2 break-words text-left">
+                  <span className="text-[14px] font-bold text-content-muted uppercase leading-tight line-clamp-2 break-words text-left">
                     {event.opponent_name}
                   </span>
                 </div>

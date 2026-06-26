@@ -16,6 +16,7 @@ class TournamentController {
           d.name as division_name,
           d.logo_url as division_logo,
           l.name as league_name,
+          l.short_name as league_short_name,
           s.name as season_name,
           s.id as season_id
         FROM tournament_teams tt

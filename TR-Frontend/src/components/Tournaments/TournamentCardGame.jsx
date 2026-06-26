@@ -36,7 +36,7 @@ export function TournamentCardGame({ game }) {
 
   return (
     <div className={clsx(
-      'w-full bg-surface-level1 rounded-3xl border px-2 pb-1 pt-4 flex flex-col shadow-md gap-2 relative overflow-hidden select-none',
+      'w-full bg-surface-level1 rounded-3xl border px-2 pt-4 flex flex-col shadow-md gap-2 relative overflow-hidden select-none',
       isLive ? 'border-red-500/30 shadow-md shadow-red-500/5' : 'border-surface-border'
     )}>
 
@@ -44,7 +44,7 @@ export function TournamentCardGame({ game }) {
       <div className="w-full flex items-center justify-between relative">
         {/* Хозяева */}
         <div className="w-[38%] flex flex-col items-center text-center gap-1.5 min-w-0">
-          <div className="w-11 h-11 flex items-center justify-center shrink-0">
+          <div className="w-14 h-14 flex items-center justify-center shrink-0">
             <img src={getImageUrl(game.home_team_logo)} alt="" className="w-full h-full object-contain" />
           </div>
           <span className="text-[12px] font-bold text-content-main uppercase tracking-tight w-full px-1 break-words leading-tight line-clamp-2 h-7 flex items-center justify-center">
@@ -85,7 +85,7 @@ export function TournamentCardGame({ game }) {
 
         {/* Гости */}
         <div className="w-[38%] flex flex-col items-center text-center gap-1.5 min-w-0">
-          <div className="w-11 h-11 flex items-center justify-center shrink-0">
+          <div className="w-14 h-14 flex items-center justify-center shrink-0">
             <img src={getImageUrl(game.away_team_logo)} alt="" className="w-full h-full object-contain" />
           </div>
           <span className="text-[12px] font-bold text-content-main uppercase tracking-tight w-full px-1 break-words leading-tight line-clamp-2 h-7 flex items-center justify-center">
@@ -95,18 +95,18 @@ export function TournamentCardGame({ game }) {
       </div>
 
       {/* ── НИЖНЯЯ СТРОКА: метаданные ── */}
-      <div className="w-full grid grid-cols-[1fr,auto,1fr] items-center text-[12px] font-bold text-content-muted border-t border-surface-level2 pt-2 px-0.5 relative">
+      <div className="w-full grid grid-cols-[1fr,auto,1fr] items-center text-[14px] font-semibold text-content-muted border-t border-surface-level2 py-3 px-0.5 relative">
         <div className="min-w-0" />
-        <div className="flex items-center justify-center gap-3 truncate max-w-[240px] px-2">
-          <span className="font-bold text-content-muted shrink-0">{formattedDateShort}</span>
+        <div className="flex items-center justify-center gap-3 truncate max-w-[340px] px-2">
+          <span className="font-sbold text-content-muted shrink-0">{formattedDateShort}</span>
           <span className="text-content-muted font-mono shrink-0">•</span>
-          <span className="font-bold text-content-muted shrink-0">{formattedTime}</span>
+          <span className="font-sbold text-content-muted shrink-0">{formattedTime}</span>
           <span className="text-content-muted font-mono shrink-0">•</span>
           <span className="truncate">{game.arena_name || 'Арена не указана'}</span>
         </div>
         <div className="flex justify-end shrink-0 opacity-60 pr-2">
           {game.game_number && (
-            <span className="text-content-subtle">№{game.game_number}</span>
+            <span className="text-[10px] text-content-subtle opacity-40">{game.game_number}</span>
           )}
         </div>
       </div>

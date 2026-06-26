@@ -330,13 +330,13 @@ export function TournamentsPage() {
                       onToggleTeam={toggleTeamAccordion} 
                     />
 
-                    <div className="flex flex-col gap-5 mt-2">
-                      <div className="text-center text-[14px] font-black uppercase tracking-[0.2em] text-content-muted">
+                    <div className="flex flex-col gap-2 mt-2">
+                      <div className="text-center text-[14px] font-bold uppercase tracking-[0.1em] text-content-muted">
                         Плей-офф
                       </div>
 
                       {playoffs.length === 0 ? (
-                        <div className="text-center py-8 text-[14px] font-bold text-content-subtle uppercase tracking-wider bg-surface-base rounded-2xl border border-surface-border">
+                        <div className="text-center py-8 text-[12px] italic font-semibold  text-content-subtle uppercase tracking-wider bg-surface-base rounded-2xl border border-surface-border">
                           Матчи плей-офф еще не сформированы
                         </div>
                       ) : (

@@ -311,8 +311,21 @@ export const MatchInfo = ({
         ══════════════════════════════════════════════ */}
         <ContainerContent title="Тип матча">
           <div className="flex flex-col w-full">
+            {/* Логотип дивизиона + название лиги/турнира */}
+            <div className="flex items-center gap-3 py-2 px-2">
+              <div className="w-10 h-10 flex items-center justify-center shrink-0 overflow-hidden">
+                {tournamentLogo ? (
+                  <img src={getImageUrl(tournamentLogo)} alt="" className="w-full h-full object-contain" />
+                ) : (
+                  <Icon name={tournamentIcon} className="w-5 h-5 text-content-muted" />
+                )}
+              </div>
+              <span className="text-[14px] font-bold text-content-main leading-tight line-clamp-2 min-w-0">
+                {leagueValue}
+              </span>
+            </div>
+
             {[
-              { icon: 'trophy',     label: 'Лига',     value: leagueValue },
               { icon: 'calendar',   label: 'Сезон',    value: seasonValue },
               { icon: 'divisions',  label: 'Дивизион', value: divisionValue },
               { icon: 'swap',       label: stageRowLabel,  value: stageRowValue },

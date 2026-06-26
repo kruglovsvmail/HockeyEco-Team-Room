@@ -20,9 +20,9 @@ export function TournamentPageHeader({
       <div className="px-4 pointer-events-auto relative z-20 bg-surface-border">
         <button 
           onClick={onClick}
-          className="w-full bg-surface-base px-8 pt-4 pb-2  flex items-center text-left outline-none active:scale-[0.98] transition-all"
+          className="w-full bg-surface-base px-6 pt-2 pb-2  flex items-center text-left outline-none active:scale-[0.98] transition-all"
         >
-          <div className="w-[20%] shrink-0 flex items-center justify-center">
+          <div className="w-[16%] shrink-0 flex items-center justify-center">
             <div className="w-14 h-14 flex items-center justify-center overflow-hidden">
               {hasData ? (
                 <img 
@@ -40,19 +40,19 @@ export function TournamentPageHeader({
             {hasData ? (
               <>
                 <div className="text-left">
-                  <span className="text-[14px] font-black uppercase tracking-widest text-content-main block line-clamp-2 leading-tight">
+                  <span className="text-[12px] font-black uppercase tracking-widest text-content-main block line-clamp-2 leading-tight">
                     {activeTournament.league_name}
                   </span>
                 </div>
                 <div className="flex items-center justify-between w-full mt-1.5 gap-2">
                   <div className="text-left min-w-0 flex-1">
-                    <span className="text-[14px] font-semibold text-content-muted uppercase tracking-wide truncate block">
+                    <span className="text-[12px] font-semibold text-content-muted uppercase tracking-wide truncate block">
                       {activeTournament.division_name}
                     </span>
                   </div>
                   <div className="text-right shrink-0">
-                    <span className="text-[14px]  font-semibold text-content-muted uppercase tracking-wide block opacity-50">
-                      / {activeTournament.season_name}
+                    <span className="text-[12px]  font-semibold text-content-muted uppercase tracking-wide block opacity-50">
+                      {activeTournament.season_name}
                     </span>
                   </div>
                 </div>

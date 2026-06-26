@@ -65,7 +65,7 @@ export function TournamentListPanel({ teamId, activeTournamentId, onSelect, hasT
                   <span 
                     className="text-[14px] font-black uppercase tracking-wide text-content-main"
                    >
-                    {t.league_name}
+                    {t.league_short_name || t.league_name}
                   </span>
                   <h4 className="text-[14px] font-semibold text-content-muted truncate leading-tight">
                     {t.division_name}

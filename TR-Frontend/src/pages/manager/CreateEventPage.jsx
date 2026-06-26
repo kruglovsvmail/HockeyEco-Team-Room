@@ -367,8 +367,8 @@ export function CreateEventPage() {
               <FadeIn key={`media-panel-${matchType}`} duration={250} delay={300} className="w-full flex flex-col">
                 <ContainerContent title="Ссылки на трансляции" collapsible={true} defaultExpanded={false} activeBrandColor={hasTeamColor ? activeBrandColor : null}>
                   <div className="flex flex-col gap-4 text-left py-1 px-3">
-                    <TextInputLP label="Ссылка на YouTube" value={videoYtUrl} onChange={setVideoYtUrl} activeColor={hasTeamColor ? activeBrandColor : null} />
-                    <TextInputLP label="Ссылка на VK Видео" value={videoVkUrl} onChange={setVideoVkUrl} activeColor={hasTeamColor ? activeBrandColor : null} />
+                    <TextInputLP label="Ссылка 1" value={videoYtUrl} onChange={setVideoYtUrl} activeColor={hasTeamColor ? activeBrandColor : null} />
+                    <TextInputLP label="Ссылка 2" value={videoVkUrl} onChange={setVideoVkUrl} activeColor={hasTeamColor ? activeBrandColor : null} />
                   </div>
                 </ContainerContent>
               </FadeIn>

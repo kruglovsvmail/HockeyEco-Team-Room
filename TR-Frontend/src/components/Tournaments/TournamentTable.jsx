@@ -6,7 +6,7 @@ import { getImageUrl } from '../../utils/helpers';
 export function TournamentTable({ standings, expandedTeams, onToggleTeam }) {
   if (standings.length === 0) {
     return (
-      <div className="text-center py-8 text-[14px] font-bold text-content-subtle uppercase tracking-wider bg-surface-base rounded-2xl border border-surface-border">
+      <div className="text-center py-8 text-[12px] italic font-semibold text-content-subtle uppercase tracking-wider bg-surface-base rounded-2xl border border-surface-border">
         Турнирная таблица пока не сформирована
       </div>
     );
@@ -14,7 +14,7 @@ export function TournamentTable({ standings, expandedTeams, onToggleTeam }) {
 
   return (
     <div className="flex flex-col gap-2">
-      <div className="text-center text-[18px] font-bold uppercase tracking-[0.1em] text-content-muted">
+      <div className="text-center text-[14px] font-bold uppercase tracking-[0.1em] text-content-muted">
         Турнирная таблица
       </div>
     <div className="bg-surface-level1 rounded-2xl overflow-hidden shadow-md pb-4">
