@@ -207,60 +207,60 @@ class TournamentController {
         // ── Читаем из player_statistics ──────────────────────────────────────
         const skatersAllQuery = `
           SELECT
-            u.id            AS player_id,
+            u.id                              AS player_id,
             u.first_name,
             u.last_name,
-            tm.photo_url    AS photo_url,
-            t.name          AS team_name,
-            t.logo_url      AS team_logo,
-            ps.games_played,
-            ps.goals,
-            ps.assists,
-            ps.points,
-            ps.plus_minus,
-            ps.penalty_minutes
-          FROM player_statistics ps
-          JOIN tournament_rosters tr  ON ps.tournament_roster_id = tr.id
+            tm.photo_url                      AS photo_url,
+            tt.team_id                        AS team_id,
+            t.name                            AS team_name,
+            t.logo_url                        AS team_logo,
+            COALESCE(ps.games_played, 0)      AS games_played,
+            COALESCE(ps.goals, 0)             AS goals,
+            COALESCE(ps.assists, 0)           AS assists,
+            COALESCE(ps.points, 0)            AS points,
+            COALESCE(ps.plus_minus, 0)        AS plus_minus,
+            COALESCE(ps.penalty_minutes, 0)   AS penalty_minutes
+          FROM tournament_rosters tr
           JOIN tournament_teams tt    ON tr.tournament_team_id   = tt.id
           JOIN users u                ON tr.player_id            = u.id
           JOIN teams t                ON tt.team_id              = t.id
           LEFT JOIN team_members tm   ON tm.user_id = u.id AND tm.team_id = t.id
-          -- Только полевые игроки
+          LEFT JOIN player_statistics ps ON ps.tournament_roster_id = tr.id
+          -- Только полевые игроки (включая заявленных но не сыгравших — gp=0)
           WHERE tt.division_id = $1
             AND tr.application_status = 'approved'
             AND tr.position != 'goalie'
-            AND ps.games_played > 0
-          ORDER BY ps.points DESC, ps.goals DESC, ps.games_played ASC
+          ORDER BY points DESC, goals DESC, games_played ASC
         `;
 
         const goaliesAllQuery = `
           SELECT
-            u.id            AS player_id,
+            u.id                                    AS player_id,
             u.first_name,
             u.last_name,
-            tm.photo_url    AS photo_url,
-            t.name          AS team_name,
-            t.logo_url      AS team_logo,
-            ps.games_played,
-            ps.goals_against,
-            ps.saves,
-            ps.save_percent,
-            ps.goals_against_average,
-            ps.shutouts,
-            ps.minutes_played,
-            ps.shots_against
-          FROM player_statistics ps
-          JOIN tournament_rosters tr  ON ps.tournament_roster_id = tr.id
+            tm.photo_url                            AS photo_url,
+            tt.team_id                              AS team_id,
+            t.name                                  AS team_name,
+            t.logo_url                              AS team_logo,
+            COALESCE(ps.games_played, 0)            AS games_played,
+            COALESCE(ps.goals_against, 0)           AS goals_against,
+            COALESCE(ps.saves, 0)                   AS saves,
+            COALESCE(ps.save_percent, 0)            AS save_percent,
+            COALESCE(ps.goals_against_average, 0)   AS goals_against_average,
+            COALESCE(ps.shutouts, 0)                AS shutouts,
+            COALESCE(ps.minutes_played, 0)          AS minutes_played,
+            COALESCE(ps.shots_against, 0)           AS shots_against
+          FROM tournament_rosters tr
           JOIN tournament_teams tt    ON tr.tournament_team_id   = tt.id
           JOIN users u                ON tr.player_id            = u.id
           JOIN teams t                ON tt.team_id              = t.id
           LEFT JOIN team_members tm   ON tm.user_id = u.id AND tm.team_id = t.id
-          -- Только вратари
+          LEFT JOIN player_statistics ps ON ps.tournament_roster_id = tr.id
+          -- Только вратари (включая заявленных но не сыгравших — gp=0)
           WHERE tt.division_id = $1
             AND tr.application_status = 'approved'
             AND tr.position = 'goalie'
-            AND ps.games_played > 0
-          ORDER BY ps.save_percent DESC, ps.goals_against_average ASC
+          ORDER BY save_percent DESC, goals_against_average ASC
         `;
 
         [skatersResult, goaliesResult] = await Promise.all([
@@ -320,6 +320,7 @@ class TournamentController {
             u.first_name,
             u.last_name,
             tm.photo_url AS photo_url,
+            tt.team_id AS team_id,
             t.name AS team_name,
             t.logo_url AS team_logo,
             COALESCE(gp.gp, 0)                                   AS games_played,
@@ -328,14 +329,19 @@ class TournamentController {
             COALESCE(g.g, 0) + COALESCE(a.a, 0)                 AS points,
             COALESCE(pm.pm, 0)                                   AS plus_minus,
             COALESCE(p.pim, 0)                                   AS penalty_minutes
-          FROM GamesPlayed gp
-          JOIN users u  ON gp.player_id = u.id
-          JOIN teams t  ON gp.team_id   = t.id
-          LEFT JOIN team_members tm ON tm.user_id = u.id AND tm.team_id = t.id
-          LEFT JOIN Goals    g  ON g.player_id  = gp.player_id AND g.team_id = gp.team_id
-          LEFT JOIN Assists   a  ON a.player_id  = gp.player_id AND a.team_id = gp.team_id
-          LEFT JOIN Penalties p  ON p.player_id  = gp.player_id AND p.team_id = gp.team_id
-          LEFT JOIN PlusMinus pm ON pm.player_id = gp.player_id AND pm.player_team_id = gp.team_id
+          FROM tournament_rosters tr
+          JOIN tournament_teams tt   ON tr.tournament_team_id = tt.id
+          JOIN users u               ON tr.player_id          = u.id
+          JOIN teams t               ON tt.team_id            = t.id
+          LEFT JOIN team_members tm  ON tm.user_id = u.id AND tm.team_id = t.id
+          LEFT JOIN GamesPlayed gp   ON gp.player_id = tr.player_id AND gp.team_id = tt.team_id
+          LEFT JOIN Goals    g       ON g.player_id  = tr.player_id AND g.team_id  = tt.team_id
+          LEFT JOIN Assists   a      ON a.player_id  = tr.player_id AND a.team_id  = tt.team_id
+          LEFT JOIN Penalties p      ON p.player_id  = tr.player_id AND p.team_id  = tt.team_id
+          LEFT JOIN PlusMinus pm     ON pm.player_id = tr.player_id AND pm.player_team_id = tt.team_id
+          WHERE tt.division_id = $1
+            AND tr.application_status = 'approved'
+            AND tr.position != 'goalie'
           ORDER BY points DESC, goals DESC, games_played ASC
         `;
 
@@ -370,6 +376,11 @@ class TournamentController {
             FROM game_rosters gr
             JOIN ValidGames vg ON gr.game_id = vg.id
             WHERE gr.is_in_lineup = true AND gr.position_in_line = 'G'
+          ),
+          GoalieGamesPlayed AS (
+            SELECT player_id, team_id, COUNT(DISTINCT game_id) AS gp
+            FROM GoalieGames
+            GROUP BY player_id, team_id
           ),
           GoalsAbsTime AS (
             SELECT ge.id AS event_id, ge.game_id, ge.team_id AS scoring_team_id,
@@ -456,9 +467,10 @@ class TournamentController {
             u.first_name,
             u.last_name,
             tm.photo_url AS photo_url,
+            tt.team_id AS team_id,
             t.name AS team_name,
             t.logo_url AS team_logo,
-            COUNT(DISTINCT gg.game_id)                            AS games_played,
+            COALESCE(ggp.gp, 0)                                   AS games_played,
             COALESCE(gga.ga, 0)                                   AS goals_against,
             -- Отражённые = (все броски в створ вратарю) − (голы С БРОСКА против него).
             GREATEST(COALESCE(gsa.sa, 0) - COALESCE(gfs.ga_fs, 0), 0) AS saves,
@@ -478,19 +490,21 @@ class TournamentController {
                  ELSE 0.00 END                                    AS goals_against_average,
             COALESCE(sho.total_sho, 0)                           AS shutouts,
             COALESCE(gm.total_secs, 0)                           AS minutes_played
-          FROM GoalieGames gg
-          JOIN users u  ON gg.player_id = u.id
-          JOIN teams t  ON gg.team_id   = t.id
-          LEFT JOIN team_members tm    ON tm.user_id = u.id AND tm.team_id = t.id
+          FROM tournament_rosters tr
+          JOIN tournament_teams tt   ON tr.tournament_team_id = tt.id
+          JOIN users u               ON tr.player_id          = u.id
+          JOIN teams t               ON tt.team_id            = t.id
+          LEFT JOIN team_members tm  ON tm.user_id = u.id AND tm.team_id = t.id
           CROSS JOIN DivisionReg dr
-          LEFT JOIN GoaliesGA            gga ON gga.player_id = gg.player_id
-          LEFT JOIN GoaliesGAFromShot    gfs ON gfs.player_id = gg.player_id
-          LEFT JOIN GoaliesShotsAgainst  gsa ON gsa.player_id = gg.player_id
-          LEFT JOIN GoalieMinutesAgg     gm  ON gm.player_id  = gg.player_id
-          LEFT JOIN ShutoutsAgg          sho ON sho.player_id = gg.player_id
-          GROUP BY u.id, u.first_name, u.last_name, tm.photo_url, t.name, t.logo_url,
-                   gga.ga, gfs.ga_fs, gsa.sa, gm.total_secs, sho.total_sho, dr.norm_seconds
-          HAVING COUNT(DISTINCT gg.game_id) > 0
+          LEFT JOIN GoalieGamesPlayed    ggp ON ggp.player_id = tr.player_id AND ggp.team_id = tt.team_id
+          LEFT JOIN GoaliesGA            gga ON gga.player_id = tr.player_id
+          LEFT JOIN GoaliesGAFromShot    gfs ON gfs.player_id = tr.player_id
+          LEFT JOIN GoaliesShotsAgainst  gsa ON gsa.player_id = tr.player_id
+          LEFT JOIN GoalieMinutesAgg     gm  ON gm.player_id  = tr.player_id
+          LEFT JOIN ShutoutsAgg          sho ON sho.player_id = tr.player_id
+          WHERE tt.division_id = $1
+            AND tr.application_status = 'approved'
+            AND tr.position = 'goalie'
           ORDER BY save_percent DESC, goals_against_average ASC
         `;
 

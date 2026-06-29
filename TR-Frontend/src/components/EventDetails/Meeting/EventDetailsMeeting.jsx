@@ -21,7 +21,7 @@ const MEETING_TABS = [
 ];
 
 // Высота контейнера 1 (text-[30px]=30) = 30px
-const HEADER_1_HEIGHT = 46;
+const HEADER_1_HEIGHT = 50;
 
 export const EventDetailsMeeting = ({ event }) => {
   const [activeTab, setActiveTab] = useState('attendance');
@@ -130,12 +130,12 @@ export const EventDetailsMeeting = ({ event }) => {
   return (
     <div
       ref={scrollContainerRef}
-      className="h-full overflow-y-auto scrollbar-hide relative z-10"
+      className="h-full overflow-y-auto scrollbar-hide relative z-10 event-scroll-timeline"
       style={{ overflowAnchor: 'none' }}
     >
 
       {/* ── К1: СОБРАНИЕ + ВРЕМЯ — sticky, всегда виден ── */}
-      <div className="sticky top-0 z-30 bg-surface-base select-none pt-4">
+      <div className="sticky top-0 z-30 bg-surface-base select-none pt-4 pb-1">
         <div className="flex items-center w-full px-5">
           <div className="w-[70%] pr-2 flex items-center gap-2 flex-wrap">
             <span
@@ -165,9 +165,12 @@ export const EventDetailsMeeting = ({ event }) => {
         </div>
       </div>
 
-      {/* ── К2: ДАТА / МЕСТО / ВЗНОС + ИКОНКА СОБРАНИЯ ── */}
+      {/* ── К2: ДАТА / МЕСТО / ВЗНОС + ИКОНКА СОБРАНИЯ — уезжает под К1 при скролле ── */}
       <div className="relative z-10 bg-surface-base">
-        <div className="flex items-stretch gap-3 w-full px-5 pt-4 pb-1">
+        <div
+          className="event-fade-on-scroll flex items-stretch gap-3 w-full px-5 pt-3 pb-2"
+          style={{ '--fade-distance': '110px' }}
+        >
 
           {/* Левая часть: дата, место, взнос */}
           <div className="flex-1 flex flex-col gap-1.5 min-w-0">
@@ -240,7 +243,7 @@ export const EventDetailsMeeting = ({ event }) => {
           tabs={MEETING_TABS}
           activeTab={activeTab}
           onChange={setActiveTab}
-          className="px-4"
+          className="px-4 pt-3"
           activeColor={hasTeamColor ? localEvent.team_color : null}
         />
       </div>

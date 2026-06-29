@@ -173,7 +173,7 @@ export function HintPopover({ status, customContent, children, className }) {
   const popoverContent = isRendered && createPortal(
     <div 
       className={clsx(
-        "fixed z-[9999] bg-surface-level1 border border-surface-border shadow-2xl rounded-xl p-3 select-none pointer-events-auto will-change-transform",
+        "fixed z-[9999] bg-surface-level1 border border-surface-border shadow-2xl rounded-2xl p-3 select-none pointer-events-auto will-change-transform",
         customContent ? "w-[260px]" : "w-[210px]"
       )}
       style={{
@@ -191,7 +191,7 @@ export function HintPopover({ status, customContent, children, className }) {
       {customContent ? (
         customContent
       ) : (
-        <p className="text-[10px] font-semibold text-content-main leading-snug text-center whitespace-normal break-words">
+        <p className="text-[12px] font-semibold text-content-main leading-snug text-center whitespace-normal break-words">
           {message}
         </p>
       )}

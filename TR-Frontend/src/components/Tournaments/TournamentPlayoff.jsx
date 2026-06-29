@@ -303,11 +303,9 @@ export function TournamentPlayoff({
                     <div className="w-full bg-surface-level1 px-4 pb-3 pt-1 flex flex-col shadow-md select-none relative overflow-hidden transition-all rounded-2xl">
                       <div className="flex items-center justify-between w-full mb-3 pb-1 border-b border-b-surface-border">
                         <div>
-                          {isMultiMatch ? (
-                            <span className="text-[10px] font-bold uppercase tracking-widest text-content-muted">
-                              серия до {matchup.wins_needed}-х побед
-                            </span>
-                          ) : null}
+                          <span className="text-[10px] font-bold uppercase tracking-widest text-content-muted">
+                            серия до {matchup.wins_needed === 1 ? '1-ой победы' : `${matchup.wins_needed}-х побед`}
+                          </span>
                         </div>
                         <div>
                           {finalPlaceLabel && (

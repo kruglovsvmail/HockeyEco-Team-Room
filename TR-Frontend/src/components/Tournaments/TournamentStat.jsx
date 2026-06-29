@@ -5,10 +5,11 @@ import { getImageUrl } from '../../utils/helpers';
 import { Icon } from '../../ui/Icon';
 import { Avatar } from '../../ui/Avatar';
 import { FadeIn } from '../../ui/FadeIn';
+import { BottomSheet } from '../../ui/BottomSheet';
 
 const STAGE_OPTIONS = [
   { value: 'all', label: 'Общая' },
-  { value: 'regular', label: 'Регуляр.' },
+  { value: 'regular', label: 'Регулярка' },
   { value: 'playoff', label: 'Плей-офф' }
 ];
 
@@ -25,8 +26,12 @@ export function TournamentStat({
   const timeoutRef = useRef(null);
 
   // Локальный стейт амплуа
-  const [playerType, setPlayerType] = useState('skaters'); 
+  const [playerType, setPlayerType] = useState('skaters');
   const [isDropdownOpen, setIsDropdownOpen] = useState(false);
+
+  // Фильтр по команде (один общий для полевых и вратарей; null = все команды)
+  const [selectedTeamId, setSelectedTeamId] = useState(null);
+  const [isTeamSheetOpen, setIsTeamSheetOpen] = useState(false);
 
   // ПРЕДОХРАНИТЕЛИ: Разделяют программный клик и физический свайп
   const isScrollingProgrammatically = useRef(false);
@@ -38,7 +43,7 @@ export function TournamentStat({
 
   const selectedStage = STAGE_OPTIONS.find(opt => opt.value === stageType) || STAGE_OPTIONS[0];
 
-  // Автозакрытие выпадающего списка при клике в любую пустую область экрана
+  // Автозакрытие выпадающего списка этапов при клике в любую пустую область экрана
   useEffect(() => {
     const handleClickOutside = (event) => {
       if (dropdownRef.current && !dropdownRef.current.contains(event.target)) {
@@ -111,23 +116,54 @@ export function TournamentStat({
     }));
   };
 
+  // Список команд для выпадающего фильтра — собираем уникальные из обоих списков (полевые + вратари),
+  // чтобы команда без сыгранных игроков (но с заявкой) тоже была доступна для выбора.
+  const teamOptions = useMemo(() => {
+    const map = new Map();
+    const collect = (rows) => {
+      if (!rows) return;
+      rows.forEach((r) => {
+        if (r.team_id != null && !map.has(r.team_id)) {
+          map.set(r.team_id, { team_id: r.team_id, team_name: r.team_name, team_logo: r.team_logo });
+        }
+      });
+    };
+    collect(skaters);
+    collect(goalies);
+    return Array.from(map.values()).sort((a, b) => (a.team_name || '').localeCompare(b.team_name || '', 'ru'));
+  }, [skaters, goalies]);
+
+  const selectedTeam = useMemo(
+    () => teamOptions.find((t) => t.team_id === selectedTeamId) || null,
+    [teamOptions, selectedTeamId]
+  );
+
+  // Если ранее выбранная команда исчезла из списка (смена этапа / турнира) — сбрасываем фильтр.
+  useEffect(() => {
+    if (selectedTeamId != null && !teamOptions.some((t) => t.team_id === selectedTeamId)) {
+      setSelectedTeamId(null);
+    }
+  }, [teamOptions, selectedTeamId]);
+
   const sortedSkaters = useMemo(() => {
     if (!skaters) return [];
-    return [...skaters].sort((a, b) => {
+    const base = selectedTeamId == null ? skaters : skaters.filter((r) => r.team_id === selectedTeamId);
+    return [...base].sort((a, b) => {
       const valA = Number(a[skaterSort.key]) || 0;
       const valB = Number(b[skaterSort.key]) || 0;
       return skaterSort.order === 'desc' ? valB - valA : valA - valB;
     });
-  }, [skaters, skaterSort]);
+  }, [skaters, skaterSort, selectedTeamId]);
 
   const sortedGoalies = useMemo(() => {
     if (!goalies) return [];
-    return [...goalies].sort((a, b) => {
+    const base = selectedTeamId == null ? goalies : goalies.filter((r) => r.team_id === selectedTeamId);
+    return [...base].sort((a, b) => {
       const valA = Number(a[goalieSort.key]) || 0;
       const valB = Number(b[goalieSort.key]) || 0;
       return goalieSort.order === 'desc' ? valB - valA : valA - valB;
     });
-  }, [goalies, goalieSort]);
+  }, [goalies, goalieSort, selectedTeamId]);
 
   const renderSortIndicator = (sortState, currentKey) => {
     if (sortState.key !== currentKey) return <span className="opacity-20 ml-0.5">↕</span>;
@@ -144,7 +180,86 @@ export function TournamentStat({
 
   return (
     <div className="flex flex-col gap-4 w-full">
-      
+
+      {/* 0. ФИЛЬТР ПО КОМАНДЕ — триггер на всю ширину, выбор через BottomSheet */}
+      <button
+        type="button"
+        onClick={() => setIsTeamSheetOpen(true)}
+        className="relative w-full h-[40px] px-10 flex items-center justify-center bg-surface-level1 shadow-md rounded-2xl text-[12px] font-bold uppercase tracking-widest text-content-main outline-none active:opacity-75 transition-opacity select-none"
+      >
+        <span className="flex items-center gap-2 min-w-0">
+          {selectedTeam?.team_logo && (
+            <img
+              src={getImageUrl(selectedTeam.team_logo)}
+              alt=""
+              className="w-5 h-5 rounded-full bg-surface-base object-contain shrink-0"
+            />
+          )}
+          <span className="truncate">{selectedTeam ? selectedTeam.team_name : 'Все команды'}</span>
+        </span>
+        <Icon
+          name="chevron_left"
+          className="absolute right-4 w-4 h-4 -rotate-90 text-content-muted"
+        />
+      </button>
+
+      <BottomSheet isOpen={isTeamSheetOpen} onClose={() => setIsTeamSheetOpen(false)}>
+        <div className="flex flex-col gap-1 pb-2">
+          <h3 className="text-[18px] font-black uppercase tracking-wider text-content-main mb-3">
+            Выбор команды
+          </h3>
+
+          <button
+            type="button"
+            onClick={() => {
+              setSelectedTeamId(null);
+              setIsTeamSheetOpen(false);
+            }}
+            className={clsx(
+              "w-full h-[52px] flex items-center justify-center px-4 rounded-2xl text-[12px] font-black uppercase tracking-wide transition-colors outline-none",
+              selectedTeamId == null
+                ? "bg-brand text-white"
+                : "bg-surface-level1 text-content-main active:bg-surface-level2"
+            )}
+            style={selectedTeamId == null && hasTeamColor ? { backgroundColor: activeBrandColor } : {}}
+          >
+            Все команды
+          </button>
+
+          {teamOptions.map((opt) => {
+            const isSelected = opt.team_id === selectedTeamId;
+            return (
+              <button
+                key={opt.team_id}
+                type="button"
+                onClick={() => {
+                  setSelectedTeamId(opt.team_id);
+                  setIsTeamSheetOpen(false);
+                }}
+                className={clsx(
+                  "w-full h-[52px] flex items-center gap-3 px-4 rounded-2xl text-[12px] font-black uppercase tracking-wide transition-colors outline-none text-left",
+                  isSelected
+                    ? "bg-brand text-white"
+                    : "bg-surface-level1 text-content-main active:bg-surface-level2"
+                )}
+                style={isSelected && hasTeamColor ? { backgroundColor: activeBrandColor } : {}}
+              >
+                {opt.team_logo ? (
+                  <img
+                    src={getImageUrl(opt.team_logo)}
+                    alt=""
+                    className="w-7 h-7 rounded-full bg-surface-base object-contain shrink-0"
+                  />
+                ) : (
+                  <div className="w-7 h-7 shrink-0" />
+                )}
+                <span className="truncate flex-1">{opt.team_name}</span>
+              </button>
+            );
+          })}
+        </div>
+      </BottomSheet>
+
       {/* 1. ИНТЕГРИРОВАННАЯ ВЕРХНЯЯ ПАНЕЛЬ УПРАВЛЕНИЯ ФИЛЬТРАМИ */}
       <div className="flex items-center gap-2 w-full justify-between select-none">
         
@@ -162,13 +277,13 @@ export function TournamentStat({
           </button>
 
           <div className="flex items-center overflow-hidden flex-1 justify-center">
-            <div className="relative overflow-hidden w-[150px] h-5 flex items-center justify-center">
+            <div className="relative overflow-hidden w-[130px] h-5 flex items-center justify-center">
               <div 
                 className="w-[200%] flex items-start h-full absolute left-0 top-0.5 transition-transform duration-300 ease-[cubic-bezier(0.32,0.72,0,1)] will-change-transform"
                 style={{ transform: `translateX(-${isGoaliesActive ? 50 : 0}%)` }}
               >
                 <div className="w-1/2 shrink-0 text-center text-[12px] font-bold uppercase tracking-wider text-content-main truncate">
-                  Полевые игроки
+                  Полевые
                 </div>
                 <div className="w-1/2 shrink-0 text-center text-[12px] font-bold uppercase tracking-wider text-content-main truncate">
                   Вратари
@@ -190,7 +305,7 @@ export function TournamentStat({
         </div>
 
         {/* Выпадающий список этапов со строго фиксированной шириной 124px */}
-        <div ref={dropdownRef} className="relative bg-surface-level1 shadow-md rounded-2xl w-[124px] shrink-0 h-[40px] flex items-center justify-center">
+        <div ref={dropdownRef} className="relative bg-surface-level1 shadow-md rounded-2xl w-[140px] shrink-0 h-[40px] flex items-center justify-center">
           <button
             type="button"
             onClick={() => setIsDropdownOpen(!isDropdownOpen)}
@@ -254,7 +369,7 @@ export function TournamentStat({
                           className="w-9 h-9 rounded-lg bg-surface-level2 -mt-1"
                           fallbackClassName="text-brand text-[10px] font-black"
                         />
-                        {row.team_logo && (
+                        {row.team_logo && selectedTeamId == null && (
                           <img src={getImageUrl(row.team_logo)} alt="" className="absolute -bottom-2 -left-1 w-4 h-4 rounded-full bg-surface-base object-contain" />
                         )}
                       </div>
@@ -335,7 +450,7 @@ export function TournamentStat({
                           className="w-9 h-9 rounded-lg bg-surface-level2 -mt-1"
                           fallbackClassName="text-brand text-[10px] font-black"
                         />
-                        {row.team_logo && (
+                        {row.team_logo && selectedTeamId == null && (
                           <img src={getImageUrl(row.team_logo)} alt="" className="absolute -bottom-3 -left-2 w-4 h-4 rounded-full bg-surface-base object-contain" />
                         )}
                       </div>
