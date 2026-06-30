@@ -1,6 +1,7 @@
 import bcrypt from 'bcrypt';
 import pool from '../config/db.js'; // Используем единый pool подключения из вашего конфига
 import s3 from '../config/s3.js';   // Используем ваш рабочий конфигурированный клиент S3
+import { processAvatar } from '../utils/imageProcessor.js';
 
 /**
  * Вспомогательный метод загрузки в S3-хранилище, полностью скопированный из TeamController.js
@@ -114,7 +115,9 @@ class ProfileController {
       const s3Key = `uploads/users_${userId}_avatar.webp`;
       const dbPath = `/uploads/users_${userId}_avatar.webp`;
 
-      await uploadBufferToS3(req.file, s3Key);
+      // Ресайз до 400×400 + конвертация в WebP перед заливкой
+      const processedBuffer = await processAvatar(req.file.buffer);
+      await uploadBufferToS3({ buffer: processedBuffer, mimetype: 'image/webp' }, s3Key);
 
       await pool.query('UPDATE users SET avatar_url = $1, updated_at = NOW() WHERE id = $2', [dbPath, userId]);
 

@@ -2,6 +2,7 @@ import pool from '../config/db.js';
 import s3 from '../config/s3.js';
 import path from 'path';
 import { PERMISSIONS } from '../utils/permissions.js';
+import { processAvatar } from '../utils/imageProcessor.js';
 import { sendPushToTeamExcept } from '../services/pushService.js';
 
 /**
@@ -460,10 +461,11 @@ export const updateMemberPhoto = async (req, res) => {
     }
     const userId = memberRes.rows[0].user_id;
 
-    const ext = path.extname(req.file.originalname) || '.png';
-    const bucketKey = `uploads/teams_${teamId}_users_${userId}_photo${ext}`;
-    
-    await uploadBufferToS3(req.file, bucketKey);
+    // Ресайз до 400×400 + конвертация в WebP перед заливкой (всегда .webp)
+    const bucketKey = `uploads/teams_${teamId}_users_${userId}_photo.webp`;
+
+    const processedBuffer = await processAvatar(req.file.buffer);
+    await uploadBufferToS3({ buffer: processedBuffer, mimetype: 'image/webp' }, bucketKey);
     const photoUrl = `/${bucketKey}`;
 
     await pool.query(
