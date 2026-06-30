@@ -1,5 +1,5 @@
-import React, { useState, useEffect, useRef, useMemo } from 'react';
-import { getAuthHeaders, getContrastTextColor } from '../../../utils/helpers';
+import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
+import { getAuthHeaders, getContrastTextColor, getImageUrl } from '../../../utils/helpers';
 import { useAccess } from '../../../hooks/useAccess';
 import { PERMISSIONS } from '../../../utils/permissions';
 import { Avatar } from '../../../ui/Avatar';
@@ -385,6 +385,8 @@ export const TrainingLines = ({ event, initialAttendees = [], initialStaffMember
         setIsEditMode(false);
         setIsDeleteMode(false);
         setActiveSelection(null);
+        // Перегенерируем и заливаем картинку расстановки в S3 (не блокируя выход из редактирования)
+        regenerateFormationImage();
         if (refreshData) refreshData();
       } else {
         setToast({ isOpen: true, message: data.error || 'Не удалось сохранить расстановку', type: 'danger' });
@@ -434,13 +436,10 @@ export const TrainingLines = ({ event, initialAttendees = [], initialStaffMember
     }
   };
 
-  // Генерация картинки-карточки расстановки и вызов системного «Поделиться»
-  const handleShareLines = async () => {
-    if (draftLines.length === 0) return;
+  // Снимок off-screen карточки в PNG-файл (pixelRatio: 3 → ретина-чёткая)
+  const buildShareFile = useCallback(async () => {
     const node = shareCardRef.current;
-    if (!node) { await shareAsText(); return; }
-
-    setIsSharing(true);
+    if (!node) return null;
     try {
       const blob = await toBlob(node, {
         pixelRatio: 3,
@@ -448,13 +447,91 @@ export const TrainingLines = ({ event, initialAttendees = [], initialStaffMember
         backgroundColor: getComputedStyle(document.documentElement)
           .getPropertyValue('--color-surface-base').trim() || '#f3f4f6',
       });
-      if (!blob) throw new Error('Пустой blob');
+      if (!blob) return null;
+      return { blob, file: new File([blob], 'rasstanovka_trenirovka.png', { type: 'image/png' }) };
+    } catch (e) {
+      console.error('Не удалось подготовить картинку расстановки:', e);
+      return null;
+    }
+  }, []);
 
-      const fileName = 'rasstanovka_trenirovka.png';
-      const file = new File([blob], fileName, { type: 'image/png' });
+  // Готовый к шерингу файл (загружен из S3 или собран после сохранения)
+  const preparedShareRef = useRef(null); // { blob, file } | null
+  const [isGeneratingFormation, setIsGeneratingFormation] = useState(false);
+  const [isShareReady, setIsShareReady] = useState(false); // есть ли готовый файл (для подписи кнопки)
+
+  // Детерминированный URL картинки расстановки в S3 (ключ из teamId + training_id) — без хранения в БД
+  const formationImageUrl = useMemo(() => {
+    if (!event?.my_team_id || !event?.event_id) return null;
+    return getImageUrl(`/roster-formation/team-${event.my_team_id}-formation_training-${event.event_id}.png`);
+  }, [event?.my_team_id, event?.event_id]);
+
+  // Предзагрузка готовой картинки из S3 при открытии вкладки → чтобы по клику шерить синхронно.
+  // 404 (картинку ещё не генерировали) — норма, упадём на клиентскую генерацию.
+  useEffect(() => {
+    if (!(hasShareRoleAccess && hasShareAccess) || !formationImageUrl) {
+      preparedShareRef.current = null;
+      return;
+    }
+    let cancelled = false;
+    setIsShareReady(false);
+    (async () => {
+      try {
+        const resp = await fetch(formationImageUrl, { cache: 'no-store' });
+        if (!resp.ok) { if (!cancelled) { preparedShareRef.current = null; setIsShareReady(false); } return; }
+        const blob = await resp.blob();
+        if (!blob || blob.type !== 'image/png') { if (!cancelled) { preparedShareRef.current = null; setIsShareReady(false); } return; }
+        if (!cancelled) { preparedShareRef.current = { blob, file: new File([blob], 'rasstanovka_trenirovka.png', { type: 'image/png' }) }; setIsShareReady(true); }
+      } catch { if (!cancelled) { preparedShareRef.current = null; setIsShareReady(false); } }
+    })();
+    return () => { cancelled = true; };
+  }, [formationImageUrl, hasShareRoleAccess, hasShareAccess]);
+
+  // Сгенерировать картинку и перезаписать в S3 — после сохранения расстановки или по клику «Генерация»
+  const regenerateFormationImage = useCallback(async () => {
+    setIsGeneratingFormation(true);
+    try {
+      const result = await buildShareFile();
+      if (!result) return;
+      const apiUrl = import.meta.env.VITE_API_URL || '';
+      const fd = new FormData();
+      fd.append('teamId', event.my_team_id);
+      fd.append('image', result.file, result.file.name);
+      const resp = await fetch(`${apiUrl}/api/trainings/${event.event_id}/lines/formation-image?teamId=${event.my_team_id}`, {
+        method: 'POST',
+        headers: getAuthHeaders(), // без Content-Type — boundary проставит FormData
+        body: fd,
+      });
+      if (resp.ok) {
+        preparedShareRef.current = result; // сразу готов к моментальному шерингу
+        setIsShareReady(true);
+      }
+    } catch (e) {
+      console.error('Не удалось обновить картинку расстановки в S3:', e);
+    } finally {
+      setIsGeneratingFormation(false);
+    }
+  }, [buildShareFile, event?.my_team_id, event?.event_id]);
+
+  // Клик «Поделиться»
+  const handleShareLines = async () => {
+    if (draftLines.length === 0) return;
+
+    // Быстрый путь (моб./PWA): файл уже готов → share СИНХРОННО, сохраняя user activation
+    const prepared = preparedShareRef.current;
+    if (prepared && navigator.canShare && navigator.canShare({ files: [prepared.file] })) {
+      navigator.share({ files: [prepared.file] }).catch(() => { /* пользователь закрыл окно */ });
+      return;
+    }
+
+    setIsSharing(true);
+    try {
+      const result = prepared || await buildShareFile();
+      if (!result) throw new Error('Не удалось получить картинку');
+      const { blob, file } = result;
 
       if (navigator.canShare && navigator.canShare({ files: [file] })) {
-        try { await navigator.share({ files: [file] }); } catch { /* пользователь закрыл окно */ }
+        try { await navigator.share({ files: [file] }); } catch { /* закрыл окно */ }
         return;
       }
 
@@ -471,7 +548,7 @@ export const TrainingLines = ({ event, initialAttendees = [], initialStaffMember
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
-      a.download = fileName;
+      a.download = file.name;
       document.body.appendChild(a);
       a.click();
       a.remove();
@@ -854,12 +931,12 @@ export const TrainingLines = ({ event, initialAttendees = [], initialStaffMember
             <>
               {hasShareRoleAccess && draftLines.length > 0 && (
                 hasShareAccess ? (
-                  <button onClick={handleShareLines} disabled={isSharing} style={{ color: activeBrandColor, borderColor: activeBrandColor }}
+                  <button onClick={isShareReady ? handleShareLines : regenerateFormationImage} disabled={isSharing || isGeneratingFormation} style={{ color: activeBrandColor, borderColor: activeBrandColor }}
                     className="flex flex-1 justify-center items-center gap-1 px-3 py-2 rounded-full text-[14px] font-semibold border bg-surface-base transition-all active:scale-95 hover:opacity-80 outline-none cursor-pointer select-none disabled:opacity-60 disabled:active:scale-100">
-                    {isSharing
+                    {(isSharing || isGeneratingFormation)
                       ? <div className="w-3.5 h-3.5 rounded-full border-2 border-current border-t-transparent animate-spin shrink-0" />
-                      : <Icon name="share" className="w-4 h-4 shrink-0" />}
-                    {isSharing ? 'Генерация…' : 'Поделиться'}
+                      : <Icon name={isShareReady ? 'share' : 'refresh'} className="w-4 h-4 shrink-0" />}
+                    {isGeneratingFormation ? 'Генерация…' : !isShareReady ? 'Генерация' : isSharing ? 'Готовим…' : 'Поделиться'}
                   </button>
                 ) : (
                   <HintPopover status="no_subscription">

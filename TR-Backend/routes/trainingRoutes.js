@@ -11,6 +11,8 @@ import {
   deleteTraining,
 } from '../controllers/TrainingController.js';
 import { getTrainingLines, saveTrainingLines } from '../controllers/TrainingLinesController.js';
+import { uploadTrainingFormationImage } from '../controllers/FormationImageController.js';
+import upload from '../config/upload.js';
 import { verifyToken, requireTeamPermission } from '../middleware/auth.js';
 
 const router = express.Router();
@@ -51,5 +53,8 @@ router.delete('/:eventId', verifyToken, requireTeamPermission('TRAINING_DELETE')
 
 router.get('/:eventId/lines', verifyToken, requireTeamPermission('INTERNAL_VIEW'), getTrainingLines);
 router.post('/:eventId/lines', verifyToken, requireTeamPermission('TRAINING_LINES_MANAGE'), saveTrainingLines);
+
+// Загрузить/перезаписать картинку расстановки в S3 (генерируется на клиенте после сохранения)
+router.post('/:eventId/lines/formation-image', verifyToken, requireTeamPermission('TRAINING_LINES_MANAGE'), upload.single('image'), uploadTrainingFormationImage);
 
 export default router;

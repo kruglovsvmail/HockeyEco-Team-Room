@@ -268,6 +268,8 @@ export const MatchLines = ({ event, initialAttendees = [], initialDraftLines = [
         setIsEditMode(false);
         setIsDeleteMode(false);
         setActiveSelection(null);
+        // Перегенерируем и заливаем картинку состава в S3 (не блокируя выход из редактирования)
+        regenerateFormationImage();
         refreshData();
       } else {
         setToast({
@@ -387,35 +389,119 @@ export const MatchLines = ({ event, initialAttendees = [], initialDraftLines = [
     }
   };
 
-  // Генерация картинки-карточки составов и вызов системного «Поделиться»
-  const handleShareLines = async () => {
-    if (draftLines.length === 0) return;
+  // Снимок off-screen карточки в PNG-файл (pixelRatio: 3 → ретина-чёткая ~1800px)
+  const buildShareFile = useCallback(async () => {
     const node = shareCardRef.current;
-    if (!node) { await shareAsText(); return; }
-
-    setIsSharing(true);
+    if (!node) return null;
     try {
-      // pixelRatio: 3 → ретина-чёткая картинка (~1800px по ширине)
       const blob = await toBlob(node, {
         pixelRatio: 3,
         cacheBust: true,
         backgroundColor: getComputedStyle(document.documentElement)
           .getPropertyValue('--color-surface-base').trim() || '#f3f4f6',
       });
-      if (!blob) throw new Error('Пустой blob');
-
+      if (!blob) return null;
       const fileName = `sostav_${event?.opponent_name || 'match'}.png`.replace(/[^\wа-яёА-ЯЁ.-]+/gi, '_');
-      const file = new File([blob], fileName, { type: 'image/png' });
+      return { blob, file: new File([blob], fileName, { type: 'image/png' }) };
+    } catch (e) {
+      console.error('Не удалось подготовить картинку состава:', e);
+      return null;
+    }
+  }, [event?.opponent_name]);
 
-      // 1) Шеринг файлом — если устройство умеет (моб. браузеры, PWA)
+  // Готовый к шерингу файл (загружен из S3 или собран после сохранения)
+  const preparedShareRef = useRef(null); // { blob, file } | null
+  const [isGeneratingFormation, setIsGeneratingFormation] = useState(false);
+  const [isShareReady, setIsShareReady] = useState(false); // есть ли готовый файл (для подписи кнопки)
+  const formationDirtyRef = useRef(false); // картинку надо перегенерировать после прихода свежих draftLines
+
+  // Детерминированный URL картинки состава в S3 (ключ из teamId + game_id) — без хранения в БД
+  const formationImageUrl = useMemo(() => {
+    if (!event?.my_team_id || !event?.event_id) return null;
+    return getImageUrl(`/roster-formation/team-${event.my_team_id}-formation_game-${event.event_id}.png`);
+  }, [event?.my_team_id, event?.event_id]);
+
+  // Предзагрузка готовой картинки из S3 при открытии вкладки → чтобы по клику шерить синхронно
+  // (navigator.share требует «живого» жеста, await после клика его теряет). 404 — норма (ещё не генерили).
+  useEffect(() => {
+    if (!(hasShareRoleAccess && hasShareAccess) || !formationImageUrl) {
+      preparedShareRef.current = null;
+      return;
+    }
+    let cancelled = false;
+    setIsShareReady(false);
+    (async () => {
+      try {
+        const resp = await fetch(formationImageUrl, { cache: 'no-store' });
+        if (!resp.ok) { if (!cancelled) { preparedShareRef.current = null; setIsShareReady(false); } return; }
+        const blob = await resp.blob();
+        if (!blob || blob.type !== 'image/png') { if (!cancelled) { preparedShareRef.current = null; setIsShareReady(false); } return; }
+        const fileName = `sostav_${event?.opponent_name || 'match'}.png`.replace(/[^\wа-яёА-ЯЁ.-]+/gi, '_');
+        if (!cancelled) { preparedShareRef.current = { blob, file: new File([blob], fileName, { type: 'image/png' }) }; setIsShareReady(true); }
+      } catch { if (!cancelled) { preparedShareRef.current = null; setIsShareReady(false); } }
+    })();
+    return () => { cancelled = true; };
+  }, [formationImageUrl, hasShareRoleAccess, hasShareAccess, event?.opponent_name]);
+
+  // Сгенерировать картинку и перезаписать в S3 — после сохранения состава/параметров или по клику «Генерация»
+  const regenerateFormationImage = useCallback(async () => {
+    setIsGeneratingFormation(true);
+    try {
+      const result = await buildShareFile();
+      if (!result) return;
+      const apiUrl = import.meta.env.VITE_API_URL || '';
+      const fd = new FormData();
+      fd.append('teamId', event.my_team_id);
+      fd.append('image', result.file, result.file.name);
+      const resp = await fetch(`${apiUrl}/api/matches/${event.event_id}/lines/formation-image?teamId=${event.my_team_id}`, {
+        method: 'POST',
+        headers: getAuthHeaders(), // без Content-Type — boundary проставит FormData
+        body: fd,
+      });
+      if (resp.ok) {
+        preparedShareRef.current = result; // сразу готов к моментальному шерингу
+        setIsShareReady(true);
+      }
+    } catch (e) {
+      console.error('Не удалось обновить картинку состава в S3:', e);
+    } finally {
+      setIsGeneratingFormation(false);
+    }
+  }, [buildShareFile, event?.my_team_id, event?.event_id]);
+
+  // Перегенерация после «Сохранить параметры» (номер/капитан/ассистент): ждём, пока приедет
+  // свежий draftLines (через refreshData → проп → синк-эффект), и только тогда снимаем картинку.
+  useEffect(() => {
+    if (!formationDirtyRef.current) return;
+    if (isEditMode || !(hasShareRoleAccess && hasShareAccess) || draftLines.length === 0) return;
+    formationDirtyRef.current = false;
+    regenerateFormationImage();
+  }, [draftLines, isEditMode, hasShareRoleAccess, hasShareAccess, regenerateFormationImage]);
+
+  // Клик «Поделиться»
+  const handleShareLines = async () => {
+    if (draftLines.length === 0) return;
+
+    // Быстрый путь (моб./PWA): файл уже готов → вызываем share СИНХРОННО, сохраняя user activation
+    const prepared = preparedShareRef.current;
+    if (prepared && navigator.canShare && navigator.canShare({ files: [prepared.file] })) {
+      navigator.share({ files: [prepared.file] }).catch(() => { /* пользователь закрыл окно */ });
+      return;
+    }
+
+    // Иначе — десктоп (буфер/скачивание) или файл ещё не готов → генерим по клику
+    setIsSharing(true);
+    try {
+      const result = prepared || await buildShareFile();
+      if (!result) throw new Error('Не удалось получить картинку');
+      const { blob, file } = result;
+
       if (navigator.canShare && navigator.canShare({ files: [file] })) {
-        try {
-          await navigator.share({ files: [file] });
-        } catch { /* пользователь закрыл окно шеринга */ }
+        try { await navigator.share({ files: [file] }); } catch { /* закрыл окно */ }
         return;
       }
 
-      // 2) Десктоп без file-share — копируем картинку в буфер обмена
+      // Десктоп без file-share — копируем картинку в буфер обмена
       if (navigator.clipboard && typeof window.ClipboardItem !== 'undefined') {
         try {
           await navigator.clipboard.write([new window.ClipboardItem({ 'image/png': blob })]);
@@ -424,11 +510,11 @@ export const MatchLines = ({ event, initialAttendees = [], initialDraftLines = [
         } catch { /* буфер недоступен — упадём на скачивание */ }
       }
 
-      // 3) Последний резерв — скачивание PNG
+      // Последний резерв — скачивание PNG
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
-      a.download = fileName;
+      a.download = file.name;
       document.body.appendChild(a);
       a.click();
       a.remove();
@@ -436,7 +522,6 @@ export const MatchLines = ({ event, initialAttendees = [], initialDraftLines = [
       setToast({ isOpen: true, message: 'Картинка состава сохранена', type: 'success' });
     } catch (err) {
       console.error('Не удалось сгенерировать картинку состава:', err);
-      // 3) Полный фолбэк — старый текстовый шеринг
       await shareAsText();
     } finally {
       setIsSharing(false);
@@ -624,8 +709,11 @@ export const MatchLines = ({ event, initialAttendees = [], initialDraftLines = [
       const data = await res.json();
       if (data.success) {
         setIsRosterSheetOpen(false);
-        setIsPublished(false); 
-        refreshData(); 
+        setIsPublished(false);
+        // Параметры (номер/капитан/ассистент) изменились → пометим картинку на перегенерацию,
+        // она запустится, когда приедет свежий draftLines (см. эффект formationDirtyRef)
+        formationDirtyRef.current = true;
+        refreshData();
       } else {
         setSheetError(data.error || 'Ошибка сохранения');
       }
@@ -919,17 +1007,17 @@ export const MatchLines = ({ event, initialAttendees = [], initialDraftLines = [
               {hasShareRoleAccess && draftLines.length > 0 && (
                 hasShareAccess ? (
                   <button
-                    onClick={handleShareLines}
-                    disabled={isSharing}
+                    onClick={isShareReady ? handleShareLines : regenerateFormationImage}
+                    disabled={isSharing || isGeneratingFormation}
                     style={{ color: activeBrandColor, borderColor: activeBrandColor }}
                     className="flex flex-1 justify-center items-center gap-1 px-3 py-2 rounded-full text-[14px] font-semibold border bg-surface-base transition-all active:scale-95 hover:opacity-80 outline-none cursor-pointer select-none disabled:opacity-60 disabled:active:scale-100"
                   >
-                    {isSharing ? (
+                    {(isSharing || isGeneratingFormation) ? (
                       <div className="w-3.5 h-3.5 rounded-full border-2 border-current border-t-transparent animate-spin shrink-0" />
                     ) : (
-                      <Icon name="share" className="w-4 h-4 shrink-0" />
+                      <Icon name={isShareReady ? 'share' : 'refresh'} className="w-4 h-4 shrink-0" />
                     )}
-                    {isSharing ? 'Генерация…' : 'Поделиться'}
+                    {isGeneratingFormation ? 'Генерация…' : !isShareReady ? 'Генерация' : isSharing ? 'Готовим…' : 'Поделиться'}
                   </button>
                 ) : (
                   <HintPopover status="no_subscription" className="flex-1">

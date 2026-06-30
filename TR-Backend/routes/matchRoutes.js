@@ -18,6 +18,8 @@ import {
   cancelFriendlyMatch 
 } from '../controllers/MatchAttendanceController.js';
 import { getMatchLines, saveMatchLines, submitMatchRoster, updateLinePlayer } from '../controllers/MatchLinesController.js';
+import { uploadMatchFormationImage } from '../controllers/FormationImageController.js';
+import upload from '../config/upload.js';
 import {
   getMatchRosters,
   addMatchEvent,
@@ -85,6 +87,9 @@ router.get('/:eventId/lines', verifyToken, requireTeamPermission('INTERNAL_VIEW'
 
 // Сохранить черновик пятерок на матч (чистая тактика тренера, разрешено без подписки)
 router.post('/:eventId/lines', verifyToken, requireTeamPermission('MATCH_LINES_MANAGE'), saveMatchLines);
+
+// Загрузить/перезаписать картинку состава в S3 (генерируется на клиенте после сохранения)
+router.post('/:eventId/lines/formation-image', verifyToken, requireTeamPermission('MATCH_LINES_MANAGE'), upload.single('image'), uploadMatchFormationImage);
 
 // Обновить параметры конкретного игрока в черновике (номер, C, A) — доступно руководителям по подписке
 router.put('/:eventId/line-player', verifyToken, requireTeamPermission('MATCH_LINES_EDIT_PLAYER_PARAMS'), updateLinePlayer);
