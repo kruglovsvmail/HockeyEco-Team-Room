@@ -365,10 +365,10 @@ export const TrainingAttendance = ({
         </div>
 
         <div className="w-full text-center px-0.5">
-          <span className="text-[14px] font-bold text-content-main leading-tight break-words block pointer-events-none">
+          <span className="text-[14px] font-bold text-content-main leading-tight whitespace-nowrap block pointer-events-none">
             {attendeeUser.last_name}
           </span>
-          <span className="text-[10px] text-content-muted leading-tight break-words block pointer-events-none">
+          <span className="text-[10px] text-content-muted leading-tight whitespace-nowrap block pointer-events-none">
             {attendeeUser.first_name}
           </span>
         </div>

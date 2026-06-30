@@ -14,6 +14,16 @@ import { HintPopover } from '../../../ui/HintPopover';
 import clsx from 'clsx';
 import { PageLoader } from '../../../ui/Loader';
 import { FadeIn } from '../../../ui/FadeIn';
+import { toBlob } from 'html-to-image';
+import { MatchLinesShareCard } from './MatchLinesShareCard';
+import dayjs from 'dayjs';
+import utc from 'dayjs/plugin/utc';
+import timezone from 'dayjs/plugin/timezone';
+import 'dayjs/locale/ru';
+
+dayjs.extend(utc);
+dayjs.extend(timezone);
+dayjs.locale('ru');
 
 const getSafeUserFromToken = () => {
   try {
@@ -54,6 +64,7 @@ export const MatchLines = ({ event, initialAttendees = [], initialDraftLines = [
   const [isEditMode, setIsEditMode] = useState(false);
   const [isDeleteMode, setIsDeleteMode] = useState(false); 
   const [isPublishing, setIsPublishing] = useState(false);
+  const [isSharing, setIsSharing] = useState(false);
   const [isSubmittingRoster, setIsSubmittingRoster] = useState(false);
   const [timeToMatch, setTimeToMatch] = useState(999);
   
@@ -97,6 +108,7 @@ export const MatchLines = ({ event, initialAttendees = [], initialDraftLines = [
   const hasShareAccess = checkAccess('MATCH_LINES_SHARE', event?.my_team_id);
 
   const carouselRef = useRef(null);
+  const shareCardRef = useRef(null);
   const chipsScrollRef = useRef(null);
   const pressTimer = useRef(null);
   const longPressFired = useRef(false);
@@ -112,6 +124,27 @@ export const MatchLines = ({ event, initialAttendees = [], initialDraftLines = [
   const hasTeamColor = isColorsEnabled && !!event?.team_color;
   const activeBrandColor = hasTeamColor ? event.team_color : 'var(--color-brand)';
   const contrastBadgeText = getContrastTextColor(hasTeamColor ? event.team_color : null) === 'text-white' ? '#ffffff' : '#111827';
+
+  // ── Данные шапки для картинки-карточки составов ──────────────────────────
+  const shareHeader = useMemo(() => {
+    const isMyTeamHome = event?.my_team_id === event?.home_team_id;
+    const homeJersey   = event?.home_jersey_type || event?.home_jersey || 'light';
+    const awayJersey   = event?.away_jersey_type || event?.away_jersey || 'dark';
+    const myJerseyType = isMyTeamHome ? homeJersey : awayJersey;
+
+    const arenaTz = event?.arena_timezone || 'UTC';
+    const target  = event?.event_date || event?.game_date;
+    const dObj    = target ? dayjs.utc(target).tz(arenaTz) : null;
+    const daysMap = ['ВС', 'ПН', 'ВТ', 'СР', 'ЧТ', 'ПТ', 'СБ'];
+
+    return {
+      opponentName: event?.opponent_name || '',
+      arenaDisplay: event?.arena_name || '',
+      timeDisplay:  dObj ? dObj.format('HH:mm') : '',
+      dateDisplay:  dObj ? `${dObj.format('D MMMM')}, ${daysMap[dObj.day()]}` : '',
+      jerseyLabel:  myJerseyType === 'dark' ? 'Тёмные' : 'Светлые',
+    };
+  }, [event]);
 
   // Высокопроизводительная синхронизация с централизованным реактивным хранилищем родительского контейнера матча
   useEffect(() => { setAttendees(initialAttendees); }, [initialAttendees]);
@@ -305,8 +338,8 @@ export const MatchLines = ({ event, initialAttendees = [], initialDraftLines = [
     }
   };
 
-  // Формирование текстового состава звеньев и вызов системного окна «Поделиться»
-  const handleShareLines = async () => {
+  // Текстовый состав — фолбэк, если картинку сгенерировать/расшарить не удалось
+  const buildLinesText = () => {
     const POSITION_DISPLAY = { 'LW': 'ЛН', 'C': 'ЦН', 'RW': 'ПН', 'LD': 'ЛЗ', 'RD': 'ПЗ' };
     const POSITIONS_ORDER = ['LW', 'C', 'RW', 'LD', 'RD'];
     const GOALIE_LABELS = { 5: 'ОСН', 6: 'ЗАП', 7: 'РЕЗ' };
@@ -336,15 +369,14 @@ export const MatchLines = ({ event, initialAttendees = [], initialDraftLines = [
       });
     }
 
-    const text = textParts.join('\n').trim();
-    if (!text) return;
+    return textParts.join('\n').trim();
+  };
 
+  const shareAsText = async () => {
+    const text = buildLinesText();
+    if (!text) return;
     if (navigator.share) {
-      try {
-        await navigator.share({ text });
-      } catch (err) {
-        // Пользователь закрыл окно шеринга
-      }
+      try { await navigator.share({ text }); } catch { /* пользователь закрыл окно */ }
     } else {
       try {
         await navigator.clipboard.writeText(text);
@@ -352,6 +384,62 @@ export const MatchLines = ({ event, initialAttendees = [], initialDraftLines = [
       } catch {
         setToast({ isOpen: true, message: 'Не удалось скопировать', type: 'danger' });
       }
+    }
+  };
+
+  // Генерация картинки-карточки составов и вызов системного «Поделиться»
+  const handleShareLines = async () => {
+    if (draftLines.length === 0) return;
+    const node = shareCardRef.current;
+    if (!node) { await shareAsText(); return; }
+
+    setIsSharing(true);
+    try {
+      // pixelRatio: 3 → ретина-чёткая картинка (~1800px по ширине)
+      const blob = await toBlob(node, {
+        pixelRatio: 3,
+        cacheBust: true,
+        backgroundColor: getComputedStyle(document.documentElement)
+          .getPropertyValue('--color-surface-base').trim() || '#f3f4f6',
+      });
+      if (!blob) throw new Error('Пустой blob');
+
+      const fileName = `sostav_${event?.opponent_name || 'match'}.png`.replace(/[^\wа-яёА-ЯЁ.-]+/gi, '_');
+      const file = new File([blob], fileName, { type: 'image/png' });
+
+      // 1) Шеринг файлом — если устройство умеет (моб. браузеры, PWA)
+      if (navigator.canShare && navigator.canShare({ files: [file] })) {
+        try {
+          await navigator.share({ files: [file] });
+        } catch { /* пользователь закрыл окно шеринга */ }
+        return;
+      }
+
+      // 2) Десктоп без file-share — копируем картинку в буфер обмена
+      if (navigator.clipboard && typeof window.ClipboardItem !== 'undefined') {
+        try {
+          await navigator.clipboard.write([new window.ClipboardItem({ 'image/png': blob })]);
+          setToast({ isOpen: true, message: 'Картинка состава скопирована в буфер обмена', type: 'success' });
+          return;
+        } catch { /* буфер недоступен — упадём на скачивание */ }
+      }
+
+      // 3) Последний резерв — скачивание PNG
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = fileName;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+      setToast({ isOpen: true, message: 'Картинка состава сохранена', type: 'success' });
+    } catch (err) {
+      console.error('Не удалось сгенерировать картинку состава:', err);
+      // 3) Полный фолбэк — старый текстовый шеринг
+      await shareAsText();
+    } finally {
+      setIsSharing(false);
     }
   };
 
@@ -788,7 +876,7 @@ export const MatchLines = ({ event, initialAttendees = [], initialDraftLines = [
               {hasAdminAccess && (
                 hasRosterSubmitAccess ? (
                   timeToMatch < DEADLINES.ROSTER_SUBMIT_MINUTES ? (
-                    <HintPopover status="deadline_roster_submit">
+                    <HintPopover status="deadline_roster_submit" className="flex-1">
                       <button
                         type="button"
                         className="flex w-full justify-center items-center gap-1 px-3 py-2 rounded-full text-[14px] font-semibold bg-surface-base border border-content-subtle text-content-muted opacity-40 cursor-pointer select-none outline-none"
@@ -816,7 +904,7 @@ export const MatchLines = ({ event, initialAttendees = [], initialDraftLines = [
                     </button>
                   )
                 ) : (
-                  <HintPopover status="no_subscription">
+                  <HintPopover status="no_subscription" className="flex-1">
                     <button
                       type="button"
                       className="flex w-full justify-center items-center gap-1 px-3 py-2 rounded-full text-[14px] font-semibold bg-surface-base border border-content-subtle text-content-muted opacity-40 cursor-pointer select-none outline-none"
@@ -832,14 +920,19 @@ export const MatchLines = ({ event, initialAttendees = [], initialDraftLines = [
                 hasShareAccess ? (
                   <button
                     onClick={handleShareLines}
+                    disabled={isSharing}
                     style={{ color: activeBrandColor, borderColor: activeBrandColor }}
-                    className="flex flex-1 justify-center items-center gap-1 px-3 py-2 rounded-full text-[14px] font-semibold border bg-surface-base transition-all active:scale-95 hover:opacity-80 outline-none cursor-pointer select-none"
+                    className="flex flex-1 justify-center items-center gap-1 px-3 py-2 rounded-full text-[14px] font-semibold border bg-surface-base transition-all active:scale-95 hover:opacity-80 outline-none cursor-pointer select-none disabled:opacity-60 disabled:active:scale-100"
                   >
-                    <Icon name="share" className="w-4 h-4 shrink-0" />
-                    Поделиться
+                    {isSharing ? (
+                      <div className="w-3.5 h-3.5 rounded-full border-2 border-current border-t-transparent animate-spin shrink-0" />
+                    ) : (
+                      <Icon name="share" className="w-4 h-4 shrink-0" />
+                    )}
+                    {isSharing ? 'Генерация…' : 'Поделиться'}
                   </button>
                 ) : (
-                  <HintPopover status="no_subscription">
+                  <HintPopover status="no_subscription" className="flex-1">
                     <button
                       type="button"
                       className="flex w-full justify-center items-center gap-1 px-3 py-2 rounded-full text-[14px] font-semibold border border-content-subtle bg-surface-base text-content-muted opacity-40 cursor-pointer select-none outline-none"
@@ -854,7 +947,7 @@ export const MatchLines = ({ event, initialAttendees = [], initialDraftLines = [
               {hasCoachAccess && (
                 hasLinesManageAccess ? (
                   timeToMatch <= DEADLINES.MIDDLE_EDIT_MINUTES ? (
-                    <HintPopover status="deadline_lines_edit">
+                    <HintPopover status="deadline_lines_edit" className="flex-1">
                       <button
                         type="button"
                         className="flex w-full justify-center items-center gap-1 px-3 py-2 rounded-full text-[14px] font-semibold border border-content-subtle bg-surface-base text-content-muted opacity-40 cursor-pointer select-none outline-none"
@@ -874,7 +967,7 @@ export const MatchLines = ({ event, initialAttendees = [], initialDraftLines = [
                     </button>
                   )
                 ) : (
-                  <HintPopover status="no_subscription">
+                  <HintPopover status="no_subscription" className="flex-1">
                     <button
                       type="button"
                       className="flex w-full justify-center items-center gap-1 px-3 py-2 rounded-full text-[14px] font-semibold border border-content-subtle bg-surface-base text-content-muted opacity-40 cursor-pointer select-none outline-none"
@@ -1055,13 +1148,27 @@ export const MatchLines = ({ event, initialAttendees = [], initialDraftLines = [
         )}
       </BottomSheet>
 
-      <Toast 
+      <Toast
         isOpen={toast.isOpen}
         message={toast.message}
         type={toast.type}
         onClose={() => setToast(prev => ({ ...prev, isOpen: false }))}
         activeColor={hasTeamColor ? event.team_color : null}
       />
+
+      {/* Off-screen карточка-источник для генерации картинки составов (html-to-image) */}
+      <div aria-hidden="true" style={{ position: 'fixed', left: -99999, top: 0, pointerEvents: 'none' }}>
+        <MatchLinesShareCard
+          ref={shareCardRef}
+          lines={draftLines}
+          accent={activeBrandColor}
+          opponentName={shareHeader.opponentName}
+          dateDisplay={shareHeader.dateDisplay}
+          timeDisplay={shareHeader.timeDisplay}
+          arenaDisplay={shareHeader.arenaDisplay}
+          jerseyLabel={shareHeader.jerseyLabel}
+        />
+      </div>
 
       </div>
     </FadeIn>

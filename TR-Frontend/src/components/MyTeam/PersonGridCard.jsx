@@ -42,10 +42,10 @@ export const PersonGridCard = React.memo(({ person, onClick, showBadges = false,
       </div>
 
       <div className="w-full text-center px-0.5">
-        <span className="text-[14px] font-bold text-content-main leading-tight break-words block pointer-events-none">
+        <span className="text-[14px] font-bold text-content-main leading-tight whitespace-nowrap block pointer-events-none">
           {person.last_name}
         </span>
-        <span className="text-[10px] text-content-muted leading-tight break-words block pointer-events-none">
+        <span className="text-[10px] text-content-muted leading-tight whitespace-nowrap block pointer-events-none">
           {person.first_name}
         </span>
       </div>

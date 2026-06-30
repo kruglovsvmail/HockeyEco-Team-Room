@@ -622,7 +622,7 @@ export const UserDetails = ({ data }) => {
                 <span className="text-[10px] font-black uppercase tracking-widest"
                 style={{ color: activeBrandColor || 'var(--color-success)' }}
                 >Виртуальный профиль</span>
-                <span className="text-[10px] font-medium text-content-muted mt-0.5">Для присвоения аккаунта</span>
+                <span className="text-[10px] font-medium text-content-muted mt-0.5">Для активации аккаунта</span>
               </div>
               <span className="font-mono text-[14px] font-black bg-surface-level2 px-2.5 py-1.5 rounded-xl border border-surface-border text-content-main shadow-inner select-all">
                 {profile.virtual_code}
