@@ -133,7 +133,7 @@ function JerseyColorPicker({ blockNum, blockColors, setBlockColors, isEditMode }
 }
 
 // ── Компонент ────────────────────────────────────────────────────────────
-export const TrainingLines = ({ event, initialAttendees = [], initialStaffMembers = [], refreshData }) => {
+export const TrainingLines = ({ event, initialAttendees = [], initialStaffMembers = [], initialFormationFile = null, refreshData }) => {
   const [attendees, setAttendees] = useState(initialAttendees);
   const [draftLines, setDraftLines] = useState([]);
   const [staffMembers, setStaffMembers] = useState(initialStaffMembers);
@@ -460,32 +460,16 @@ export const TrainingLines = ({ event, initialAttendees = [], initialStaffMember
   const [isGeneratingFormation, setIsGeneratingFormation] = useState(false);
   const [isShareReady, setIsShareReady] = useState(false); // есть ли готовый файл (для подписи кнопки)
 
-  // Детерминированный URL картинки расстановки в S3 (ключ из teamId + training_id) — без хранения в БД
-  const formationImageUrl = useMemo(() => {
-    if (!event?.my_team_id || !event?.event_id) return null;
-    return getImageUrl(`/roster-formation/team-${event.my_team_id}-formation_training-${event.event_id}.png`);
-  }, [event?.my_team_id, event?.event_id]);
-
-  // Предзагрузка готовой картинки из S3 при открытии вкладки → чтобы по клику шерить синхронно.
-  // 404 (картинку ещё не генерировали) — норма, упадём на клиентскую генерацию.
+  // Готовый файл прилетает уже загруженным из S3 родителем (EventDetailsTraining) на старте страницы —
+  // поэтому при открытии вкладки «Расстановка» шеринг сразу готов, без запроса в момент клика.
   useEffect(() => {
-    if (!(hasShareRoleAccess && hasShareAccess) || !formationImageUrl) {
-      preparedShareRef.current = null;
-      return;
+    if (initialFormationFile) {
+      preparedShareRef.current = initialFormationFile;
+      setIsShareReady(true);
+    } else if (!preparedShareRef.current) {
+      setIsShareReady(false);
     }
-    let cancelled = false;
-    setIsShareReady(false);
-    (async () => {
-      try {
-        const resp = await fetch(formationImageUrl, { cache: 'no-store' });
-        if (!resp.ok) { if (!cancelled) { preparedShareRef.current = null; setIsShareReady(false); } return; }
-        const blob = await resp.blob();
-        if (!blob || blob.type !== 'image/png') { if (!cancelled) { preparedShareRef.current = null; setIsShareReady(false); } return; }
-        if (!cancelled) { preparedShareRef.current = { blob, file: new File([blob], 'rasstanovka_trenirovka.png', { type: 'image/png' }) }; setIsShareReady(true); }
-      } catch { if (!cancelled) { preparedShareRef.current = null; setIsShareReady(false); } }
-    })();
-    return () => { cancelled = true; };
-  }, [formationImageUrl, hasShareRoleAccess, hasShareAccess]);
+  }, [initialFormationFile]);
 
   // Сгенерировать картинку и перезаписать в S3 — после сохранения расстановки или по клику «Генерация»
   const regenerateFormationImage = useCallback(async () => {

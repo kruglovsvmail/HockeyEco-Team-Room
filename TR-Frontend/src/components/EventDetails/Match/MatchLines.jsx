@@ -55,7 +55,7 @@ const sanitizePosition = (pos) => {
   return validKeys.includes(sanitized) ? sanitized : 'LW';
 };
 
-export const MatchLines = ({ event, initialAttendees = [], initialDraftLines = [], initialIsPublished = false, initialStaffMembers = [], refreshData }) => {
+export const MatchLines = ({ event, initialAttendees = [], initialDraftLines = [], initialIsPublished = false, initialStaffMembers = [], initialFormationFile = null, refreshData }) => {
   const [attendees, setAttendees] = useState(initialAttendees);
   const [draftLines, setDraftLines] = useState(initialDraftLines);
   const [isPublished, setIsPublished] = useState(initialIsPublished);
@@ -415,33 +415,16 @@ export const MatchLines = ({ event, initialAttendees = [], initialDraftLines = [
   const [isShareReady, setIsShareReady] = useState(false); // есть ли готовый файл (для подписи кнопки)
   const formationDirtyRef = useRef(false); // картинку надо перегенерировать после прихода свежих draftLines
 
-  // Детерминированный URL картинки состава в S3 (ключ из teamId + game_id) — без хранения в БД
-  const formationImageUrl = useMemo(() => {
-    if (!event?.my_team_id || !event?.event_id) return null;
-    return getImageUrl(`/roster-formation/team-${event.my_team_id}-formation_game-${event.event_id}.png`);
-  }, [event?.my_team_id, event?.event_id]);
-
-  // Предзагрузка готовой картинки из S3 при открытии вкладки → чтобы по клику шерить синхронно
-  // (navigator.share требует «живого» жеста, await после клика его теряет). 404 — норма (ещё не генерили).
+  // Готовый файл прилетает уже загруженным из S3 родителем (EventDetailsMatch) на старте страницы —
+  // поэтому при открытии вкладки «Состав» шеринг сразу готов, без запроса в момент клика.
   useEffect(() => {
-    if (!(hasShareRoleAccess && hasShareAccess) || !formationImageUrl) {
-      preparedShareRef.current = null;
-      return;
+    if (initialFormationFile) {
+      preparedShareRef.current = initialFormationFile;
+      setIsShareReady(true);
+    } else if (!preparedShareRef.current) {
+      setIsShareReady(false);
     }
-    let cancelled = false;
-    setIsShareReady(false);
-    (async () => {
-      try {
-        const resp = await fetch(formationImageUrl, { cache: 'no-store' });
-        if (!resp.ok) { if (!cancelled) { preparedShareRef.current = null; setIsShareReady(false); } return; }
-        const blob = await resp.blob();
-        if (!blob || blob.type !== 'image/png') { if (!cancelled) { preparedShareRef.current = null; setIsShareReady(false); } return; }
-        const fileName = `sostav_${event?.opponent_name || 'match'}.png`.replace(/[^\wа-яёА-ЯЁ.-]+/gi, '_');
-        if (!cancelled) { preparedShareRef.current = { blob, file: new File([blob], fileName, { type: 'image/png' }) }; setIsShareReady(true); }
-      } catch { if (!cancelled) { preparedShareRef.current = null; setIsShareReady(false); } }
-    })();
-    return () => { cancelled = true; };
-  }, [formationImageUrl, hasShareRoleAccess, hasShareAccess, event?.opponent_name]);
+  }, [initialFormationFile]);
 
   // Сгенерировать картинку и перезаписать в S3 — после сохранения состава/параметров или по клику «Генерация»
   const regenerateFormationImage = useCallback(async () => {

@@ -30,7 +30,7 @@ export default defineConfig({
         
         // 🎨 ХАБ УПРАВЛЕНИЯ ЦВЕТОМ СТАРТОВОГО ЭКРАНА (Замените #0f172a на ваш hex-код)
         theme_color: '#f3f4f6',      // Цвет статус-бара (должен совпадать со светлым theme-color в index.html)
-        background_color: '#f3f4f6', // Физический фон системного Splash Screen при клике на иконку
+        background_color: '#e2e4e7', // Физический фон системного Splash Screen при клике на иконку
         
         display: 'standalone',
         orientation: 'portrait',

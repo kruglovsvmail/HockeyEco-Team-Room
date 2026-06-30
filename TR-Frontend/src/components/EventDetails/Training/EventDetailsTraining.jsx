@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, Suspense, lazy, useCallback } from 'react';
-import { getAuthHeaders } from '../../../utils/helpers';
+import { getAuthHeaders, getImageUrl } from '../../../utils/helpers';
 import { Icon } from '../../../ui/Icon';
 import { ChipTabs } from '../../../ui/ChipTabs';
 import { useFocusRevalidate } from '../../../hooks/useFocusRevalidate';
@@ -204,6 +204,24 @@ export const EventDetailsTraining = ({ event }) => {
 
   useEffect(() => { fetchAllTrainingData(); }, [fetchAllTrainingData]);
   useFocusRevalidate(fetchAllTrainingData);
+
+  // Предзагрузка картинки расстановки из S3 заранее (на уровне страницы деталей, а не вкладки «Расстановка»).
+  const [formationFile, setFormationFile] = useState(null);
+  useEffect(() => {
+    if (!localEvent?.my_team_id || !localEvent?.event_id) { setFormationFile(null); return; }
+    const url = getImageUrl(`/roster-formation/team-${localEvent.my_team_id}-formation_training-${localEvent.event_id}.png`);
+    let cancelled = false;
+    (async () => {
+      try {
+        const resp = await fetch(url, { cache: 'no-store' });
+        if (!resp.ok) { if (!cancelled) setFormationFile(null); return; }
+        const blob = await resp.blob();
+        if (!blob || blob.type !== 'image/png') { if (!cancelled) setFormationFile(null); return; }
+        if (!cancelled) setFormationFile({ blob, file: new File([blob], 'rasstanovka_trenirovka.png', { type: 'image/png' }) });
+      } catch { if (!cancelled) setFormationFile(null); }
+    })();
+    return () => { cancelled = true; };
+  }, [localEvent?.my_team_id, localEvent?.event_id, trainingData]);
 
   // ── Сохранение из шторки — расписание и взнос одним общим запросом ────────
   const handleSave = async () => {
@@ -465,6 +483,7 @@ export const EventDetailsTraining = ({ event }) => {
                       event={localEvent}
                       initialAttendees={trainingData.attendees}
                       initialStaffMembers={trainingData.staffMembers}
+                      initialFormationFile={formationFile}
                       refreshData={fetchAllTrainingData}
                     />
                   </FadeIn>

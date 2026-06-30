@@ -158,6 +158,25 @@ export const EventDetailsMatch = ({ event, user: userProp, selectedTeam: selecte
   useFocusRevalidate(fetchAllMatchData);
   useEffect(() => () => { if (rafRef.current) cancelAnimationFrame(rafRef.current); }, []);
 
+  // Предзагрузка картинки состава из S3 заранее (на уровне страницы деталей, а не вкладки «Состав»).
+  // Готовый файл прокидывается в MatchLines, чтобы шеринг был мгновенным без проверки при клике на вкладку.
+  const [formationFile, setFormationFile] = useState(null);
+  useEffect(() => {
+    if (!localEvent?.my_team_id || !localEvent?.event_id) { setFormationFile(null); return; }
+    const url = getImageUrl(`/roster-formation/team-${localEvent.my_team_id}-formation_game-${localEvent.event_id}.png`);
+    let cancelled = false;
+    (async () => {
+      try {
+        const resp = await fetch(url, { cache: 'no-store' });
+        if (!resp.ok) { if (!cancelled) setFormationFile(null); return; }
+        const blob = await resp.blob();
+        if (!blob || blob.type !== 'image/png') { if (!cancelled) setFormationFile(null); return; }
+        if (!cancelled) setFormationFile({ blob, file: new File([blob], 'sostav.png', { type: 'image/png' }) });
+      } catch { if (!cancelled) setFormationFile(null); }
+    })();
+    return () => { cancelled = true; };
+  }, [localEvent?.my_team_id, localEvent?.event_id, matchData]);
+
   if (!localEvent) return null;
 
   // ── Вычисления для шапки ──────────────────────────────────────────────────
@@ -360,6 +379,7 @@ export const EventDetailsMatch = ({ event, user: userProp, selectedTeam: selecte
                       initialDraftLines={matchData.draftLines}
                       initialIsPublished={matchData.isPublished}
                       initialStaffMembers={matchData.staffMembers}
+                      initialFormationFile={formationFile}
                       refreshData={fetchAllMatchData}
                     />
                   </FadeIn>
