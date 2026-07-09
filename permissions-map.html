@@ -1,0 +1,578 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Team-Room — Карта прав и ролей</title>
+<style>
+  :root {
+    --bg: #0f1117;
+    --surface: #1a1d27;
+    --border: #2a2d3a;
+    --text: #e1e4ed;
+    --text-muted: #8b8fa3;
+    --accent: #6c8cff;
+    --green: #34d399;
+    --yellow: #fbbf24;
+    --red: #f87171;
+    --orange: #fb923c;
+    --purple: #a78bfa;
+    --cyan: #22d3ee;
+    --pink: #f472b6;
+    --teal: #2dd4bf;
+    --blue: #60a5fa;
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    line-height: 1.6;
+    padding: 32px 24px;
+  }
+
+  .container { max-width: 1200px; margin: 0 auto; }
+
+  h1 {
+    font-size: 28px;
+    font-weight: 700;
+    margin-bottom: 8px;
+  }
+
+  .subtitle {
+    color: var(--text-muted);
+    font-size: 14px;
+    margin-bottom: 40px;
+  }
+
+  /* ---- Legend ---- */
+  .legend {
+    display: flex;
+    gap: 20px;
+    flex-wrap: wrap;
+    margin-bottom: 32px;
+    padding: 16px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    font-size: 13px;
+  }
+  .legend-item { display: flex; align-items: center; gap: 6px; }
+  .legend-dot {
+    width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0;
+  }
+  .legend-dot.free { background: var(--green); }
+  .legend-dot.sub  { background: var(--yellow); }
+
+  /* ---- Tabs ---- */
+  .tabs {
+    display: flex;
+    gap: 0;
+    border-bottom: 2px solid var(--border);
+    margin-bottom: 0;
+    overflow-x: auto;
+  }
+  .tab {
+    padding: 10px 20px;
+    cursor: pointer;
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--text-muted);
+    border-bottom: 2px solid transparent;
+    margin-bottom: -2px;
+    white-space: nowrap;
+    transition: all .2s;
+    user-select: none;
+  }
+  .tab:hover { color: var(--text); }
+  .tab.active {
+    color: var(--accent);
+    border-bottom-color: var(--accent);
+  }
+
+  /* ---- View toggle ---- */
+  .view-toggle {
+    display: flex;
+    justify-content: flex-end;
+    gap: 8px;
+    margin: 20px 0 24px;
+  }
+  .view-btn {
+    padding: 6px 16px;
+    font-size: 13px;
+    font-weight: 600;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    background: transparent;
+    color: var(--text-muted);
+    cursor: pointer;
+    transition: all .2s;
+  }
+  .view-btn.active {
+    background: var(--accent);
+    color: #fff;
+    border-color: var(--accent);
+  }
+
+  /* ---- Role cards (by-role view) ---- */
+  .role-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(340px, 1fr));
+    gap: 20px;
+  }
+
+  .role-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    overflow: hidden;
+    transition: border-color .2s;
+  }
+  .role-card:hover { border-color: var(--accent); }
+
+  .role-header {
+    padding: 16px 20px;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    border-bottom: 1px solid var(--border);
+  }
+  .role-icon {
+    width: 40px; height: 40px; border-radius: 10px;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 20px; flex-shrink: 0;
+  }
+  .role-name { font-weight: 700; font-size: 16px; }
+  .role-code { font-size: 12px; color: var(--text-muted); font-family: monospace; }
+  .role-count {
+    margin-left: auto;
+    background: var(--border);
+    border-radius: 12px;
+    padding: 2px 10px;
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--text-muted);
+  }
+
+  .role-body { padding: 16px 20px; }
+
+  .perm-section-title {
+    font-size: 11px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: .8px;
+    color: var(--text-muted);
+    margin: 12px 0 8px;
+  }
+  .perm-section-title:first-child { margin-top: 0; }
+
+  .perm-item {
+    display: flex;
+    align-items: flex-start;
+    gap: 8px;
+    padding: 5px 0;
+    font-size: 13px;
+  }
+  .perm-dot {
+    width: 8px; height: 8px; border-radius: 50%;
+    margin-top: 6px; flex-shrink: 0;
+  }
+  .perm-dot.free { background: var(--green); }
+  .perm-dot.sub  { background: var(--yellow); }
+
+  /* ---- Table view ---- */
+  .table-wrapper {
+    overflow-x: auto;
+    border: 1px solid var(--border);
+    border-radius: 12px;
+  }
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 13px;
+    min-width: 900px;
+  }
+  thead th {
+    background: var(--surface);
+    padding: 12px 10px;
+    text-align: center;
+    font-weight: 700;
+    font-size: 12px;
+    border-bottom: 2px solid var(--border);
+    position: sticky;
+    top: 0;
+    white-space: nowrap;
+  }
+  thead th:first-child {
+    text-align: left;
+    padding-left: 16px;
+    min-width: 280px;
+  }
+  tbody tr { border-bottom: 1px solid var(--border); }
+  tbody tr:last-child { border-bottom: none; }
+  tbody tr:hover { background: rgba(108,140,255,.06); }
+  tbody td {
+    padding: 10px 10px;
+    text-align: center;
+    vertical-align: middle;
+  }
+  tbody td:first-child {
+    text-align: left;
+    padding-left: 16px;
+    color: var(--text);
+  }
+  .section-row td {
+    background: rgba(108,140,255,.08);
+    font-weight: 700;
+    font-size: 12px;
+    text-transform: uppercase;
+    letter-spacing: .5px;
+    color: var(--accent);
+    padding: 8px 16px;
+  }
+  .cell-free { color: var(--green); font-size: 16px; }
+  .cell-sub  { color: var(--yellow); font-size: 16px; }
+  .cell-no   { color: var(--border); font-size: 14px; }
+
+  .hidden { display: none; }
+</style>
+</head>
+<body>
+
+<div class="container">
+  <h1>Team-Room — Карта прав и ролей</h1>
+  <p class="subtitle">Автоматически сгенерировано из permissions.js &nbsp;|&nbsp; 9 ролей &nbsp;|&nbsp; 28 разрешений</p>
+
+  <div class="legend">
+    <div class="legend-item"><div class="legend-dot free"></div> Доступно без подписки</div>
+    <div class="legend-item"><div class="legend-dot sub"></div> Требуется подписка</div>
+  </div>
+
+  <div class="tabs" id="tabs">
+    <div class="tab active" data-view="roles">По ролям</div>
+    <div class="tab" data-view="table">Сводная таблица</div>
+  </div>
+
+  <!-- ===================== BY ROLE ===================== -->
+  <div id="view-roles" style="margin-top:24px">
+    <div class="role-grid">
+
+      <!-- OWNER -->
+      <div class="role-card">
+        <div class="role-header">
+          <div class="role-icon" style="background:rgba(108,140,255,.15);color:var(--accent)">&#9733;</div>
+          <div><div class="role-name">Владелец команды</div><div class="role-code">owner</div></div>
+          <div class="role-count">27</div>
+        </div>
+        <div class="role-body">
+          <div class="perm-section-title">Пользователи</div>
+          <div class="perm-item"><div class="perm-dot free"></div>Редактирование ролей в команде</div>
+          <div class="perm-item"><div class="perm-dot free"></div>Редактирование игрового профиля</div>
+          <div class="perm-item"><div class="perm-dot free"></div>Редактирование базового блока (ФИО, контакты, аватар)</div>
+          <div class="perm-item"><div class="perm-dot free"></div>Просмотр виртуального кода игрока</div>
+
+          <div class="perm-section-title">Управление командой</div>
+          <div class="perm-item"><div class="perm-dot free"></div>Вкладка «Состав» — добавление/удаление участников</div>
+          <div class="perm-item"><div class="perm-dot free"></div>Вкладка «Ростер» — заявочный лист турнира</div>
+          <div class="perm-item"><div class="perm-dot free"></div>Редактирование профиля команды (логотип, название, цвета)</div>
+
+          <div class="perm-section-title">Менеджерские разделы</div>
+          <div class="perm-item"><div class="perm-dot free"></div>Создание событий</div>
+          <div class="perm-item"><div class="perm-dot free"></div>Раздел «Справочники»</div>
+
+          <div class="perm-section-title">События (общее)</div>
+          <div class="perm-item"><div class="perm-dot free"></div>Просмотр карточки события (INTERNAL_VIEW)</div>
+
+          <div class="perm-section-title">Матчи</div>
+          <div class="perm-item"><div class="perm-dot free"></div>Отметки присутствия на матче</div>
+          <div class="perm-item"><div class="perm-dot free"></div>Подтверждение/отмена товарищеского матча</div>
+          <div class="perm-item"><div class="perm-dot free"></div>Составление звеньев (пятёрок)</div>
+          <div class="perm-item"><div class="perm-dot free"></div>Шеринг звеньев</div>
+          <div class="perm-item"><div class="perm-dot free"></div>Редактирование параметров игрока в звеньях (C, A, номер)</div>
+          <div class="perm-item"><div class="perm-dot free"></div>Отправка заявки состава в лигу</div>
+          <div class="perm-item"><div class="perm-dot free"></div>Заполнение результатов матча</div>
+          <div class="perm-item"><div class="perm-dot free"></div>Редактирование медиа-ссылок</div>
+          <div class="perm-item"><div class="perm-dot free"></div>Редактирование расписания матча</div>
+          <div class="perm-item"><div class="perm-dot free"></div>Редактирование формы и взноса</div>
+          <div class="perm-item"><div class="perm-dot free"></div>Удаление матча</div>
+
+          <div class="perm-section-title">Тренировки</div>
+          <div class="perm-item"><div class="perm-dot free"></div>Отметки присутствия на тренировке</div>
+          <div class="perm-item"><div class="perm-dot free"></div>Расстановка игроков на тренировку</div>
+          <div class="perm-item"><div class="perm-dot free"></div>Шеринг расстановки тренировки</div>
+          <div class="perm-item"><div class="perm-dot free"></div>Редактирование расписания / стоимости / удаление тренировки</div>
+
+          <div class="perm-section-title">Собрания</div>
+          <div class="perm-item"><div class="perm-dot free"></div>Отметки присутствия на собрании</div>
+          <div class="perm-item"><div class="perm-dot free"></div>Редактирование расписания / стоимости / удаление собрания</div>
+        </div>
+      </div>
+
+      <!-- CLUB_TOP_MANAGER -->
+      <div class="role-card">
+        <div class="role-header">
+          <div class="role-icon" style="background:rgba(251,191,36,.15);color:var(--yellow)">&#9830;</div>
+          <div><div class="role-name">Руководитель клуба</div><div class="role-code">top_manager</div></div>
+          <div class="role-count">2</div>
+        </div>
+        <div class="role-body">
+          <div class="perm-section-title">Управление командой</div>
+          <div class="perm-item"><div class="perm-dot sub"></div>Вкладка «Состав» — добавление/удаление участников</div>
+          <div class="perm-section-title">События</div>
+          <div class="perm-item"><div class="perm-dot sub"></div>Просмотр карточки события (INTERNAL_VIEW)</div>
+        </div>
+      </div>
+
+      <!-- CLUB_ADMIN -->
+      <div class="role-card">
+        <div class="role-header">
+          <div class="role-icon" style="background:rgba(251,146,60,.15);color:var(--orange)">&#9670;</div>
+          <div><div class="role-name">Администратор клуба</div><div class="role-code">club_admin</div></div>
+          <div class="role-count">1</div>
+        </div>
+        <div class="role-body">
+          <div class="perm-section-title">События</div>
+          <div class="perm-item"><div class="perm-dot sub"></div>Просмотр карточки события (INTERNAL_VIEW)</div>
+        </div>
+      </div>
+
+      <!-- TEAM_MANAGER -->
+      <div class="role-card">
+        <div class="role-header">
+          <div class="role-icon" style="background:rgba(52,211,153,.15);color:var(--green)">&#9881;</div>
+          <div><div class="role-name">Менеджер команды</div><div class="role-code">team_manager</div></div>
+          <div class="role-count">24</div>
+        </div>
+        <div class="role-body">
+          <div class="perm-section-title">Пользователи</div>
+          <div class="perm-item"><div class="perm-dot sub"></div>Редактирование ролей в команде</div>
+          <div class="perm-item"><div class="perm-dot sub"></div>Редактирование игрового профиля</div>
+          <div class="perm-item"><div class="perm-dot sub"></div>Редактирование базового блока (ФИО, контакты, аватар)</div>
+          <div class="perm-item"><div class="perm-dot sub"></div>Просмотр виртуального кода игрока</div>
+
+          <div class="perm-section-title">Управление командой</div>
+          <div class="perm-item"><div class="perm-dot sub"></div>Вкладка «Состав» — добавление/удаление участников</div>
+          <div class="perm-item"><div class="perm-dot sub"></div>Вкладка «Ростер» — заявочный лист турнира</div>
+
+          <div class="perm-section-title">Менеджерские разделы</div>
+          <div class="perm-item"><div class="perm-dot sub"></div>Создание событий</div>
+          <div class="perm-item"><div class="perm-dot sub"></div>Раздел «Справочники»</div>
+
+          <div class="perm-section-title">События (общее)</div>
+          <div class="perm-item"><div class="perm-dot sub"></div>Просмотр карточки события (INTERNAL_VIEW)</div>
+
+          <div class="perm-section-title">Матчи</div>
+          <div class="perm-item"><div class="perm-dot sub"></div>Отметки присутствия на матче</div>
+          <div class="perm-item"><div class="perm-dot sub"></div>Подтверждение/отмена товарищеского матча</div>
+          <div class="perm-item"><div class="perm-dot sub"></div>Шеринг звеньев</div>
+          <div class="perm-item"><div class="perm-dot sub"></div>Редактирование параметров игрока в звеньях</div>
+          <div class="perm-item"><div class="perm-dot sub"></div>Отправка заявки состава в лигу</div>
+          <div class="perm-item"><div class="perm-dot sub"></div>Заполнение результатов матча</div>
+          <div class="perm-item"><div class="perm-dot sub"></div>Редактирование медиа / расписания / формы и взноса / удаление матча</div>
+
+          <div class="perm-section-title">Тренировки</div>
+          <div class="perm-item"><div class="perm-dot sub"></div>Отметки присутствия на тренировке</div>
+          <div class="perm-item"><div class="perm-dot sub"></div>Шеринг расстановки тренировки</div>
+          <div class="perm-item"><div class="perm-dot sub"></div>Редактирование расписания / стоимости / удаление тренировки</div>
+
+          <div class="perm-section-title">Собрания</div>
+          <div class="perm-item"><div class="perm-dot sub"></div>Отметки присутствия на собрании</div>
+          <div class="perm-item"><div class="perm-dot sub"></div>Редактирование расписания / стоимости / удаление собрания</div>
+        </div>
+      </div>
+
+      <!-- TEAM_ADMIN -->
+      <div class="role-card">
+        <div class="role-header">
+          <div class="role-icon" style="background:rgba(167,139,250,.15);color:var(--purple)">&#9874;</div>
+          <div><div class="role-name">Администратор команды</div><div class="role-code">team_admin</div></div>
+          <div class="role-count">17</div>
+        </div>
+        <div class="role-body">
+          <div class="perm-section-title">Менеджерские разделы</div>
+          <div class="perm-item"><div class="perm-dot sub"></div>Создание событий</div>
+          <div class="perm-item"><div class="perm-dot sub"></div>Раздел «Справочники»</div>
+
+          <div class="perm-section-title">События (общее)</div>
+          <div class="perm-item"><div class="perm-dot sub"></div>Просмотр карточки события (INTERNAL_VIEW)</div>
+
+          <div class="perm-section-title">Матчи</div>
+          <div class="perm-item"><div class="perm-dot sub"></div>Шеринг звеньев</div>
+          <div class="perm-item"><div class="perm-dot sub"></div>Редактирование параметров игрока в звеньях</div>
+          <div class="perm-item"><div class="perm-dot sub"></div>Отправка заявки состава в лигу</div>
+          <div class="perm-item"><div class="perm-dot sub"></div>Заполнение результатов матча</div>
+          <div class="perm-item"><div class="perm-dot sub"></div>Редактирование медиа / расписания / формы и взноса / удаление матча</div>
+
+          <div class="perm-section-title">Тренировки</div>
+          <div class="perm-item"><div class="perm-dot sub"></div>Шеринг расстановки тренировки</div>
+          <div class="perm-item"><div class="perm-dot sub"></div>Редактирование расписания / стоимости / удаление тренировки</div>
+
+          <div class="perm-section-title">Собрания</div>
+          <div class="perm-item"><div class="perm-dot sub"></div>Редактирование расписания / стоимости / удаление собрания</div>
+        </div>
+      </div>
+
+      <!-- HEAD_COACH -->
+      <div class="role-card">
+        <div class="role-header">
+          <div class="role-icon" style="background:rgba(34,211,238,.15);color:var(--cyan)">&#9917;</div>
+          <div><div class="role-name">Главный тренер</div><div class="role-code">head_coach</div></div>
+          <div class="role-count">6</div>
+        </div>
+        <div class="role-body">
+          <div class="perm-section-title">События (общее)</div>
+          <div class="perm-item"><div class="perm-dot free"></div>Просмотр карточки события (INTERNAL_VIEW)</div>
+
+          <div class="perm-section-title">Матчи</div>
+          <div class="perm-item"><div class="perm-dot free"></div>Составление звеньев (пятёрок)</div>
+          <div class="perm-item"><div class="perm-dot free"></div>Шеринг звеньев</div>
+          <div class="perm-item"><div class="perm-dot free"></div>Отправка заявки состава в лигу</div>
+
+          <div class="perm-section-title">Тренировки</div>
+          <div class="perm-item"><div class="perm-dot free"></div>Расстановка игроков на тренировку</div>
+          <div class="perm-item"><div class="perm-dot free"></div>Шеринг расстановки тренировки</div>
+        </div>
+      </div>
+
+      <!-- COACH -->
+      <div class="role-card">
+        <div class="role-header">
+          <div class="role-icon" style="background:rgba(45,212,191,.15);color:var(--teal)">&#127947;</div>
+          <div><div class="role-name">Тренер (помощник)</div><div class="role-code">coach</div></div>
+          <div class="role-count">6</div>
+        </div>
+        <div class="role-body">
+          <div class="perm-section-title">События (общее)</div>
+          <div class="perm-item"><div class="perm-dot free"></div>Просмотр карточки события (INTERNAL_VIEW)</div>
+
+          <div class="perm-section-title">Матчи</div>
+          <div class="perm-item"><div class="perm-dot free"></div>Составление звеньев (пятёрок)</div>
+          <div class="perm-item"><div class="perm-dot free"></div>Шеринг звеньев</div>
+          <div class="perm-item"><div class="perm-dot free"></div>Отправка заявки состава в лигу</div>
+
+          <div class="perm-section-title">Тренировки</div>
+          <div class="perm-item"><div class="perm-dot free"></div>Расстановка игроков на тренировку</div>
+          <div class="perm-item"><div class="perm-dot free"></div>Шеринг расстановки тренировки</div>
+        </div>
+      </div>
+
+      <!-- PLAYER -->
+      <div class="role-card">
+        <div class="role-header">
+          <div class="role-icon" style="background:rgba(244,114,182,.15);color:var(--pink)">&#127946;</div>
+          <div><div class="role-name">Игрок</div><div class="role-code">player</div></div>
+          <div class="role-count">2</div>
+        </div>
+        <div class="role-body">
+          <div class="perm-section-title">События</div>
+          <div class="perm-item"><div class="perm-dot sub"></div>Просмотр карточки события (INTERNAL_VIEW)</div>
+          <div class="perm-item"><div class="perm-dot sub"></div>Самостоятельная отметка явки на событие</div>
+        </div>
+      </div>
+
+      <!-- GLOBAL_ADMIN -->
+      <div class="role-card">
+        <div class="role-header">
+          <div class="role-icon" style="background:rgba(248,113,113,.15);color:var(--red)">&#128274;</div>
+          <div><div class="role-name">Глобальный администратор</div><div class="role-code">admin</div></div>
+          <div class="role-count">&infin;</div>
+        </div>
+        <div class="role-body">
+          <p style="font-size:13px;color:var(--text-muted)">Системная роль разработчика / владельца платформы. Полный доступ ко всем функциям через серверную логику, не участвует в PERMISSIONS-справочнике.</p>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- ===================== TABLE ===================== -->
+  <div id="view-table" class="hidden" style="margin-top:24px">
+    <div class="table-wrapper">
+      <table>
+        <thead>
+          <tr>
+            <th>Разрешение</th>
+            <th>Owner</th>
+            <th>Top&nbsp;Mgr</th>
+            <th>Club&nbsp;Admin</th>
+            <th>Team&nbsp;Mgr</th>
+            <th>Team&nbsp;Admin</th>
+            <th>Head&nbsp;Coach</th>
+            <th>Coach</th>
+            <th>Player</th>
+          </tr>
+        </thead>
+        <tbody>
+          <!-- Пользователи -->
+          <tr class="section-row"><td colspan="9">Пользователи</td></tr>
+          <tr><td>Редактирование ролей в команде</td><td class="cell-free">&#10004;</td><td class="cell-no">&mdash;</td><td class="cell-no">&mdash;</td><td class="cell-sub">&#10004;</td><td class="cell-no">&mdash;</td><td class="cell-no">&mdash;</td><td class="cell-no">&mdash;</td><td class="cell-no">&mdash;</td></tr>
+          <tr><td>Редактирование игрового профиля</td><td class="cell-free">&#10004;</td><td class="cell-no">&mdash;</td><td class="cell-no">&mdash;</td><td class="cell-sub">&#10004;</td><td class="cell-no">&mdash;</td><td class="cell-no">&mdash;</td><td class="cell-no">&mdash;</td><td class="cell-no">&mdash;</td></tr>
+          <tr><td>Редактирование базового блока</td><td class="cell-free">&#10004;</td><td class="cell-no">&mdash;</td><td class="cell-no">&mdash;</td><td class="cell-sub">&#10004;</td><td class="cell-no">&mdash;</td><td class="cell-no">&mdash;</td><td class="cell-no">&mdash;</td><td class="cell-no">&mdash;</td></tr>
+          <tr><td>Просмотр виртуального кода</td><td class="cell-free">&#10004;</td><td class="cell-no">&mdash;</td><td class="cell-no">&mdash;</td><td class="cell-sub">&#10004;</td><td class="cell-no">&mdash;</td><td class="cell-no">&mdash;</td><td class="cell-no">&mdash;</td><td class="cell-no">&mdash;</td></tr>
+
+          <!-- Управление командой -->
+          <tr class="section-row"><td colspan="9">Управление командой</td></tr>
+          <tr><td>Состав — добавление/удаление</td><td class="cell-free">&#10004;</td><td class="cell-sub">&#10004;</td><td class="cell-no">&mdash;</td><td class="cell-sub">&#10004;</td><td class="cell-no">&mdash;</td><td class="cell-no">&mdash;</td><td class="cell-no">&mdash;</td><td class="cell-no">&mdash;</td></tr>
+          <tr><td>Ростер — заявочный лист</td><td class="cell-free">&#10004;</td><td class="cell-no">&mdash;</td><td class="cell-no">&mdash;</td><td class="cell-sub">&#10004;</td><td class="cell-no">&mdash;</td><td class="cell-no">&mdash;</td><td class="cell-no">&mdash;</td><td class="cell-no">&mdash;</td></tr>
+          <tr><td>Профиль команды (логотип, цвета)</td><td class="cell-free">&#10004;</td><td class="cell-no">&mdash;</td><td class="cell-no">&mdash;</td><td class="cell-no">&mdash;</td><td class="cell-no">&mdash;</td><td class="cell-no">&mdash;</td><td class="cell-no">&mdash;</td><td class="cell-no">&mdash;</td></tr>
+
+          <!-- Менеджерские разделы -->
+          <tr class="section-row"><td colspan="9">Менеджерские разделы</td></tr>
+          <tr><td>Создание событий</td><td class="cell-free">&#10004;</td><td class="cell-no">&mdash;</td><td class="cell-no">&mdash;</td><td class="cell-sub">&#10004;</td><td class="cell-sub">&#10004;</td><td class="cell-no">&mdash;</td><td class="cell-no">&mdash;</td><td class="cell-no">&mdash;</td></tr>
+          <tr><td>Справочники</td><td class="cell-free">&#10004;</td><td class="cell-no">&mdash;</td><td class="cell-no">&mdash;</td><td class="cell-sub">&#10004;</td><td class="cell-sub">&#10004;</td><td class="cell-no">&mdash;</td><td class="cell-no">&mdash;</td><td class="cell-no">&mdash;</td></tr>
+
+          <!-- События -->
+          <tr class="section-row"><td colspan="9">События (общее)</td></tr>
+          <tr><td>Просмотр карточки события</td><td class="cell-free">&#10004;</td><td class="cell-sub">&#10004;</td><td class="cell-sub">&#10004;</td><td class="cell-sub">&#10004;</td><td class="cell-sub">&#10004;</td><td class="cell-free">&#10004;</td><td class="cell-free">&#10004;</td><td class="cell-sub">&#10004;</td></tr>
+          <tr><td>Самостоятельная отметка явки</td><td class="cell-no">&mdash;</td><td class="cell-no">&mdash;</td><td class="cell-no">&mdash;</td><td class="cell-no">&mdash;</td><td class="cell-no">&mdash;</td><td class="cell-no">&mdash;</td><td class="cell-no">&mdash;</td><td class="cell-sub">&#10004;</td></tr>
+
+          <!-- Матчи -->
+          <tr class="section-row"><td colspan="9">Матчи</td></tr>
+          <tr><td>Отметки присутствия</td><td class="cell-free">&#10004;</td><td class="cell-no">&mdash;</td><td class="cell-no">&mdash;</td><td class="cell-sub">&#10004;</td><td class="cell-no">&mdash;</td><td class="cell-no">&mdash;</td><td class="cell-no">&mdash;</td><td class="cell-no">&mdash;</td></tr>
+          <tr><td>Подтверждение/отмена товарищеского</td><td class="cell-free">&#10004;</td><td class="cell-no">&mdash;</td><td class="cell-no">&mdash;</td><td class="cell-sub">&#10004;</td><td class="cell-no">&mdash;</td><td class="cell-no">&mdash;</td><td class="cell-no">&mdash;</td><td class="cell-no">&mdash;</td></tr>
+          <tr><td>Составление звеньев (пятёрок)</td><td class="cell-free">&#10004;</td><td class="cell-no">&mdash;</td><td class="cell-no">&mdash;</td><td class="cell-no">&mdash;</td><td class="cell-no">&mdash;</td><td class="cell-free">&#10004;</td><td class="cell-free">&#10004;</td><td class="cell-no">&mdash;</td></tr>
+          <tr><td>Шеринг звеньев</td><td class="cell-free">&#10004;</td><td class="cell-no">&mdash;</td><td class="cell-no">&mdash;</td><td class="cell-sub">&#10004;</td><td class="cell-sub">&#10004;</td><td class="cell-free">&#10004;</td><td class="cell-free">&#10004;</td><td class="cell-no">&mdash;</td></tr>
+          <tr><td>Параметры игрока в звеньях (C, A)</td><td class="cell-free">&#10004;</td><td class="cell-no">&mdash;</td><td class="cell-no">&mdash;</td><td class="cell-sub">&#10004;</td><td class="cell-sub">&#10004;</td><td class="cell-no">&mdash;</td><td class="cell-no">&mdash;</td><td class="cell-no">&mdash;</td></tr>
+          <tr><td>Отправка заявки состава в лигу</td><td class="cell-free">&#10004;</td><td class="cell-no">&mdash;</td><td class="cell-no">&mdash;</td><td class="cell-sub">&#10004;</td><td class="cell-sub">&#10004;</td><td class="cell-free">&#10004;</td><td class="cell-free">&#10004;</td><td class="cell-no">&mdash;</td></tr>
+          <tr><td>Заполнение результатов матча</td><td class="cell-free">&#10004;</td><td class="cell-no">&mdash;</td><td class="cell-no">&mdash;</td><td class="cell-sub">&#10004;</td><td class="cell-sub">&#10004;</td><td class="cell-no">&mdash;</td><td class="cell-no">&mdash;</td><td class="cell-no">&mdash;</td></tr>
+          <tr><td>Медиа-ссылки (YouTube, VK)</td><td class="cell-free">&#10004;</td><td class="cell-no">&mdash;</td><td class="cell-no">&mdash;</td><td class="cell-sub">&#10004;</td><td class="cell-sub">&#10004;</td><td class="cell-no">&mdash;</td><td class="cell-no">&mdash;</td><td class="cell-no">&mdash;</td></tr>
+          <tr><td>Расписание матча</td><td class="cell-free">&#10004;</td><td class="cell-no">&mdash;</td><td class="cell-no">&mdash;</td><td class="cell-sub">&#10004;</td><td class="cell-sub">&#10004;</td><td class="cell-no">&mdash;</td><td class="cell-no">&mdash;</td><td class="cell-no">&mdash;</td></tr>
+          <tr><td>Форма и взнос за матч</td><td class="cell-free">&#10004;</td><td class="cell-no">&mdash;</td><td class="cell-no">&mdash;</td><td class="cell-sub">&#10004;</td><td class="cell-sub">&#10004;</td><td class="cell-no">&mdash;</td><td class="cell-no">&mdash;</td><td class="cell-no">&mdash;</td></tr>
+          <tr><td>Удаление матча</td><td class="cell-free">&#10004;</td><td class="cell-no">&mdash;</td><td class="cell-no">&mdash;</td><td class="cell-sub">&#10004;</td><td class="cell-sub">&#10004;</td><td class="cell-no">&mdash;</td><td class="cell-no">&mdash;</td><td class="cell-no">&mdash;</td></tr>
+
+          <!-- Тренировки -->
+          <tr class="section-row"><td colspan="9">Тренировки</td></tr>
+          <tr><td>Отметки присутствия</td><td class="cell-free">&#10004;</td><td class="cell-no">&mdash;</td><td class="cell-no">&mdash;</td><td class="cell-sub">&#10004;</td><td class="cell-no">&mdash;</td><td class="cell-no">&mdash;</td><td class="cell-no">&mdash;</td><td class="cell-no">&mdash;</td></tr>
+          <tr><td>Расстановка игроков</td><td class="cell-free">&#10004;</td><td class="cell-no">&mdash;</td><td class="cell-no">&mdash;</td><td class="cell-no">&mdash;</td><td class="cell-no">&mdash;</td><td class="cell-free">&#10004;</td><td class="cell-free">&#10004;</td><td class="cell-no">&mdash;</td></tr>
+          <tr><td>Шеринг расстановки</td><td class="cell-free">&#10004;</td><td class="cell-no">&mdash;</td><td class="cell-no">&mdash;</td><td class="cell-sub">&#10004;</td><td class="cell-sub">&#10004;</td><td class="cell-free">&#10004;</td><td class="cell-free">&#10004;</td><td class="cell-no">&mdash;</td></tr>
+          <tr><td>Расписание тренировки</td><td class="cell-free">&#10004;</td><td class="cell-no">&mdash;</td><td class="cell-no">&mdash;</td><td class="cell-sub">&#10004;</td><td class="cell-sub">&#10004;</td><td class="cell-no">&mdash;</td><td class="cell-no">&mdash;</td><td class="cell-no">&mdash;</td></tr>
+          <tr><td>Стоимость тренировки</td><td class="cell-free">&#10004;</td><td class="cell-no">&mdash;</td><td class="cell-no">&mdash;</td><td class="cell-sub">&#10004;</td><td class="cell-sub">&#10004;</td><td class="cell-no">&mdash;</td><td class="cell-no">&mdash;</td><td class="cell-no">&mdash;</td></tr>
+          <tr><td>Удаление тренировки</td><td class="cell-free">&#10004;</td><td class="cell-no">&mdash;</td><td class="cell-no">&mdash;</td><td class="cell-sub">&#10004;</td><td class="cell-sub">&#10004;</td><td class="cell-no">&mdash;</td><td class="cell-no">&mdash;</td><td class="cell-no">&mdash;</td></tr>
+
+          <!-- Собрания -->
+          <tr class="section-row"><td colspan="9">Собрания</td></tr>
+          <tr><td>Отметки присутствия</td><td class="cell-free">&#10004;</td><td class="cell-no">&mdash;</td><td class="cell-no">&mdash;</td><td class="cell-sub">&#10004;</td><td class="cell-no">&mdash;</td><td class="cell-no">&mdash;</td><td class="cell-no">&mdash;</td><td class="cell-no">&mdash;</td></tr>
+          <tr><td>Расписание собрания</td><td class="cell-free">&#10004;</td><td class="cell-no">&mdash;</td><td class="cell-no">&mdash;</td><td class="cell-sub">&#10004;</td><td class="cell-sub">&#10004;</td><td class="cell-no">&mdash;</td><td class="cell-no">&mdash;</td><td class="cell-no">&mdash;</td></tr>
+          <tr><td>Стоимость собрания</td><td class="cell-free">&#10004;</td><td class="cell-no">&mdash;</td><td class="cell-no">&mdash;</td><td class="cell-sub">&#10004;</td><td class="cell-sub">&#10004;</td><td class="cell-no">&mdash;</td><td class="cell-no">&mdash;</td><td class="cell-no">&mdash;</td></tr>
+          <tr><td>Удаление собрания</td><td class="cell-free">&#10004;</td><td class="cell-no">&mdash;</td><td class="cell-no">&mdash;</td><td class="cell-sub">&#10004;</td><td class="cell-sub">&#10004;</td><td class="cell-no">&mdash;</td><td class="cell-no">&mdash;</td><td class="cell-no">&mdash;</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<script>
+  document.querySelectorAll('.tab').forEach(tab => {
+    tab.addEventListener('click', () => {
+      document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+      tab.classList.add('active');
+      const view = tab.dataset.view;
+      document.getElementById('view-roles').classList.toggle('hidden', view !== 'roles');
+      document.getElementById('view-table').classList.toggle('hidden', view !== 'table');
+    });
+  });
+</script>
+</body>
+</html>
