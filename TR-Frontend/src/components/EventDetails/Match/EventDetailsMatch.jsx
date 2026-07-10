@@ -233,8 +233,11 @@ export const EventDetailsMatch = ({ event, user: userProp, selectedTeam: selecte
           Весь скролл нативный. Никакого JS-перехвата.
       ══════════════════════════════════════════════════════════════════════ */}
 
-      {/* ── К1: МАТЧ + ВРЕМЯ + КАРАНДАШИК — sticky, всегда виден ── */}
-      <div className="sticky top-0 z-30 bg-surface-base select-none pt-4 pb-1">
+      {/* ── К1: МАТЧ + ВРЕМЯ + КАРАНДАШИК — sticky, всегда виден ──
+          Высота жёстко зафиксирована uiFixed(HEADER_1_HEIGHT) — иначе при масштабе
+          шапка растёт, а sticky-табы снизу залипают на старом отступе top:50px,
+          образуя видимую дыру между К1 и табами. */}
+      <div className="sticky top-0 z-30 bg-surface-base select-none flex items-center" style={{ height: uiFixed(HEADER_1_HEIGHT) }}>
         <div className="flex items-center w-full px-5">
           <div className="w-[70%] pr-2">
             <span
@@ -313,7 +316,7 @@ export const EventDetailsMatch = ({ event, user: userProp, selectedTeam: selecte
       {/* ── ТАБЫ — sticky, прилипают ровно под К1 ── */}
       <div
         className="sticky z-20 bg-surface-base shadow-lg pb-1"
-        style={{ top: `${HEADER_1_HEIGHT}px` }}
+        style={{ top: uiFixed(HEADER_1_HEIGHT) }}
       >
         <ChipTabs
           tabs={MATCH_TABS}

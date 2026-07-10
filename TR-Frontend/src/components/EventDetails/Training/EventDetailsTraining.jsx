@@ -328,23 +328,28 @@ export const EventDetailsTraining = ({ event, openRightPanel }) => {
       style={{ overflowAnchor: 'none' }}
     >
 
-      {/* ── К1: ТРЕНИРОВКА + ВРЕМЯ + КАРАНДАШИК — sticky, всегда виден ── */}
-      <div className="sticky top-0 z-30 bg-surface-base select-none pt-4 pb-1">
+      {/* ── К1: ТРЕНИРОВКА + ВРЕМЯ + КАРАНДАШИК — sticky, всегда виден ──
+          Высота жёстко зафиксирована uiFixed(HEADER_1_HEIGHT) — иначе при масштабе
+          шапка растёт (или бейдж «Клубная» переносится второй строкой), а sticky-табы
+          снизу залипают на старом отступе top:50px, образуя видимую дыру между К1 и табами. */}
+      <div className="sticky top-0 z-30 bg-surface-base select-none flex items-center" style={{ height: uiFixed(HEADER_1_HEIGHT) }}>
         <div className="flex items-center w-full px-5">
-          <div className="w-[70%] pr-2 flex items-center gap-2 flex-wrap">
+          <div className="w-[70%] pr-2 flex items-center gap-2 flex-nowrap min-w-0">
             <span
-              className="font-black uppercase leading-none"
+              className="font-black uppercase leading-none shrink-0"
               style={{ color: activeBrandColor, fontSize: uiFixed(30) }}
             >
               Тренировка
             </span>
             {isClub && (
               <span
-                className="text-[10px] font-black uppercase tracking-widest px-2 py-0.5 rounded-full border shrink-0"
+                className="font-black uppercase tracking-widest rounded-full border shrink-0 whitespace-nowrap"
                 style={{
                   color:            activeBrandColor,
                   borderColor:      `${activeBrandColor}40`,
                   backgroundColor:  `${activeBrandColor}12`,
+                  fontSize: uiFixed(10),
+                  paddingLeft: uiFixed(8), paddingRight: uiFixed(8), paddingTop: uiFixed(2), paddingBottom: uiFixed(2)
                 }}
               >
                 Клубная
@@ -431,7 +436,7 @@ export const EventDetailsTraining = ({ event, openRightPanel }) => {
       {/* ── ТАБЫ — sticky, прилипают ровно под К1 ── */}
       <div
         className="sticky z-20 bg-surface-base shadow-lg pb-1"
-        style={{ top: `${HEADER_1_HEIGHT}px` }}
+        style={{ top: uiFixed(HEADER_1_HEIGHT) }}
       >
         <ChipTabs
           tabs={TRAINING_TABS}

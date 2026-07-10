@@ -1,7 +1,7 @@
 // TournamentTable.jsx
 import React from 'react';
 import clsx from 'clsx';
-import { getImageUrl } from '../../utils/helpers';
+import { getImageUrl, uiFixed } from '../../utils/helpers';
 
 export function TournamentTable({ standings, expandedTeams, onToggleTeam }) {
   if (standings.length === 0) {
@@ -42,7 +42,7 @@ export function TournamentTable({ standings, expandedTeams, onToggleTeam }) {
               <div className="text-center text-[14px] font-mono text-content-muted mr-5">{row.rank}</div>
               <div className="flex items-center gap-4 min-w-0">
                 <img src={getImageUrl(row.team_logo)} alt="" className="w-6 h-6 object-contain shrink-0" />
-                <span className="leading-tight text-[14px] text-content-main uppercase font-bold truncate">
+                <span className="leading-tight text-content-main uppercase font-bold truncate" style={{ fontSize: uiFixed(14) }}>
                   {row.team_name}
                 </span>
               </div>
@@ -80,9 +80,9 @@ export function TournamentTable({ standings, expandedTeams, onToggleTeam }) {
                     </div>
                   </div>
                   
-                  <div className="flex justify-between bg-surface-base items-center px-8 py-3 text-[12px] font-normal text-content-muted">
+                  <div className="flex justify-between bg-surface-base items-center px-8 py-3 font-normal text-content-muted" style={{ fontSize: uiFixed(12) }}>
                     <span>Всего заброшено / пропущено:</span>
-                    <span className="font-mono text-content-muted text-[12px]">
+                    <span className="font-mono text-content-muted" style={{ fontSize: uiFixed(12) }}>
                       {row.goals_for} — {row.goals_against}
                     </span>
                   </div>

@@ -1,5 +1,6 @@
 import React from 'react';
 import { Icon } from '../../ui/Icon';
+import { uiFixed } from '../../utils/helpers';
 import dayjs from 'dayjs';
 
 // Строгий список трехбуквенных названий месяцев для предотвращения точек и склонений
@@ -52,18 +53,18 @@ export const CompactWeek = React.memo(function CompactWeek({
       
       {/* БЛОК 1: Изолированный переключатель недель без лишней логики раскрытия */}
       <div className="flex flex-1 min-w-0 items-center justify-between bg-surface-level1 shadow-lg rounded-3xl px-2 py-2.5">
-        <button 
+        <button
           onClick={handlePrevWeek}
           className="p-1 text-content-main hover:text-brand transition-colors outline-none z-10"
         >
-          <Icon name="chevron_left" className="w-5 h-5" />
+          <Icon name="chevron_left" style={{ width: uiFixed(20), height: uiFixed(20) }} />
         </button>
 
         {/* Ограничивающее окно фиксированной ширины без иконки календаря внутри */}
         <div className="flex items-center overflow-hidden flex-1 justify-center ">
-          <div className="relative overflow-hidden w-[150px] h-5 flex items-center justify-center">
+          <div className="relative overflow-hidden flex items-center justify-center" style={{ width: uiFixed(150), height: uiFixed(20) }}>
             {/* Трехколоночный трек, двигающийся зеркально карусели событий */}
-            <div 
+            <div
               className="w-[300%] flex items-start h-full absolute left-0 top-0"
               style={{
                 transform: `translateX(calc(-33.33333% - ${offsetIndex * 33.33333}%))`,
@@ -72,26 +73,26 @@ export const CompactWeek = React.memo(function CompactWeek({
               }}
             >
               {/* Слайд 1: Прошлая неделя */}
-              <div className="w-1/3 shrink-0 text-center text-[14px] font-bold text-content-main capitalize truncate">
+              <div className="w-1/3 shrink-0 text-center font-bold text-content-main capitalize truncate" style={{ fontSize: uiFixed(14) }}>
                 {prevTitle}
               </div>
               {/* Слайд 2: Текущая неделя */}
-              <div className="w-1/3 shrink-0 text-center text-[14px] font-bold text-content-main capitalize truncate">
+              <div className="w-1/3 shrink-0 text-center font-bold text-content-main capitalize truncate" style={{ fontSize: uiFixed(14) }}>
                 {currentTitle}
               </div>
               {/* Слайд 3: Следующая неделя */}
-              <div className="w-1/3 shrink-0 text-center text-[14px] font-bold text-content-main capitalize truncate">
+              <div className="w-1/3 shrink-0 text-center font-bold text-content-main capitalize truncate" style={{ fontSize: uiFixed(14) }}>
                 {nextTitle}
               </div>
             </div>
           </div>
         </div>
 
-        <button 
+        <button
           onClick={handleNextWeek}
           className="p-1 text-content-main hover:text-brand transition-colors outline-none rotate-180 z-10"
         >
-          <Icon name="chevron_left" className="w-5 h-5" />
+          <Icon name="chevron_left" style={{ width: uiFixed(20), height: uiFixed(20) }} />
         </button>
       </div>
 

@@ -133,7 +133,7 @@ export function SettingsPage() {
                   <SegmentedControl
                     options={[
                       { value: '1', label: 'Обычный' },
-                      { value: '1.15', label: 'Крупнее' },
+                      { value: '1.25', label: 'Крупнее' },
                     ]}
                     value={uiScale}
                     onChange={handleChangeScale}

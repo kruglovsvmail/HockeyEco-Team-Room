@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useRef, useState, useLayoutEffect } from 'react';
 import { Icon } from '../../ui/Icon';
 import dayjs from 'dayjs';
 import clsx from 'clsx';
@@ -6,6 +6,25 @@ import { getImageUrl } from '../../utils/helpers';
 
 // ─── Основной компонент ───────────────────────────────────────────────────────
 export function TournamentCardGame({ game }) {
+  // Определяем, перенеслась ли арена на вторую строку (тогда точку-разделитель
+  // перед ней не показываем). CSS не умеет детектить факт переноса flex-wrap,
+  // поэтому сравниваем вертикальные позиции блоков через ResizeObserver.
+  const dateGroupRef = useRef(null);
+  const arenaGroupRef = useRef(null);
+  const [arenaWrapped, setArenaWrapped] = useState(false);
+
+  useLayoutEffect(() => {
+    const check = () => {
+      if (dateGroupRef.current && arenaGroupRef.current) {
+        setArenaWrapped(arenaGroupRef.current.offsetTop > dateGroupRef.current.offsetTop);
+      }
+    };
+    check();
+    const ro = new ResizeObserver(check);
+    if (dateGroupRef.current?.parentElement) ro.observe(dateGroupRef.current.parentElement);
+    return () => ro.disconnect();
+  }, []);
+
   const isFinished = game.status === 'finished';
   const isLive = game.status === 'live';
   const hasTime = !!game.game_date;
@@ -97,12 +116,19 @@ export function TournamentCardGame({ game }) {
       {/* ── НИЖНЯЯ СТРОКА: метаданные ── */}
       <div className="w-full grid grid-cols-[1fr,auto,1fr] items-center text-[14px] font-semibold text-content-muted border-t border-surface-level2 py-3 px-0.5 relative">
         <div className="min-w-0" />
-        <div className="flex items-center justify-center gap-3 truncate max-w-[340px] px-2">
-          <span className="font-sbold text-content-muted shrink-0">{formattedDateShort}</span>
-          <span className="text-content-muted font-mono shrink-0">•</span>
-          <span className="font-sbold text-content-muted shrink-0">{formattedTime}</span>
-          <span className="text-content-muted font-mono shrink-0">•</span>
-          <span className="truncate">{game.arena_name || 'Арена не указана'}</span>
+        {/* Дата+время не переносятся; арена уезжает на вторую строку по центру, если не влезает в одну.
+            Точка перед ареной скрывается через visibility (а не удаляется из потока), чтобы
+            освободившееся место не «расклеивало» перенос обратно и вёрстка не мигала. */}
+        <div className="flex flex-wrap items-center justify-center gap-x-3 gap-y-0.5 px-2">
+          <div ref={dateGroupRef} className="flex items-center gap-3 shrink-0">
+            <span className="font-sbold text-content-muted">{formattedDateShort}</span>
+            <span className="text-content-muted font-mono">•</span>
+            <span className="font-sbold text-content-muted">{formattedTime}</span>
+          </div>
+          <div ref={arenaGroupRef} className="flex items-center gap-3">
+            <span className={clsx("text-content-muted font-mono", arenaWrapped && "invisible")}>•</span>
+            <span className="text-center">{game.arena_name || 'Арена не указана'}</span>
+          </div>
         </div>
         <div className="flex justify-end shrink-0 opacity-60 pr-2">
           {game.game_number && (

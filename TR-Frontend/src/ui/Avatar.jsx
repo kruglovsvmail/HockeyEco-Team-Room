@@ -1,13 +1,13 @@
 import React from 'react';
 import clsx from 'clsx';
-import { getImageUrl } from '../utils/helpers';
+import { getImageUrl, uiFixed } from '../utils/helpers';
 
-export const Avatar = ({ 
-  photoUrl, 
-  firstName, 
-  lastName, 
-  className = "", 
-  fallbackClassName = "bg-surface-level2 text-content-muted text-[16px]", // Светлый минимализм по умолчанию
+export const Avatar = ({
+  photoUrl,
+  firstName,
+  lastName,
+  className = "",
+  fallbackClassName = "bg-surface-level2 text-content-muted", // Светлый минимализм по умолчанию
 }) => {
   const getInitials = (fName, lName) => {
     const f = fName ? String(fName).charAt(0).toUpperCase() : '';
@@ -27,10 +27,13 @@ export const Avatar = ({
           className="w-full h-full object-cover pointer-events-none" 
         />
       ) : (
-        <div className={clsx(
-          "w-full h-full flex items-center justify-center font-bold pointer-events-none",
-          fallbackClassName
-        )}>
+        <div
+          className={clsx(
+            "w-full h-full flex items-center justify-center font-bold pointer-events-none",
+            fallbackClassName
+          )}
+          style={{ fontSize: uiFixed(16) }}
+        >
           {getInitials(firstName, lastName)}
         </div>
       )}

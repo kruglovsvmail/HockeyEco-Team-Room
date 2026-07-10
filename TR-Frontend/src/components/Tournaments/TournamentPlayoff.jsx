@@ -3,7 +3,7 @@ import React, { useState, useEffect, useMemo, useRef } from 'react';
 import clsx from 'clsx';
 import { Icon } from '../../ui/Icon';
 import { HintPopover } from '../../ui/HintPopover';
-import { getImageUrl } from '../../utils/helpers';
+import { getImageUrl, uiFixed } from '../../utils/helpers';
 
 const STAGE_OPTIONS = [
   { value: 'all', label: 'Общая' },
@@ -303,15 +303,20 @@ export function TournamentPlayoff({
                     <div className="w-full bg-surface-level1 px-4 pb-3 pt-1 flex flex-col shadow-md select-none relative overflow-hidden transition-all rounded-2xl">
                       <div className="flex items-center justify-between w-full mb-3 pb-1 border-b border-b-surface-border">
                         <div>
-                          <span className="text-[10px] font-bold uppercase tracking-widest text-content-muted">
+                          <span className="font-bold uppercase tracking-widest text-content-muted whitespace-nowrap" style={{ fontSize: uiFixed(10) }}>
                             серия до {matchup.wins_needed === 1 ? '1-ой победы' : `${matchup.wins_needed}-х побед`}
                           </span>
                         </div>
                         <div>
                           {finalPlaceLabel && (
-                            <span 
-                              className="px-2 py-1 text-[10px] font-bold uppercase tracking-widest text-white bg-brand rounded-xl opacity-60"
-                              style={hasTeamColor ? { backgroundColor: activeBrandColor } : {}}
+                            <span
+                              className="font-bold uppercase tracking-widest text-white bg-brand rounded-xl opacity-60 whitespace-nowrap"
+                              style={{
+                                ...(hasTeamColor ? { backgroundColor: activeBrandColor } : {}),
+                                fontSize: uiFixed(10),
+                                paddingLeft: uiFixed(8), paddingRight: uiFixed(8),
+                                paddingTop: uiFixed(4), paddingBottom: uiFixed(4)
+                              }}
                             >
                               {finalPlaceLabel}
                             </span>

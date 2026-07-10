@@ -559,7 +559,7 @@ export const UserDetails = ({ data, openRightPanel, pushRightPanel }) => {
           >
             <div className="flex items-center gap-2.5">
               <Icon name="metrics" className="w-4 h-4" style={{ color: brandColor }} />
-              <span className="font-black uppercase text-content-main tracking-widest whitespace-nowrap" style={{ fontSize: uiFixed(10) }}>Статистика в команде</span>
+              <span className="text-[10px] font-black uppercase text-content-main tracking-widest whitespace-nowrap">Статистика в команде</span>
             </div>
             <Icon name="chevron_right" className="w-4 h-4 text-content-subtle" />
           </button>
