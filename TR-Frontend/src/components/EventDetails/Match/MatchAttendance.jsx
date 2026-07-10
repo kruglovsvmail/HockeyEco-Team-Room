@@ -641,7 +641,7 @@ export const MatchAttendance = ({ event, initialAttendees = [], initialTeamRoste
             </h3>
             <div className="text-[14px] text-content-muted max-w-[280px] flex flex-col gap-4">
               {isPlayerInLines && (
-                <span className="text-danger font-semibold bg-danger-muted rounded-xl p-4 text-left block text-md leading-normal">
+                <span className="text-danger font-semibold bg-danger-muted rounded-xl p-4 text-left block text-[14px] leading-normal">
                   Внимание! При удалении игрок исчезнет из формации звена на матч.
                 </span>
               )}

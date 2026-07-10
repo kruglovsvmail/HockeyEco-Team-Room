@@ -94,17 +94,6 @@ export default {
         '3xl': 'var(--radius-3xl)',   
         'full': 'var(--radius-full)',
       },
-      
-      fontSize: {
-        'xs': ['var(--fs-xs)', { lineHeight: 'var(--lh-xs)' }],       
-        'sm': ['var(--fs-sm)', { lineHeight: 'var(--lh-sm)' }],   
-        'base': ['var(--fs-base)', { lineHeight: 'var(--lh-base)' }],      
-        'lg': ['var(--fs-lg)', { lineHeight: 'var(--lh-lg)' }],   
-        'xl': ['var(--fs-xl)', { lineHeight: 'var(--lh-xl)' }],    
-        '2xl': ['var(--fs-2xl)', { lineHeight: 'var(--lh-2xl)' }],       
-        '3xl': ['var(--fs-3xl)', { lineHeight: 'var(--lh-3xl)' }],  
-        '4xl': ['var(--fs-4xl)', { lineHeight: 'var(--lh-4xl)' }],    
-      }
     },
   },
   plugins: [],

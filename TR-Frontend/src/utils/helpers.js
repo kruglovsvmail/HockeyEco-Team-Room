@@ -3,6 +3,12 @@ export const getPortalRoot = () => {
   return document.getElementById('app-portal-root') || document.body;
 };
 
+// Замораживает физический пиксельный размер элемента (шрифт/ширину/высоту) против
+// глобального масштаба интерфейса --ui-scale из настроек (SettingsPage → App.jsx).
+// Компенсирует деление на scale заранее, чтобы после общего transform: scale() на #app-shell
+// итоговый видимый размер оставался равен исходному px независимо от выбранного масштаба.
+export const uiFixed = (px) => `calc(${px}px / var(--ui-scale, 1))`;
+
 export const getToken = () => localStorage.getItem('teampwa_token') || sessionStorage.getItem('teampwa_token');
 
 export const removeToken = () => {

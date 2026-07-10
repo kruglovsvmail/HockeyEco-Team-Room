@@ -35,7 +35,7 @@ export function TournamentTable({ standings, expandedTeams, onToggleTeam }) {
             <div 
               onClick={() => onToggleTeam(row.team_id)}
               className={clsx(
-                "grid grid-cols-[36px,1fr,50px,40px] items-center px-3 py-3 text-md font-semibold transition-colors cursor-pointer active:bg-surface-base select-none",
+                "grid grid-cols-[36px,1fr,50px,40px] items-center px-3 py-3 text-[14px] font-semibold transition-colors cursor-pointer active:bg-surface-base select-none",
                 isExpanded && "bg-surface-base"
               )}
             >

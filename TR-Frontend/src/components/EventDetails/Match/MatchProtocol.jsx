@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import clsx from 'clsx';
-import { getAuthHeaders } from '../../../utils/helpers';
+import { getAuthHeaders, uiFixed } from '../../../utils/helpers';
 import { FadeIn } from '../../../ui/FadeIn';
 import { PageLoader } from '../../../ui/Loader';
 import { Avatar } from '../../../ui/Avatar';
@@ -58,14 +58,16 @@ const PlayerBlock = ({ event, side, subLines = [], onClick }) => {
         )}
         onClick={clickable ? onClick : undefined}
       >
-        <Avatar
-          photoUrl={event.scorer_photo}
-          firstName={event.scorer_first_name}
-          lastName={event.scorer_last_name}
-          className="w-9 h-9 rounded-xl bg-surface-level2 shrink-0"
-        />
+        <div className="rounded-xl bg-surface-level2 shrink-0 overflow-hidden" style={{ width: uiFixed(36), height: uiFixed(36) }}>
+          <Avatar
+            photoUrl={event.scorer_photo}
+            firstName={event.scorer_first_name}
+            lastName={event.scorer_last_name}
+            className="w-full h-full rounded-xl"
+          />
+        </div>
         {hasPlayer && (
-          <span className="text-[10px] font-bold text-content-muted leading-none shrink-0">
+          <span className="font-bold text-content-muted leading-none shrink-0" style={{ fontSize: uiFixed(10) }}>
             #{event.scorer_jersey ?? '?'}
           </span>
         )}
@@ -75,10 +77,11 @@ const PlayerBlock = ({ event, side, subLines = [], onClick }) => {
       {hasPlayer ? (
         <span
           className={clsx(
-            "text-[14px] font-bold text-content-main leading-tight w-full",
+            "font-bold text-content-main leading-tight w-full truncate block",
             isHome ? 'text-left' : 'text-right',
             clickable && "cursor-pointer active:opacity-70 transition-opacity"
           )}
+          style={{ fontSize: uiFixed(14) }}
           onClick={clickable ? onClick : undefined}
         >
           {event.scorer_last_name} {event.scorer_first_name?.[0] ?? ''}.
@@ -150,20 +153,23 @@ const GoaliePlayer = ({ event, side, onPlayerClick }) => {
 const EventCenter = ({ event }) => {
   const strengthLabel = GOAL_STRENGTH_LABELS[event.goal_strength] ?? null;
 
+  const badgeStyle = { fontSize: uiFixed(10), paddingLeft: uiFixed(8), paddingRight: uiFixed(8), paddingTop: uiFixed(4), paddingBottom: uiFixed(4) };
+  const goalieBadgeStyle = { fontSize: uiFixed(10), paddingLeft: uiFixed(10), paddingRight: uiFixed(10), paddingTop: uiFixed(4), paddingBottom: uiFixed(4) };
+
   const badge = (() => {
     switch (event.event_type) {
       case 'goal':
-        return <span className="text-[10px] font-bold uppercase px-2 py-1 rounded-full bg-emerald-500 text-white leading-none">ГОЛ</span>;
+        return <span className="font-bold uppercase rounded-full bg-emerald-500 text-white leading-none" style={badgeStyle}>ГОЛ</span>;
       case 'penalty':
-        return <span className="text-[10px] font-bold uppercase px-2 py-1 rounded-full bg-red-500 text-white leading-none">ШТРАФ</span>;
+        return <span className="font-bold uppercase rounded-full bg-red-500 text-white leading-none" style={badgeStyle}>ШТРАФ</span>;
       case 'shootout_goal':
-        return <span className="text-[10px] font-bold uppercase px-2 py-1 rounded-full bg-emerald-500 text-white leading-none">ШБ</span>;
+        return <span className="font-bold uppercase rounded-full bg-emerald-500 text-white leading-none" style={badgeStyle}>ШБ</span>;
       case 'shootout_miss':
       case 'failed_ps':
-        return <span className="text-[10px] font-bold uppercase px-2 py-1 rounded-full bg-surface-level2 text-content-muted leading-none">МИМО</span>;
+        return <span className="font-bold uppercase rounded-full bg-surface-level2 text-content-muted leading-none" style={badgeStyle}>МИМО</span>;
       case 'goalie':
         return (
-          <span className="text-[10px] font-semibold uppercase px-2.5 py-1 rounded-lg bg-surface-level2 text-content-main leading-tight text-center">
+          <span className="font-semibold uppercase rounded-lg bg-surface-level2 text-content-main leading-tight text-center" style={goalieBadgeStyle}>
             {event.goalie_empty ? <>ПВ<br /></> : <>Замена<br />вратаря</>}
           </span>
         );
@@ -173,19 +179,19 @@ const EventCenter = ({ event }) => {
   })();
 
   return (
-    <div className="flex flex-col items-center gap-1 shrink-0 w-[80px] self-start">
-      <span className="text-[14px] font-bold text-content-main tabular-nums leading-tight">
+    <div className="flex flex-col items-center gap-1 shrink-0 self-start" style={{ width: uiFixed(80) }}>
+      <span className="font-bold text-content-main tabular-nums leading-tight" style={{ fontSize: uiFixed(14) }}>
         {formatTime(event.display_seconds ?? event.time_seconds)}
       </span>
       {badge}
       {/* Доп. метка: БОЛ / МЕН / ПВ / минуты штрафа */}
       {event.event_type === 'goal' && strengthLabel && (
-        <span className="text-[10px] font-bold text-content-muted uppercase tracking-wider leading-none">
+        <span className="font-bold text-content-muted uppercase tracking-wider leading-none" style={{ fontSize: uiFixed(10) }}>
           {strengthLabel}
         </span>
       )}
       {event.event_type === 'penalty' && event.penalty_minutes != null && (
-        <span className="text-[10px] font-bold text-content-muted uppercase tracking-wider leading-none">
+        <span className="font-bold text-content-muted uppercase tracking-wider leading-none" style={{ fontSize: uiFixed(10) }}>
           {event.penalty_minutes} МИН
         </span>
       )}

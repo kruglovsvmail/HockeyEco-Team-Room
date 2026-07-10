@@ -164,13 +164,7 @@ export function PageLoader({ className }) {
             </svg>
           </div>
         </div>
-        
-      </div>
-      
-      {/* Текстовые точки загрузки */}
-      <span className="text-[0px] font-semibold uppercase mt-4 animate-pulse">
-        Шайба Летит к кэшу...
-      </span>
+      </div>      
     </div>
   );
 }

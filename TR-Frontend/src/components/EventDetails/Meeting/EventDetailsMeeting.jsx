@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
-import { getAuthHeaders } from '../../../utils/helpers';
+import { getAuthHeaders, uiFixed } from '../../../utils/helpers';
 import { Icon } from '../../../ui/Icon';
 import { ChipTabs } from '../../../ui/ChipTabs';
 import { useFocusRevalidate } from '../../../hooks/useFocusRevalidate';
@@ -139,8 +139,8 @@ export const EventDetailsMeeting = ({ event, openRightPanel }) => {
         <div className="flex items-center w-full px-5">
           <div className="w-[70%] pr-2 flex items-center gap-2 flex-wrap">
             <span
-              className="text-[30px] font-black uppercase leading-none"
-              style={{ color: activeBrandColor }}
+              className="font-black uppercase leading-none"
+              style={{ color: activeBrandColor, fontSize: uiFixed(30) }}
             >
               Собрание
             </span>
@@ -158,7 +158,7 @@ export const EventDetailsMeeting = ({ event, openRightPanel }) => {
             )}
           </div>
           <div className="w-[30%] flex justify-end items-center gap-2">
-            <span className="text-[30px] font-black text-content-main leading-none">
+            <span className="font-black text-content-main leading-none" style={{ fontSize: uiFixed(30) }}>
               {timeDisplay}
             </span>
           </div>
@@ -225,7 +225,7 @@ export const EventDetailsMeeting = ({ event, openRightPanel }) => {
           <div className="shrink-0 w-[80px]">
             <div className="w-full aspect-square rounded-xl bg-surface-border flex flex-col items-center justify-center gap-0 overflow-hidden">
               <Icon name="users" className="w-12 h-12 text-content-muted" />
-              <span className="text-[8px] opacity-60 text-content-muted font-normal uppercase text-center px-1.5 w-full">
+              <span className="text-[10px] opacity-60 text-content-muted font-normal uppercase text-center px-1.5 w-full">
                 {localEvent?.my_team_name || ''}
               </span>
             </div>

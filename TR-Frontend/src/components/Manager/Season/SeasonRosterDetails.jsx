@@ -22,7 +22,7 @@ import {
 
 // Общая "пилюльная" геометрия для колонок Док-ты и Допуск в таблице состава — единый визуальный стиль
 // (радиус, высота, шрифт, тень), цвет/заливка и ширина настраиваются отдельно в каждой колонке.
-const PILL_CLASS = "inline-flex items-center justify-center px-3 py-1.5 rounded-full text-[11px] font-bold shadow-sm";
+const PILL_CLASS = "inline-flex items-center justify-center px-3 py-1.5 rounded-full text-[12px] font-bold shadow-sm";
 
 // Нижняя шторка редактирования игрока внутри заявки: амплуа, номер, капитанство, удаление.
 // Документы допуска редактируются отдельно — из таблицы состава, правой панелью (см. handleOpenDocs).
@@ -503,7 +503,7 @@ export function SeasonRosterDetails({ app, teamId, onClose, activeBrandColor, op
           )}
           {(p.is_captain || p.is_assistant) && (
             <span
-              className="absolute -top-1.5 -right-2.5 w-4 h-4 rounded-full flex items-center justify-center text-[9px] font-black text-white shadow-sm z-20"
+              className="absolute -top-1.5 -right-2.5 w-4 h-4 rounded-full flex items-center justify-center text-[10px] font-black text-white shadow-sm z-20"
               style={{ backgroundColor: activeBrandColor || 'var(--color-brand)' }}
             >
               {p.is_captain ? 'К' : 'А'}

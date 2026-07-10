@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useMemo, Suspense, lazy, useCallback } from 'react';
-import { getImageUrl, getAuthHeaders, getContrastTextColor } from '../../../utils/helpers';
+import { getImageUrl, getAuthHeaders, getContrastTextColor, uiFixed } from '../../../utils/helpers';
 import { Icon } from '../../../ui/Icon';
 import { ChipTabs } from '../../../ui/ChipTabs';
 import { useFocusRevalidate } from '../../../hooks/useFocusRevalidate';
@@ -238,14 +238,14 @@ export const EventDetailsMatch = ({ event, user: userProp, selectedTeam: selecte
         <div className="flex items-center w-full px-5">
           <div className="w-[70%] pr-2">
             <span
-              className="text-[30px] font-black uppercase leading-none"
-              style={{ color: activeBrandColor }}
+              className="font-black uppercase leading-none"
+              style={{ color: activeBrandColor, fontSize: uiFixed(30) }}
             >
               МАТЧ
             </span>
           </div>
           <div className="w-[30%] flex justify-end items-center gap-2">
-            <span className="text-[30px] font-black text-content-main leading-none">
+            <span className="font-black text-content-main leading-none" style={{ fontSize: uiFixed(30) }}>
               {timeDisplay}
             </span>
           </div>

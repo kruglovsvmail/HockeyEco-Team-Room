@@ -51,7 +51,7 @@ export const CompactWeek = React.memo(function CompactWeek({
     <div className="flex items-center gap-2 w-full justify-between select-none">
       
       {/* БЛОК 1: Изолированный переключатель недель без лишней логики раскрытия */}
-      <div className="flex flex-1 items-center justify-between bg-surface-level1 shadow-lg rounded-3xl px-2 py-2.5">
+      <div className="flex flex-1 min-w-0 items-center justify-between bg-surface-level1 shadow-lg rounded-3xl px-2 py-2.5">
         <button 
           onClick={handlePrevWeek}
           className="p-1 text-content-main hover:text-brand transition-colors outline-none z-10"

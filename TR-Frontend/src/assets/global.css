@@ -64,15 +64,8 @@
     --radius-3xl: 1rem;
     --radius-full: 9999px;
 
-    /* --- РАЗМЕРЫ ШРИФТОВ И МЕЖСТРОЧНЫЙ ИНТЕРВАЛ --- */
-    --fs-xs: 0.75rem; --lh-xs: 1rem;       
-    --fs-sm: 0.875rem; --lh-sm: 1.25rem;
-    --fs-base: 1rem; --lh-base: 1.5rem;
-    --fs-lg: 1.125rem; --lh-lg: 1.75rem;
-    --fs-xl: 1.25rem; --lh-xl: 1.75rem;
-    --fs-2xl: 1.5rem; --lh-2xl: 2rem;
-    --fs-3xl: 1.875rem; --lh-3xl: 2.25rem;
-    --fs-4xl: 2.25rem; --lh-4xl: 2.5rem;
+    /* --- МАСШТАБ ИНТЕРФЕЙСА (настройка размера шрифта пользователем) --- */
+    --ui-scale: 1;
   }
 
   /* --- ТЕМHАЯ ТЕМА --- */

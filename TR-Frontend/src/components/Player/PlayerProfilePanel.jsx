@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import clsx from 'clsx';
-import { getImageUrl, getAuthHeaders } from '../../utils/helpers';
+import { getImageUrl, getAuthHeaders, uiFixed } from '../../utils/helpers';
 import { Avatar } from '../../ui/Avatar';
 import { PageLoader } from '../../ui/Loader';
 import { SegmentedControl } from '../../ui/SegmentedControl';
@@ -141,7 +141,7 @@ const SeasonGroup = ({ title, rows, isGoalie }) => (
       <span className="text-[10px] font-bold uppercase tracking-widest text-content-subtle">{title}</span>
     </div>
     {rows.length === 0 ? (
-      <div className="text-center text-[11px] font-bold uppercase tracking-widest text-content-subtle py-6">
+      <div className="text-center text-[12px] font-bold uppercase tracking-widest text-content-subtle py-6">
         Нет данных
       </div>
     ) : (
@@ -264,9 +264,10 @@ export function PlayerProfilePanel({ data }) {
         <div className="flex items-center gap-4 p-4 bg-surface-level1 border border-surface-border rounded-2xl shadow-sm">
           <div
             className={clsx(
-              "relative w-20 h-20 shrink-0 rounded-3xl bg-surface-base border border-surface-border p-0.5 shadow-sm overflow-hidden",
+              "relative shrink-0 rounded-3xl bg-surface-base border border-surface-border p-0.5 shadow-sm overflow-hidden",
               allPhotos.length > 1 && "cursor-pointer active:scale-95 transition-transform"
             )}
+            style={{ width: uiFixed(80), height: uiFixed(80) }}
             onClick={() => allPhotos.length > 1 && setPhotoIndex(p => (p + 1) % allPhotos.length)}
           >
             <Avatar
@@ -282,13 +283,13 @@ export function PlayerProfilePanel({ data }) {
               </div>
             )}
             {allPhotos.length > 1 && (
-              <div className="absolute top-1 right-1 bg-black/40 text-white text-[8px] font-bold px-1 py-0.5 rounded">
+              <div className="absolute top-1 right-1 bg-black/40 text-white text-[10px] font-bold px-1 py-0.5 rounded">
                 {photoIndex + 1}/{allPhotos.length}
               </div>
             )}
           </div>
           <div className="flex flex-col text-left flex-1 min-w-0">
-            <h2 className="text-[16px] font-bold text-content-main uppercase truncate leading-tight">{info.last_name}</h2>
+            <h2 className="font-bold text-content-main uppercase whitespace-nowrap leading-tight" style={{ fontSize: uiFixed(16) }}>{info.last_name}</h2>
             <h3 className="text-[12px] font-bold text-content-muted mt-0.5 capitalize">{info.first_name}</h3>
             {info.middle_name && <h4 className="text-[12px] font-medium text-content-muted truncate opacity-60">{info.middle_name}</h4>}
           </div>

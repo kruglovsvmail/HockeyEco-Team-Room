@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
-import { getImageUrl, getAuthHeaders, getContrastTextColor } from '../../../utils/helpers';
+import { getImageUrl, getAuthHeaders, getContrastTextColor, uiFixed } from '../../../utils/helpers';
 import { BottomSheet } from '../../../ui/BottomSheet';
 import { ButtonLP } from '../../../ui/Button-LP';
 import { SectionHeader } from '../../../ui/SectionHeader';
@@ -745,16 +745,21 @@ export const MatchLines = ({ event, initialAttendees = [], initialDraftLines = [
           }
         }}
         className={clsx(
-          "flex flex-col items-center w-[94px] relative transition-all duration-200 shrink-0",
+          "flex flex-col items-center relative transition-all duration-200 shrink-0",
           isEditMode ? "cursor-pointer" : (hasAdminAccess && player ? "cursor-pointer active:scale-95" : "pointer-events-none"),
           (isEditMode && !player && !isSelected && !isDeleteMode) ? "opacity-70 hover:opacity-100" : "opacity-100",
           jiggleClass
         )}
+        style={{ width: uiFixed(94) }}
       >
-        <div 
-          style={isSelected ? { borderColor: activeBrandColor, boxShadow: `0 0 0 2px ${activeBrandColor}` } : {}}
+        <div
+          style={{
+            width: uiFixed(64),
+            height: uiFixed(64),
+            ...(isSelected ? { borderColor: activeBrandColor, boxShadow: `0 0 0 2px ${activeBrandColor}` } : {})
+          }}
           className={clsx(
-            "w-16 h-16 rounded-2xl flex items-center justify-center relative transition-all duration-200 shrink-0 box-border z-0 origin-center",
+            "rounded-2xl flex items-center justify-center relative transition-all duration-200 shrink-0 box-border z-0 origin-center",
             isSelected && !hasTeamColor ? "ring-2 ring-brand scale-110" : isSelected ? "scale-110 border" : "",
             player ? "shadow-lg border border-surface-border bg-surface-level3" : isSelected ? "bg-surface-base" : "bg-surface-base border border-dashed border-content-muted"
           )}
@@ -772,16 +777,19 @@ export const MatchLines = ({ event, initialAttendees = [], initialDraftLines = [
               />
               
               {!isEditMode && (player.is_captain || player.is_assistant) && (
-                <div 
-                  style={{ backgroundColor: activeBrandColor, color: contrastBadgeText }}
-                  className="absolute -top-1 -right-2 w-[20px] h-[20px] rounded-full shadow-sm flex items-center justify-center text-[10px] font-black z-20"
+                <div
+                  style={{ backgroundColor: activeBrandColor, color: contrastBadgeText, width: uiFixed(20), height: uiFixed(20), fontSize: uiFixed(10) }}
+                  className="absolute -top-1 -right-2 rounded-full shadow-sm flex items-center justify-center font-black z-20"
                 >
                   {player.is_captain ? 'К' : 'А'}
                 </div>
               )}
 
               {!isEditMode && player.jersey_number != null && (
-                <div className="absolute -bottom-1 -right-2 w-[24px] h-[24px] bg-content-muted rounded-full shadow-sm flex items-center justify-center text-[14px] font-bold text-content-dark z-10">
+                <div
+                  className="absolute -bottom-1 -right-2 bg-content-muted rounded-full shadow-sm flex items-center justify-center font-bold text-content-dark z-10"
+                  style={{ width: uiFixed(24), height: uiFixed(24), fontSize: uiFixed(14) }}
+                >
                   {player.jersey_number}
                 </div>
               )}
@@ -796,13 +804,13 @@ export const MatchLines = ({ event, initialAttendees = [], initialDraftLines = [
               )}
 
               <div className="absolute -bottom-2 bg-surface-level2 rounded-md px-1.5 py-0.5 border border-surface-border shadow-sm z-10">
-                <span className="text-[8px] font-black text-content-muted uppercase tracking-widest leading-none block">
+                <span className="font-black text-content-muted uppercase tracking-widest leading-none block" style={{ fontSize: uiFixed(10) }}>
                   {labelText || pos}
                 </span>
               </div>
             </>
           ) : (
-            <span className="text-[14px] font-black text-content-muted uppercase tracking-widest select-none">
+            <span className="font-black text-content-muted uppercase tracking-widest select-none" style={{ fontSize: uiFixed(14) }}>
               {labelText || pos}
             </span>
           )}
@@ -810,10 +818,10 @@ export const MatchLines = ({ event, initialAttendees = [], initialDraftLines = [
         <div className="w-full mt-4 flex flex-col items-center justify-center h-6 overflow-visible">
           {player ? (
             <>
-              <span className="text-[14px] font-bold text-content-main leading-none w-full text-center pointer-events-none whitespace-nowrap">
+              <span className="font-bold text-content-main leading-none w-full text-center pointer-events-none truncate px-0.5" style={{ fontSize: uiFixed(14) }}>
                 {player.last_name}
               </span>
-              <span className="text-[10px] font-medium text-content-muted leading-none w-full text-center pointer-events-none whitespace-nowrap mt-1">
+              <span className="font-medium text-content-muted leading-none w-full text-center pointer-events-none truncate px-0.5 mt-1" style={{ fontSize: uiFixed(10) }}>
                 {player.first_name}
               </span>
             </>

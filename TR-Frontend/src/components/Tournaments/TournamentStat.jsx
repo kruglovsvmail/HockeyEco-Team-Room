@@ -309,7 +309,7 @@ export function TournamentStat({
               Статистика команды
             </span>
             {teamStats && (
-              <span className="text-[11px] font-bold text-content-muted uppercase tracking-wide shrink-0">
+              <span className="text-[12px] font-bold text-content-muted uppercase tracking-wide shrink-0">
                 {teamStats.games_played} игр
               </span>
             )}
@@ -317,7 +317,7 @@ export function TournamentStat({
 
           {isTeamStatsLoading ? (
             <div className="h-14 flex items-center justify-center">
-              <span className="text-[11px] font-bold uppercase tracking-widest text-content-subtle opacity-60">
+              <span className="text-[12px] font-bold uppercase tracking-widest text-content-subtle opacity-60">
                 Загрузка...
               </span>
             </div>
@@ -337,7 +337,7 @@ export function TournamentStat({
             </div>
           ) : (
             <div className="h-14 flex items-center justify-center">
-              <span className="text-[11px] font-bold uppercase tracking-widest text-content-subtle opacity-60">
+              <span className="text-[12px] font-bold uppercase tracking-widest text-content-subtle opacity-60">
                 Нет данных
               </span>
             </div>
@@ -349,7 +349,7 @@ export function TournamentStat({
       <div className="flex items-center gap-2 w-full justify-between select-none">
 
         {/* Капсула карусели амплуа (Полевые / Вратари) */}
-        <div className="flex flex-1 items-center justify-between bg-surface-level1 shadow-md rounded-2xl h-[40px] px-1.5">
+        <div className="flex flex-1 min-w-0 items-center justify-between bg-surface-level1 shadow-md rounded-2xl h-[40px] px-1.5">
           <button
             disabled={isSkatersActive}
             onClick={() => setPlayerType('skaters')}

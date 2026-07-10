@@ -39,6 +39,19 @@ export function SettingsPage() {
     return localStorage.getItem('tr_theme') === 'dark';
   });
 
+  // Инициализируем масштаб интерфейса (управляет переменной --ui-scale в App.jsx)
+  const [uiScale, setUiScale] = useState(() => {
+    return localStorage.getItem('tr_ui_scale') || '1';
+  });
+
+  const handleChangeScale = (value) => {
+    setUiScale(value);
+    localStorage.setItem('tr_ui_scale', value);
+    document.documentElement.style.setProperty('--ui-scale', value);
+    // Уведомляем TeamLayout — он расширяет сайдбар/правую панель с 80% до 90% при масштабе > 1
+    window.dispatchEvent(new Event('tr_ui_scale_changed'));
+  };
+
   const handleToggleColors = (checked) => {
     setUseTeamColors(checked);
     localStorage.setItem('tr_use_team_colors', checked ? 'true' : 'false');
@@ -107,6 +120,24 @@ export function SettingsPage() {
                     </span>
                   </div>
                   <Toggle checked={isDarkMode} onChange={handleToggleTheme} />
+                </div>
+              </SettingsBlock>
+
+              {/* БЛОК 3: НАСТРОЙКА МАСШТАБА ИНТЕРФЕЙСА (РАЗМЕР ШРИФТА) */}
+              <SettingsBlock title="Размер шрифта" icon="text_size">
+                <div className="flex flex-col">
+                  <span className="text-[18px] font-bold text-content-main">Масштаб интерфейса</span>
+                  <span className="text-[12px] text-content-muted mt-0.5 mb-3">
+                    Увеличивает текст и элементы во всём приложении
+                  </span>
+                  <SegmentedControl
+                    options={[
+                      { value: '1', label: 'Обычный' },
+                      { value: '1.15', label: 'Крупнее' },
+                    ]}
+                    value={uiScale}
+                    onChange={handleChangeScale}
+                  />
                 </div>
               </SettingsBlock>
             </>
@@ -243,7 +274,7 @@ function NotificationSettings() {
               </div>
             ) : (
               <>
-                <span className="text-md font-bold text-content-main">
+                <span className="text-[14px] font-bold text-content-main">
                   {isSubscribed ? 'Уведомления включены' : 'Включить уведомления'}
                 </span>
                 <span className="text-[12px] text-content-muted pr-4 mt-0.5">

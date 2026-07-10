@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import clsx from 'clsx';
-import { getAuthHeaders, getImageUrl } from '../../utils/helpers';
+import { getAuthHeaders, getImageUrl, uiFixed } from '../../utils/helpers';
 import { Avatar } from '../../ui/Avatar';
 import { PageLoader } from '../../ui/Loader';
 import { Icon } from '../../ui/Icon';
@@ -36,7 +36,7 @@ const AttendanceRing = ({ percent, size = 68, strokeWidth = 8 }) => {
         )}
       </svg>
       <div className="absolute inset-0 flex items-center justify-center">
-        <span className="text-[13px] font-black text-content-main tabular-nums">
+        <span className="text-[14px] font-black text-content-main tabular-nums">
           {percent != null ? `${percent}%` : '—'}
         </span>
       </div>
@@ -57,10 +57,10 @@ const AttendanceCard = ({ title, action, total, attended, percent, children }) =
     </div>
     <div className="flex items-center justify-between gap-3">
       <div className="flex flex-col gap-2">
-        <div className="text-[13px] font-bold text-content-main">
+        <div className="text-[14px] font-bold text-content-main">
           Всего: <span className="text-content-muted font-black">{total}</span>
         </div>
-        <div className="text-[13px] font-bold text-content-main">
+        <div className="text-[14px] font-bold text-content-main">
           Посетил: <span className="text-content-muted font-black">{attended}</span>
         </div>
       </div>
@@ -78,7 +78,7 @@ const AttendanceCard = ({ title, action, total, attended, percent, children }) =
 const ResultStat = ({ label, value, percent }) => (
   <div className="flex flex-col items-center gap-1.5 flex-1">
     <span className="text-[10px] font-bold uppercase tracking-widest text-content-subtle">{label}</span>
-    <span className="text-[26px] font-black text-content-main leading-none tabular-nums">{value}</span>
+    <span className="text-[28px] font-bold text-content-main leading-none tabular-nums">{value}</span>
     <span className="relative inline-flex items-center justify-center rounded-full px-3 py-1 overflow-hidden">
       <span className="absolute inset-0 bg-brand opacity-10 rounded-full" />
       <span className="relative text-[12px] font-black text-brand tabular-nums">
@@ -186,7 +186,7 @@ const MatchResultsChart = ({ games }) => {
             <div className="text-[10px] font-bold uppercase text-content-muted tracking-wide truncate max-w-[140px]">
               {active.opponentName || 'Соперник'}
             </div>
-            <div className="text-[13px] font-black text-content-main">{active.myScore}:{active.oppScore}</div>
+            <div className="text-[14px] font-black text-content-main">{active.myScore}:{active.oppScore}</div>
           </div>
         )}
       </div>
@@ -381,11 +381,14 @@ export function TeamStatsPanel({ data }) {
       {/* КАРТОЧКА ШАПКИ ИГРОКА — тот же вид, что и в UserDetails.jsx, но без
           редактирования, статуса «в ростере» и капитанских нашивок. */}
       <div className="flex items-center gap-4 p-4 bg-surface-level1 border border-surface-border rounded-2xl shadow-sm">
-        <div className="w-20 h-20 rounded-3xl bg-surface-base border border-surface-border p-0.5 shadow-sm flex items-center justify-center overflow-hidden shrink-0">
+        <div
+          className="rounded-3xl bg-surface-base border border-surface-border p-0.5 shadow-sm flex items-center justify-center overflow-hidden shrink-0"
+          style={{ width: uiFixed(80), height: uiFixed(80) }}
+        >
           <Avatar photoUrl={info.avatar_url} firstName={info.first_name} lastName={info.last_name} className="w-full h-full rounded-3xl" />
         </div>
         <div className="flex flex-col text-left flex-1 min-w-0">
-          <h2 className="text-[16px] font-bold text-content-main uppercase truncate leading-tight">{info.last_name}</h2>
+          <h2 className="font-bold text-content-main uppercase whitespace-nowrap leading-tight" style={{ fontSize: uiFixed(16) }}>{info.last_name}</h2>
           <h3 className="text-[12px] font-bold text-content-muted mt-0.5 capitalize">{info.first_name}</h3>
           {info.middle_name && <h4 className="text-[12px] font-medium text-content-muted truncate opacity-60">{info.middle_name}</h4>}
         </div>
@@ -408,7 +411,7 @@ export function TeamStatsPanel({ data }) {
                 onClick={() => setIsFilterOpen(true)}
                 className="flex items-center gap-1 min-w-0 text-brand cursor-pointer active:opacity-70"
               >
-                <span className="text-[11px] font-bold truncate max-w-[140px]">{currentFilterLabel}</span>
+                <span className="text-[12px] font-bold truncate max-w-[140px]">{currentFilterLabel}</span>
                 <Icon name="chevron" className="w-3 h-3 shrink-0" />
               </button>
             }
@@ -424,7 +427,7 @@ export function TeamStatsPanel({ data }) {
           </AttendanceCard>
         </>
       ) : (
-        <div className="text-center text-[11px] font-bold uppercase tracking-widest text-content-subtle py-10 bg-surface-level1 rounded-2xl border border-dashed border-surface-border">
+        <div className="text-center text-[12px] font-bold uppercase tracking-widest text-content-subtle py-10 bg-surface-level1 rounded-2xl border border-dashed border-surface-border">
           Нет данных
         </div>
       )}
@@ -434,7 +437,7 @@ export function TeamStatsPanel({ data }) {
           строк с чекбоксами, множественный выбор. */}
       <BottomSheet isOpen={isFilterOpen} onClose={() => setIsFilterOpen(false)}>
         <div className="flex flex-col gap-4">
-          <h3 className="text-base font-black tracking-widest text-content-main uppercase">Фильтр матчей</h3>
+          <h3 className="text-[16px] font-black tracking-widest text-content-main uppercase">Фильтр матчей</h3>
 
           {showFilterSearch && (
             <TextInputLP

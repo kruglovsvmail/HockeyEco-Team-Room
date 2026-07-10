@@ -90,6 +90,9 @@ export function Icon({ name, className = "w-6 h-6", style, strokeWidth }) {
 
     // Иконка обобщённого файла (сканы, документы, PDF)
     file: <svg {...baseProps}><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>,
+
+    // Иконка размера шрифта (маленькая и большая буква "А")
+    text_size: <svg {...baseProps}><path d="M4 20 L9 7 L14 20"/><line x1="5.5" y1="15.5" x2="12.5" y2="15.5"/><path d="M16 20 L19.5 11 L23 20" strokeWidth="1.5"/></svg>,
   };
 
   return icons[name] || null;

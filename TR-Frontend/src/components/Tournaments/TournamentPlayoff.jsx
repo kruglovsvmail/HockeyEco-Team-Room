@@ -190,7 +190,7 @@ export function TournamentPlayoff({
                     {game.home_team_logo ? (
                       <img src={getImageUrl(game.home_team_logo)} alt="" className="w-5 h-5 object-contain shrink-0" />
                     ) : (
-                      <div className="w-4 h-4 bg-surface-level3 border border-surface-border text-[8px] text-content-muted font-bold shrink-0 flex items-center justify-center rounded-full">?</div>
+                      <div className="w-4 h-4 bg-surface-level3 border border-surface-border text-[10px] text-content-muted font-bold shrink-0 flex items-center justify-center rounded-full">?</div>
                     )}
                     <span className="uppercase tracking-tight text-content-main truncate">{homeShort}</span>
                   </div>
@@ -207,7 +207,7 @@ export function TournamentPlayoff({
                     {game.away_team_logo ? (
                       <img src={getImageUrl(game.away_team_logo)} alt="" className="w-5 h-5 object-contain shrink-0" />
                     ) : (
-                      <div className="w-4 h-4 bg-surface-level3 border border-surface-border text-[8px] text-content-muted font-bold shrink-0 flex items-center justify-center rounded-full">?</div>
+                      <div className="w-4 h-4 bg-surface-level3 border border-surface-border text-[10px] text-content-muted font-bold shrink-0 flex items-center justify-center rounded-full">?</div>
                     )}
                   </div>
                 </div>
@@ -338,7 +338,7 @@ export function TournamentPlayoff({
                             </div>
                             
                             {isFinalRound && matchup.winner_id && (
-                              <span className={clsx("text-[8px] font-black uppercase tracking-widest px-1.5 py-1 rounded-xl shrink-0 leading-none", getFinalBadge(matchup.matchup_number, isTeam1Winner).className)}>
+                              <span className={clsx("text-[10px] font-black uppercase tracking-widest px-1.5 py-1 rounded-xl shrink-0 leading-none", getFinalBadge(matchup.matchup_number, isTeam1Winner).className)}>
                                 {getFinalBadge(matchup.matchup_number, isTeam1Winner).text}
                               </span>
                             )}
@@ -361,7 +361,7 @@ export function TournamentPlayoff({
                             </div>
 
                             {isFinalRound && matchup.winner_id && (
-                              <span className={clsx("text-[8px] font-bold uppercase tracking-widest px-1.5 py-1 rounded-xl shrink-0 leading-none", getFinalBadge(matchup.matchup_number, isTeam2Winner).className)}>
+                              <span className={clsx("text-[10px] font-bold uppercase tracking-widest px-1.5 py-1 rounded-xl shrink-0 leading-none", getFinalBadge(matchup.matchup_number, isTeam2Winner).className)}>
                                 {getFinalBadge(matchup.matchup_number, isTeam2Winner).text}
                               </span>
                             )}
@@ -370,7 +370,7 @@ export function TournamentPlayoff({
 
                         {/* КУБЫ РЕЗУЛЬТАТОВ */}
                         <div className="flex flex-col items-center shrink-0 ml-2">
-                          <span className="text-[8px] font-black uppercase tracking-wider text-content-subtle mb-1 text-center block w-full whitespace-nowrap">
+                          <span className="text-[10px] font-black uppercase tracking-wider text-content-subtle mb-1 text-center block w-full whitespace-nowrap">
                             {isMultiMatch ? 'счет в серии' : 'счет матча'}
                           </span>
                           <div className="flex flex-col gap-1 items-center justify-center bg-surface-level1 border border-surface-border rounded-lg p-1 w-11">

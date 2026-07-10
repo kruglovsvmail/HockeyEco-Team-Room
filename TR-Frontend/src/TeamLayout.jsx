@@ -7,7 +7,7 @@ import utc from 'dayjs/plugin/utc';
 import timezone from 'dayjs/plugin/timezone';
 import 'dayjs/locale/ru';
 
-import { getToken, removeToken, getAuthHeaders } from './utils/helpers';
+import { getToken, removeToken, getAuthHeaders, uiFixed } from './utils/helpers';
 import { Sidebar } from './components/Sidebar';
 import { Header } from './components/Header';
 import { Icon } from './ui/Icon';
@@ -60,6 +60,22 @@ function TeamLayoutContent() {
   const [selectedTeam, setSelectedTeam] = useState(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
+
+  // Ширина сайдбара/правой панели: расширяем с 80% до 90% при увеличенном масштабе
+  // интерфейса (SettingsPage), чтобы дать больше физического места контенту панелей.
+  const [panelPct, setPanelPct] = useState(() => {
+    const scale = parseFloat(localStorage.getItem('tr_ui_scale') || '1');
+    return scale > 1 ? 90 : 80;
+  });
+
+  useEffect(() => {
+    const handleScaleChange = () => {
+      const scale = parseFloat(localStorage.getItem('tr_ui_scale') || '1');
+      setPanelPct(scale > 1 ? 90 : 80);
+    };
+    window.addEventListener('tr_ui_scale_changed', handleScaleChange);
+    return () => window.removeEventListener('tr_ui_scale_changed', handleScaleChange);
+  }, []);
 
   const [rightPanel, setRightPanel] = useState({ isOpen: false, type: null, data: null, title: '', previous: null });
   const [panel100, setPanel100] = useState({ isOpen: false, type: null, data: null, title: '' });
@@ -385,11 +401,11 @@ function TeamLayoutContent() {
       {/* Сайдбар: выезжает слева внутри 1000px-контейнера */}
       <aside
         className={clsx(
-          "absolute inset-y-0 left-0 z-40 h-full w-[80%] bg-surface-level1 flex-shrink-0",
+          "absolute inset-y-0 left-0 z-40 h-full bg-surface-level1 flex-shrink-0",
           "transition-transform duration-300 ease-[cubic-bezier(0.32,0.72,0,1)]",
           isSidebarOpen ? "translate-x-0" : "-translate-x-full"
         )}
-        style={{ willChange: 'transform' }}
+        style={{ willChange: 'transform', width: `${panelPct}%` }}
       >
         <Sidebar
           user={user}
@@ -401,13 +417,22 @@ function TeamLayoutContent() {
       </aside>
 
       {/* Основной контент — уезжает влево синхронно с появлением оверлея события */}
-      <div className={clsx(
-        "flex flex-col flex-1 w-full h-full min-w-0 z-30 relative",
-        "transition-transform duration-[350ms] ease-[cubic-bezier(0.32,0.72,0,1)]",
-        isSidebarOpen ? "translate-x-[80%] shadow-2xl" : "",
-        rightPanel.isOpen ? "-translate-x-[80%]" : "",
-        (eventMatch && eventForOverlay) || applicationMatch ? "-translate-x-full" : ""
-      )}>
+      <div
+        className={clsx(
+          "flex flex-col flex-1 w-full h-full min-w-0 z-30 relative",
+          "transition-transform duration-[350ms] ease-[cubic-bezier(0.32,0.72,0,1)]",
+          isSidebarOpen && "shadow-2xl"
+        )}
+        style={{
+          transform: (eventMatch && eventForOverlay) || applicationMatch
+            ? 'translateX(-100%)'
+            : rightPanel.isOpen
+            ? `translateX(-${panelPct}%)`
+            : isSidebarOpen
+            ? `translateX(${panelPct}%)`
+            : undefined
+        }}
+      >
         <Header
           isSidebarOpen={isSidebarOpen}
           onToggleSidebar={() => setIsSidebarOpen(!isSidebarOpen)}
@@ -438,12 +463,15 @@ function TeamLayoutContent() {
 
       {/* Правая панель: выезжает справа внутри 1000px-контейнера.
           eventEdit, playerDocs, playerProfile и userDetails подняты над оверлеями EventPage/SeasonRostersDetailsPage (z-100) и panel100 (z-60). */}
-      <div className={clsx(
-        "absolute top-0 right-0 w-[80%] h-full bg-surface-level2 border-l border-white/10 shadow-[-15px_0_30px_rgba(0,0,0,0.1)] flex flex-col overflow-hidden flex-shrink-0",
-        "transition-transform duration-300 ease-[cubic-bezier(0.32,0.72,0,1)]",
-        (rightPanel.type === 'eventEdit' || rightPanel.type === 'playerDocs' || rightPanel.type === 'playerProfile' || rightPanel.type === 'userDetails' || rightPanel.type === 'teamStats') ? "z-[110]" : "z-[40]",
-        rightPanel.isOpen ? "translate-x-0" : "translate-x-full"
-      )}>
+      <div
+        className={clsx(
+          "absolute top-0 right-0 h-full bg-surface-level2 border-l border-white/10 shadow-[-15px_0_30px_rgba(0,0,0,0.1)] flex flex-col overflow-hidden flex-shrink-0",
+          "transition-transform duration-300 ease-[cubic-bezier(0.32,0.72,0,1)]",
+          (rightPanel.type === 'eventEdit' || rightPanel.type === 'playerDocs' || rightPanel.type === 'playerProfile' || rightPanel.type === 'userDetails' || rightPanel.type === 'teamStats') ? "z-[110]" : "z-[40]",
+          rightPanel.isOpen ? "translate-x-0" : "translate-x-full"
+        )}
+        style={{ width: `${panelPct}%` }}
+      >
         <div className="w-full h-full flex flex-col overflow-hidden shrink-0">
           {rightPanel.isOpen && (
             <>
@@ -451,7 +479,7 @@ function TeamLayoutContent() {
                 <button onClick={backRightPanel} className="p-1.5 ml-1 bg-white/10 rounded-xl text-content-muted hover:text-brand transition-colors outline-none cursor-pointer active:scale-95 flex items-center">
                   <Icon name="chevron_left" className="w-6 h-6 text-content-main" />
                 </button>
-                <h3 className="text-[14px] font-bold text-content-main uppercase tracking-wider text-right truncate pl-4">
+                <h3 className="font-bold text-content-main uppercase tracking-wider text-right truncate pl-4" style={{ fontSize: uiFixed(14) }}>
                   {rightPanel.title}
                 </h3>
               </div>
@@ -531,7 +559,7 @@ function TeamLayoutContent() {
             key="event-overlay"
             className="absolute inset-0 z-[100] overflow-hidden"
             initial={{ x: '100%' }}
-            animate={{ x: rightPanel.isOpen && (rightPanel.type === 'eventEdit' || rightPanel.type === 'playerProfile' || rightPanel.type === 'userDetails' || rightPanel.type === 'teamStats') ? '-80%' : 0 }}
+            animate={{ x: rightPanel.isOpen && (rightPanel.type === 'eventEdit' || rightPanel.type === 'playerProfile' || rightPanel.type === 'userDetails' || rightPanel.type === 'teamStats') ? `-${panelPct}%` : 0 }}
             exit={{ x: '100%' }}
             transition={{ duration: 0.35, ease: [0.32, 0.72, 0, 1] }}
           >
@@ -555,7 +583,8 @@ function TeamLayoutContent() {
           z-[105] — выше оверлея (z-100) и panel100 (z-60), но ниже самой панели (z-110). */}
       {rightPanel.isOpen && ((rightPanel.type === 'eventEdit' && eventForOverlay) || (rightPanel.type === 'playerDocs' && applicationMatch) || ((rightPanel.type === 'playerProfile' || rightPanel.type === 'userDetails' || rightPanel.type === 'teamStats') && (eventForOverlay || panel100.isOpen))) && (
         <div
-          className="absolute top-0 bottom-0 left-0 w-[20%] z-[105] cursor-pointer"
+          className="absolute top-0 bottom-0 left-0 z-[105] cursor-pointer"
+          style={{ width: `${100 - panelPct}%` }}
           onClick={closeRightPanel}
         />
       )}
@@ -568,7 +597,7 @@ function TeamLayoutContent() {
             key="application-overlay"
             className="absolute inset-0 z-[100] overflow-hidden"
             initial={{ x: '100%' }}
-            animate={{ x: rightPanel.isOpen && rightPanel.type === 'playerDocs' ? '-80%' : 0 }}
+            animate={{ x: rightPanel.isOpen && rightPanel.type === 'playerDocs' ? `-${panelPct}%` : 0 }}
             exit={{ x: '100%' }}
             transition={{ duration: 0.35, ease: [0.32, 0.72, 0, 1] }}
           >
@@ -586,13 +615,19 @@ function TeamLayoutContent() {
       </AnimatePresence>
 
       {/* PANEL100. Сдвигается влево, когда поверх него открыт профиль игрока (playerProfile, z-110). */}
-      <div className={clsx(
-        "absolute inset-0 w-full h-full z-[60] bg-surface-level2 flex flex-col overflow-hidden",
-        "transition-transform duration-300 ease-[cubic-bezier(0.32,0.72,0,1)]",
-        panel100.isOpen
-          ? (rightPanel.isOpen && (rightPanel.type === 'playerProfile' || rightPanel.type === 'teamStats') ? "-translate-x-[80%]" : "translate-x-0")
-          : "translate-x-full"
-      )}>
+      <div
+        className={clsx(
+          "absolute inset-0 w-full h-full z-[60] bg-surface-level2 flex flex-col overflow-hidden",
+          "transition-transform duration-300 ease-[cubic-bezier(0.32,0.72,0,1)]"
+        )}
+        style={{
+          transform: !panel100.isOpen
+            ? 'translateX(100%)'
+            : (rightPanel.isOpen && (rightPanel.type === 'playerProfile' || rightPanel.type === 'teamStats'))
+            ? `translateX(-${panelPct}%)`
+            : 'translateX(0)'
+        }}
+      >
         <div className="flex items-center justify-between shadow-md px-4 h-[60px] shrink-0 z-[90] border-b border-surface-border">
           <button
             onClick={closePanel100}
@@ -600,7 +635,7 @@ function TeamLayoutContent() {
           >
             <Icon name="chevron_left" className="w-6 h-6 text-content-main" />
           </button>
-          <h3 className="text-[14px] font-bold text-content-main uppercase tracking-wider text-right truncate pl-4">
+          <h3 className="font-bold text-content-main uppercase tracking-wider text-right truncate pl-4" style={{ fontSize: uiFixed(14) }}>
             {panel100.title}
           </h3>
         </div>

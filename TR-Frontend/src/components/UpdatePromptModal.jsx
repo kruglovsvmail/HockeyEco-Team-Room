@@ -83,7 +83,7 @@ export function UpdatePromptModal({ isOpen, onUpdate, onLater }) {
             <ul className="flex flex-col gap-2 pl-1">
               {changelog.map((item, index) => (
                 <li key={index} className="flex items-start gap-2 text-[14px] text-content-main font-medium leading-relaxed">
-                  <span className="text-brand shrink-0 mt-1.5 select-none text-[8px]">•</span>
+                  <span className="text-brand shrink-0 mt-1.5 select-none text-[10px]">•</span>
                   <span>{item}</span>
                 </li>
               ))}

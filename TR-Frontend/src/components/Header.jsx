@@ -2,6 +2,7 @@ import React from 'react';
 import { Menu, X, ChevronLeft } from 'lucide-react';
 import { useLocation } from 'react-router-dom';
 import { Icon } from '../ui/Icon';
+import { uiFixed } from '../utils/helpers';
 
 export function Header({
   isSidebarOpen, onToggleSidebar, user, teams, selectedTeam, onTeamUpdated,
@@ -138,7 +139,10 @@ export function Header({
           </button>
         )}
 
-        <div className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 text-[14px] font-semibold uppercase tracking-widest text-content-main pointer-events-none whitespace-nowrap text-center">
+        <div
+          className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 font-semibold uppercase tracking-widest text-content-main pointer-events-none whitespace-nowrap text-center"
+          style={{ fontSize: uiFixed(14) }}
+        >
           {getSectionTitle()}
         </div>
 

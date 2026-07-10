@@ -154,6 +154,12 @@ export default function App() {
     }
   }, []);
 
+  // Инициализируем пользовательский масштаб интерфейса (настройка размера шрифта)
+  useEffect(() => {
+    const savedScale = localStorage.getItem('tr_ui_scale') || '1';
+    document.documentElement.style.setProperty('--ui-scale', savedScale);
+  }, []);
+
   // Инициализируем менеджер жизненного цикла Service Worker
   const {
     needRefresh: [needRefresh, setNeedRefresh],
@@ -186,37 +192,50 @@ export default function App() {
           Порталы (тосты/шторки) лежат в #app-portal-root и сами учитывают env() — их не трогаем. */}
       <div
         id="app-shell"
-        className="relative z-10 w-full h-full max-w-[1000px] mx-auto flex flex-col overflow-hidden overflow-x-hidden scrollbar-hide shadow-2xl"
+        className="relative z-10 w-full h-full max-w-[1000px] mx-auto overflow-hidden shadow-2xl"
         style={{ paddingTop: 'env(safe-area-inset-top)', paddingBottom: 'env(safe-area-inset-bottom)' }}
       >
-        {/* Точка монтирования всех порталов (шторки, тосты, попперы), чтобы они оставались внутри 1000px-контейнера */}
-        <div id="app-portal-root" className="absolute inset-0 z-[200] pointer-events-none" />
+        {/* Масштабирующий слой: компенсированный transform-scale, управляемый переменной --ui-scale
+            (настройка размера шрифта в SettingsPage). Отступы safe-area специально оставлены на
+            внешнем #app-shell — они физические и не должны увеличиваться вместе с интерфейсом. */}
+        <div
+          className="flex flex-col overflow-hidden overflow-x-hidden scrollbar-hide"
+          style={{
+            width: 'calc(100% / var(--ui-scale, 1))',
+            height: 'calc(100% / var(--ui-scale, 1))',
+            transform: 'scale(var(--ui-scale, 1))',
+            transformOrigin: 'top left',
+          }}
+        >
+          {/* Точка монтирования всех порталов (шторки, тосты, попперы), чтобы они оставались внутри 1000px-контейнера */}
+          <div id="app-portal-root" className="absolute inset-0 z-[200] pointer-events-none" />
 
-        <BrowserRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
-          <Suspense fallback={<PageLoader />}>
-            <Routes>
-              <Route path="/login" element={<LoginPage />} />
-              
-              <Route element={<TeamLayout />}>
-                <Route path="/" element={<SchedulePage />} />
-                <Route path="/event/:eventType/:eventId" element={<SchedulePage />} />
-                <Route path="/my-team" element={<MyTeamPage />} />
-                <Route path="/tournaments" element={<TournamentsPage />} />
-                <Route path="/profile" element={<ProfilePage />} />
-                <Route path="/settings" element={<SettingsPage />} />
+          <BrowserRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
+            <Suspense fallback={<PageLoader />}>
+              <Routes>
+                <Route path="/login" element={<LoginPage />} />
 
-                <Route path="/manager/create-event" element={<CreateEventPage />} />
-                <Route path="/manager/season-rosters" element={<SeasonRostersPage />} />
-                <Route path="/application/:appId" element={<SeasonRostersPage />} />
-                <Route path="/manager/finances" element={<FinancesPage />} />
-                <Route path="/manager/handbooks" element={<HandbooksPage />} />
-              </Route>
+                <Route element={<TeamLayout />}>
+                  <Route path="/" element={<SchedulePage />} />
+                  <Route path="/event/:eventType/:eventId" element={<SchedulePage />} />
+                  <Route path="/my-team" element={<MyTeamPage />} />
+                  <Route path="/tournaments" element={<TournamentsPage />} />
+                  <Route path="/profile" element={<ProfilePage />} />
+                  <Route path="/settings" element={<SettingsPage />} />
 
-              {/* Автоматический редирект для любых неописанных путей */}
-              <Route path="*" element={<Navigate to="/" replace />} />
-            </Routes>
-          </Suspense>
-        </BrowserRouter>
+                  <Route path="/manager/create-event" element={<CreateEventPage />} />
+                  <Route path="/manager/season-rosters" element={<SeasonRostersPage />} />
+                  <Route path="/application/:appId" element={<SeasonRostersPage />} />
+                  <Route path="/manager/finances" element={<FinancesPage />} />
+                  <Route path="/manager/handbooks" element={<HandbooksPage />} />
+                </Route>
+
+                {/* Автоматический редирект для любых неописанных путей */}
+                <Route path="*" element={<Navigate to="/" replace />} />
+              </Routes>
+            </Suspense>
+          </BrowserRouter>
+        </div>
       </div>
 
       {/* ФИКСИРОВАННЫЙ ТОП-ЦЕНТР БАННЕР ОФФЛАЙНА НАД ВСЕМИ СЛОЯМИ */}

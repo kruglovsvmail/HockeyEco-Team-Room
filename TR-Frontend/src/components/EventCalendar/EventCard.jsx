@@ -5,7 +5,7 @@ import utc from 'dayjs/plugin/utc';
 import timezone from 'dayjs/plugin/timezone';
 import Toggle from '../../ui/Toggle';
 import { Icon } from '../../ui/Icon';
-import { getImageUrl, getContrastTextColor } from '../../utils/helpers';
+import { getImageUrl, getContrastTextColor, uiFixed } from '../../utils/helpers';
 import { HintPopover } from '../../ui/HintPopover';
 import { ConfirmSheet } from '../../ui/ConfirmSheet';
 
@@ -217,13 +217,13 @@ const EventCard = ({
 
       {/* 2. ЦЕНТР: Тип события и Время */}
       <div className="flex justify-between items-end px-5 mt-4">
-        <div className="flex items-center gap-2">
-          <h2 className="text-[30px] font-bold text-content-main leading-none uppercase tracking-wide">
+        <div className="flex items-center gap-2 min-w-0">
+          <h2 className="font-bold text-content-main leading-none uppercase tracking-wide truncate" style={{ fontSize: uiFixed(30) }}>
             {eventTitle}
           </h2>
           {renderMatchIcon()}
         </div>
-        <div className="text-[30px] font-black tracking-tight leading-none" style={{ color: activeBrandColor }}>
+        <div className="shrink-0 font-black tracking-tight leading-none" style={{ color: activeBrandColor, fontSize: uiFixed(30) }}>
           {eventDate.format('HH:mm')}
         </div>
       </div>
@@ -241,7 +241,7 @@ const EventCard = ({
           ) : (
             <>
               <div className="flex flex-col text-left">
-                <span className="text-[8px] font-bold text-content-muted uppercase tracking-wider">
+                <span className="text-[10px] font-bold text-content-muted uppercase tracking-wider">
                   {isInitiator ? 'Ожидает подтверждения:' : 'До подтверждения осталось:'}
                 </span>
                 <span className="text-[18px] font-black tracking-widest text-content-muted font-mono">

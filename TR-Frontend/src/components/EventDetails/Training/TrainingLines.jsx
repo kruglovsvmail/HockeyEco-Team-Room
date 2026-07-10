@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
-import { getAuthHeaders, getContrastTextColor, getImageUrl } from '../../../utils/helpers';
+import { getAuthHeaders, getContrastTextColor, getImageUrl, uiFixed } from '../../../utils/helpers';
 import { useAccess } from '../../../hooks/useAccess';
 import { PERMISSIONS } from '../../../utils/permissions';
 import { Avatar } from '../../../ui/Avatar';
@@ -699,16 +699,21 @@ export const TrainingLines = ({ event, initialAttendees = [], initialStaffMember
           if (isEditMode) handleSlotClick(lineNum, pos);
         }}
         className={clsx(
-          "flex flex-col items-center w-[94px] relative transition-all duration-200 shrink-0",
+          "flex flex-col items-center relative transition-all duration-200 shrink-0",
           isEditMode ? "cursor-pointer" : "pointer-events-none",
           isEditMode && !player && !isSelected && !isDeleteMode ? "opacity-70 hover:opacity-100" : "opacity-100",
           jiggleClass
         )}
+        style={{ width: uiFixed(94) }}
       >
         <div
-          style={isSelected ? { borderColor: activeBrandColor, boxShadow: `0 0 0 2px ${activeBrandColor}` } : {}}
+          style={{
+            width: uiFixed(64),
+            height: uiFixed(64),
+            ...(isSelected ? { borderColor: activeBrandColor, boxShadow: `0 0 0 2px ${activeBrandColor}` } : {})
+          }}
           className={clsx(
-            "w-16 h-16 rounded-2xl flex items-center justify-center relative transition-all duration-200 shrink-0 box-border z-0 origin-center",
+            "rounded-2xl flex items-center justify-center relative transition-all duration-200 shrink-0 box-border z-0 origin-center",
             isSelected && !hasTeamColor ? "ring-2 ring-brand scale-110" : isSelected ? "scale-110 border" : "",
             player ? "shadow-lg border border-surface-border bg-surface-level3" : isSelected ? "bg-surface-base" : "bg-surface-base border border-dashed border-content-muted"
           )}
@@ -725,18 +730,18 @@ export const TrainingLines = ({ event, initialAttendees = [], initialStaffMember
                 </button>
               )}
               <div className="absolute -bottom-2 bg-surface-level2 rounded-md px-1.5 py-0.5 border border-surface-border shadow-sm z-10">
-                <span className="text-[8px] font-black text-content-muted uppercase tracking-widest leading-none block">{labelText || pos}</span>
+                <span className="font-black text-content-muted uppercase tracking-widest leading-none block" style={{ fontSize: uiFixed(10) }}>{labelText || pos}</span>
               </div>
             </>
           ) : (
-            <span className="text-[14px] font-black text-content-muted uppercase tracking-widest select-none">{labelText || pos}</span>
+            <span className="font-black text-content-muted uppercase tracking-widest select-none" style={{ fontSize: uiFixed(14) }}>{labelText || pos}</span>
           )}
         </div>
         <div className="w-full mt-4 flex flex-col items-center justify-center h-6 overflow-visible">
           {player ? (
             <>
-              <span className="text-[14px] font-bold text-content-main leading-none w-full text-center pointer-events-none whitespace-nowrap">{player.last_name}</span>
-              <span className="text-[10px] font-medium text-content-muted leading-none w-full text-center pointer-events-none whitespace-nowrap mt-1">{player.first_name}</span>
+              <span className="font-bold text-content-main leading-none w-full text-center pointer-events-none truncate px-0.5" style={{ fontSize: uiFixed(14) }}>{player.last_name}</span>
+              <span className="font-medium text-content-muted leading-none w-full text-center pointer-events-none truncate px-0.5 mt-1" style={{ fontSize: uiFixed(10) }}>{player.first_name}</span>
             </>
           ) : (
             <span className="text-[10px] font-bold text-transparent leading-none select-none">_</span>

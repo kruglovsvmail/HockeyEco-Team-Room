@@ -88,7 +88,7 @@ export function Toast({ isOpen, message, type = 'success', onClose, duration = 3
         </div>
 
         {/* Текст уведомления */}
-        <div className="text-md font-semibold leading-snug">
+        <div className="text-[14px] font-semibold leading-snug">
           {message}
         </div>
       </div>

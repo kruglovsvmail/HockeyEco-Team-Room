@@ -41,13 +41,13 @@ function Slot({ player, label }) {
               </div>
             )}
             <div className="absolute -bottom-2 bg-surface-level2 rounded-md px-1.5 py-0.5 border border-surface-border shadow-sm">
-              <span className="text-[8px] font-black text-content-muted uppercase tracking-widest leading-none block">
+              <span className="text-[10px] font-black text-content-muted uppercase tracking-widest leading-none block">
                 {label}
               </span>
             </div>
           </>
         ) : (
-          <span className="text-[13px] font-black text-content-muted uppercase tracking-widest select-none">
+          <span className="text-[14px] font-black text-content-muted uppercase tracking-widest select-none">
             {label}
           </span>
         )}
@@ -102,20 +102,20 @@ export const TrainingLinesShareCard = forwardRef(function TrainingLinesShareCard
     >
       {/* ── ШАПКА (без соперника и формы) — на всю ширину ── */}
       <div className="bg-surface-level1 rounded-2xl p-4 flex items-start justify-between shadow-md">
-        <span className="text-[34px] font-black uppercase leading-none" style={{ color: accent }}>
+        <span className="text-[36px] font-black uppercase leading-none" style={{ color: accent }}>
           Тренировка
         </span>
 
         <div className="flex flex-col items-end gap-1.5 text-right shrink-0 pl-3">
           {dateDisplay && (
             <div className="flex items-center gap-2">
-              <span className="text-[15px] font-bold text-content-main leading-none">{dateDisplay}</span>
+              <span className="text-[16px] font-bold text-content-main leading-none">{dateDisplay}</span>
               <Icon name="calendar" className="w-4 h-4 text-content-main shrink-0" />
             </div>
           )}
           {(arenaDisplay || timeDisplay) && (
             <div className="flex items-center gap-2">
-              <span className="text-[15px] font-bold leading-none" style={{ color: accent }}>
+              <span className="text-[16px] font-bold leading-none" style={{ color: accent }}>
                 {[arenaDisplay, timeDisplay].filter(Boolean).join(' · ')}
               </span>
               <Icon name="location_pin" className="w-4 h-4 shrink-0" style={{ color: accent }} />

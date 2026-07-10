@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import dayjs from 'dayjs';
-import { getImageUrl, getAuthHeaders, getContrastTextColor } from '../../utils/helpers';
+import { getImageUrl, getAuthHeaders, getContrastTextColor, uiFixed } from '../../utils/helpers';
 import { Avatar } from '../../ui/Avatar';
 import { PageLoader } from '../../ui/Loader';
 import { FadeIn } from '../../ui/FadeIn';
@@ -23,12 +23,22 @@ const formatPhoneNumber = (phoneStr) => {
   return phoneStr;
 };
 
+// Правильное склонение числительных для возраста (1 год, 2 года, 5 лет)
+const pluralizeAge = (age) => {
+  const mod100 = age % 100;
+  const mod10 = age % 10;
+  if (mod100 >= 11 && mod100 <= 14) return 'лет';
+  if (mod10 === 1) return 'год';
+  if (mod10 >= 2 && mod10 <= 4) return 'года';
+  return 'лет';
+};
+
 // Унифицированная строка вывода информации с динамической подкраской бренда хоккейной команды
 const InfoRow = ({ label, value, highlight = false, activeBrandColor }) => (
-  <div className="flex items-center justify-between py-2.5 border-b border-surface-border last:border-0">
-    <span className="text-[12px] font-bold text-content-muted uppercase tracking-wider">{label}</span>
-    <span 
-      className={`text-[14px] font-black ${highlight ? '' : 'text-content-main'}`}
+  <div className="flex items-center justify-between gap-3 py-2.5 border-b border-surface-border last:border-0">
+    <span className="text-[12px] font-bold text-content-muted uppercase tracking-wider shrink-0">{label}</span>
+    <span
+      className={`text-[14px] font-black whitespace-nowrap ${highlight ? '' : 'text-content-main'}`}
       style={highlight ? { color: activeBrandColor || 'var(--color-brand)' } : {}}
     >
       {value || '—'}
@@ -472,7 +482,10 @@ export const UserDetails = ({ data, openRightPanel, pushRightPanel }) => {
           )}
 
           <div className="flex items-center gap-4 w-full pr-1">
-            <div className="w-20 h-20 rounded-3xl bg-surface-base border border-surface-border p-0.5 shadow-sm flex items-center justify-center overflow-hidden shrink-0 relative">
+            <div
+              className="rounded-3xl bg-surface-base border border-surface-border p-0.5 shadow-sm flex items-center justify-center overflow-hidden shrink-0 relative"
+              style={{ width: uiFixed(80), height: uiFixed(80) }}
+            >
               <Avatar photoUrl={profile.avatar_url} firstName={profile.first_name} lastName={profile.last_name} className="w-full h-full rounded-3xl" />
               
               {isEditHeader && hasHeaderBlockAccess && (
@@ -497,14 +510,14 @@ export const UserDetails = ({ data, openRightPanel, pushRightPanel }) => {
                 {profile.roster_id ? 'В ростере' : 'Не в ростере'}
               </span>
               
-              <h2 className="text-[16px] font-bold text-content-main uppercase truncate leading-tight">{profile.last_name}</h2>
+              <h2 className="font-bold text-content-main uppercase whitespace-nowrap leading-tight" style={{ fontSize: uiFixed(16) }}>{profile.last_name}</h2>
               <h3 className="text-[12px] font-bold text-content-muted mt-0.5 capitalize">{profile.first_name}</h3>
               {profile.middle_name && <h4 className="text-[12px] font-medium text-content-muted truncate opacity-60">{profile.middle_name}</h4>}
               
               {!isEditHeader && (profile.is_captain || profile.is_assistant) && (
-                <div 
-                  className={`mt-2 self-start px-2 py-0.5 text-[10px] font-black uppercase rounded-md shadow-sm ${getContrastTextColor(brandColor)}`}
-                  style={{ backgroundColor: brandColor }}
+                <div
+                  className={`mt-2 self-start px-2 py-0.5 font-black uppercase rounded-md shadow-sm whitespace-nowrap ${getContrastTextColor(brandColor)}`}
+                  style={{ backgroundColor: brandColor, fontSize: uiFixed(10) }}
                 >
                   {profile.is_captain ? 'Капитан (C)' : 'Ассистент (A)'}
                 </div>
@@ -546,7 +559,7 @@ export const UserDetails = ({ data, openRightPanel, pushRightPanel }) => {
           >
             <div className="flex items-center gap-2.5">
               <Icon name="metrics" className="w-4 h-4" style={{ color: brandColor }} />
-              <span className="text-[10px] font-black uppercase text-content-main tracking-widest">Статистика в команде</span>
+              <span className="font-black uppercase text-content-main tracking-widest whitespace-nowrap" style={{ fontSize: uiFixed(10) }}>Статистика в команде</span>
             </div>
             <Icon name="chevron_right" className="w-4 h-4 text-content-subtle" />
           </button>
@@ -645,7 +658,7 @@ export const UserDetails = ({ data, openRightPanel, pushRightPanel }) => {
           ) : (
             <div className="flex flex-col">
               <InfoRow label="Игровой номер" value={profile.jersey_number ? `# ${profile.jersey_number}` : null} highlight activeBrandColor={activeBrandColor} />
-              <InfoRow label="Игровое амплуа" value={
+              <InfoRow label="Амплуа" value={
                 profile.position === 'goalie' ? 'Вратарь' : 
                 profile.position === 'defense' ? 'Защитник' : 
                 profile.position === 'forward' ? 'Нападающий' : null
@@ -678,9 +691,9 @@ export const UserDetails = ({ data, openRightPanel, pushRightPanel }) => {
 
         {/* БЛОК 4: ЛИЧНАЯ ИНФОРМАЦИЯ */}
         <CustomBlock title="Личная информация" icon="roster" isEditing={false} isManager={showAdminControls} onAction={null} activeBrandColor={activeBrandColor}>
-          <InfoRow label="Номер тел." value={formatPhoneNumber(profile.phone)} />
+          <InfoRow label="тел." value={formatPhoneNumber(profile.phone)} />
           <InfoRow label="Дата рожд." value={profile.birth_date ? dayjs(profile.birth_date).format('DD.MM.YYYY') : null} />
-          <InfoRow label="Возраст" value={age ? `${age} лет` : null} />
+          <InfoRow label="Возраст" value={age ? `${age} ${pluralizeAge(age)}` : null} />
         </CustomBlock>
 
         {/* ЗЕЛЕНЫЙ БЛОК ВИРТУАЛЬНОГО ПРОФИЛЯ РУКОВОДИТЕЛЯ */}
