@@ -34,7 +34,7 @@ const TRAINING_TABS = [
 // Высота контейнера 1 (text-[30px]=30) = 30px
 const HEADER_1_HEIGHT = 50;
 
-export const EventDetailsTraining = ({ event }) => {
+export const EventDetailsTraining = ({ event, openRightPanel }) => {
   const [activeTab, setActiveTab] = useState('attendance');
   const [localEvent, setLocalEvent] = useState(event);
 
@@ -465,6 +465,7 @@ export const EventDetailsTraining = ({ event }) => {
                       initialTeamRoster={trainingData.teamRoster}
                       initialStaffMembers={trainingData.staffMembers}
                       refreshData={fetchAllTrainingData}
+                      openRightPanel={openRightPanel}
                     />
                   </FadeIn>
                 )}

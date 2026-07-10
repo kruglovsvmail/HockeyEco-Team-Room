@@ -457,7 +457,7 @@ export const UserDetails = ({ data }) => {
                 {profile.roster_id ? 'В ростере' : 'Не в ростере'}
               </span>
               
-              <h2 className="text-[18px] font-black text-content-main uppercase truncate leading-tight">{profile.last_name}</h2>
+              <h2 className="text-[16px] font-bold text-content-main uppercase truncate leading-tight">{profile.last_name}</h2>
               <h3 className="text-[12px] font-bold text-content-muted mt-0.5 capitalize">{profile.first_name}</h3>
               {profile.middle_name && <h4 className="text-[12px] font-medium text-content-muted truncate opacity-60">{profile.middle_name}</h4>}
               

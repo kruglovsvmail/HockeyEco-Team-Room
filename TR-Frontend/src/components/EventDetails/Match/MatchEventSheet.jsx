@@ -4,7 +4,7 @@ import { BottomSheet } from '../../../ui/BottomSheet';
 import { ButtonLP } from '../../../ui/Button-LP';
 import { TimeMMSSInputLP, SelectInputLP } from '../../../ui/Input-LP';
 import { Icon } from '../../../ui/Icon';
-import { getAuthHeaders, getImageUrl } from '../../../utils/helpers';
+import { getImageUrl } from '../../../utils/helpers';
 
 const GOAL_STRENGTHS = [
   { value: 'equal', label: 'Равные составы' },
@@ -94,7 +94,7 @@ export function MatchEventSheet({
   editRole,
   myTeamId,
   onClose,
-  onSaved,
+  onSave,
 }) {
   const isEdit = !!existingEvent;
   const actualMode = existingEvent ? (existingEvent.event_type === 'penalty' ? 'penalty' : 'goal') : (mode || 'goal');
@@ -125,7 +125,6 @@ export function MatchEventSheet({
   const [activeChip, setActiveChip] = useState('scorer'); // 'scorer' | 'assist' | 'pm'
   const [pmHome, setPmHome] = useState([]);
   const [pmAway, setPmAway] = useState([]);
-  const [isSaving, setIsSaving] = useState(false);
 
   // ── Конечная карусель (для goal-mode) ─────────────────────────────────
   // 2 слайда: [scoring, conceding]. Стартуем на scoring (progress 0).
@@ -285,16 +284,19 @@ export function MatchEventSheet({
   };
 
   // ── Сохранение ─────────────────────────────────────────────────────────
-  const handleSave = async () => {
-    if (isSaving) return;
-    if (!actualTeamId) { alert('Не определена команда'); return; }
+  // Событие больше не летит в бэкенд отсюда — вместо этого локально патчим
+  // черновик в MatchProtocol (onSave), а реальный запрос уйдёт одним пакетом
+  // по нажатию главной кнопки «Сохранить» (или не уйдёт вовсе — по «Отмена»).
+  const handleSave = () => {
+    // actualTeamId может быть null — это легитимно для стороны внешнего соперника
+    // (нет реальной команды в системе), team_id в БД для таких событий тоже null.
     const totalSec = parseMM(minutes) * 60 + parseSS(seconds);
     const { period, time_seconds } = totalToPeriod(totalSec, regulation);
 
-    let body;
+    let payload;
     if (isGoal) {
-      body = {
-        teamId: parentMatch.my_team_id, period, time_seconds, event_type: 'goal',
+      payload = {
+        period, time_seconds, event_type: 'goal',
         team_id: actualTeamId,
         scorer_id: scorerId || null,
         assist1_id: assistIds[0] || null,
@@ -306,8 +308,8 @@ export function MatchEventSheet({
       };
     } else {
       const pen = PENALTIES[penaltyIdx];
-      body = {
-        teamId: parentMatch.my_team_id, period, time_seconds, event_type: 'penalty',
+      payload = {
+        period, time_seconds, event_type: 'penalty',
         team_id: actualTeamId,
         scorer_id: penaltyPlayerId || null,
         penalty_player_id: penaltyPlayerId || null,
@@ -316,26 +318,8 @@ export function MatchEventSheet({
       };
     }
 
-    setIsSaving(true);
-    try {
-      const apiUrl = import.meta.env.VITE_API_URL || '';
-      const url = isEdit
-        ? `${apiUrl}/api/matches/${parentMatch.event_id}/results/events/${existingEvent.id}`
-        : `${apiUrl}/api/matches/${parentMatch.event_id}/results/events`;
-      const res = await fetch(url, {
-        method: isEdit ? 'PUT' : 'POST',
-        headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
-        body: JSON.stringify(body),
-      });
-      const json = await res.json();
-      if (json.success) {
-        if (onSaved) onSaved();
-        if (onClose) onClose();
-      } else {
-        alert(json.error || 'Не удалось сохранить');
-      }
-    } catch (err) { console.error(err); }
-    finally { setIsSaving(false); }
+    if (onSave) onSave(payload, existingEvent?.id ?? null);
+    if (onClose) onClose();
   };
 
   return (
@@ -556,7 +540,7 @@ export function MatchEventSheet({
         )}
 
         {/* Кнопка сохранить */}
-        <ButtonLP type="button" variant="primary" isLoading={isSaving} disabled={isSaving} onClick={handleSave} activeColor={activeBrandColor}>
+        <ButtonLP type="button" variant="primary" onClick={handleSave} activeColor={activeBrandColor}>
           {isEdit ? 'Сохранить' : 'Добавить'}
         </ButtonLP>
       </div>

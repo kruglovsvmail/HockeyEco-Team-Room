@@ -29,7 +29,7 @@ const getSafeUserFromToken = () => {
   }
 };
 
-export const MatchAttendance = ({ event, initialAttendees = [], initialTeamRoster = [], initialStaffMembers = [], initialDraftLines = [], refreshData }) => {
+export const MatchAttendance = ({ event, initialAttendees = [], initialTeamRoster = [], initialStaffMembers = [], initialDraftLines = [], refreshData, openRightPanel }) => {
   const [attendees, setAttendees] = useState(initialAttendees);
   const [teamRoster, setTeamRoster] = useState(initialTeamRoster);
   const [hasManageAccess, setHasManageAccess] = useState(false);
@@ -313,6 +313,19 @@ export const MatchAttendance = ({ event, initialAttendees = [], initialTeamRoste
                 : (player.position !== 'goalie' && player.position !== 'G'))
   );
 
+  const handlePersonClick = (attendeeUser) => {
+    if (!openRightPanel) return;
+    openRightPanel('userDetails', {
+      user_id: attendeeUser.id,
+      team_id: event?.my_team_id,
+      currentRoster: teamRoster,
+      onRefresh: refreshData,
+      activeBrandColor: hasTeamColor ? activeBrandColor : null,
+      user,
+      selectedTeam
+    }, 'Участник команды');
+  };
+
   const renderAttendeeCard = (attendeeUser, index) => {
     const photoUrl = attendeeUser.team_photo || attendeeUser.avatar_url;
     const canRemove = hasManageAccess || String(activeUserId) === String(attendeeUser.id);
@@ -341,17 +354,22 @@ export const MatchAttendance = ({ event, initialAttendees = [], initialTeamRoste
         className={clsx("flex flex-col items-center gap-1.5 select-none w-full text-center relative", jiggleClass)}
       >
         <div className="relative">
-          <Avatar 
-            photoUrl={photoUrl}
-            firstName={attendeeUser.first_name}
-            lastName={attendeeUser.last_name}
-            className={clsx(
-              "w-16 h-16 rounded-2xl bg-surface-level2 border border-surface-level2 shadow-sm origin-center",
-              isRemoving && "animate-slot-exit",
-              isEntering && "animate-slot-enter"
-            )}
-          />
-          
+          <div
+            onClick={(e) => { if (!isEditMode) { e.stopPropagation(); handlePersonClick(attendeeUser); } }}
+            className={clsx(!isEditMode && openRightPanel && "cursor-pointer active:opacity-70 transition-opacity")}
+          >
+            <Avatar
+              photoUrl={photoUrl}
+              firstName={attendeeUser.first_name}
+              lastName={attendeeUser.last_name}
+              className={clsx(
+                "w-16 h-16 rounded-2xl bg-surface-level2 border border-surface-level2 shadow-sm origin-center",
+                isRemoving && "animate-slot-exit",
+                isEntering && "animate-slot-enter"
+              )}
+            />
+          </div>
+
           {/* КРЕСТИК ИСКЛЮЧЕНИЯ ИЗ ЯВОК С УЧЕТОМ ПОДПИСКИ */}
           {isEditMode && canRemove && !isRemoving && (
             hasAttendanceSubscription ? (

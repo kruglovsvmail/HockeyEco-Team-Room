@@ -381,6 +381,7 @@ export function TournamentsPage() {
                     hasTeamColor={hasTeamColor}
                     activeBrandColor={activeBrandColor}
                     divisionId={activeTournament?.division_id}
+                    openRightPanel={openRightPanel}
                   />
                 )
               )}

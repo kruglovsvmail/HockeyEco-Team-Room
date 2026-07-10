@@ -11,13 +11,14 @@ const TEAM_STAT_ROWS = [
   { key: 'shots_on_goal',    label: 'Броски в створ' },
   { key: 'goals',            label: 'Заброшено шайб' },
   { key: 'shooting_pct',     label: '% реализации',                isPercentage: true },
+  { key: 'shots_against',    label: 'Броски соперников' },
+  { key: 'saves',            label: 'Отражённые броски' },
+  { key: 'goals_against',    label: 'Пропущено шайб' },
+  { key: 'save_pct',         label: '% отражённых бросков',        isPercentage: true },
   { key: 'pp_goals',         label: 'Голы в большинстве' },
   { key: 'pp_pct',           label: '% реализации большинства',    isPercentage: true },
   { key: 'sh_goals',         label: 'Голы в меньшинстве' },
   { key: 'pim',              label: 'Штрафное время (мин)' },
-  { key: 'saves',            label: 'Отражённые броски' },
-  { key: 'goals_against',    label: 'Пропущено шайб' },
-  { key: 'save_pct',         label: '% отражённых бросков',        isPercentage: true },
 ];
 
 const STAGE_OPTIONS = [
@@ -33,7 +34,8 @@ export function TournamentStat({
   onStageTypeChange,
   hasTeamColor,
   activeBrandColor,
-  divisionId
+  divisionId,
+  openRightPanel
 }) {
   const carouselRef = useRef(null);
   const dropdownRef = useRef(null);
@@ -207,6 +209,11 @@ export function TournamentStat({
   // Хелпер изоляции тач-событий (останавливает всплытие жеста к родительской карусели)
   const handleTouchIsolation = (e) => {
     e.stopPropagation();
+  };
+
+  const handlePlayerClick = (row) => {
+    if (!openRightPanel || !row?.player_id) return;
+    openRightPanel('playerProfile', { playerId: row.player_id, activeBrandColor, hasTeamColor }, 'Профиль игрока');
   };
 
   const isSkatersActive = playerType === 'skaters';
@@ -436,7 +443,14 @@ export function TournamentStat({
                   <div className="pl-3">Игрок</div>
                 </div>
                 {sortedSkaters.length > 0 && sortedSkaters.map((row, idx) => (
-                  <div key={row.player_id} className="h-16 flex items-center px-2 border-b border-surface-border last:border-0 text-left font-semibold text-content-main">
+                  <div
+                    key={row.player_id}
+                    onClick={() => handlePlayerClick(row)}
+                    className={clsx(
+                      "h-16 flex items-center px-2 border-b border-surface-border last:border-0 text-left font-semibold text-content-main",
+                      openRightPanel && "cursor-pointer active:opacity-70 transition-opacity"
+                    )}
+                  >
                     <div className="w-4 text-[10px] font-mono text-content-muted text-center shrink-0">{idx + 1}</div>
                     <div className="flex items-center gap-4 min-w-0 flex-1 pl-1">
                       <div className="relative shrink-0 w-7 h-7">
@@ -516,7 +530,14 @@ export function TournamentStat({
                   <div className="pl-3">Вратарь</div>
                 </div>
                 {sortedGoalies.length > 0 && sortedGoalies.map((row, idx) => (
-                  <div key={row.player_id} className="h-16 flex items-center px-2 border-b border-surface-border last:border-0 text-left font-semibold text-content-main">
+                  <div
+                    key={row.player_id}
+                    onClick={() => handlePlayerClick(row)}
+                    className={clsx(
+                      "h-16 flex items-center px-2 border-b border-surface-border last:border-0 text-left font-semibold text-content-main",
+                      openRightPanel && "cursor-pointer active:opacity-70 transition-opacity"
+                    )}
+                  >
                     <div className="w-4 text-[10px] font-mono text-content-muted text-center shrink-0">{idx + 1}</div>
                     <div className="flex items-center gap-4 min-w-0 flex-1 pl-2">
                       <div className="relative shrink-0 w-7 h-7">

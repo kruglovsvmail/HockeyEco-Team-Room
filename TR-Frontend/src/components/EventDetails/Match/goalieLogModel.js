@@ -7,15 +7,24 @@
 //
 // decode: состояния → точки смен по сторонам.
 // encode: точки смен по сторонам → состояния (для PUT в БД).
+//
+// Точка = { time_seconds, goalie_id, unspecified }. goalie_id=null И
+// unspecified=false — буквально пустые ворота (тактический отзыв вратаря).
+// goalie_id=null И unspecified=true — «не указан» (например, сторона внешнего
+// соперника без ростера — мы не знаем, кто стоит в воротах). goalie_id не может
+// быть sentinel-значением — FK на users(id) в БД это не пропустит, поэтому
+// «не указан» кодируется отдельным булевым столбцом (home/away_goalie_unspecified).
 
-// log: [{ time_seconds, home_goalie_id, away_goalie_id }]
-// → { home: [{ time_seconds, goalie_id }], away: [...] }  (только моменты смен)
+// log: [{ time_seconds, home_goalie_id, away_goalie_id, home_goalie_unspecified, away_goalie_unspecified }]
+// → { home: [{ time_seconds, goalie_id, unspecified }], away: [...] }  (только моменты смен)
 export function decodeGoalieLog(log) {
   const rows = (log || [])
     .map(r => ({
       t: Number(r.time_seconds) || 0,
       h: r.home_goalie_id ?? null,
       a: r.away_goalie_id ?? null,
+      hu: !!r.home_goalie_unspecified,
+      au: !!r.away_goalie_unspecified,
     }))
     .sort((x, y) => x.t - y.t);
 
@@ -23,42 +32,51 @@ export function decodeGoalieLog(log) {
   const away = [];
   let prevH; // undefined = ещё не встречали
   let prevA;
+  const keyOf = (id, u) => `${id}|${u}`;
   for (const r of rows) {
-    if (prevH === undefined || r.h !== prevH) { home.push({ time_seconds: r.t, goalie_id: r.h }); prevH = r.h; }
-    if (prevA === undefined || r.a !== prevA) { away.push({ time_seconds: r.t, goalie_id: r.a }); prevA = r.a; }
+    const hKey = keyOf(r.h, r.hu);
+    const aKey = keyOf(r.a, r.au);
+    if (prevH === undefined || hKey !== prevH) { home.push({ time_seconds: r.t, goalie_id: r.h, unspecified: r.hu }); prevH = hKey; }
+    if (prevA === undefined || aKey !== prevA) { away.push({ time_seconds: r.t, goalie_id: r.a, unspecified: r.au }); prevA = aKey; }
   }
   return { home, away };
 }
 
-// Значение таймлайна на момент t: вратарь последней точки с time <= t.
+// Значение таймлайна на момент t: точка последней смены с time <= t.
 function sampleAt(timeline, t) {
-  let val = null;
+  let val = { goalie_id: null, unspecified: false };
   for (const p of timeline) {
-    if (p.time_seconds <= t) val = p.goalie_id;
+    if (p.time_seconds <= t) val = p;
     else break;
   }
   return val;
 }
 
-// { home, away } → [{ time_seconds, home_goalie_id, away_goalie_id }]
+// { home, away } → [{ time_seconds, home_goalie_id, away_goalie_id, home_goalie_unspecified, away_goalie_unspecified }]
 export function encodeGoalieLog(model) {
   const home = [...(model.home || [])].sort((a, b) => a.time_seconds - b.time_seconds);
   const away = [...(model.away || [])].sort((a, b) => a.time_seconds - b.time_seconds);
   const times = Array.from(new Set([...home, ...away].map(p => p.time_seconds))).sort((a, b) => a - b);
-  return times.map(t => ({
-    time_seconds: t,
-    home_goalie_id: sampleAt(home, t),
-    away_goalie_id: sampleAt(away, t),
-  }));
+  return times.map(t => {
+    const h = sampleAt(home, t);
+    const a = sampleAt(away, t);
+    return {
+      time_seconds: t,
+      home_goalie_id: h.goalie_id,
+      away_goalie_id: a.goalie_id,
+      home_goalie_unspecified: h.unspecified,
+      away_goalie_unspecified: a.unspecified,
+    };
+  });
 }
 
 // Добавить/изменить смену на стороне. replaceTime — если редактируем существующую
 // точку (сначала убираем её), иначе просто добавляем новую.
-export function setGoalieChange(model, side, { time_seconds, goalie_id, replaceTime }) {
+export function setGoalieChange(model, side, { time_seconds, goalie_id, unspecified, replaceTime }) {
   const base = model[side] || [];
   let next = replaceTime != null ? base.filter(p => p.time_seconds !== replaceTime) : base.slice();
   next = next.filter(p => p.time_seconds !== time_seconds); // без дублей по времени
-  next.push({ time_seconds: Number(time_seconds) || 0, goalie_id: goalie_id ?? null });
+  next.push({ time_seconds: Number(time_seconds) || 0, goalie_id: goalie_id ?? null, unspecified: !!unspecified });
   next.sort((a, b) => a.time_seconds - b.time_seconds);
   return { ...model, [side]: next };
 }

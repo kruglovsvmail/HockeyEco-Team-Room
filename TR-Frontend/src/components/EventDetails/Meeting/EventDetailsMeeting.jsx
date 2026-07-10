@@ -23,7 +23,7 @@ const MEETING_TABS = [
 // Высота контейнера 1 (text-[30px]=30) = 30px
 const HEADER_1_HEIGHT = 50;
 
-export const EventDetailsMeeting = ({ event }) => {
+export const EventDetailsMeeting = ({ event, openRightPanel }) => {
   const [activeTab, setActiveTab] = useState('attendance');
   const [localEvent, setLocalEvent] = useState(event);
 
@@ -261,6 +261,7 @@ export const EventDetailsMeeting = ({ event }) => {
                 initialTeamRoster={meetingData.teamRoster}
                 initialStaffMembers={meetingData.staffMembers}
                 refreshData={fetchAllMeetingData}
+                openRightPanel={openRightPanel}
               />
             )}
           </FadeIn>

@@ -12,7 +12,13 @@ WORKDIR /app
 
 # Копируем файлы зависимостей и устанавливаем их
 COPY package*.json ./
-RUN npm install
+
+# Ретраи на сетевые обрывы (та же нестабильность сети Timeweb, что иногда рвёт git clone к
+# GitHub, может уронить npm install на скачивании пакетов)
+RUN npm config set fetch-retries 5 && \
+    npm config set fetch-retry-mintimeout 20000 && \
+    npm config set fetch-retry-maxtimeout 120000 && \
+    npm install
 
 # Копируем весь остальной код и запускаем сборку
 COPY . .

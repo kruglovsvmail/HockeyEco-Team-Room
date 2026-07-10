@@ -40,16 +40,24 @@ const GOAL_STRENGTH_LABELS = {
 // home → выравнивание влево, аватар слева, номер справа от него
 // away → выравнивание вправо, аватар справа, номер слева от него
 // ═══════════════════════════════════════════════════════════════════════
-const PlayerBlock = ({ event, side, subLines = [] }) => {
+const PlayerBlock = ({ event, side, subLines = [], onClick }) => {
   const isHome = side === 'home';
   const hasPlayer = !!(event.scorer_last_name || event.scorer_first_name);
+  const clickable = hasPlayer && !!onClick;
 
   return (
     <div className={`flex flex-col min-w-0 w-full gap-0.5 ${isHome ? 'items-start' : 'items-end'}`}>
 
       {/* Строка 1: аватар во внешнем углу + номер рядом к центру */}
       {/* home: [аватар] [номер →]   away: [← номер] [аватар] */}
-      <div className={`flex items-center gap-1.5 ${isHome ? 'flex-row' : 'flex-row-reverse'}`}>
+      <div
+        className={clsx(
+          "flex items-center gap-1.5",
+          isHome ? 'flex-row' : 'flex-row-reverse',
+          clickable && "cursor-pointer active:opacity-70 transition-opacity"
+        )}
+        onClick={clickable ? onClick : undefined}
+      >
         <Avatar
           photoUrl={event.scorer_photo}
           firstName={event.scorer_first_name}
@@ -65,11 +73,18 @@ const PlayerBlock = ({ event, side, subLines = [] }) => {
 
       {/* Строка 2: Фамилия И. либо «Не указан» */}
       {hasPlayer ? (
-        <span className={`text-[14px] font-bold text-content-main leading-tight w-full ${isHome ? 'text-left' : 'text-right'}`}>
+        <span
+          className={clsx(
+            "text-[14px] font-bold text-content-main leading-tight w-full",
+            isHome ? 'text-left' : 'text-right',
+            clickable && "cursor-pointer active:opacity-70 transition-opacity"
+          )}
+          onClick={clickable ? onClick : undefined}
+        >
           {event.scorer_last_name} {event.scorer_first_name?.[0] ?? ''}.
         </span>
       ) : (
-        <span className={`text-[14px] font-bold italic text-content-subtle leading-tight w-full ${isHome ? 'text-left' : 'text-right'}`}>
+        <span className={`text-[12px] italic text-content-subtle leading-tight w-full ${isHome ? 'text-left' : 'text-right'}`}>
           Не указан
         </span>
       )}
@@ -84,26 +99,26 @@ const PlayerBlock = ({ event, side, subLines = [] }) => {
   );
 };
 
-const GoalPlayer = ({ event, side }) => {
+const GoalPlayer = ({ event, side, onPlayerClick }) => {
   const subLines = [];
   if (event.assist1_id)
     subLines.push(`#${event.assist1_jersey ?? '?'} ${event.assist1_last_name} ${event.assist1_first_name?.[0] ?? ''}.`);
   if (event.assist2_id)
     subLines.push(`#${event.assist2_jersey ?? '?'} ${event.assist2_last_name} ${event.assist2_first_name?.[0] ?? ''}.`);
-  return <PlayerBlock event={event} side={side} subLines={subLines} />;
+  return <PlayerBlock event={event} side={side} subLines={subLines} onClick={onPlayerClick} />;
 };
 
-const PenaltyPlayer = ({ event, side }) => {
+const PenaltyPlayer = ({ event, side, onPlayerClick }) => {
   const subLines = event.penalty_violation ? [event.penalty_violation] : [];
-  return <PlayerBlock event={event} side={side} subLines={subLines} />;
+  return <PlayerBlock event={event} side={side} subLines={subLines} onClick={onPlayerClick} />;
 };
 
 // Вратарь: смена/старт — переиспользуем PlayerBlock (scorer_* заполнены данными
 // вратаря). Снятие (пустые ворота) — отдельный блок без игрока.
-const GoaliePlayer = ({ event, side }) => {
+const GoaliePlayer = ({ event, side, onPlayerClick }) => {
   const isHome = side === 'home';
 
-  if (event.goalie_empty) {
+  if (event.goalie_empty || event.goalie_unspecified) {
     return (
       <div className={`flex flex-col min-w-0 w-full gap-0.5 ${isHome ? 'items-start' : 'items-end'}`}>
         <div className={`flex items-center gap-1.5 ${isHome ? 'flex-row' : 'flex-row-reverse'}`}>
@@ -112,7 +127,7 @@ const GoaliePlayer = ({ event, side }) => {
           </span>
         </div>
         <span className={`text-[14px] font-bold text-content-main leading-tight w-full ${isHome ? 'text-left' : 'text-right'}`}>
-          Пустые ворота
+          {event.goalie_unspecified ? 'Не указан' : 'Пустые ворота'}
         </span>
         {event.prev_goalie_label && (
           <span className={`text-[10px] text-content-muted leading-tight w-full ${isHome ? 'text-left' : 'text-right'}`}>
@@ -126,7 +141,7 @@ const GoaliePlayer = ({ event, side }) => {
   const subLines = (event.goalie_kind === 'change' && event.prev_goalie_label)
     ? [`сменил ${event.prev_goalie_label}`]
     : [];
-  return <PlayerBlock event={event} side={side} subLines={subLines} />;
+  return <PlayerBlock event={event} side={side} subLines={subLines} onClick={onPlayerClick} />;
 };
 
 // ═══════════════════════════════════════════════════════════════════════
@@ -182,9 +197,14 @@ const EventCenter = ({ event }) => {
 // ОДНО СОБЫТИЕ — трёхколоночная карточка [home | center | away]
 // Высота боковых колонок выравнивается по наибольшей через ResizeObserver
 // ═══════════════════════════════════════════════════════════════════════
-const EventCard = ({ event, homeTeamId, canEdit, editRole, myTeamId, onEdit, onDelete }) => {
+const EventCard = ({ event, homeTeamId, canEdit, editRole, myTeamId, onEdit, onDelete, openRightPanel, activeBrandColor, hasTeamColor }) => {
   const isHome = event.team_id === homeTeamId;
   const side = isHome ? 'home' : 'away';
+
+  const playerId = event.event_type === 'goalie' ? event.goalie_id : event.scorer_id;
+  const onPlayerClick = (playerId != null && openRightPanel)
+    ? () => openRightPanel('playerProfile', { playerId, activeBrandColor, hasTeamColor }, 'Профиль игрока')
+    : null;
 
   // Что доступно текущей роли по этому событию.
   // Инициатор: правит и удаляет всё. Соперник: правит голы (своё авторство/«±»),
@@ -228,11 +248,11 @@ const EventCard = ({ event, homeTeamId, canEdit, editRole, myTeamId, onEdit, onD
       case 'shootout_goal':
       case 'shootout_miss':
       case 'failed_ps':
-        return <GoalPlayer event={event} side={side} />;
+        return <GoalPlayer event={event} side={side} onPlayerClick={onPlayerClick} />;
       case 'penalty':
-        return <PenaltyPlayer event={event} side={side} />;
+        return <PenaltyPlayer event={event} side={side} onPlayerClick={onPlayerClick} />;
       case 'goalie':
-        return <GoaliePlayer event={event} side={side} />;
+        return <GoaliePlayer event={event} side={side} onPlayerClick={onPlayerClick} />;
       default:
         return null;
     }
@@ -291,7 +311,7 @@ const EventCard = ({ event, homeTeamId, canEdit, editRole, myTeamId, onEdit, onD
 };
 
 // ─── Блок периода ─────────────────────────────────────────────────────
-const PeriodBlock = ({ label, events, homeTeamId, canEdit, editRole, myTeamId, onEdit, onDelete }) => (
+const PeriodBlock = ({ label, events, homeTeamId, canEdit, editRole, myTeamId, onEdit, onDelete, openRightPanel, activeBrandColor, hasTeamColor }) => (
   <div className="flex flex-col gap-2">
     <div className="flex items-center gap-3 px-1">
       <div className="flex-1 h-px bg-surface-border" />
@@ -310,6 +330,9 @@ const PeriodBlock = ({ label, events, homeTeamId, canEdit, editRole, myTeamId, o
         myTeamId={myTeamId}
         onEdit={onEdit}
         onDelete={onDelete}
+        openRightPanel={openRightPanel}
+        activeBrandColor={activeBrandColor}
+        hasTeamColor={hasTeamColor}
       />
     ))}
   </div>
@@ -325,10 +348,7 @@ export const MatchProtocol = ({ event, user, selectedTeam, openRightPanel }) => 
 
   // Локальный статус матча.
   // - Стартует из event.status (приходит из календарного кэша).
-  // - После добавления/удаления события через MatchEventSheet триггеры БД переводят
-  //   матч в finished_no_result. Слушатель tr-match-protocol-updated синхронит
-  //   localStatus, чтобы кнопка "Опубликовать" реактивировалась без reload.
-  // - После успешного publish становится 'finished'.
+  // - После успешного сохранения результатов (doPublish) становится 'finished'.
   const [localStatus, setLocalStatus] = useState(event?.status);
   useEffect(() => { setLocalStatus(event?.status); }, [event?.event_id, event?.status]);
 
@@ -359,8 +379,6 @@ export const MatchProtocol = ({ event, user, selectedTeam, openRightPanel }) => 
     (gameDatePassed && isNonOfficial && localStatus === 'scheduled');
 
   const isPlayable = isMatchOver || localStatus === 'live';
-
-  const isPublished = localStatus === 'finished';
 
   // Командное цветовое кодирование (тумблер в SettingsPage). По умолчанию ВКЛ.
   const isColorsEnabled = typeof window !== 'undefined' && localStorage.getItem('tr_use_team_colors') !== 'false';
@@ -401,24 +419,17 @@ export const MatchProtocol = ({ event, user, selectedTeam, openRightPanel }) => 
     try {
       const sessKey = `tr_event_match_${event.event_id}`;
       const cached = sessionStorage.getItem(sessKey);
-      if (cached) {
-        sessionStorage.setItem(sessKey, JSON.stringify({ ...JSON.parse(cached), ...patch }));
-      }
+      // Раньше писали только если запись УЖЕ существовала — но её никто заранее
+      // не создавал, поэтому патч всегда тихо терялся, а "О матче"/счёт не
+      // обновлялись без полного закрытия и повторного открытия карточки.
+      // Базой берём то, что в кэше, а если там пусто — сам проп event (у него
+      // есть все поля, которые ждёт EventDetailsMatch при полной замене localEvent).
+      const base = cached ? JSON.parse(cached) : event;
+      sessionStorage.setItem(sessKey, JSON.stringify({ ...base, ...patch }));
     } catch {}
     window.dispatchEvent(new CustomEvent('tr-events-updated'));
-  }, [event?.event_id]);
+  }, [event]);
 
-  // Live-refresh: после "Добавить" / "Сохранить" в MatchEventSheet перезагружаем периоды
-  // и одновременно откатываем локальный статус — триггеры БД делают ровно это.
-  useEffect(() => {
-    const onUpdated = () => {
-      fetchProtocol();
-      setLocalStatus('finished_no_result');
-      patchEventCache({ status: 'finished_no_result' });
-    };
-    window.addEventListener('tr-match-protocol-updated', onUpdated);
-    return () => window.removeEventListener('tr-match-protocol-updated', onUpdated);
-  }, [fetchProtocol, patchEventCache]);
 
   // ── Режим просмотра / редактирования (как в MatchLines) ──────────────────
   const [isEditMode, setIsEditMode] = useState(false);
@@ -426,7 +437,17 @@ export const MatchProtocol = ({ event, user, selectedTeam, openRightPanel }) => 
   const [eventSheet, setEventSheet] = useState(null);
   // событие, для которого открыто подтверждение удаления
   const [deleteConfirmEvent, setDeleteConfirmEvent] = useState(null);
-  const [isDeleting, setIsDeleting] = useState(false);
+
+  // ── Черновик сессии правки (события / журнал вратарей / броски) ──────────
+  // Пока идёт правка, все изменения живут только здесь, в памяти — ни один
+  // под-компонент (MatchEventSheet / GoalieChangeSheet / ShotsSheet) больше
+  // не пишет в бэкенд сам. «Сохранить» одним пакетом коммитит всё разом и
+  // пересчитывает счёт; «Отмена» просто отбрасывает черновик без единого
+  // запроса — на сервере ничего не менялось, откатывать нечего.
+  const [draftEvents, setDraftEvents] = useState(null); // null = сессии правки нет
+  const [deletedEventIds, setDeletedEventIds] = useState(() => new Set());
+  const [draftGoalieLog, setDraftGoalieLog] = useState(null);
+  const [draftShots, setDraftShots] = useState(null);
 
   // ── Регламент матча (количество периодов / длина / ОТ) ──────────────────
   const [regulation, setRegulation] = useState({ period_length: 20, ot_length: 0, periods_count: 3, opponent_can_edit: true });
@@ -454,6 +475,32 @@ export const MatchProtocol = ({ event, user, selectedTeam, openRightPanel }) => 
   // ── Кэшированный ростер (для inline-композера) ───────────────────────────
   const [rosters, setRosters] = useState({ home: [], away: [], home_team_id: null, away_team_id: null });
 
+  // Клиентское обогащение «сырого» события (id игроков) именами/номерами/фото
+  // из уже загруженного ростера — повторяет JOIN'ы backend'а getMatchProtocol,
+  // чтобы черновые (ещё не сохранённые) события рендерились в ленте так же,
+  // как события, пришедшие с сервера.
+  const enrichEvent = useCallback((ev) => {
+    const allPlayers = [...(rosters.home || []), ...(rosters.away || [])];
+    const findPlayer = (id) => (id == null ? null : allPlayers.find(p => p.player_id === id));
+    const scorer = findPlayer(ev.scorer_id);
+    const a1 = findPlayer(ev.assist1_id);
+    const a2 = findPlayer(ev.assist2_id);
+    return {
+      ...ev,
+      scorer_first_name: scorer?.first_name ?? null,
+      scorer_last_name: scorer?.last_name ?? null,
+      scorer_jersey: scorer?.jersey_number ?? null,
+      scorer_photo: scorer?.photo_url ?? null,
+      assist1_first_name: a1?.first_name ?? null,
+      assist1_last_name: a1?.last_name ?? null,
+      assist1_jersey: a1?.jersey_number ?? null,
+      assist2_first_name: a2?.first_name ?? null,
+      assist2_last_name: a2?.last_name ?? null,
+      assist2_jersey: a2?.jersey_number ?? null,
+      penalty_violation: ev.penalty_violation ?? null,
+    };
+  }, [rosters]);
+
   // ── Журнал смен вратарей (нужен для строки «В воротах» и привязки бросков) ─
   const [goalieLog, setGoalieLog] = useState([]);
   const fetchGoalieLog = useCallback(async () => {
@@ -470,6 +517,28 @@ export const MatchProtocol = ({ event, user, selectedTeam, openRightPanel }) => 
   }, [canFillResults, event?.event_id, event?.my_team_id]);
 
   useEffect(() => { fetchGoalieLog(); }, [fetchGoalieLog]);
+
+  // Снимок бросков на момент входа в правку — броски нигде больше не кэшируются
+  // на уровне MatchProtocol (раньше их грузила сама ShotsSheet при каждом
+  // открытии), нужен один раз как стартовое состояние черновика.
+  const fetchShotsSnapshot = useCallback(async () => {
+    if (!event?.event_id || !event?.my_team_id) return {};
+    const apiUrl = import.meta.env.VITE_API_URL || '';
+    try {
+      const r = await fetch(
+        `${apiUrl}/api/matches/${event.event_id}/results/goalie-shots?teamId=${event.my_team_id}`,
+        { headers: getAuthHeaders() }
+      );
+      const j = await r.json();
+      if (!j?.success) return {};
+      const map = {};
+      (j.shots || []).forEach(s => {
+        const key = `${s.team_id}_${s.goalie_id == null ? 'null' : s.goalie_id}_${s.period}`;
+        map[key] = Number(s.shots_count) || 0;
+      });
+      return map;
+    } catch { return {}; }
+  }, [event?.event_id, event?.my_team_id]);
 
   // Загружаем регламент + ростеры одним запросом /rosters.
   useEffect(() => {
@@ -543,47 +612,148 @@ export const MatchProtocol = ({ event, user, selectedTeam, openRightPanel }) => 
   const [goalieSheet, setGoalieSheet] = useState(null);
   // Цель удаления смены вратаря из ленты: { side, time_seconds } | null
   const [goalieDeleteTarget, setGoalieDeleteTarget] = useState(null);
-  const [isDeletingGoalie, setIsDeletingGoalie] = useState(false);
 
-  const handlePublish = async () => {
-    if (isPublishing || isPublished) return;
+  // Пересчёт счёта/статуса матча из game_events (та же ручка, что раньше называлась
+  // «Опубликовать») — вызывается только изнутри handleSaveResults, уже после того,
+  // как черновик событий/журнала/бросков закоммичен в БД.
+  const doPublish = async () => {
+    const apiUrl = import.meta.env.VITE_API_URL || '';
+    const res = await fetch(
+      `${apiUrl}/api/matches/${event.event_id}/results/publish`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
+        body: JSON.stringify({ teamId: event.my_team_id })
+      }
+    );
+    const data = await res.json();
+    if (!data.success) throw new Error(data.error || 'Не удалось опубликовать');
+    // Локально переключаем статус — кнопка станет "Опубликовано".
+    setLocalStatus('finished');
+    // Чистим кэш календаря, чтобы SchedulePage перетянул свежие данные.
+    try {
+      const prefix = `tr_cached_events_team_${event.my_team_id}_month_`;
+      const keysToRemove = [];
+      for (let i = 0; i < localStorage.length; i++) {
+        const k = localStorage.key(i);
+        if (k && k.startsWith(prefix)) keysToRemove.push(k);
+      }
+      keysToRemove.forEach(k => localStorage.removeItem(k));
+    } catch {}
+    // Патчим sessionStorage события — EventDetailsMatch перерисует
+    // Противостояние/счёт без необходимости закрывать/открывать карточку.
+    patchEventCache({
+      status: 'finished',
+      home_score: data.home_score,
+      away_score: data.away_score,
+    });
+  };
+
+  // ── Вход в режим правки: снимок текущего состояния становится черновиком ──
+  // Всё, что произойдёт дальше (добавление/правка/удаление гола, штрафа, смены
+  // вратаря, бросков), меняет только этот снимок — в бэкенд ничего не летит,
+  // пока не нажата «Сохранить».
+  const handleEnterEdit = () => {
+    setDraftEvents(periods.flatMap(p => p.events.map(ev => ({ ...ev }))));
+    setDeletedEventIds(new Set());
+    setDraftGoalieLog(goalieLog.map(r => ({ ...r })));
+    setIsEditMode(true);
+    // Броски не блокируют переключение экрана — грузятся в фоне, пока
+    // пользователь их не открыл (шторка «Броски» доступна только внутри
+    // уже активной сессии правки).
+    fetchShotsSnapshot().then(setDraftShots);
+  };
+
+  // ── Отмена: черновик просто отбрасывается. На сервере ничего не менялось
+  // за время сессии правки — значит и откатывать нечего, ни одного запроса.
+  const handleCancelEdit = () => {
+    setDraftEvents(null);
+    setDeletedEventIds(new Set());
+    setDraftGoalieLog(null);
+    setDraftShots(null);
+    setIsEditMode(false);
+  };
+
+  // ── Сохранить: коммитим черновик одним пакетом (события → журнал вратарей →
+  // броски), затем пересчитываем счёт (doPublish) и подтягиваем свежую правду
+  // с сервера. Если матч уже был опубликован раньше — это повторный пересчёт.
+  const handleSaveResults = async () => {
+    if (isPublishing) return;
     setIsPublishing(true);
     try {
       const apiUrl = import.meta.env.VITE_API_URL || '';
-      const res = await fetch(
-        `${apiUrl}/api/matches/${event.event_id}/results/publish`,
-        {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
-          body: JSON.stringify({ teamId: event.my_team_id })
+      const headers = { 'Content-Type': 'application/json', ...getAuthHeaders() };
+
+      for (const ev of (draftEvents || [])) {
+        if (!ev._isNew && !ev._dirty) continue;
+        const payload = {
+          teamId: event.my_team_id,
+          period: ev.period,
+          time_seconds: ev.time_seconds,
+          event_type: ev.event_type,
+          team_id: ev.team_id,
+          scorer_id: ev.scorer_id ?? null,
+          assist1_id: ev.assist1_id ?? null,
+          assist2_id: ev.assist2_id ?? null,
+          goal_strength: ev.goal_strength ?? null,
+          from_shot: ev.from_shot ?? null,
+          plus_minus_home: ev.plus_minus_home ?? [],
+          plus_minus_away: ev.plus_minus_away ?? [],
+          penalty_player_id: ev.penalty_player_id ?? null,
+          penalty_class: ev.penalty_class ?? null,
+          penalty_minutes: ev.penalty_minutes ?? null,
+        };
+        if (ev._isNew) {
+          await fetch(`${apiUrl}/api/matches/${event.event_id}/results/events`, {
+            method: 'POST', headers, body: JSON.stringify(payload),
+          });
+        } else {
+          await fetch(`${apiUrl}/api/matches/${event.event_id}/results/events/${ev.id}`, {
+            method: 'PUT', headers, body: JSON.stringify(payload),
+          });
         }
-      );
-      const data = await res.json();
-      if (data.success) {
-        // Локально переключаем статус — кнопка станет "Опубликовано".
-        setLocalStatus('finished');
-        // Чистим кэш календаря, чтобы SchedulePage перетянул свежие данные.
-        try {
-          const prefix = `tr_cached_events_team_${event.my_team_id}_month_`;
-          const keysToRemove = [];
-          for (let i = 0; i < localStorage.length; i++) {
-            const k = localStorage.key(i);
-            if (k && k.startsWith(prefix)) keysToRemove.push(k);
-          }
-          keysToRemove.forEach(k => localStorage.removeItem(k));
-        } catch {}
-        // Патчим sessionStorage события — EventDetailsMatch перерисует
-        // Противостояние/счёт без необходимости закрывать/открывать карточку.
-        patchEventCache({
-          status: 'finished',
-          home_score: data.home_score,
-          away_score: data.away_score,
-        });
-      } else {
-        alert(data.error || 'Не удалось опубликовать');
       }
+      for (const id of deletedEventIds) {
+        await fetch(`${apiUrl}/api/matches/${event.event_id}/results/events/${id}?teamId=${event.my_team_id}`, {
+          method: 'DELETE', headers: getAuthHeaders(),
+        });
+      }
+
+      if (draftGoalieLog) {
+        await fetch(`${apiUrl}/api/matches/${event.event_id}/results/goalie-log`, {
+          method: 'PUT', headers, body: JSON.stringify({ teamId: event.my_team_id, entries: draftGoalieLog }),
+        });
+      }
+
+      if (draftShots) {
+        const shotsEntries = [];
+        Object.entries(draftShots).forEach(([key, val]) => {
+          if (val === '' || val == null) return;
+          const [teamId, gid, period] = key.split('_');
+          shotsEntries.push({
+            goalie_id: gid === 'null' ? null : Number(gid),
+            team_id: Number(teamId),
+            period,
+            shots_count: Number(val) || 0,
+          });
+        });
+        await fetch(`${apiUrl}/api/matches/${event.event_id}/results/goalie-shots`, {
+          method: 'PUT', headers, body: JSON.stringify({ teamId: event.my_team_id, entries: shotsEntries }),
+        });
+      }
+
+      await doPublish();
+      await fetchProtocol();
+      await fetchGoalieLog();
+
+      setDraftEvents(null);
+      setDeletedEventIds(new Set());
+      setDraftGoalieLog(null);
+      setDraftShots(null);
+      setIsEditMode(false);
     } catch (err) {
-      console.error('Ошибка публикации матча:', err);
+      console.error('Ошибка сохранения результатов:', err);
+      alert(err?.message || 'Не удалось сохранить результаты матча');
     } finally {
       setIsPublishing(false);
     }
@@ -596,59 +766,45 @@ export const MatchProtocol = ({ event, user, selectedTeam, openRightPanel }) => 
       style={hasTeamColor ? { '--color-brand': activeBrandColor } : undefined}
     >
       {isEditMode ? (
-        <div className={clsx("grid gap-2", editRole === 'initiator' ? "grid-cols-2" : "grid-cols-1")}>
+        <div className="grid grid-cols-2 gap-2">
           <button
             type="button"
-            onClick={() => setIsEditMode(false)}
-            className="flex min-w-0 justify-center items-center gap-1 px-2 py-2 rounded-full text-[14px] font-semibold bg-surface-base border border-brand text-brand  transition-all active:scale-95 hover:bg-surface-border outline-none cursor-pointer select-none"
+            onClick={handleCancelEdit}
+            disabled={isPublishing}
+            className="flex min-w-0 justify-center items-center gap-1 px-2 py-2 rounded-full text-[14px] font-semibold bg-surface-base text-danger transition-all active:scale-95 hover:bg-surface-border outline-none cursor-pointer select-none disabled:opacity-50"
           >
-            <Icon name="save" className="w-4 h-4 shrink-0" />
-            <span className="truncate">Готово</span>
+            <Icon name="close" className="w-4 h-4 shrink-0" strokeWidth={3} />
+            <span className="truncate">Отмена</span>
           </button>
+          <button
+            type="button"
+            onClick={handleSaveResults}
+            disabled={isPublishing}
+            className="flex min-w-0 justify-center items-center gap-1 px-2 py-2 rounded-full text-[14px] font-semibold bg-surface-base text-success transition-all active:scale-95 hover:bg-surface-border outline-none cursor-pointer select-none shadow-sm disabled:opacity-50"
+          >
+            {isPublishing ? (
+              <div className="w-3.5 h-3.5 rounded-full border-2 border-success border-t-transparent animate-spin shrink-0" />
+            ) : (
+              <Icon name="save" className="w-4 h-4 shrink-0" strokeWidth={2.5} />
+            )}
+            <span className="truncate">Сохранить</span>
+          </button>
+        </div>
+      ) : (
+        <div className={clsx("grid gap-2", editRole === 'initiator' ? "grid-cols-2" : "grid-cols-1")}>
           {editRole === 'initiator' && (
             <button
               type="button"
               onClick={handleOpenRegulation}
-              className="flex min-w-0 justify-center items-center gap-1 px-2 py-2 rounded-full text-[14px] font-semibold bg-surface-base border border-brand text-brand  transition-all active:scale-95 hover:bg-surface-border outline-none cursor-pointer select-none"
+              className="flex min-w-0 justify-center items-center gap-1 px-2 py-2 rounded-full text-[14px] font-semibold bg-surface-base border border-brand text-brand transition-all active:scale-95 hover:bg-surface-border outline-none cursor-pointer select-none"
             >
               <Icon name="settings" className="w-4 h-4 shrink-0" />
               <span className="truncate">Настройки</span>
             </button>
           )}
-        </div>
-      ) : (
-        <div className="grid grid-cols-2 gap-2">
           <button
             type="button"
-            onClick={handlePublish}
-            disabled={isPublished || isPublishing}
-            style={hasTeamColor ? (
-              isPublished
-                ? { backgroundColor: activeBrandColor, borderColor: activeBrandColor }
-                : { borderColor: activeBrandColor, color: activeBrandColor }
-            ) : undefined}
-            className={clsx(
-              "flex min-w-0 justify-center items-center gap-1 px-2 py-2 rounded-full text-[14px] font-semibold bg-surface-base border transition-all outline-none select-none",
-              hasTeamColor
-                ? (isPublished ? "text-white cursor-default" : "cursor-pointer active:scale-95 hover:bg-surface-border")
-                : (isPublished
-                    ? "border-content-success bg-success text-content-dark cursor-default"
-                    : "border-success text-success cursor-pointer active:scale-95 hover:bg-surface-border")
-            )}
-          >
-            {isPublishing ? (
-              <div
-                className="w-3.5 h-3.5 rounded-full border-2 border-t-transparent animate-spin shrink-0"
-                style={hasTeamColor ? { borderColor: activeBrandColor, borderTopColor: 'transparent' } : { borderColor: 'var(--color-success)', borderTopColor: 'transparent' }}
-              />
-            ) : (
-              <Icon name="save" className="w-4 h-4 shrink-0" />
-            )}
-            <span className="truncate">{isPublished ? 'Опубликовано' : 'Опубликовать'}</span>
-          </button>
-          <button
-            type="button"
-            onClick={() => setIsEditMode(true)}
+            onClick={handleEnterEdit}
             className="flex min-w-0 justify-center items-center gap-1 px-2 py-2 rounded-full text-[14px] font-semibold border border-brand text-brand bg-surface-base transition-all active:scale-95 hover:bg-surface-border outline-none cursor-pointer select-none"
           >
             <Icon name="edit" className="w-4 h-4 shrink-0" />
@@ -664,7 +820,7 @@ export const MatchProtocol = ({ event, user, selectedTeam, openRightPanel }) => 
     if (ev.event_type === 'goalie') {
       setGoalieSheet({
         side: ev.goalie_side,
-        existingChange: { time_seconds: ev.time_seconds, goalie_id: ev.goalie_id },
+        existingChange: { time_seconds: ev.time_seconds, goalie_id: ev.goalie_id, unspecified: ev.goalie_unspecified },
       });
       return;
     }
@@ -680,11 +836,20 @@ export const MatchProtocol = ({ event, user, selectedTeam, openRightPanel }) => 
     setEventSheet({ mode, scoringTeamId: teamId, existingEvent: null });
   };
 
-  // После добавления / редактирования / удаления — обновляем протокол + статус.
-  const handleEventSaved = () => {
-    setLocalStatus('finished_no_result');
-    patchEventCache({ status: 'finished_no_result' });
-    fetchProtocol();
+  // Патч от MatchEventSheet — только локальный черновик, никакой сети.
+  // existingId != null → правка уже существующего (в БД или ранее добавленного
+  // в этой же сессии) события; иначе — новое, с временным id.
+  const handleEventDraftSave = (payload, existingId) => {
+    setDraftEvents(prev => {
+      const list = prev || [];
+      if (existingId != null) {
+        return list.map(ev => (ev.id === existingId
+          ? { ...ev, ...payload, id: existingId, _isNew: ev._isNew, _dirty: ev._isNew ? undefined : true }
+          : ev));
+      }
+      const tempId = `tmp-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+      return [...list, { ...payload, id: tempId, _isNew: true }];
+    });
   };
 
   // Удаление через ConfirmSheet
@@ -696,56 +861,37 @@ export const MatchProtocol = ({ event, user, selectedTeam, openRightPanel }) => 
     setDeleteConfirmEvent(ev);
   };
 
-  const handleConfirmDeleteGoalie = async () => {
-    if (!goalieDeleteTarget || isDeletingGoalie) return;
-    setIsDeletingGoalie(true);
-    try {
-      const apiUrl = import.meta.env.VITE_API_URL || '';
-      const model = decodeGoalieLog(goalieLog);
-      const next = removeGoalieChange(model, goalieDeleteTarget.side, goalieDeleteTarget.time_seconds);
-      const entries = encodeGoalieLog(next);
-      const res = await fetch(
-        `${apiUrl}/api/matches/${event.event_id}/results/goalie-log`,
-        { method: 'PUT', headers: { 'Content-Type': 'application/json', ...getAuthHeaders() }, body: JSON.stringify({ teamId: event.my_team_id, entries }) }
-      );
-      const json = await res.json();
-      if (json.success) {
-        setGoalieDeleteTarget(null);
-        fetchGoalieLog();
-        handleEventSaved();
-      } else {
-        alert(json.error || 'Не удалось удалить');
-      }
-    } catch (err) { console.error(err); }
-    finally { setIsDeletingGoalie(false); }
+  // Удаление смены вратаря — тоже только в черновике журнала.
+  const handleConfirmDeleteGoalie = () => {
+    if (!goalieDeleteTarget) return;
+    const model = decodeGoalieLog(draftGoalieLog || []);
+    const next = removeGoalieChange(model, goalieDeleteTarget.side, goalieDeleteTarget.time_seconds);
+    setDraftGoalieLog(encodeGoalieLog(next));
+    setGoalieDeleteTarget(null);
   };
 
-  const handleConfirmDelete = async () => {
-    if (!deleteConfirmEvent || isDeleting) return;
-    setIsDeleting(true);
-    try {
-      const apiUrl = import.meta.env.VITE_API_URL || '';
-      const res = await fetch(
-        `${apiUrl}/api/matches/${event.event_id}/results/events/${deleteConfirmEvent.id}?teamId=${event.my_team_id}`,
-        { method: 'DELETE', headers: getAuthHeaders() }
-      );
-      const json = await res.json();
-      if (json.success) {
-        setDeleteConfirmEvent(null);
-        handleEventSaved();
-      } else {
-        alert(json.error || 'Не удалось удалить');
-      }
-    } catch (err) { console.error(err); }
-    finally { setIsDeleting(false); }
+  // Удаление гола/штрафа — убираем из черновика; если это уже существовавшая
+  // в БД запись (числовой id, не наш временный tmp-...) — помечаем на DELETE
+  // при коммите, иначе просто выбрасываем без следа.
+  const handleConfirmDelete = () => {
+    if (!deleteConfirmEvent) return;
+    const id = deleteConfirmEvent.id;
+    setDraftEvents(prev => (prev || []).filter(ev => ev.id !== id));
+    if (typeof id === 'number') {
+      setDeletedEventIds(prev => new Set(prev).add(id));
+    }
+    setDeleteConfirmEvent(null);
   };
 
   // ── Карточки смен/снятий вратаря для ленты (из журнала смен) ─────────────
   // Журнал хранится «состояниями» обеих команд; раскладываем на независимые
   // таймлайны и делаем карточку на каждый момент смены.
+  // Пока идёт сессия правки — источник данных это черновик в памяти; иначе —
+  // то, что реально лежит на сервере (periods / goalieLog).
+  const activeGoalieLog = (isEditMode && draftGoalieLog) ? draftGoalieLog : goalieLog;
   const goalieFeedItems = useMemo(() => {
-    if (!goalieLog?.length) return [];
-    const model = decodeGoalieLog(goalieLog);
+    if (!activeGoalieLog?.length) return [];
+    const model = decodeGoalieLog(activeGoalieLog);
     const items = [];
     const build = (sideKey, points) => {
       const teamId = sideKey === 'home' ? rosters.home_team_id : rosters.away_team_id;
@@ -756,9 +902,11 @@ export const MatchProtocol = ({ event, user, selectedTeam, openRightPanel }) => 
       };
       points.forEach((pt, i) => {
         if (i === 0) return; // стартовый вратарь карточкой не показываем — только смены/снятия
-        const prevId = i > 0 ? points[i - 1].goalie_id : null;
+        const prevPoint = i > 0 ? points[i - 1] : null;
         const g = pt.goalie_id != null ? (arr || []).find(p => p.player_id === pt.goalie_id) : null;
-        const prevLabel = prevId != null ? labelOf(prevId) : (i > 0 ? 'пустые ворота' : null);
+        const prevLabel = prevPoint?.unspecified
+          ? 'не указан'
+          : (prevPoint?.goalie_id != null ? labelOf(prevPoint.goalie_id) : (i > 0 ? 'пустые ворота' : null));
         items.push({
           id: `goalie-${sideKey}-${pt.time_seconds}`,
           event_type: 'goalie',
@@ -768,7 +916,8 @@ export const MatchProtocol = ({ event, user, selectedTeam, openRightPanel }) => 
           period: periodKeyForTime(pt.time_seconds, regulation),
           goalie_side: sideKey,
           goalie_id: pt.goalie_id ?? null,
-          goalie_empty: pt.goalie_id == null,
+          goalie_empty: pt.goalie_id == null && !pt.unspecified,
+          goalie_unspecified: !!pt.unspecified,
           goalie_kind: i === 0 ? 'start' : 'change',
           prev_goalie_label: prevLabel,
           scorer_first_name: g?.first_name,
@@ -781,13 +930,30 @@ export const MatchProtocol = ({ event, user, selectedTeam, openRightPanel }) => 
     build('home', model.home);
     build('away', model.away);
     return items;
-  }, [goalieLog, rosters, regulation]);
+  }, [activeGoalieLog, rosters, regulation]);
 
-  // Мёрж голов/штрафов (с бэка) и карточек смен вратаря в единую ленту.
+  // Голы/штрафы: пока идёт правка — черновик (обогащаем именами клиентски же,
+  // как это делает JOIN на бэкенде), иначе — то, что реально пришло с сервера.
+  const activePeriodEvents = useMemo(() => {
+    if (isEditMode && draftEvents) {
+      const byPeriod = new Map();
+      draftEvents.forEach(raw => {
+        const ev = enrichEvent(raw);
+        if (!byPeriod.has(ev.period)) byPeriod.set(ev.period, []);
+        byPeriod.get(ev.period).push(ev);
+      });
+      return Array.from(byPeriod.entries()).map(([period, events]) => ({
+        period, label: PERIOD_LABELS[period] || period, events,
+      }));
+    }
+    return periods;
+  }, [isEditMode, draftEvents, periods, enrichEvent]);
+
+  // Мёрж голов/штрафов и карточек смен вратаря в единую ленту.
   const mergedPeriods = useMemo(() => {
     const map = new Map();
     // Голам/штрафам считаем абсолютное время от начала матча (в карточках показываем его).
-    periods.forEach(p => map.set(p.period, {
+    activePeriodEvents.forEach(p => map.set(p.period, {
       period: p.period,
       label: p.label,
       events: p.events.map(ev => ({ ...ev, display_seconds: ev.time_seconds })),
@@ -802,27 +968,29 @@ export const MatchProtocol = ({ event, user, selectedTeam, openRightPanel }) => 
         const blk = map.get(p);
         return { ...blk, events: blk.events.slice().sort((a, b) => (a.display_seconds ?? a.time_seconds ?? 0) - (b.display_seconds ?? b.time_seconds ?? 0)) };
       });
-  }, [periods, goalieFeedItems, regulation]);
+  }, [activePeriodEvents, goalieFeedItems]);
 
   // Стартовые вратари каждой команды (первая точка таймлайна смен).
   // Возвращаем объект всегда — если вратарь не задан, сторона = null («не указан»).
   const startingGoalies = useMemo(() => {
-    const model = decodeGoalieLog(goalieLog || []);
+    const model = decodeGoalieLog(activeGoalieLog || []);
     const labelFor = (sideArr, point) => {
       if (!point) return null;
-      if (point.goalie_id == null) return { text: 'Пустые ворота', time_seconds: point.time_seconds, goalie_id: null };
+      if (point.unspecified) return { text: 'Не указан', time_seconds: point.time_seconds, goalie_id: null, unspecified: true };
+      if (point.goalie_id == null) return { text: 'Пустые ворота', time_seconds: point.time_seconds, goalie_id: null, unspecified: false };
       const g = (sideArr || []).find(p => p.player_id === point.goalie_id);
       return {
         text: g ? `#${g.jersey_number ?? '?'} ${g.last_name || ''}`.trim() : `#${point.goalie_id}`,
         time_seconds: point.time_seconds,
         goalie_id: point.goalie_id,
+        unspecified: false,
       };
     };
     return {
       home: labelFor(rosters.home, model.home[0]),
       away: labelFor(rosters.away, model.away[0]),
     };
-  }, [goalieLog, rosters]);
+  }, [activeGoalieLog, rosters]);
 
   if (!isPlayable) {
     return (
@@ -839,8 +1007,11 @@ export const MatchProtocol = ({ event, user, selectedTeam, openRightPanel }) => 
   const homeName = homeIsMy ? (event?.my_team_name || 'Хозяева') : (event?.opponent_name || 'Хозяева');
   const awayName = homeIsMy ? (event?.opponent_name || 'Гости')  : (event?.my_team_name || 'Гости');
   const homeTeamIdForBlock = event?.home_team_id;
-  const awayTeamIdForBlock = homeIsMy ? event?.opponent_team_id : event?.my_team_id;
-  const awayDisabled = !awayTeamIdForBlock;
+  // Для внешнего соперника (справочник) реального team_id нет — передаём явный
+  // null (game_events.team_id допускает NULL по FK на teams). MatchEventSheet
+  // уже умеет сохранять событие без выбора игрока (ростер соперника недоступен —
+  // просто покажет «Заявка соперника недоступна»).
+  const awayTeamIdForBlock = homeIsMy ? (event?.opponent_team_id ?? null) : event?.my_team_id;
 
   // Кнопка действия (половина ширины для команды, либо во всю ширину для «Броски»).
   const ActionButton = ({ type, label, icon, disabled, onClick }) => {
@@ -848,7 +1019,7 @@ export const MatchProtocol = ({ event, user, selectedTeam, openRightPanel }) => 
       goal: 'text-success',
       penalty: 'text-danger',
       goalie: 'text-content-muted',
-      shots: 'text-brand',
+      shots: 'text-content-muted',
     }[type] || 'border-surface-border text-content-muted';
     return (
       <button
@@ -880,15 +1051,15 @@ export const MatchProtocol = ({ event, user, selectedTeam, openRightPanel }) => 
           </div>
           <div className="grid grid-cols-2 gap-2.5">
             <ActionButton type="goal" label="Гол" icon="shootout_goal" onClick={() => handleOpenAddEvent('goal', homeTeamIdForBlock)} />
-            <ActionButton type="goal" label="Гол" icon="shootout_goal" disabled={awayDisabled} onClick={() => handleOpenAddEvent('goal', awayTeamIdForBlock)} />
+            <ActionButton type="goal" label="Гол" icon="shootout_goal" onClick={() => handleOpenAddEvent('goal', awayTeamIdForBlock)} />
           </div>
           <div className="grid grid-cols-2 gap-2.5">
             <ActionButton type="penalty" label="Штраф" icon="whistle" onClick={() => handleOpenAddEvent('penalty', homeTeamIdForBlock)} />
-            <ActionButton type="penalty" label="Штраф" icon="whistle" disabled={awayDisabled} onClick={() => handleOpenAddEvent('penalty', awayTeamIdForBlock)} />
+            <ActionButton type="penalty" label="Штраф" icon="whistle" onClick={() => handleOpenAddEvent('penalty', awayTeamIdForBlock)} />
           </div>
           <div className="grid grid-cols-2 gap-2.5">
             <ActionButton type="goalie" label="Замена вр." icon="swap" onClick={() => setGoalieSheet({ side: 'home', existingChange: null })} />
-            <ActionButton type="goalie" label="Замена вр." icon="swap" disabled={awayDisabled} onClick={() => setGoalieSheet({ side: 'away', existingChange: null })} />
+            <ActionButton type="goalie" label="Замена вр." icon="swap" onClick={() => setGoalieSheet({ side: 'away', existingChange: null })} />
           </div>
         </>
       )}
@@ -906,8 +1077,10 @@ export const MatchProtocol = ({ event, user, selectedTeam, openRightPanel }) => 
     const Item = ({ info, side }) => {
       const content = (
         <span className={clsx(
-          "block text-center text-[14px] font-bold truncate",
-          info ? "text-content-main" : "text-content-subtle italic"
+          "block text-center text-[14px] truncate",
+          !info ? "font-bold italic text-content-subtle"
+            : info.unspecified ? "font-normal text-content-subtle"
+            : "font-bold text-content-main"
         )}>
           {info ? info.text : 'Вратарь не указан'}
         </span>
@@ -918,7 +1091,7 @@ export const MatchProtocol = ({ event, user, selectedTeam, openRightPanel }) => 
       return (
         <button
           type="button"
-          onClick={() => setGoalieSheet({ side, existingChange: info ? { time_seconds: info.time_seconds, goalie_id: info.goalie_id } : null })}
+          onClick={() => setGoalieSheet({ side, existingChange: info ? { time_seconds: info.time_seconds, goalie_id: info.goalie_id, unspecified: info.unspecified } : null })}
           className="min-w-0 w-full active:scale-[0.98] transition-transform outline-none cursor-pointer"
         >
           {content}
@@ -964,6 +1137,9 @@ export const MatchProtocol = ({ event, user, selectedTeam, openRightPanel }) => 
               myTeamId={myTeamId}
               onEdit={handleEditEvent}
               onDelete={handleDeleteRequest}
+              openRightPanel={openRightPanel}
+              activeBrandColor={activeBrandColor}
+              hasTeamColor={hasTeamColor}
             />
           ))}
         </div>
@@ -987,7 +1163,7 @@ export const MatchProtocol = ({ event, user, selectedTeam, openRightPanel }) => 
         editRole={editRole}
         myTeamId={myTeamId}
         onClose={() => setEventSheet(null)}
-        onSaved={handleEventSaved}
+        onSave={handleEventDraftSave}
       />
 
       <ShotsSheet
@@ -995,11 +1171,12 @@ export const MatchProtocol = ({ event, user, selectedTeam, openRightPanel }) => 
         parentMatch={event}
         regulation={regulation}
         rosters={rosters}
-        goalieLog={goalieLog}
+        goalieLog={activeGoalieLog}
+        shots={draftShots}
         editRole={editRole}
         myTeamId={myTeamId}
         onClose={() => setShowShots(false)}
-        onSaved={handleEventSaved}
+        onSave={(nextShots) => setDraftShots(nextShots)}
       />
 
       <GoalieChangeSheet
@@ -1008,18 +1185,17 @@ export const MatchProtocol = ({ event, user, selectedTeam, openRightPanel }) => 
         existingChange={goalieSheet?.existingChange}
         parentMatch={event}
         rosters={rosters}
-        goalieLog={goalieLog}
+        goalieLog={activeGoalieLog}
         onClose={() => setGoalieSheet(null)}
-        onSaved={() => { fetchGoalieLog(); handleEventSaved(); }}
+        onSave={(entries) => setDraftGoalieLog(entries)}
       />
 
       <ConfirmSheet
         isOpen={!!deleteConfirmEvent}
         onClose={() => setDeleteConfirmEvent(null)}
         onConfirm={handleConfirmDelete}
-        isLoading={isDeleting}
         title="Удалить событие?"
-        description="Запись о событии будет удалена из протокола матча безвозвратно."
+        description="Запись о событии будет удалена из протокола матча."
         confirmLabel="Удалить"
         variant="danger"
       />
@@ -1028,7 +1204,6 @@ export const MatchProtocol = ({ event, user, selectedTeam, openRightPanel }) => 
         isOpen={!!goalieDeleteTarget}
         onClose={() => setGoalieDeleteTarget(null)}
         onConfirm={handleConfirmDeleteGoalie}
-        isLoading={isDeletingGoalie}
         title="Удалить смену вратаря?"
         description="Запись о смене вратаря будет удалена из протокола матча."
         confirmLabel="Удалить"

@@ -40,7 +40,17 @@ WORKDIR /app
 
 # Сначала копируем только файлы зависимостей
 COPY package*.json ./
-RUN npm install
+
+# Ретраи на сетевые обрывы (та же нестабильность сети, что иногда рвёт git clone к GitHub,
+# периодически роняет npm install с "Exit handler never called!" — известный баг npm при
+# обрыве соединения). После установки — жёсткая проверка, что express реально резолвится:
+# без неё npm иногда возвращает успешный код выхода даже после сбоя, и битый node_modules
+# молча уезжает в прод (ровно это уже случилось один раз).
+RUN npm config set fetch-retries 5 && \
+    npm config set fetch-retry-mintimeout 20000 && \
+    npm config set fetch-retry-maxtimeout 120000 && \
+    npm install && \
+    node -e "require.resolve('express')"
 
 # Копируем весь остальной код бэкенда
 COPY . .

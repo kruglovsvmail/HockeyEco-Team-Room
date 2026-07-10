@@ -363,6 +363,7 @@ export const EventDetailsMatch = ({ event, user: userProp, selectedTeam: selecte
                       initialStaffMembers={matchData.staffMembers}
                       initialDraftLines={matchData.draftLines}
                       refreshData={fetchAllMatchData}
+                      openRightPanel={openRightPanel}
                     />
                   </FadeIn>
                 )}
@@ -391,7 +392,7 @@ export const EventDetailsMatch = ({ event, user: userProp, selectedTeam: selecte
               <Suspense fallback={<PageLoader />}>
                 {activeTab === 'stats' && (
                   <FadeIn>
-                    <MatchStats event={localEvent} />
+                    <MatchStats event={localEvent} openRightPanel={openRightPanel} />
                   </FadeIn>
                 )}
               </Suspense>

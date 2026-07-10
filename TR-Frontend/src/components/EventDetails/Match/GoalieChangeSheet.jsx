@@ -3,17 +3,14 @@ import clsx from 'clsx';
 import { BottomSheet } from '../../../ui/BottomSheet';
 import { ButtonLP } from '../../../ui/Button-LP';
 import { TimeMMSSInputLP } from '../../../ui/Input-LP';
-import { getAuthHeaders, getImageUrl } from '../../../utils/helpers';
+import { getImageUrl } from '../../../utils/helpers';
 import { decodeGoalieLog, encodeGoalieLog, setGoalieChange } from './goalieLogModel';
 
 const pad2 = (n) => String(Math.max(0, Math.floor(Number(n) || 0))).padStart(2, '0');
 const parseMM = (s) => Math.max(0, Math.min(99, parseInt(s || '0', 10) || 0));
 const parseSS = (s) => Math.max(0, Math.min(59, parseInt(s || '0', 10) || 0));
 
-export function GoalieChangeSheet({ isOpen, side, parentMatch, rosters, goalieLog, existingChange, onClose, onSaved }) {
-  const eventId = parentMatch?.event_id;
-  const userTeamId = parentMatch?.my_team_id;
-
+export function GoalieChangeSheet({ isOpen, side, parentMatch, rosters, goalieLog, existingChange, onClose, onSave }) {
   const isColorsEnabled = typeof window !== 'undefined' && localStorage.getItem('tr_use_team_colors') !== 'false';
   const teamColor = parentMatch?.team_color;
   const hasTeamColor = isColorsEnabled && !!teamColor;
@@ -37,8 +34,8 @@ export function GoalieChangeSheet({ isOpen, side, parentMatch, rosters, goalieLo
   }, [goalieLog, field, goalies]);
 
   const [time, setTime] = useState('00:00');
-  const [selectedId, setSelectedId] = useState(null); // player_id | null (пустые ворота)
-  const [isSaving, setIsSaving] = useState(false);
+  const [selectedId, setSelectedId] = useState(null); // player_id | null (пустые ворота или не указан)
+  const [isUnspecified, setIsUnspecified] = useState(false); // true = «не указан» (не путать с пустыми воротами)
 
   useEffect(() => {
     if (!isOpen) return;
@@ -46,9 +43,11 @@ export function GoalieChangeSheet({ isOpen, side, parentMatch, rosters, goalieLo
       const t = Number(existingChange.time_seconds) || 0;
       setTime(`${pad2(Math.floor(t / 60))}:${pad2(t % 60)}`);
       setSelectedId(existingChange.goalie_id ?? null);
+      setIsUnspecified(!!existingChange.unspecified);
     } else {
       setTime('00:00');
       setSelectedId(currentGoalieId);
+      setIsUnspecified(false);
     }
   }, [isOpen, existingChange, currentGoalieId]);
 
@@ -60,33 +59,22 @@ export function GoalieChangeSheet({ isOpen, side, parentMatch, rosters, goalieLo
   const teamName = isHome ? homeName : awayName;
   const teamLogo = isHome ? homeLogo : awayLogo;
 
-  const handleSave = async () => {
-    if (isSaving) return;
-    setIsSaving(true);
-    try {
-      const apiUrl = import.meta.env.VITE_API_URL || '';
-      const headers = { 'Content-Type': 'application/json', ...getAuthHeaders() };
-      const [m = '00', s = '00'] = (time || '00:00').split(':');
-      const timeSec = parseMM(m) * 60 + parseSS(s);
-      const model = decodeGoalieLog(goalieLog);
-      const next = setGoalieChange(model, side, {
-        time_seconds: timeSec,
-        goalie_id: selectedId,
-        replaceTime: existingChange ? (Number(existingChange.time_seconds) || 0) : undefined,
-      });
-      const entries = encodeGoalieLog(next);
-      const res = await fetch(`${apiUrl}/api/matches/${eventId}/results/goalie-log`, {
-        method: 'PUT', headers, body: JSON.stringify({ teamId: userTeamId, entries }),
-      });
-      const json = await res.json();
-      if (json.success) {
-        if (onSaved) onSaved();
-        if (onClose) onClose();
-      } else {
-        alert(json.error || 'Не удалось сохранить');
-      }
-    } catch (err) { console.error(err); }
-    finally { setIsSaving(false); }
+  // Смена вратаря больше не летит в бэкенд отсюда — патчим локальный черновик
+  // журнала в MatchProtocol (onSave), реальный PUT уйдёт одним пакетом по
+  // главной кнопке «Сохранить» (или не уйдёт вовсе — по «Отмена»).
+  const handleSave = () => {
+    const [m = '00', s = '00'] = (time || '00:00').split(':');
+    const timeSec = parseMM(m) * 60 + parseSS(s);
+    const model = decodeGoalieLog(goalieLog);
+    const next = setGoalieChange(model, side, {
+      time_seconds: timeSec,
+      goalie_id: selectedId,
+      unspecified: isUnspecified,
+      replaceTime: existingChange ? (Number(existingChange.time_seconds) || 0) : undefined,
+    });
+    const entries = encodeGoalieLog(next);
+    if (onSave) onSave(entries);
+    if (onClose) onClose();
   };
 
   const Tile = ({ active, onClick, children, subtitle, dashed }) => (
@@ -131,15 +119,33 @@ export function GoalieChangeSheet({ isOpen, side, parentMatch, rosters, goalieLo
             {goalies.map(g => (
               <Tile
                 key={g.player_id}
-                active={selectedId === g.player_id}
-                onClick={() => setSelectedId(g.player_id)}
-                subtitle={selectedId === g.player_id ? 'на льду' : null}
+                active={selectedId === g.player_id && !isUnspecified}
+                onClick={() => { setSelectedId(g.player_id); setIsUnspecified(false); }}
+                subtitle={selectedId === g.player_id && !isUnspecified ? 'на льду' : null}
               >
                 {g.jersey_number ?? '?'}
               </Tile>
             ))}
-            <Tile dashed active={selectedId === null} onClick={() => setSelectedId(null)} subtitle={selectedId === null ? 'пустые ворота' : null}>
+            <Tile
+              dashed
+              active={selectedId === null && !isUnspecified}
+              onClick={() => { setSelectedId(null); setIsUnspecified(false); }}
+              subtitle={selectedId === null && !isUnspecified ? 'пустые ворота' : null}
+            >
               ПВ
+            </Tile>
+            {/* «НЕТ» — всегда доступна, вне зависимости от того, заявлены ли вратари:
+                отличаем «не знаем, кто именно сейчас в воротах» от намеренно пустых
+                ворот. Актуально и когда заявки нет вовсе, и когда заявлен только
+                один вратарь из двух, и даже когда заявлены оба, но кто на льду —
+                неизвестно. */}
+            <Tile
+              dashed
+              active={isUnspecified}
+              onClick={() => { setSelectedId(null); setIsUnspecified(true); }}
+              subtitle={isUnspecified ? 'не указан' : null}
+            >
+              НЕТ
             </Tile>
           </div>
         </div>
@@ -147,8 +153,6 @@ export function GoalieChangeSheet({ isOpen, side, parentMatch, rosters, goalieLo
         <ButtonLP
           type="button"
           variant="primary"
-          isLoading={isSaving}
-          disabled={isSaving}
           onClick={handleSave}
           activeColor={activeBrandColor}
         >

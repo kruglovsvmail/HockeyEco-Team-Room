@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useRef } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { Icon } from '../../../ui/Icon';
 import { getImageUrl, getAuthHeaders } from '../../../utils/helpers';
 import { ContainerContent } from '../../../ui/ContainerContent';
@@ -31,6 +31,11 @@ export const MatchInfo = ({
 }) => {
   // localEvent используется для реактивного обновления медиа-ссылок
   const [localEvent, _setLocalEvent] = useState(event);
+  // event — состояние родителя (EventDetailsMatch), которое уже обновляется по
+  // broadcast'у tr-events-updated (например, после сохранения результатов матча).
+  // useState(event) захватывает значение только при монтировании, поэтому без
+  // этого эффекта счёт/статус здесь оставались бы устаревшими до перезахода.
+  useEffect(() => { _setLocalEvent(event); }, [event]);
   const patchLocalEvent = (patch) => {
     _setLocalEvent(prev => ({ ...prev, ...patch }));
     setLocalEvent(prev => ({ ...prev, ...patch }));

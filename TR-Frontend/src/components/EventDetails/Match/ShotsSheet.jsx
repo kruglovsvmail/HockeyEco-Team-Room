@@ -2,10 +2,14 @@ import React, { useState, useEffect, useMemo } from 'react';
 import clsx from 'clsx';
 import { BottomSheet } from '../../../ui/BottomSheet';
 import { ButtonLP } from '../../../ui/Button-LP';
-import { getAuthHeaders, getImageUrl } from '../../../utils/helpers';
-import { PageLoader } from '../../../ui/Loader';
+import { getImageUrl } from '../../../utils/helpers';
 
 const clampShots = (v) => Math.max(0, Math.min(99, Math.floor(Number(v) || 0)));
+
+// game_shots_by_goalie.team_id — NOT NULL, но без FK на teams(id) (в отличие от
+// game_events.team_id / game_goalie_log.*_goalie_id) — сентинел здесь безопасен.
+// Используем его для стороны внешнего соперника без ростера (away_team_id = null).
+const EXTERNAL_TEAM_ID = -1;
 
 // Одна клетка ввода бросков за период. Прямой числовой ввод, без степпера.
 function ShotCell({ value, onChange, activeColor }) {
@@ -33,12 +37,11 @@ function ShotCell({ value, onChange, activeColor }) {
   );
 }
 
-// rosters / goalieLog приходят из родителя (MatchProtocol) — не грузим повторно,
-// чтобы шторка открывалась мгновенно. Сами догружаем только броски.
-export function ShotsSheet({ isOpen, parentMatch, regulation, rosters, goalieLog = [], editRole, myTeamId, onClose, onSaved }) {
-  const eventId = parentMatch?.event_id;
-  const userTeamId = parentMatch?.my_team_id;
-
+// rosters / goalieLog / shots приходят из родителя (MatchProtocol) — черновик
+// матча, который живёт только в памяти до нажатия главной кнопки «Сохранить».
+// Сама шторка ничего не грузит и не шлёт в бэкенд — только патчит черновик
+// через onSave при закрытии.
+export function ShotsSheet({ isOpen, parentMatch, regulation, rosters, goalieLog = [], shots: shotsProp, editRole, myTeamId, onClose, onSave }) {
   // Командное цветовое кодирование (тумблер в SettingsPage). По умолчанию ВКЛ.
   const isColorsEnabled = typeof window !== 'undefined' && localStorage.getItem('tr_use_team_colors') !== 'false';
   const teamColor = parentMatch?.team_color;
@@ -46,35 +49,11 @@ export function ShotsSheet({ isOpen, parentMatch, regulation, rosters, goalieLog
   const activeBrandColor = hasTeamColor ? teamColor : null;
 
   const [shots, setShots] = useState({});
-  const [loading, setLoading] = useState(true);
-  const [isSaving, setIsSaving] = useState(false);
-
-  // ── Загрузка только бросков ─────────────────────────────────────────
+  // Копируем черновик из родителя при каждом открытии шторки — правки внутри
+  // не должны просачиваться наружу, пока не нажата «Сохранить» этой шторки.
   useEffect(() => {
-    if (!isOpen || !eventId || !userTeamId) return;
-    const apiUrl = import.meta.env.VITE_API_URL || '';
-    const headers = getAuthHeaders();
-    const load = async () => {
-      setLoading(true);
-      try {
-        const sRes = await fetch(`${apiUrl}/api/matches/${eventId}/results/goalie-shots?teamId=${userTeamId}`, { headers });
-        const sJson = await sRes.json();
-        if (sJson.success) {
-          const map = {};
-          (sJson.shots || []).forEach(s => {
-            const key = `${s.team_id}_${s.goalie_id == null ? 'null' : s.goalie_id}_${s.period}`;
-            map[key] = Number(s.shots_count) || 0;
-          });
-          setShots(map);
-        }
-      } catch (err) {
-        console.error('Ошибка загрузки бросков:', err);
-      } finally {
-        setLoading(false);
-      }
-    };
-    load();
-  }, [isOpen, eventId, userTeamId]);
+    if (isOpen) setShots(shotsProp || {});
+  }, [isOpen, shotsProp]);
 
   // ── Периоды из regulation ───────────────────────────────────────────
   const PERIODS = useMemo(() => {
@@ -91,13 +70,19 @@ export function ShotsSheet({ isOpen, parentMatch, regulation, rosters, goalieLog
   const goaliesInPlay = useMemo(() => {
     const homeIds = new Set();
     const awayIds = new Set();
+    let homeHasUnspecified = false;
+    let awayHasUnspecified = false;
     (goalieLog || []).forEach(row => {
       if (row.home_goalie_id != null) homeIds.add(row.home_goalie_id);
       if (row.away_goalie_id != null) awayIds.add(row.away_goalie_id);
+      if (row.home_goalie_unspecified) homeHasUnspecified = true;
+      if (row.away_goalie_unspecified) awayHasUnspecified = true;
     });
     return {
       homeList: homeGoalies.filter(g => homeIds.has(g.player_id)),
       awayList: awayGoalies.filter(g => awayIds.has(g.player_id)),
+      homeHasUnspecified,
+      awayHasUnspecified,
     };
   }, [goalieLog, homeGoalies, awayGoalies]);
 
@@ -115,18 +100,19 @@ export function ShotsSheet({ isOpen, parentMatch, regulation, rosters, goalieLog
       return next;
     });
   };
-  // Подчищаем shots: оставляем только актуальные ключи. Если у команды нет
-  // названных вратарей — допускаем командный ключ (goalie_id null).
+  // Подчищаем shots: оставляем только актуальные ключи. Командный ключ
+  // (goalie_id null) допускаем и когда названных вратарей нет вовсе, и когда
+  // часть журнала помечена «не указан» — иначе такие броски тут же стирались бы.
   useEffect(() => {
-    if (loading) return;
+    if (!isOpen) return;
     const valid = new Set();
-    const addTeam = (teamId, list) => {
+    const addTeam = (teamId, list, hasUnspecified) => {
       if (teamId == null) return;
       if (list.length > 0) list.forEach(g => PERIODS.forEach(p => valid.add(shotsKey(teamId, g.player_id, p))));
-      else PERIODS.forEach(p => valid.add(shotsKey(teamId, null, p)));
+      if (list.length === 0 || hasUnspecified) PERIODS.forEach(p => valid.add(shotsKey(teamId, null, p)));
     };
-    addTeam(rosters?.home_team_id, goaliesInPlay.homeList);
-    addTeam(rosters?.away_team_id, goaliesInPlay.awayList);
+    addTeam(rosters?.home_team_id, goaliesInPlay.homeList, goaliesInPlay.homeHasUnspecified);
+    addTeam(rosters?.away_team_id ?? EXTERNAL_TEAM_ID, goaliesInPlay.awayList, goaliesInPlay.awayHasUnspecified);
     setShots(prev => {
       const keys = Object.keys(prev);
       const kept = keys.filter(k => valid.has(k));
@@ -135,7 +121,7 @@ export function ShotsSheet({ isOpen, parentMatch, regulation, rosters, goalieLog
       kept.forEach(k => { next[k] = prev[k]; });
       return next;
     });
-  }, [loading, goaliesInPlay, PERIODS, rosters?.home_team_id, rosters?.away_team_id]);
+  }, [isOpen, goaliesInPlay, PERIODS, rosters?.home_team_id, rosters?.away_team_id]);
 
   // ── Имена + лого команд ─────────────────────────────────────────────
   const homeIsMy = parentMatch?.home_team_id === parentMatch?.my_team_id;
@@ -145,38 +131,11 @@ export function ShotsSheet({ isOpen, parentMatch, regulation, rosters, goalieLog
   const awayLogo = homeIsMy ? parentMatch?.opponent_logo_url : parentMatch?.my_team_logo_url;
 
   // ── Сохранение ──────────────────────────────────────────────────────
-  const handleSave = async () => {
-    if (isSaving) return;
-    setIsSaving(true);
-    try {
-      const apiUrl = import.meta.env.VITE_API_URL || '';
-      const headers = { 'Content-Type': 'application/json', ...getAuthHeaders() };
-
-      const shotsEntries = [];
-      Object.entries(shots).forEach(([key, val]) => {
-        if (val === '' || val == null) return;
-        const [teamId, gid, period] = key.split('_');
-        shotsEntries.push({
-          goalie_id: gid === 'null' ? null : Number(gid),
-          team_id: Number(teamId),
-          period,
-          shots_count: Number(val) || 0,
-        });
-      });
-      const shotsBody = { teamId: userTeamId, entries: shotsEntries };
-
-      const res = await fetch(`${apiUrl}/api/matches/${eventId}/results/goalie-shots`, {
-        method: 'PUT', headers, body: JSON.stringify(shotsBody),
-      });
-      const json = await res.json();
-      if (json.success) {
-        if (onSaved) onSaved();
-        if (onClose) onClose();
-      } else {
-        alert(json.error || 'Не удалось сохранить');
-      }
-    } catch (err) { console.error(err); }
-    finally { setIsSaving(false); }
+  // Просто патчим черновик в MatchProtocol — реальный PUT уйдёт одним пакетом
+  // по главной кнопке «Сохранить» (или не уйдёт вовсе — по «Отмена»).
+  const handleSave = () => {
+    if (onSave) onSave(shots);
+    if (onClose) onClose();
   };
 
   // ── Рендер одной карточки бросков (по вратарю или по команде) ────────
@@ -206,15 +165,18 @@ export function ShotsSheet({ isOpen, parentMatch, regulation, rosters, goalieLog
     const cards = [];
     const addSide = (side) => {
       const isHome = side === 'home';
-      const teamId = isHome ? rosters?.home_team_id : rosters?.away_team_id;
+      const teamId = isHome ? rosters?.home_team_id : (rosters?.away_team_id ?? EXTERNAL_TEAM_ID);
       const name = isHome ? homeName : awayName;
       const logo = isHome ? homeLogo : awayLogo;
       const list = isHome ? goaliesInPlay.homeList : goaliesInPlay.awayList;
+      const hasUnspecified = isHome ? goaliesInPlay.homeHasUnspecified : goaliesInPlay.awayHasUnspecified;
       const show = editRole !== 'opponent' || Number(teamId) === Number(myTeamId);
       if (!show) return;
-      if (list.length > 0) {
-        list.forEach(g => cards.push({ teamId, goalieId: g.player_id, title: `${[g.last_name, g.first_name].filter(Boolean).join(' ') || `id${g.player_id}`} #${g.jersey_number ?? '?'}`, logo }));
-      } else if (teamId != null) {
+      list.forEach(g => cards.push({ teamId, goalieId: g.player_id, title: `${[g.last_name, g.first_name].filter(Boolean).join(' ') || `id${g.player_id}`} #${g.jersey_number ?? '?'}`, logo }));
+      // Карточка «без привязки к вратарю» — либо когда вообще никого не назвали,
+      // либо когда часть журнала помечена «не указан» (даже если другую часть
+      // отстоял конкретный вратарь) — иначе броски за эти периоды некуда вводить.
+      if ((list.length === 0 || hasUnspecified) && teamId != null) {
         cards.push({ teamId, goalieId: null, title: `Вратарь ${name}`, logo });
       }
     };
@@ -234,32 +196,24 @@ export function ShotsSheet({ isOpen, parentMatch, regulation, rosters, goalieLog
           <p className="text-[10px] text-content-subtle mt-1">Указываются броски нанесенные не командой, а броски нанесенные по каждому вратарю</p>
         </div>
 
-        {loading ? (
-          <PageLoader className="min-h-[150px]" />
-        ) : (
-          <>
-            <div className="flex flex-col gap-3">
-              {allGoalieCards.length > 0
-                ? allGoalieCards.map(c => renderShotsCard(c.teamId, c.goalieId, c.title, c.logo))
-                : (
-                  <div className="text-[10px] text-content-subtle uppercase font-bold py-3 text-center bg-surface-level1 border border-dashed border-surface-border rounded-xl">
-                    Команда недоступна
-                  </div>
-                )}
-            </div>
+        <div className="flex flex-col gap-3">
+          {allGoalieCards.length > 0
+            ? allGoalieCards.map(c => renderShotsCard(c.teamId, c.goalieId, c.title, c.logo))
+            : (
+              <div className="text-[10px] text-content-subtle uppercase font-bold py-3 text-center bg-surface-level1 border border-dashed border-surface-border rounded-xl">
+                Команда недоступна
+              </div>
+            )}
+        </div>
 
-            <ButtonLP
-              type="button"
-              variant="primary"
-              isLoading={isSaving}
-              disabled={isSaving}
-              onClick={handleSave}
-              activeColor={activeBrandColor}
-            >
-              Сохранить
-            </ButtonLP>
-          </>
-        )}
+        <ButtonLP
+          type="button"
+          variant="primary"
+          onClick={handleSave}
+          activeColor={activeBrandColor}
+        >
+          Сохранить
+        </ButtonLP>
       </div>
     </BottomSheet>
   );

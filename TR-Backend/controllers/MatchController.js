@@ -533,12 +533,15 @@ export const getMatchStats = async (req, res) => {
         -- через game_goalie_log (берём последнюю запись лога ДО момента гола).
         -- Используем именно журнал, а не game_events.against_goalie_id, т.к. в
         -- секретарской панели TR это поле не заполняется.
+        -- team_id у события может быть NULL (сторона внешнего соперника без
+        -- команды в системе) — сравниваем через IS NOT DISTINCT FROM, иначе
+        -- CASE всегда уходит в ELSE и голы внешнего соперника считаются «за дом».
         SELECT DISTINCT ON (ge.id)
           ge.id AS event_id,
           ge.team_id AS scoring_team_id,
-          CASE WHEN ge.team_id = gi.home_team_id THEN gi.away_team_id ELSE gi.home_team_id END AS conceding_team_id,
+          CASE WHEN ge.team_id IS NOT DISTINCT FROM gi.home_team_id THEN gi.away_team_id ELSE gi.home_team_id END AS conceding_team_id,
           COALESCE(ge.from_shot, true) AS from_shot,
-          CASE WHEN ge.team_id = gi.home_team_id THEN gl.away_goalie_id ELSE gl.home_goalie_id END AS conceding_goalie_id
+          CASE WHEN ge.team_id IS NOT DISTINCT FROM gi.home_team_id THEN gl.away_goalie_id ELSE gl.home_goalie_id END AS conceding_goalie_id
         FROM "public"."game_events" ge
         CROSS JOIN game_info gi
         JOIN "public"."game_goalie_log" gl
@@ -589,16 +592,22 @@ export const getMatchStats = async (req, res) => {
         COALESCE(heng.empty_net_goals, 0)::int AS home_empty_net_goals,
         COALESCE(aeng.empty_net_goals, 0)::int AS away_empty_net_goals
       FROM game_info gi
-      LEFT JOIN goal_stats hg    ON hg.team_id = gi.home_team_id
-      LEFT JOIN goal_stats ag    ON ag.team_id = gi.away_team_id
-      LEFT JOIN penalty_stats hp ON hp.team_id = gi.home_team_id
-      LEFT JOIN penalty_stats ap ON ap.team_id = gi.away_team_id
-      LEFT JOIN shots_faced_stats   hsf  ON hsf.team_id = gi.home_team_id
-      LEFT JOIN shots_faced_stats   asf  ON asf.team_id = gi.away_team_id
-      LEFT JOIN ga_from_shot_stats  hga  ON hga.conceding_team_id = gi.home_team_id
-      LEFT JOIN ga_from_shot_stats  aga  ON aga.conceding_team_id = gi.away_team_id
-      LEFT JOIN empty_net_goals_scored heng ON heng.team_id = gi.home_team_id
-      LEFT JOIN empty_net_goals_scored aeng ON aeng.team_id = gi.away_team_id;
+      -- team_id в game_events допускает NULL (сторона внешнего соперника) —
+      -- сравниваем через IS NOT DISTINCT FROM, иначе такие строки не находят
+      -- пару и статистика внешнего соперника молча теряется.
+      -- game_shots_by_goalie.team_id, наоборот, NOT NULL — там для внешней
+      -- стороны используется сентинел -1 (см. ShotsSheet.jsx), поэтому здесь
+      -- NULL away_team_id приводим к тому же -1 через COALESCE.
+      LEFT JOIN goal_stats hg    ON hg.team_id IS NOT DISTINCT FROM gi.home_team_id
+      LEFT JOIN goal_stats ag    ON ag.team_id IS NOT DISTINCT FROM gi.away_team_id
+      LEFT JOIN penalty_stats hp ON hp.team_id IS NOT DISTINCT FROM gi.home_team_id
+      LEFT JOIN penalty_stats ap ON ap.team_id IS NOT DISTINCT FROM gi.away_team_id
+      LEFT JOIN shots_faced_stats   hsf  ON hsf.team_id = COALESCE(gi.home_team_id, -1)
+      LEFT JOIN shots_faced_stats   asf  ON asf.team_id = COALESCE(gi.away_team_id, -1)
+      LEFT JOIN ga_from_shot_stats  hga  ON hga.conceding_team_id IS NOT DISTINCT FROM gi.home_team_id
+      LEFT JOIN ga_from_shot_stats  aga  ON aga.conceding_team_id IS NOT DISTINCT FROM gi.away_team_id
+      LEFT JOIN empty_net_goals_scored heng ON heng.team_id IS NOT DISTINCT FROM gi.home_team_id
+      LEFT JOIN empty_net_goals_scored aeng ON aeng.team_id IS NOT DISTINCT FROM gi.away_team_id;
     `;
  
     // ── 2. Статистика полевых игроков ──────────────────────────────────

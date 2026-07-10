@@ -9,7 +9,7 @@ const TABS = [
   { value: 'protocol', label: 'Ход матча' },
 ];
 
-export const TournamentGamePanel = ({ data }) => {
+export const TournamentGamePanel = ({ data, openRightPanel }) => {
   const [activeTab, setActiveTab] = useState('stats');
 
   const { game, myTeamId, hasTeamColor, activeBrandColor } = data;
@@ -47,8 +47,8 @@ export const TournamentGamePanel = ({ data }) => {
 
         {/* Контент вкладок */}
         <div className="mt-4">
-          {activeTab === 'stats'    && <MatchStats    event={event} />}
-          {activeTab === 'protocol' && <MatchProtocol event={event} />}
+          {activeTab === 'stats'    && <MatchStats    event={event} openRightPanel={openRightPanel} />}
+          {activeTab === 'protocol' && <MatchProtocol event={event} openRightPanel={openRightPanel} />}
         </div>
 
       </div>

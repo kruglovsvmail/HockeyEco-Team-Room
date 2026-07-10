@@ -157,8 +157,14 @@ const ScrollFade = ({ children, onTouchStart, onTouchMove }) => (
 // ═══════════════════════════════════════════════════════════════════════
 // СТРОКА ИГРОКА (левая фиксированная колонка)
 // ═══════════════════════════════════════════════════════════════════════
-const PlayerCell = ({ player, idx }) => (
-  <div className="h-14 flex items-center px-2 border-b border-surface-border last:border-0 text-left font-semibold text-content-main">
+const PlayerCell = ({ player, idx, onClick }) => (
+  <div
+    onClick={onClick}
+    className={clsx(
+      "h-14 flex items-center px-2 border-b border-surface-border last:border-0 text-left font-semibold text-content-main",
+      onClick && "cursor-pointer active:opacity-70 transition-opacity"
+    )}
+  >
     <div className="w-4 text-[10px] font-mono text-content-muted text-center shrink-0 opacity-50">{idx + 1}</div>
     <div className="flex items-center gap-2 min-w-0 flex-1 pl-1">
       <div className="relative shrink-0">
@@ -185,8 +191,13 @@ const PlayerCell = ({ player, idx }) => (
 // ═══════════════════════════════════════════════════════════════════════
 // АККОРДЕОН ИГРОКОВ ОДНОЙ КОМАНДЫ
 // ═══════════════════════════════════════════════════════════════════════
-const PlayerAccordion = ({ teamName, teamLogo, goalies, skaters, rosterSubmitted, hasTeamColor, activeBrandColor }) => {
+const PlayerAccordion = ({ teamName, teamLogo, goalies, skaters, rosterSubmitted, hasTeamColor, activeBrandColor, openRightPanel }) => {
   const [isExpanded, setIsExpanded] = useState(false);
+
+  const handlePlayerClick = (player) => {
+    if (!openRightPanel || !player?.player_id) return;
+    openRightPanel('playerProfile', { playerId: player.player_id, activeBrandColor, hasTeamColor }, 'Профиль игрока');
+  };
 
   // Сортировка полевых
   const [skaterSort, setSkaterSort] = useState({ key: 'points', order: 'desc' });
@@ -249,7 +260,7 @@ const PlayerAccordion = ({ teamName, teamLogo, goalies, skaters, rosterSubmitted
               <div className="pl-3">Вратарь</div>
             </div>
             {sortedGoalies.map((row, idx) => (
-              <PlayerCell key={row.player_id} player={row} idx={idx} />
+              <PlayerCell key={row.player_id} player={row} idx={idx} onClick={() => handlePlayerClick(row)} />
             ))}
           </div>
           <ScrollFade onTouchStart={handleTouchIsolation} onTouchMove={handleTouchIsolation}>
@@ -285,7 +296,7 @@ const PlayerAccordion = ({ teamName, teamLogo, goalies, skaters, rosterSubmitted
               <div className="pl-3">Игрок</div>
             </div>
             {sortedSkaters.map((row, idx) => (
-              <PlayerCell key={row.player_id} player={row} idx={idx} />
+              <PlayerCell key={row.player_id} player={row} idx={idx} onClick={() => handlePlayerClick(row)} />
             ))}
           </div>
           <ScrollFade onTouchStart={handleTouchIsolation} onTouchMove={handleTouchIsolation}>
@@ -326,7 +337,7 @@ const PlayerAccordion = ({ teamName, teamLogo, goalies, skaters, rosterSubmitted
 // ═══════════════════════════════════════════════════════════════════════
 // ОСНОВНОЙ КОМПОНЕНТ СТАТИСТИКИ МАТЧА
 // ═══════════════════════════════════════════════════════════════════════
-export const MatchStats = ({ event }) => {
+export const MatchStats = ({ event, openRightPanel }) => {
   const [stats, setStats] = useState(null);
   const [loading, setLoading] = useState(true);
   const [isTeamStatsExpanded, setIsTeamStatsExpanded] = useState(true);
@@ -428,6 +439,7 @@ export const MatchStats = ({ event }) => {
         rosterSubmitted={!!homeStats?.roster_submitted}
         hasTeamColor={hasTeamColor}
         activeBrandColor={activeBrandColor}
+        openRightPanel={openRightPanel}
       />
 
       {/* ── Блок 3: Аккордеон гостевой команды (всегда) ──── */}
@@ -439,6 +451,7 @@ export const MatchStats = ({ event }) => {
         rosterSubmitted={!!awayStats?.roster_submitted}
         hasTeamColor={hasTeamColor}
         activeBrandColor={activeBrandColor}
+        openRightPanel={openRightPanel}
       />
 
     </FadeIn>

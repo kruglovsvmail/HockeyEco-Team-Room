@@ -1,22 +1,27 @@
 import pool from '../config/db.js';
 import { sendPushToTeamExcept, getMatchInfo } from '../services/pushService.js';
 
+const EDIT_WINDOW_HOURS = 72;
+
 // Гард на запись: матч существует, неофициальный, инициатор — текущая команда,
-// время матча уже наступило. Используется во всех write-эндпоинтах результатов.
-// Возвращает роль редактора: 'initiator' (полный доступ) или 'opponent'
-// (только свои данные — если матч-флаг opponent_can_edit включён). Конкретные
-// ограничения для соперника навешиваются в самих обработчиках: add/delete/
-// regulation/goalie-log — только инициатору; updateEvent/goalie-shots/publish —
-// обоим, но со скоупом «своя команда».
-const assertEditable = async (client, gameId, teamId) => {
+// время матча уже наступило и не прошло больше EDIT_WINDOW_HOURS часов с начала
+// (глобальный админ — исключение, для него окно не действует). Используется во
+// всех write-эндпоинтах результатов. Возвращает роль редактора: 'initiator'
+// (полный доступ) или 'opponent' (только свои данные — если матч-флаг
+// opponent_can_edit включён). Конкретные ограничения для соперника навешиваются
+// в самих обработчиках: add/delete/regulation/goalie-log — только инициатору;
+// updateEvent/goalie-shots/publish — обоим, но со скоупом «своя команда».
+const assertEditable = async (client, gameId, teamId, userId) => {
   const { rows } = await client.query(
     `SELECT g.game_type, g.status, g.initiator_team_id, g.game_date,
             g.home_team_id, g.away_team_id,
-            COALESCE(gt.opponent_can_edit, true) AS opponent_can_edit
+            COALESCE(gt.opponent_can_edit, true) AS opponent_can_edit,
+            u.global_role
        FROM "public"."games" g
        LEFT JOIN "public"."game_timers" gt ON gt.game_id = g.id
+       LEFT JOIN "public"."users" u ON u.id = $2
       WHERE g.id = $1`,
-    [gameId]
+    [gameId, userId]
   );
   if (rows.length === 0) {
     return { ok: false, code: 404, error: 'Матч не найден' };
@@ -28,8 +33,15 @@ const assertEditable = async (client, gameId, teamId) => {
   if (new Date(g.game_date) > new Date()) {
     return { ok: false, code: 400, error: 'Результаты можно вносить только после начала матча' };
   }
+  const isAdmin = g.global_role === 'admin';
+  if (!isAdmin) {
+    const editWindowEnd = new Date(g.game_date).getTime() + EDIT_WINDOW_HOURS * 60 * 60 * 1000;
+    if (Date.now() > editWindowEnd) {
+      return { ok: false, code: 403, error: `Редактирование результатов доступно только в течение ${EDIT_WINDOW_HOURS} часов после начала матча` };
+    }
+  }
   const tid = Number(teamId);
-  if (Number(g.initiator_team_id) === tid) {
+  if (isAdmin || Number(g.initiator_team_id) === tid) {
     return { ok: true, role: 'initiator', game: g };
   }
   const isParticipant = Number(g.home_team_id) === tid || Number(g.away_team_id) === tid;
@@ -41,34 +53,49 @@ const assertEditable = async (client, gameId, teamId) => {
 
 // ── Журнал вратарей: combined-строки ↔ независимые таймлайны сторон ──────────
 // Нужно, чтобы соперник мог менять только СВОЮ колонку (home/away), не затирая
-// вратаря другой команды. Логика зеркалит фронтовый goalieLogModel.js.
+// вратаря другой команды. Логика зеркалит фронтовый goalieLogModel.js, включая
+// unspecified-флаг («не указан» — отдельно от NULL=пустые ворота, т.к. FK на
+// users(id) не пропускает sentinel-значения вроде -1).
 function decodeGoalieLog(rows) {
   const sorted = (rows || [])
-    .map(r => ({ t: Number(r.time_seconds) || 0, h: r.home_goalie_id ?? null, a: r.away_goalie_id ?? null }))
+    .map(r => ({
+      t: Number(r.time_seconds) || 0,
+      h: r.home_goalie_id ?? null, a: r.away_goalie_id ?? null,
+      hu: !!r.home_goalie_unspecified, au: !!r.away_goalie_unspecified,
+    }))
     .sort((x, y) => x.t - y.t);
   const home = [];
   const away = [];
   let ph; let pa;
+  const keyOf = (id, u) => `${id}|${u}`;
   for (const r of sorted) {
-    if (ph === undefined || r.h !== ph) { home.push({ time_seconds: r.t, goalie_id: r.h }); ph = r.h; }
-    if (pa === undefined || r.a !== pa) { away.push({ time_seconds: r.t, goalie_id: r.a }); pa = r.a; }
+    const hKey = keyOf(r.h, r.hu);
+    const aKey = keyOf(r.a, r.au);
+    if (ph === undefined || hKey !== ph) { home.push({ time_seconds: r.t, goalie_id: r.h, unspecified: r.hu }); ph = hKey; }
+    if (pa === undefined || aKey !== pa) { away.push({ time_seconds: r.t, goalie_id: r.a, unspecified: r.au }); pa = aKey; }
   }
   return { home, away };
 }
 function sampleGoalieAt(timeline, t) {
-  let v = null;
-  for (const p of timeline) { if (p.time_seconds <= t) v = p.goalie_id; else break; }
+  let v = { goalie_id: null, unspecified: false };
+  for (const p of timeline) { if (p.time_seconds <= t) v = p; else break; }
   return v;
 }
 function encodeGoalieLog(model) {
   const home = [...(model.home || [])].sort((a, b) => a.time_seconds - b.time_seconds);
   const away = [...(model.away || [])].sort((a, b) => a.time_seconds - b.time_seconds);
   const times = Array.from(new Set([...home, ...away].map(p => p.time_seconds))).sort((a, b) => a - b);
-  return times.map(t => ({
-    time_seconds: t,
-    home_goalie_id: sampleGoalieAt(home, t),
-    away_goalie_id: sampleGoalieAt(away, t),
-  }));
+  return times.map(t => {
+    const h = sampleGoalieAt(home, t);
+    const a = sampleGoalieAt(away, t);
+    return {
+      time_seconds: t,
+      home_goalie_id: h.goalie_id,
+      away_goalie_id: a.goalie_id,
+      home_goalie_unspecified: h.unspecified,
+      away_goalie_unspecified: a.unspecified,
+    };
+  });
 }
 
 // =============================================================================
@@ -154,16 +181,19 @@ export const addMatchEvent = async (req, res) => {
   if (time_seconds == null || Number(time_seconds) < 0) {
     return res.status(400).json({ success: false, error: 'Некорректное время события' });
   }
-  if (!team_id) {
+  if (team_id === undefined) {
     return res.status(400).json({ success: false, error: 'Не указана команда события' });
   }
+  // team_id === null допустим — сторона внешнего соперника (нет реальной команды
+  // в системе), game_events.team_id допускает NULL по FK на teams.
+  const eventTeamId = team_id != null ? Number(team_id) : null;
 
   // from_shot имеет смысл только для голов; для прочих типов — true (default БД).
   const fromShotValue = event_type === 'goal' ? (from_shot !== false) : true;
 
   const client = await pool.connect();
   try {
-    const check = await assertEditable(client, gameId, teamId);
+    const check = await assertEditable(client, gameId, teamId, req.user.id);
     if (!check.ok) return res.status(check.code).json({ success: false, error: check.error });
     if (check.role !== 'initiator') {
       return res.status(403).json({ success: false, error: 'Добавлять события может только команда-инициатор' });
@@ -180,7 +210,7 @@ export const addMatchEvent = async (req, res) => {
       ) VALUES ($1,$2,$3,$4,$5, $6,$7,$8,$9, $10,$11,$12,$13,$14, $15,$16)
       RETURNING id
     `, [
-      gameId, String(period), Number(time_seconds), event_type, Number(team_id),
+      gameId, String(period), Number(time_seconds), event_type, eventTeamId,
       scorer_id || null, assist1_id || null, assist2_id || null, goal_strength || null,
       penalty_player_id || null, penalty_violation || null, penalty_minutes || null, penalty_class || null, penalty_end_time || null,
       against_goalie_id || null, fromShotValue
@@ -243,15 +273,17 @@ export const updateMatchEvent = async (req, res) => {
   if (time_seconds == null || Number(time_seconds) < 0) {
     return res.status(400).json({ success: false, error: 'Некорректное время события' });
   }
-  if (!team_id) {
+  if (team_id === undefined) {
     return res.status(400).json({ success: false, error: 'Не указана команда события' });
   }
+  // team_id === null допустим — сторона внешнего соперника.
+  const eventTeamId = team_id != null ? Number(team_id) : null;
 
   const fromShotValue = event_type === 'goal' ? (from_shot !== false) : true;
 
   const client = await pool.connect();
   try {
-    const check = await assertEditable(client, gameId, teamId);
+    const check = await assertEditable(client, gameId, teamId, req.user.id);
     if (!check.ok) return res.status(check.code).json({ success: false, error: check.error });
 
     // Тянем существующее событие целиком — для проверки и для скоупа соперника
@@ -300,7 +332,7 @@ export const updateMatchEvent = async (req, res) => {
       pmReplaceTeam = myTeamId; // соперник правит только своё +/-
     } else {
       vals = [
-        String(period), Number(time_seconds), event_type, Number(team_id),
+        String(period), Number(time_seconds), event_type, eventTeamId,
         scorer_id || null, assist1_id || null, assist2_id || null, goal_strength || null,
         penalty_player_id || null, penalty_violation || null, penalty_minutes || null, penalty_class || null, penalty_end_time || null,
         against_goalie_id || null, rowId, fromShotValue,
@@ -385,7 +417,7 @@ export const deleteMatchEvent = async (req, res) => {
   }
   const client = await pool.connect();
   try {
-    const check = await assertEditable(client, gameId, teamId);
+    const check = await assertEditable(client, gameId, teamId, req.user.id);
     if (!check.ok) return res.status(check.code).json({ success: false, error: check.error });
     if (check.role !== 'initiator') {
       return res.status(403).json({ success: false, error: 'Удалять события может только команда-инициатор' });
@@ -414,7 +446,8 @@ export const getGoalieLog = async (req, res) => {
   try {
     const gameId = Number(req.params.eventId);
     const { rows } = await pool.query(`
-      SELECT id, time_seconds, home_goalie_id, away_goalie_id
+      SELECT id, time_seconds, home_goalie_id, away_goalie_id,
+             home_goalie_unspecified, away_goalie_unspecified
       FROM "public"."game_goalie_log"
       WHERE game_id = $1
       ORDER BY time_seconds ASC, id ASC
@@ -440,7 +473,7 @@ export const saveGoalieLog = async (req, res) => {
   }
   const client = await pool.connect();
   try {
-    const check = await assertEditable(client, gameId, teamId);
+    const check = await assertEditable(client, gameId, teamId, req.user.id);
     if (!check.ok) return res.status(check.code).json({ success: false, error: check.error });
 
     await client.query('BEGIN');
@@ -452,7 +485,7 @@ export const saveGoalieLog = async (req, res) => {
       const mySide = Number(check.game.home_team_id) === Number(teamId) ? 'home' : 'away';
       const otherSide = mySide === 'home' ? 'away' : 'home';
       const { rows: existingRows } = await client.query(
-        'SELECT time_seconds, home_goalie_id, away_goalie_id FROM "public"."game_goalie_log" WHERE game_id = $1',
+        'SELECT time_seconds, home_goalie_id, away_goalie_id, home_goalie_unspecified, away_goalie_unspecified FROM "public"."game_goalie_log" WHERE game_id = $1',
         [gameId]
       );
       const existing = decodeGoalieLog(existingRows);
@@ -463,14 +496,16 @@ export const saveGoalieLog = async (req, res) => {
     await client.query('DELETE FROM "public"."game_goalie_log" WHERE game_id = $1', [gameId]);
 
     if (finalEntries.length > 0) {
-      const valuesSql = finalEntries.map((_, i) => `($1, $${i*3+2}, $${i*3+3}, $${i*3+4})`).join(',');
+      const valuesSql = finalEntries.map((_, i) => `($1, $${i*5+2}, $${i*5+3}, $${i*5+4}, $${i*5+5}, $${i*5+6})`).join(',');
       const flat = finalEntries.flatMap(e => [
         Number(e.time_seconds) || 0,
         e.home_goalie_id || null,
-        e.away_goalie_id || null
+        e.away_goalie_id || null,
+        !!e.home_goalie_unspecified,
+        !!e.away_goalie_unspecified,
       ]);
       await client.query(
-        `INSERT INTO "public"."game_goalie_log" (game_id, time_seconds, home_goalie_id, away_goalie_id) VALUES ${valuesSql}`,
+        `INSERT INTO "public"."game_goalie_log" (game_id, time_seconds, home_goalie_id, away_goalie_id, home_goalie_unspecified, away_goalie_unspecified) VALUES ${valuesSql}`,
         [gameId, ...flat]
       );
     }
@@ -529,7 +564,7 @@ export const saveGoalieShots = async (req, res) => {
   }
   const client = await pool.connect();
   try {
-    const check = await assertEditable(client, gameId, teamId);
+    const check = await assertEditable(client, gameId, teamId, req.user.id);
     if (!check.ok) return res.status(check.code).json({ success: false, error: check.error });
 
     // Соперник может вводить броски только по своему вратарю (своей команде).
@@ -605,7 +640,7 @@ export const saveRegulation = async (req, res) => {
 
   const client = await pool.connect();
   try {
-    const check = await assertEditable(client, gameId, teamId);
+    const check = await assertEditable(client, gameId, teamId, req.user.id);
     if (!check.ok) return res.status(check.code).json({ success: false, error: check.error });
     if (check.role !== 'initiator') {
       return res.status(403).json({ success: false, error: 'Настройки матча меняет только команда-инициатор' });
@@ -683,9 +718,12 @@ export const saveRegulation = async (req, res) => {
 };
 
 // =============================================================================
-// ПУБЛИКАЦИЯ РЕЗУЛЬТАТОВ — переводит статус в finished
+// ПУБЛИКАЦИЯ РЕЗУЛЬТАТОВ — переводит статус в finished и пересчитывает счёт.
 // Доступно из finished_no_result и scheduled (на случай если ленивый апдейт
-// статуса ещё не сработал в этой сессии).
+// статуса ещё не сработал в этой сессии), а также из finished — публикация
+// больше не одноразовая: кнопка «Сохранить» в режиме правки после уже
+// опубликованного матча повторно дёргает этот же эндпоинт, чтобы пересчитать
+// счёт по свежим событиям, не откатывая статус в неопубликованный.
 // =============================================================================
 export const publishMatchResults = async (req, res) => {
   const gameId = Number(req.params.eventId);
@@ -695,7 +733,7 @@ export const publishMatchResults = async (req, res) => {
   }
   const client = await pool.connect();
   try {
-    const check = await assertEditable(client, gameId, teamId);
+    const check = await assertEditable(client, gameId, teamId, req.user.id);
     if (!check.ok) return res.status(check.code).json({ success: false, error: check.error });
 
     // При публикации пересчитываем счёт из game_events (event_type='goal').
@@ -709,11 +747,14 @@ export const publishMatchResults = async (req, res) => {
              ), 0),
              away_score = COALESCE((
                SELECT COUNT(*)::int FROM "public"."game_events" ge
-                WHERE ge.game_id = g.id AND ge.event_type = 'goal' AND ge.team_id = g.away_team_id
+                -- Для внешнего соперника away_team_id = NULL в games, а события гостей
+                -- сохраняются с team_id = NULL тоже (FK на teams допускает NULL) —
+                -- обычное "=" никогда не совпадёт с NULL, поэтому IS NOT DISTINCT FROM.
+                WHERE ge.game_id = g.id AND ge.event_type = 'goal' AND ge.team_id IS NOT DISTINCT FROM g.away_team_id
              ), 0)
        WHERE g.id = $1
          AND g.game_type <> 'official'
-         AND g.status IN ('finished_no_result', 'scheduled')
+         AND g.status IN ('finished_no_result', 'scheduled', 'finished')
        RETURNING id, status, home_score, away_score
     `, [gameId]);
 
