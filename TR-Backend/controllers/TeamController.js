@@ -1,4 +1,4 @@
-import pool from '../config/db.js';
+﻿import pool from '../config/db.js';
 import s3 from '../config/s3.js';
 import path from 'path';
 import { PERMISSIONS } from '../utils/permissions.js';
@@ -6,7 +6,7 @@ import { processAvatar } from '../utils/imageProcessor.js';
 import { sendPushToTeamExcept } from '../services/pushService.js';
 
 /**
- * Внутренняя функция для проверки гранулярных прав доступа и подписки
+ * Р’РЅСѓС‚СЂРµРЅРЅСЏСЏ С„СѓРЅРєС†РёСЏ РґР»СЏ РїСЂРѕРІРµСЂРєРё РіСЂР°РЅСѓР»СЏСЂРЅС‹С… РїСЂР°РІ РґРѕСЃС‚СѓРїР° Рё РїРѕРґРїРёСЃРєРё
  */
 async function checkPermissionInternal(userId, teamId, permissionKey, client = pool) {
   if (!userId) return false;
@@ -71,12 +71,12 @@ async function checkPermissionInternal(userId, teamId, permissionKey, client = p
   });
 }
 
-// Получение всех команд текущего пользователя
+// РџРѕР»СѓС‡РµРЅРёРµ РІСЃРµС… РєРѕРјР°РЅРґ С‚РµРєСѓС‰РµРіРѕ РїРѕР»СЊР·РѕРІР°С‚РµР»СЏ
 export const getMyTeams = async (req, res) => {
     try {
         const userId = req.user.id;
 
-        // 1. Базовый список команд пользователя
+        // 1. Р‘Р°Р·РѕРІС‹Р№ СЃРїРёСЃРѕРє РєРѕРјР°РЅРґ РїРѕР»СЊР·РѕРІР°С‚РµР»СЏ
         const teamsQuery = `
             SELECT DISTINCT t.id, t.name, t.short_name, t.logo_url, t.city, t.description,
                             t.jersey_dark_url, t.jersey_light_url, t.color_home_1, t.color_home_2,
@@ -95,7 +95,7 @@ export const getMyTeams = async (req, res) => {
 
         const teamIds = teams.map(t => t.id);
 
-        // 2. Роли пользователя в командах (team_roles)
+        // 2. Р РѕР»Рё РїРѕР»СЊР·РѕРІР°С‚РµР»СЏ РІ РєРѕРјР°РЅРґР°С… (team_roles)
         const teamRolesRes = await pool.query(`
             SELECT tm.team_id, tr.role
             FROM team_roles tr
@@ -103,7 +103,7 @@ export const getMyTeams = async (req, res) => {
             WHERE tm.user_id = $1 AND tm.team_id = ANY($2) AND tr.left_at IS NULL AND tm.left_at IS NULL
         `, [userId, teamIds]);
 
-        // 3. Роли пользователя через клуб (club_roles → команды клуба)
+        // 3. Р РѕР»Рё РїРѕР»СЊР·РѕРІР°С‚РµР»СЏ С‡РµСЂРµР· РєР»СѓР± (club_roles в†’ РєРѕРјР°РЅРґС‹ РєР»СѓР±Р°)
         const clubRolesRes = await pool.query(`
             SELECT t.id AS team_id, cr.role
             FROM club_roles cr
@@ -112,7 +112,7 @@ export const getMyTeams = async (req, res) => {
             WHERE cr.user_id = $1 AND t.id = ANY($2) AND cr.left_at IS NULL AND cm.left_at IS NULL
         `, [userId, teamIds]);
 
-        // 4. Статус подписки пользователя
+        // 4. РЎС‚Р°С‚СѓСЃ РїРѕРґРїРёСЃРєРё РїРѕР»СЊР·РѕРІР°С‚РµР»СЏ
         const subRes = await pool.query(
             'SELECT subscription_expires_at FROM users WHERE id = $1',
             [userId]
@@ -120,7 +120,7 @@ export const getMyTeams = async (req, res) => {
         const subExpires = subRes.rows[0]?.subscription_expires_at;
         const hasSubscription = subExpires ? new Date(subExpires) > new Date() : false;
 
-        // 5. Склеиваем роли в карту по team_id
+        // 5. РЎРєР»РµРёРІР°РµРј СЂРѕР»Рё РІ РєР°СЂС‚Сѓ РїРѕ team_id
         const rolesByTeam = {};
         for (const { team_id, role } of teamRolesRes.rows) {
             if (!rolesByTeam[team_id]) rolesByTeam[team_id] = new Set();
@@ -131,7 +131,7 @@ export const getMyTeams = async (req, res) => {
             rolesByTeam[team_id].add(role);
         }
 
-        // 6. Собираем итоговый массив команд с ролями
+        // 6. РЎРѕР±РёСЂР°РµРј РёС‚РѕРіРѕРІС‹Р№ РјР°СЃСЃРёРІ РєРѕРјР°РЅРґ СЃ СЂРѕР»СЏРјРё
         const enrichedTeams = teams.map(team => {
             const isOwner = team.owner_id === userId;
             const roles = Array.from(rolesByTeam[team.id] || []);
@@ -139,8 +139,8 @@ export const getMyTeams = async (req, res) => {
 
             return {
                 ...team,
-                user_role: roles.join(','),       // строка для обратной совместимости с фолбеком
-                user_roles: roles,                 // массив для accessMatrix
+                user_role: roles.join(','),       // СЃС‚СЂРѕРєР° РґР»СЏ РѕР±СЂР°С‚РЅРѕР№ СЃРѕРІРјРµСЃС‚РёРјРѕСЃС‚Рё СЃ С„РѕР»Р±РµРєРѕРј
+                user_roles: roles,                 // РјР°СЃСЃРёРІ РґР»СЏ accessMatrix
                 has_subscription: hasSubscription,
                 is_owner: isOwner,
             };
@@ -153,12 +153,12 @@ export const getMyTeams = async (req, res) => {
     }
 };
 
-// Получение детализированных списков участников хоккейной команды
+// РџРѕР»СѓС‡РµРЅРёРµ РґРµС‚Р°Р»РёР·РёСЂРѕРІР°РЅРЅС‹С… СЃРїРёСЃРєРѕРІ СѓС‡Р°СЃС‚РЅРёРєРѕРІ С…РѕРєРєРµР№РЅРѕР№ РєРѕРјР°РЅРґС‹
 export const getTeamDetails = async (req, res) => {
     try {
         const teamId = req.params.id;
         
-        // 1. Запрос полного списка членов команды (активные участники состава)
+        // 1. Р—Р°РїСЂРѕСЃ РїРѕР»РЅРѕРіРѕ СЃРїРёСЃРєР° С‡Р»РµРЅРѕРІ РєРѕРјР°РЅРґС‹ (Р°РєС‚РёРІРЅС‹Рµ СѓС‡Р°СЃС‚РЅРёРєРё СЃРѕСЃС‚Р°РІР°)
         const membersQuery = `
             SELECT 
                 tm.id as member_id, u.id as user_id, 
@@ -172,7 +172,7 @@ export const getTeamDetails = async (req, res) => {
             ORDER BY u.last_name, u.first_name
         `;
 
-        // 2. Запрос активного игрового ростера на турниры
+        // 2. Р—Р°РїСЂРѕСЃ Р°РєС‚РёРІРЅРѕРіРѕ РёРіСЂРѕРІРѕРіРѕ СЂРѕСЃС‚РµСЂР° РЅР° С‚СѓСЂРЅРёСЂС‹
         const rosterQuery = `
             SELECT 
                 tm.id as member_id, u.id as user_id, 
@@ -186,7 +186,7 @@ export const getTeamDetails = async (req, res) => {
             ORDER BY tr.jersey_number
         `;
         
-        // 3. Запрос административного и тренерского штаба
+        // 3. Р—Р°РїСЂРѕСЃ Р°РґРјРёРЅРёСЃС‚СЂР°С‚РёРІРЅРѕРіРѕ Рё С‚СЂРµРЅРµСЂСЃРєРѕРіРѕ С€С‚Р°Р±Р°
         const staffQuery = `
             SELECT 
                 tm.id as member_id, u.id as user_id, 
@@ -218,17 +218,17 @@ export const getTeamDetails = async (req, res) => {
     }
 };
 
-// Получение анкеты участника команды с селективной защитой виртуального кода и выдачей карты прав
+// РџРѕР»СѓС‡РµРЅРёРµ Р°РЅРєРµС‚С‹ СѓС‡Р°СЃС‚РЅРёРєР° РєРѕРјР°РЅРґС‹ СЃ СЃРµР»РµРєС‚РёРІРЅРѕР№ Р·Р°С‰РёС‚РѕР№ РІРёСЂС‚СѓР°Р»СЊРЅРѕРіРѕ РєРѕРґР° Рё РІС‹РґР°С‡РµР№ РєР°СЂС‚С‹ РїСЂР°РІ
 export const getTeamMemberDetails = async (req, res) => {
   const { teamId, userId } = req.params;
   const reqUserId = req.user?.id;
 
   try {
     if (!reqUserId) {
-      return res.status(401).json({ error: 'Пользователь не идентифицирован' });
+      return res.status(401).json({ error: 'РџРѕР»СЊР·РѕРІР°С‚РµР»СЊ РЅРµ РёРґРµРЅС‚РёС„РёС†РёСЂРѕРІР°РЅ' });
     }
 
-    // Вычисляем динамические права на основе эталонной матрицы permissions.js
+    // Р’С‹С‡РёСЃР»СЏРµРј РґРёРЅР°РјРёС‡РµСЃРєРёРµ РїСЂР°РІР° РЅР° РѕСЃРЅРѕРІРµ СЌС‚Р°Р»РѕРЅРЅРѕР№ РјР°С‚СЂРёС†С‹ permissions.js
     const canEditRoles = await checkPermissionInternal(reqUserId, teamId, 'EDIT_USER_BLOCK_ROLES');
     const canEditGameProfile = await checkPermissionInternal(reqUserId, teamId, 'EDIT_USER_BLOCK_HOCKEY');
     const canEditHeader = await checkPermissionInternal(reqUserId, teamId, 'EDIT_USER_BLOCK_BASE');
@@ -255,12 +255,12 @@ export const getTeamMemberDetails = async (req, res) => {
     const { rows } = await pool.query(query, [teamId, userId]);
 
     if (rows.length === 0) {
-      return res.status(404).json({ error: 'Участник команды не найден' });
+      return res.status(404).json({ error: 'РЈС‡Р°СЃС‚РЅРёРє РєРѕРјР°РЅРґС‹ РЅРµ РЅР°Р№РґРµРЅ' });
     }
 
     const memberData = rows[0];
 
-    // Если у пользователя нет прав (или нет подписки) — скрываем виртуальный код
+    // Р•СЃР»Рё Сѓ РїРѕР»СЊР·РѕРІР°С‚РµР»СЏ РЅРµС‚ РїСЂР°РІ (РёР»Рё РЅРµС‚ РїРѕРґРїРёСЃРєРё) вЂ” СЃРєСЂС‹РІР°РµРј РІРёСЂС‚СѓР°Р»СЊРЅС‹Р№ РєРѕРґ
     if (!canViewVirtualCode) {
       delete memberData.virtual_code;
     }
@@ -282,7 +282,193 @@ export const getTeamMemberDetails = async (req, res) => {
   }
 };
 
-// Интерактивное автоматическое сохранение параметров участника команды руководителем / админом
+// РЎС‚Р°С‚РёСЃС‚РёРєР° РёРіСЂРѕРєР° РІРЅСѓС‚СЂРё РєРѕРЅРєСЂРµС‚РЅРѕР№ РєРѕРјР°РЅРґС‹ (РїР°РЅРµР»СЊ "РЎС‚Р°С‚РёСЃС‚РёРєР° РІ РєРѕРјР°РЅРґРµ").
+// РџРѕРєР° СЃС‡РёС‚Р°РµРј РїРѕСЃРµС‰Р°РµРјРѕСЃС‚СЊ РєРѕРјР°РЅРґРЅС‹С… С‚СЂРµРЅРёСЂРѕРІРѕРє Рё РјР°С‚С‡РµР№; РІ Р±СѓРґСѓС‰РµРј СЃСЋРґР° Р¶Рµ
+// РґРѕР±Р°РІСЏС‚СЃСЏ РґСЂСѓРіРёРµ Р±Р»РѕРєРё (СЃРѕР±СЂР°РЅРёСЏ Рё С‚.Рї.).
+//
+// РўСЂРµРЅРёСЂРѕРІРєРё Рё РќР•РѕС„РёС†РёР°Р»СЊРЅС‹Рµ РјР°С‚С‡Рё (friendly_pwa/friendly_ext/tournament_ext)
+// СЃС‡РёС‚Р°РµРј С‚РѕР»СЊРєРѕ Р·Р° С‚Рµ РїРµСЂРёРѕРґС‹, РєРѕРіРґР° РёРіСЂРѕРє СЂРµР°Р»СЊРЅРѕ С‡РёСЃР»РёР»СЃСЏ РІ РёРіСЂРѕРІРѕРј СЃРѕСЃС‚Р°РІРµ
+// РєРѕРјР°РЅРґС‹ (team_rosters): Р·Р°РєСЂС‹С‚С‹Рµ РїРµСЂРёРѕРґС‹ Р±РµСЂС‘Рј РёР· РёСЃС‚РѕСЂРёРё team_roster_periods
+// (РµС‘ Р·Р°РїРѕР»РЅСЏРµС‚ Р‘Р”-С‚СЂРёРіРіРµСЂ trg_team_rosters_close_period РїСЂРё РєР°Р¶РґРѕРј РёСЃРєР»СЋС‡РµРЅРёРё
+// РёРіСЂРѕРєР° вЂ” РёР· Р»СЋР±РѕРіРѕ РїСЂРёР»РѕР¶РµРЅРёСЏ, Team-Room РёР»Рё LMS), С‚РµРєСѓС‰РёР№ РЅРµР·Р°РєСЂС‹С‚С‹Р№ РїРµСЂРёРѕРґ вЂ”
+// РЅР°РїСЂСЏРјСѓСЋ РёР· team_rosters.left_at IS NULL.
+//
+// РћР¤РР¦РРђР›Р¬РќР«Р• РјР°С‚С‡Рё (game_type = 'official', РїСЂРёРІСЏР·Р°РЅС‹ Рє РґРёРІРёР·РёРѕРЅСѓ) СЃС‡РёС‚Р°РµРј
+// РїРѕ РґСЂСѓРіРѕРјСѓ РєСЂРёС‚РµСЂРёСЋ вЂ” РЅРµ РїРѕ team_rosters, Р° РїРѕ С„Р°РєС‚Сѓ РѕРґРѕР±СЂРµРЅРЅРѕР№ Р·Р°СЏРІРєРё
+// РёРіСЂРѕРєР° РЅР° РґРёРІРёР·РёРѕРЅ (tournament_rosters.application_status = 'approved',
+// tournament_team_id -> tournament_teams.division_id), СЃ СѓС‡С‘С‚РѕРј period_start/
+// period_end Р·Р°СЏРІРєРё, РµСЃР»Рё РѕРЅРё Р·Р°РґР°РЅС‹ (С‡Р°СЃС‚РёС‡РЅР°СЏ Р·Р°СЏРІРєР° РЅР° С‡Р°СЃС‚СЊ СЃРµР·РѕРЅР°).
+//
+// В«РџРѕСЃРµС‚РёР»В» РјР°С‚С‡ вЂ” РќР• РѕС‚РјРµС‚РєР° РІ team_game_attendance (СЌС‚Рѕ С‚РѕР»СЊРєРѕ РѕРїСЂРѕСЃ
+// РЅР°РјРµСЂРµРЅРёР№ РґРѕ С„РѕСЂРјРёСЂРѕРІР°РЅРёСЏ СЃРѕСЃС‚Р°РІР°), Р° С„Р°РєС‚ РїРѕРїР°РґР°РЅРёСЏ РІ РёС‚РѕРіРѕРІС‹Р№ РїСЂРѕС‚РѕРєРѕР»
+// РјР°С‚С‡Р°: РЅР°Р»РёС‡РёРµ СЃС‚СЂРѕРєРё РІ game_rosters (game_id + player_id + team_id).
+// РРіСЂРѕРє РјРѕРі РѕС‚РјРµС‚РёС‚СЊСЃСЏ РЅР° РёРіСЂСѓ, РЅРѕ РЅРµ РїРѕРїР°СЃС‚СЊ РІ СЃРѕСЃС‚Р°РІ вЂ” СЌС‚Рѕ РЅРµ СЃС‡РёС‚Р°РµС‚СЃСЏ.
+//
+// РњР°С‚С‡Рё РѕС‚РґР°СЋС‚СЃСЏ С„СЂРѕРЅС‚Сѓ РЎР«Р Р«Рњ СЃРїРёСЃРєРѕРј СЃ "Р±РёСЂРєР°РјРё" (Р»РёРіР°/СЃРµР·РѕРЅ/РґРёРІРёР·РёРѕРЅ РёР»Рё
+// РІРЅРµС€РЅРёР№ С‚СѓСЂРЅРёСЂ) вЂ” РїРѕСЃРµС‰Р°РµРјРѕСЃС‚СЊ, РїРѕР±РµРґС‹/РЅРёС‡СЊРё/РїРѕСЂР°Р¶РµРЅРёСЏ Рё С„РёР»СЊС‚СЂ РїРѕ С‚СѓСЂРЅРёСЂСѓ
+// СЃС‡РёС‚Р°СЋС‚СЃСЏ РІ Р±СЂР°СѓР·РµСЂРµ РїСЂРё РїРµСЂРµРєР»СЋС‡РµРЅРёРё С„РёР»СЊС‚СЂР°, Р±РµР· РїРѕРІС‚РѕСЂРЅС‹С… Р·Р°РїСЂРѕСЃРѕРІ.
+export const getMemberTeamStats = async (req, res) => {
+  const { teamId, userId } = req.params;
+
+  try {
+    const infoQuery = `
+      SELECT
+        u.first_name, u.last_name, u.middle_name,
+        COALESCE(tm.photo_url, u.avatar_url) as avatar_url
+      FROM team_members tm
+      JOIN users u ON u.id = tm.user_id
+      WHERE tm.team_id = $1 AND tm.user_id = $2
+    `;
+
+    const trainingQuery = `
+      WITH member AS (
+        SELECT id AS member_id FROM team_members WHERE team_id = $1 AND user_id = $2
+      ),
+      periods AS (
+        SELECT trp.joined_at, trp.left_at::timestamp AS left_at
+        FROM team_roster_periods trp, member
+        WHERE trp.team_id = $1 AND trp.member_id = member.member_id
+        UNION ALL
+        SELECT tr.joined_at, NULL::timestamp AS left_at
+        FROM team_rosters tr, member
+        WHERE tr.team_id = $1 AND tr.member_id = member.member_id AND tr.left_at IS NULL
+      )
+      SELECT
+        COUNT(DISTINCT tt.id) AS total,
+        COUNT(DISTINCT ta.team_training_id) AS attended
+      FROM team_training tt
+      JOIN periods p ON tt.training_date >= p.joined_at AND (p.left_at IS NULL OR tt.training_date < p.left_at)
+      LEFT JOIN team_training_attendance ta ON ta.team_training_id = tt.id AND ta.user_id = $2
+      WHERE tt.team_id = $1
+    `;
+
+    // Р•РґРёРЅС‹Р№ СЃРїРёСЃРѕРє Р’РЎР•РҐ РґРѕСЃС‚СѓРїРЅС‹С… РґР»СЏ РїРѕРґСЃС‡С‘С‚Р° РјР°С‚С‡РµР№ (РЅРµ С‚РѕР»СЊРєРѕ СЃС‹РіСЂР°РЅРЅС‹С…)
+    // СЃ "Р±РёСЂРєР°РјРё" Р»РёРіРё/СЃРµР·РѕРЅР°/РґРёРІРёР·РёРѕРЅР° РёР»Рё РІРЅРµС€РЅРµРіРѕ С‚СѓСЂРЅРёСЂР° вЂ” РѕС‚РґР°С‘Рј РµРіРѕ
+    // С„СЂРѕРЅС‚Сѓ С†РµР»РёРєРѕРј (variant Р‘), Р° РїРѕСЃРµС‰Р°РµРјРѕСЃС‚СЊ/СЂРµР·СѓР»СЊС‚Р°С‚С‹/С„РёР»СЊС‚СЂ РїРѕ С‚СѓСЂРЅРёСЂСѓ
+    // СЃС‡РёС‚Р°СЋС‚СЃСЏ СѓР¶Рµ РІ Р±СЂР°СѓР·РµСЂРµ РїСЂРё РїРµСЂРµРєР»СЋС‡РµРЅРёРё С„РёР»СЊС‚СЂР°, Р±РµР· РЅРѕРІС‹С… Р·Р°РїСЂРѕСЃРѕРІ.
+    //
+    // РћС„РёС†РёР°Р»СЊРЅС‹Рµ вЂ” С‡РµСЂРµР· division_periods (РѕРґРѕР±СЂРµРЅРЅР°СЏ Р·Р°СЏРІРєР° РЅР° РґРёРІРёР·РёРѕРЅ),
+    // РЅРµРѕС„РёС†РёР°Р»СЊРЅС‹Рµ (friendly_pwa/friendly_ext/tournament_ext) вЂ” С‡РµСЂРµР·
+    // roster_periods (С‚РѕС‚ Р¶Рµ РєСЂРёС‚РµСЂРёР№, С‡С‚Рѕ Рё Сѓ С‚СЂРµРЅРёСЂРѕРІРѕРє). "РџРѕСЃРµС‚РёР»" (attended)
+    // РІ РѕР±РµРёС… РІРµС‚РєР°С… вЂ” РЅР°Р»РёС‡РёРµ СЃС‚СЂРѕРєРё РІ game_rosters, РєР°Рє РґРѕРіРѕРІРѕСЂРёР»РёСЃСЊ СЂР°РЅСЊС€Рµ.
+    const matchesQuery = `
+      WITH member AS (
+        SELECT id AS member_id FROM team_members WHERE team_id = $1 AND user_id = $2
+      ),
+      roster_periods AS (
+        SELECT trp.joined_at, trp.left_at::timestamp AS left_at
+        FROM team_roster_periods trp, member
+        WHERE trp.team_id = $1 AND trp.member_id = member.member_id
+        UNION ALL
+        SELECT tr.joined_at, NULL::timestamp AS left_at
+        FROM team_rosters tr, member
+        WHERE tr.team_id = $1 AND tr.member_id = member.member_id AND tr.left_at IS NULL
+      ),
+      division_periods AS (
+        SELECT tt.division_id, tro.period_start, tro.period_end
+        FROM tournament_rosters tro
+        JOIN tournament_teams tt ON tro.tournament_team_id = tt.id
+        WHERE tt.team_id = $1 AND tro.player_id = $2 AND tro.application_status = 'approved'
+      )
+      SELECT
+        g.id, g.game_date, g.game_type,
+        CASE WHEN g.home_team_id = $1 THEN g.home_score ELSE g.away_score END AS my_score,
+        CASE WHEN g.home_team_id = $1 THEN g.away_score ELSE g.home_score END AS opp_score,
+        CASE WHEN g.home_team_id = $1
+          THEN COALESCE(t_away.short_name, t_away.name, eo.short_name, eo.name, g.external_title)
+          ELSE COALESCE(t_home.short_name, t_home.name)
+        END AS opponent_name,
+        (gr.id IS NOT NULL) AS attended,
+        d.id AS division_id, d.name AS division_name, d.logo_url AS division_logo, s.name AS season_name, l.short_name AS league_name,
+        NULL::int AS ext_tournament_id, NULL::text AS ext_tournament_name, NULL::text AS ext_tournament_logo
+      FROM games g
+      JOIN division_periods dp ON dp.division_id = g.division_id
+        AND (dp.period_start IS NULL OR g.game_date::date >= dp.period_start)
+        AND (dp.period_end IS NULL OR g.game_date::date <= dp.period_end)
+      LEFT JOIN game_rosters gr ON gr.game_id = g.id AND gr.player_id = $2 AND gr.team_id = $1
+      LEFT JOIN divisions d ON g.division_id = d.id
+      LEFT JOIN seasons s ON d.season_id = s.id
+      LEFT JOIN leagues l ON s.league_id = l.id
+      LEFT JOIN teams t_home ON g.home_team_id = t_home.id
+      LEFT JOIN teams t_away ON g.away_team_id = t_away.id
+      LEFT JOIN external_opponents eo ON g.away_external_id = eo.id
+      WHERE g.status = 'finished' AND g.game_type = 'official' AND (g.home_team_id = $1 OR g.away_team_id = $1)
+
+      UNION ALL
+
+      SELECT
+        g.id, g.game_date, g.game_type,
+        CASE WHEN g.home_team_id = $1 THEN g.home_score ELSE g.away_score END AS my_score,
+        CASE WHEN g.home_team_id = $1 THEN g.away_score ELSE g.home_score END AS opp_score,
+        CASE WHEN g.home_team_id = $1
+          THEN COALESCE(t_away.short_name, t_away.name, eo.short_name, eo.name, g.external_title)
+          ELSE COALESCE(t_home.short_name, t_home.name)
+        END AS opponent_name,
+        (gr.id IS NOT NULL) AS attended,
+        NULL::int AS division_id, NULL::text AS division_name, NULL::text AS division_logo, NULL::text AS season_name, NULL::text AS league_name,
+        et.id AS ext_tournament_id, et.name AS ext_tournament_name, et.logo_url AS ext_tournament_logo
+      FROM games g
+      JOIN roster_periods p ON g.game_date >= p.joined_at AND (p.left_at IS NULL OR g.game_date < p.left_at)
+      LEFT JOIN game_rosters gr ON gr.game_id = g.id AND gr.player_id = $2 AND gr.team_id = $1
+      LEFT JOIN team_external_tournaments et ON g.external_tournament_id = et.id
+      LEFT JOIN teams t_home ON g.home_team_id = t_home.id
+      LEFT JOIN teams t_away ON g.away_team_id = t_away.id
+      LEFT JOIN external_opponents eo ON g.away_external_id = eo.id
+      WHERE g.status = 'finished'
+        AND g.game_type IN ('friendly_pwa', 'friendly_ext', 'tournament_ext')
+        AND (g.home_team_id = $1 OR g.away_team_id = $1)
+
+      ORDER BY game_date DESC
+    `;
+
+    const [infoRes, trainingRes, matchesRes] = await Promise.all([
+      pool.query(infoQuery, [teamId, userId]),
+      pool.query(trainingQuery, [teamId, userId]),
+      pool.query(matchesQuery, [teamId, userId]),
+    ]);
+
+    if (infoRes.rows.length === 0) {
+      return res.status(404).json({ error: 'РЈС‡Р°СЃС‚РЅРёРє РєРѕРјР°РЅРґС‹ РЅРµ РЅР°Р№РґРµРЅ' });
+    }
+
+    const toCounts = (total, attended) => {
+      const t = Number(total || 0);
+      const a = Number(attended || 0);
+      return { total: t, attended: a, percent: t > 0 ? Math.round((a / t) * 100) : null };
+    };
+
+    const trainingTotal = Number(trainingRes.rows[0]?.total || 0);
+    const trainingAttended = Number(trainingRes.rows[0]?.attended || 0);
+
+    const matches = matchesRes.rows.map(row => ({
+      gameId: row.id,
+      gameDate: row.game_date,
+      gameType: row.game_type,
+      myScore: Number(row.my_score),
+      oppScore: Number(row.opp_score),
+      opponentName: row.opponent_name,
+      attended: row.attended,
+      division: row.division_id != null
+        ? { id: row.division_id, name: row.division_name, logo: row.division_logo, seasonName: row.season_name, leagueName: row.league_name }
+        : null,
+      externalTournament: row.ext_tournament_id != null
+        ? { id: row.ext_tournament_id, name: row.ext_tournament_name, logo: row.ext_tournament_logo }
+        : null
+    }));
+
+    res.json({
+      success: true,
+      info: infoRes.rows[0],
+      training: toCounts(trainingTotal, trainingAttended),
+      matches
+    });
+  } catch (error) {
+    console.error('[Get Member Team Stats Error]:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+};
+
+// РРЅС‚РµСЂР°РєС‚РёРІРЅРѕРµ Р°РІС‚РѕРјР°С‚РёС‡РµСЃРєРѕРµ СЃРѕС…СЂР°РЅРµРЅРёРµ РїР°СЂР°РјРµС‚СЂРѕРІ СѓС‡Р°СЃС‚РЅРёРєР° РєРѕРјР°РЅРґС‹ СЂСѓРєРѕРІРѕРґРёС‚РµР»РµРј / Р°РґРјРёРЅРѕРј
 export const updateMemberDetails = async (req, res) => {
   const { teamId, memberId } = req.params;
   const { position, jerseyNumber, roles, isCaptain, isAssistant } = req.body;
@@ -291,11 +477,11 @@ export const updateMemberDetails = async (req, res) => {
   try {
     await pool.query('BEGIN');
 
-    // 1. ПРОВЕРКА ПРАВ ДЛЯ ИГРОВОГО ПРОФИЛЬНОГО БЛОКА
+    // 1. РџР РћР’Р•Р РљРђ РџР РђР’ Р”Р›РЇ РР“Р РћР’РћР“Рћ РџР РћР¤РР›Р¬РќРћР“Рћ Р‘Р›РћРљРђ
     if (position !== undefined || jerseyNumber !== undefined) {
       const hasAccess = await checkPermissionInternal(reqUserId, teamId, 'EDIT_USER_BLOCK_HOCKEY');
       if (!hasAccess) {
-        return res.status(403).json({ error: 'Недостаточно прав или требуется продлить подписку для изменения игрового профиля' });
+        return res.status(403).json({ error: 'РќРµРґРѕСЃС‚Р°С‚РѕС‡РЅРѕ РїСЂР°РІ РёР»Рё С‚СЂРµР±СѓРµС‚СЃСЏ РїСЂРѕРґР»РёС‚СЊ РїРѕРґРїРёСЃРєСѓ РґР»СЏ РёР·РјРµРЅРµРЅРёСЏ РёРіСЂРѕРІРѕРіРѕ РїСЂРѕС„РёР»СЏ' });
       }
 
       if (jerseyNumber) {
@@ -305,7 +491,7 @@ export const updateMemberDetails = async (req, res) => {
           [teamId, jerseyNumber, memberId]
         );
         if (numCheck.rows.length > 0) {
-          return res.status(400).json({ error: 'Этот игровой номер уже занят другим активным игроком' });
+          return res.status(400).json({ error: 'Р­С‚РѕС‚ РёРіСЂРѕРІРѕР№ РЅРѕРјРµСЂ СѓР¶Рµ Р·Р°РЅСЏС‚ РґСЂСѓРіРёРј Р°РєС‚РёРІРЅС‹Рј РёРіСЂРѕРєРѕРј' });
         }
       }
 
@@ -318,11 +504,11 @@ export const updateMemberDetails = async (req, res) => {
       );
     }
 
-    // 2. ПРОВЕРКА ПРАВ ДЛЯ БЛОКА ШАПКИ/КАПИТАНСТВА
+    // 2. РџР РћР’Р•Р РљРђ РџР РђР’ Р”Р›РЇ Р‘Р›РћРљРђ РЁРђРџРљР/РљРђРџРРўРђРќРЎРўР’Рђ
     if (isCaptain !== undefined || isAssistant !== undefined) {
       const hasAccess = await checkPermissionInternal(reqUserId, teamId, 'EDIT_USER_BLOCK_BASE');
       if (!hasAccess) {
-        return res.status(403).json({ error: 'Недостаточно прав или требуется продлить подписку для изменения капитанских статусов' });
+        return res.status(403).json({ error: 'РќРµРґРѕСЃС‚Р°С‚РѕС‡РЅРѕ РїСЂР°РІ РёР»Рё С‚СЂРµР±СѓРµС‚СЃСЏ РїСЂРѕРґР»РёС‚СЊ РїРѕРґРїРёСЃРєСѓ РґР»СЏ РёР·РјРµРЅРµРЅРёСЏ РєР°РїРёС‚Р°РЅСЃРєРёС… СЃС‚Р°С‚СѓСЃРѕРІ' });
       }
 
       if (isCaptain !== undefined) {
@@ -351,7 +537,7 @@ export const updateMemberDetails = async (req, res) => {
             [teamId, memberId]
           );
           if (parseInt(assistCheck.rows[0].count) >= 2) {
-            return res.status(400).json({ error: 'В ростере команды уже зафиксировано 2 ассистента' });
+            return res.status(400).json({ error: 'Р’ СЂРѕСЃС‚РµСЂРµ РєРѕРјР°РЅРґС‹ СѓР¶Рµ Р·Р°С„РёРєСЃРёСЂРѕРІР°РЅРѕ 2 Р°СЃСЃРёСЃС‚РµРЅС‚Р°' });
           }
           await pool.query(
             `UPDATE team_rosters SET is_assistant = true, is_captain = false WHERE member_id = $1 AND team_id = $2 AND left_at IS NULL`,
@@ -366,11 +552,11 @@ export const updateMemberDetails = async (req, res) => {
       }
     }
 
-    // 3. ПРОВЕРКА ПРАВ ДЛЯ АДМИНИСТРАТИВНЫХ СТАТУСОВ (Управление ролями)
+    // 3. РџР РћР’Р•Р РљРђ РџР РђР’ Р”Р›РЇ РђР”РњРРќРРЎРўР РђРўРР’РќР«РҐ РЎРўРђРўРЈРЎРћР’ (РЈРїСЂР°РІР»РµРЅРёРµ СЂРѕР»СЏРјРё)
     if (roles !== undefined) {
       const hasAccess = await checkPermissionInternal(reqUserId, teamId, 'EDIT_USER_BLOCK_ROLES');
       if (!hasAccess) {
-        return res.status(403).json({ error: 'Недостаточно прав или требуется продлить подписку для изменения административного статуса' });
+        return res.status(403).json({ error: 'РќРµРґРѕСЃС‚Р°С‚РѕС‡РЅРѕ РїСЂР°РІ РёР»Рё С‚СЂРµР±СѓРµС‚СЃСЏ РїСЂРѕРґР»РёС‚СЊ РїРѕРґРїРёСЃРєСѓ РґР»СЏ РёР·РјРµРЅРµРЅРёСЏ Р°РґРјРёРЅРёСЃС‚СЂР°С‚РёРІРЅРѕРіРѕ СЃС‚Р°С‚СѓСЃР°' });
       }
 
       const memberUserRes = await pool.query(
@@ -380,10 +566,10 @@ export const updateMemberDetails = async (req, res) => {
       
       const rolesArray = roles.split(',').map(r => r.trim()).filter(Boolean);
 
-      // Защита от саморазжалования руководителя
+      // Р—Р°С‰РёС‚Р° РѕС‚ СЃР°РјРѕСЂР°Р·Р¶Р°Р»РѕРІР°РЅРёСЏ СЂСѓРєРѕРІРѕРґРёС‚РµР»СЏ
       if (memberUserRes.rows.length > 0 && memberUserRes.rows[0].user_id === reqUserId) {
         if (!rolesArray.includes('team_manager')) {
-          return res.status(400).json({ error: 'Вы не можете лишить самого себя роли Руководителя команды' });
+          return res.status(400).json({ error: 'Р’С‹ РЅРµ РјРѕР¶РµС‚Рµ Р»РёС€РёС‚СЊ СЃР°РјРѕРіРѕ СЃРµР±СЏ СЂРѕР»Рё Р СѓРєРѕРІРѕРґРёС‚РµР»СЏ РєРѕРјР°РЅРґС‹' });
         }
       }
 
@@ -415,7 +601,7 @@ export const updateMemberDetails = async (req, res) => {
     }
 
     await pool.query('COMMIT');
-    res.json({ success: true, message: 'Изменения успешно сохранены' });
+    res.json({ success: true, message: 'РР·РјРµРЅРµРЅРёСЏ СѓСЃРїРµС€РЅРѕ СЃРѕС…СЂР°РЅРµРЅС‹' });
   } catch (error) {
     await pool.query('ROLLBACK');
     console.error('[Update Member Details Error]:', error);
@@ -423,7 +609,7 @@ export const updateMemberDetails = async (req, res) => {
   }
 };
 
-// Вспомогательный метод загрузки в S3-хранилище
+// Р’СЃРїРѕРјРѕРіР°С‚РµР»СЊРЅС‹Р№ РјРµС‚РѕРґ Р·Р°РіСЂСѓР·РєРё РІ S3-С…СЂР°РЅРёР»РёС‰Рµ
 const uploadBufferToS3 = async (file, bucketKey) => {
   const params = {
     Bucket: process.env.S3_BUCKET || 'hockeyeco-s3-storage',
@@ -441,14 +627,14 @@ const uploadBufferToS3 = async (file, bucketKey) => {
     const request = s3.putObject(params);
     return typeof request.promise === 'function' ? request.promise() : request;
   }
-  throw new Error('S3 Client не настроен на сервере');
+  throw new Error('S3 Client РЅРµ РЅР°СЃС‚СЂРѕРµРЅ РЅР° СЃРµСЂРІРµСЂРµ');
 };
 
-// Метод загрузки/замены кастомной аватарки игрока в S3
+// РњРµС‚РѕРґ Р·Р°РіСЂСѓР·РєРё/Р·Р°РјРµРЅС‹ РєР°СЃС‚РѕРјРЅРѕР№ Р°РІР°С‚Р°СЂРєРё РёРіСЂРѕРєР° РІ S3
 export const updateMemberPhoto = async (req, res) => {
   const { teamId, memberId } = req.params;
   if (!req.file) {
-    return res.status(400).json({ error: 'Файл фотографии не предоставлен' });
+    return res.status(400).json({ error: 'Р¤Р°Р№Р» С„РѕС‚РѕРіСЂР°С„РёРё РЅРµ РїСЂРµРґРѕСЃС‚Р°РІР»РµРЅ' });
   }
 
   try {
@@ -457,11 +643,11 @@ export const updateMemberPhoto = async (req, res) => {
       [memberId, teamId]
     );
     if (memberRes.rows.length === 0) {
-      return res.status(404).json({ error: 'Участник состава не найден или заархивирован' });
+      return res.status(404).json({ error: 'РЈС‡Р°СЃС‚РЅРёРє СЃРѕСЃС‚Р°РІР° РЅРµ РЅР°Р№РґРµРЅ РёР»Рё Р·Р°Р°СЂС…РёРІРёСЂРѕРІР°РЅ' });
     }
     const userId = memberRes.rows[0].user_id;
 
-    // Ресайз до 400×400 + конвертация в WebP перед заливкой (всегда .webp)
+    // Р РµСЃР°Р№Р· РґРѕ 400Г—400 + РєРѕРЅРІРµСЂС‚Р°С†РёСЏ РІ WebP РїРµСЂРµРґ Р·Р°Р»РёРІРєРѕР№ (РІСЃРµРіРґР° .webp)
     const bucketKey = `uploads/teams_${teamId}_users_${userId}_photo.webp`;
 
     const processedBuffer = await processAvatar(req.file.buffer);
@@ -480,7 +666,7 @@ export const updateMemberPhoto = async (req, res) => {
   }
 };
 
-// Метод удаления кастомного фото участника
+// РњРµС‚РѕРґ СѓРґР°Р»РµРЅРёСЏ РєР°СЃС‚РѕРјРЅРѕРіРѕ С„РѕС‚Рѕ СѓС‡Р°СЃС‚РЅРёРєР°
 export const deleteMemberPhoto = async (req, res) => {
   const { teamId, memberId } = req.params;
   try {
@@ -488,14 +674,14 @@ export const deleteMemberPhoto = async (req, res) => {
       `UPDATE team_members SET photo_url = NULL WHERE id = $1 AND team_id = $2 AND left_at IS NULL`,
       [memberId, teamId]
     );
-    res.json({ success: true, message: 'Фотография успешно удалена' });
+    res.json({ success: true, message: 'Р¤РѕС‚РѕРіСЂР°С„РёСЏ СѓСЃРїРµС€РЅРѕ СѓРґР°Р»РµРЅР°' });
   } catch (error) {
     console.error('[Delete Member Photo Error]:', error);
     res.status(500).json({ error: 'Internal server error' });
   }
 };
 
-// Обновление визуального профиля хоккейной команды
+// РћР±РЅРѕРІР»РµРЅРёРµ РІРёР·СѓР°Р»СЊРЅРѕРіРѕ РїСЂРѕС„РёР»СЏ С…РѕРєРєРµР№РЅРѕР№ РєРѕРјР°РЅРґС‹
 export const updateTeamProfile = async (req, res) => {
   try {
     const teamId = req.params.id;
@@ -585,7 +771,7 @@ export const updateTeamProfile = async (req, res) => {
   }
 };
 
-// Исключение участника из игрового ростера на турнир
+// РСЃРєР»СЋС‡РµРЅРёРµ СѓС‡Р°СЃС‚РЅРёРєР° РёР· РёРіСЂРѕРІРѕРіРѕ СЂРѕСЃС‚РµСЂР° РЅР° С‚СѓСЂРЅРёСЂ
 export const excludeFromRoster = async (req, res) => {
   const { teamId, memberId } = req.params;
   try {
@@ -595,14 +781,14 @@ export const excludeFromRoster = async (req, res) => {
       WHERE member_id = $1 AND team_id = $2 AND left_at IS NULL
     `;
     await pool.query(updateRosterQuery, [memberId, teamId]);
-    res.json({ success: true, message: 'Игрок успешно исключен из турнирного ростера' });
+    res.json({ success: true, message: 'РРіСЂРѕРє СѓСЃРїРµС€РЅРѕ РёСЃРєР»СЋС‡РµРЅ РёР· С‚СѓСЂРЅРёСЂРЅРѕРіРѕ СЂРѕСЃС‚РµСЂР°' });
   } catch (error) {
     console.error('[Exclude From Roster Error]:', error);
     res.status(500).json({ error: 'Internal server error' });
   }
 };
 
-// Полное исключение из членства команды (состав + ростер)
+// РџРѕР»РЅРѕРµ РёСЃРєР»СЋС‡РµРЅРёРµ РёР· С‡Р»РµРЅСЃС‚РІР° РєРѕРјР°РЅРґС‹ (СЃРѕСЃС‚Р°РІ + СЂРѕСЃС‚РµСЂ)
 export const excludeFromMembership = async (req, res) => {
   const { teamId, memberId } = req.params;
   try {
@@ -624,18 +810,18 @@ export const excludeFromMembership = async (req, res) => {
 
     await pool.query('COMMIT');
 
-    // Push: участник покинул команду
+    // Push: СѓС‡Р°СЃС‚РЅРёРє РїРѕРєРёРЅСѓР» РєРѕРјР°РЅРґСѓ
     const { rows: [excluded] } = await pool.query(
       'SELECT u.last_name, u.first_name FROM team_members tm JOIN users u ON u.id = tm.user_id WHERE tm.id = $1',
       [memberId]
     );
-    const eName = excluded ? `${excluded.last_name} ${excluded.first_name}` : 'Участник';
+    const eName = excluded ? `${excluded.last_name} ${excluded.first_name}` : 'РЈС‡Р°СЃС‚РЅРёРє';
     sendPushToTeamExcept(teamId, null, 'team_news', {
-      title: 'Уход из команды', body: `${eName} покинул команду`,
+      title: 'РЈС…РѕРґ РёР· РєРѕРјР°РЅРґС‹', body: `${eName} РїРѕРєРёРЅСѓР» РєРѕРјР°РЅРґСѓ`,
       url: '/my-team', tag: `member-leave-${memberId}`,
     }).catch(() => {});
 
-    res.json({ success: true, message: 'Пользователь полностью удален из состава и ростеров команды' });
+    res.json({ success: true, message: 'РџРѕР»СЊР·РѕРІР°С‚РµР»СЊ РїРѕР»РЅРѕСЃС‚СЊСЋ СѓРґР°Р»РµРЅ РёР· СЃРѕСЃС‚Р°РІР° Рё СЂРѕСЃС‚РµСЂРѕРІ РєРѕРјР°РЅРґС‹' });
   } catch (error) {
     await pool.query('ROLLBACK');
     console.error('[Exclude From Membership Error]:', error);
@@ -643,13 +829,13 @@ export const excludeFromMembership = async (req, res) => {
   }
 };
 
-// Поиск зарегистрированного пользователя по номеру телефона
+// РџРѕРёСЃРє Р·Р°СЂРµРіРёСЃС‚СЂРёСЂРѕРІР°РЅРЅРѕРіРѕ РїРѕР»СЊР·РѕРІР°С‚РµР»СЏ РїРѕ РЅРѕРјРµСЂСѓ С‚РµР»РµС„РѕРЅР°
 export const searchUserByPhone = async (req, res) => {
   const { teamId } = req.params;
   const { phone } = req.query;
 
   if (!phone) {
-    return res.status(400).json({ error: 'Параметр phone обязателен' });
+    return res.status(400).json({ error: 'РџР°СЂР°РјРµС‚СЂ phone РѕР±СЏР·Р°С‚РµР»РµРЅ' });
   }
 
   try {
@@ -669,7 +855,7 @@ export const searchUserByPhone = async (req, res) => {
     const { rows } = await pool.query(query, [teamId, last10Digits]);
 
     if (rows.length === 0) {
-      return res.json({ success: false, message: 'Пользователь с таким номером не зарегистрирован' });
+      return res.json({ success: false, message: 'РџРѕР»СЊР·РѕРІР°С‚РµР»СЊ СЃ С‚Р°РєРёРј РЅРѕРјРµСЂРѕРј РЅРµ Р·Р°СЂРµРіРёСЃС‚СЂРёСЂРѕРІР°РЅ' });
     }
 
     res.json({ success: true, user: rows[0] });
@@ -679,7 +865,7 @@ export const searchUserByPhone = async (req, res) => {
   }
 };
 
-// Добавление или восстановление членства пользователя в команде
+// Р”РѕР±Р°РІР»РµРЅРёРµ РёР»Рё РІРѕСЃСЃС‚Р°РЅРѕРІР»РµРЅРёРµ С‡Р»РµРЅСЃС‚РІР° РїРѕР»СЊР·РѕРІР°С‚РµР»СЏ РІ РєРѕРјР°РЅРґРµ
 export const addOrRestoreTeamMember = async (req, res) => {
   const { teamId } = req.params;
   const { userId } = req.body;
@@ -691,22 +877,22 @@ export const addOrRestoreTeamMember = async (req, res) => {
     if (rows.length > 0) {
       const existing = rows[0];
       if (existing.left_at === null) {
-        return res.status(400).json({ error: 'Пользователь уже находится в составе команды' });
+        return res.status(400).json({ error: 'РџРѕР»СЊР·РѕРІР°С‚РµР»СЊ СѓР¶Рµ РЅР°С…РѕРґРёС‚СЃСЏ РІ СЃРѕСЃС‚Р°РІРµ РєРѕРјР°РЅРґС‹' });
       }
 
       await pool.query(
         `UPDATE team_members SET left_at = NULL, joined_at = CURRENT_DATE WHERE id = $1`, 
         [existing.id]
       );
-      // Push: участник вернулся
+      // Push: СѓС‡Р°СЃС‚РЅРёРє РІРµСЂРЅСѓР»СЃСЏ
       const { rows: [restored] } = await pool.query('SELECT last_name, first_name FROM users WHERE id = $1', [userId]);
-      const rName = restored ? `${restored.last_name} ${restored.first_name}` : 'Участник';
+      const rName = restored ? `${restored.last_name} ${restored.first_name}` : 'РЈС‡Р°СЃС‚РЅРёРє';
       sendPushToTeamExcept(teamId, userId, 'team_news', {
-        title: 'Возвращение в команду', body: `${rName} вернулся в состав`,
+        title: 'Р’РѕР·РІСЂР°С‰РµРЅРёРµ РІ РєРѕРјР°РЅРґСѓ', body: `${rName} РІРµСЂРЅСѓР»СЃСЏ РІ СЃРѕСЃС‚Р°РІ`,
         url: '/my-team', tag: `member-join-${userId}`,
       }).catch(() => {});
 
-      return res.json({ success: true, message: 'Членство пользователя в команде успешно восстановлено' });
+      return res.json({ success: true, message: 'Р§Р»РµРЅСЃС‚РІРѕ РїРѕР»СЊР·РѕРІР°С‚РµР»СЏ РІ РєРѕРјР°РЅРґРµ СѓСЃРїРµС€РЅРѕ РІРѕСЃСЃС‚Р°РЅРѕРІР»РµРЅРѕ' });
     }
 
     await pool.query(
@@ -714,22 +900,22 @@ export const addOrRestoreTeamMember = async (req, res) => {
       [teamId, userId]
     );
 
-    // Push: новый участник
+    // Push: РЅРѕРІС‹Р№ СѓС‡Р°СЃС‚РЅРёРє
     const { rows: [added] } = await pool.query('SELECT last_name, first_name FROM users WHERE id = $1', [userId]);
-    const aName = added ? `${added.last_name} ${added.first_name}` : 'Новый участник';
+    const aName = added ? `${added.last_name} ${added.first_name}` : 'РќРѕРІС‹Р№ СѓС‡Р°СЃС‚РЅРёРє';
     sendPushToTeamExcept(teamId, userId, 'team_news', {
-      title: 'Новый участник', body: `${aName} добавлен в состав`,
+      title: 'РќРѕРІС‹Р№ СѓС‡Р°СЃС‚РЅРёРє', body: `${aName} РґРѕР±Р°РІР»РµРЅ РІ СЃРѕСЃС‚Р°РІ`,
       url: '/my-team', tag: `member-join-${userId}`,
     }).catch(() => {});
 
-    res.json({ success: true, message: 'Пользователь успешно добавлен в состав команды' });
+    res.json({ success: true, message: 'РџРѕР»СЊР·РѕРІР°С‚РµР»СЊ СѓСЃРїРµС€РЅРѕ РґРѕР±Р°РІР»РµРЅ РІ СЃРѕСЃС‚Р°РІ РєРѕРјР°РЅРґС‹' });
   } catch (error) {
     console.error('[Add/Restore Member Error]:', error);
     res.status(500).json({ error: 'Internal server error' });
   }
 };
 
-// Включение члена основного состава в турнирный игровой ростер
+// Р’РєР»СЋС‡РµРЅРёРµ С‡Р»РµРЅР° РѕСЃРЅРѕРІРЅРѕРіРѕ СЃРѕСЃС‚Р°РІР° РІ С‚СѓСЂРЅРёСЂРЅС‹Р№ РёРіСЂРѕРІРѕР№ СЂРѕСЃС‚РµСЂ
 export const addTeamMemberToRoster = async (req, res) => {
   const { teamId } = req.params;
   const { memberId, position, jerseyNumber } = req.body;
@@ -741,7 +927,7 @@ export const addTeamMemberToRoster = async (req, res) => {
     `;
     const { rows: numRows } = await pool.query(numCheck, [teamId, jerseyNumber]);
     if (numRows.length > 0) {
-      return res.status(400).json({ error: 'Этот игровой номер уже занят активным игроком ростера' });
+      return res.status(400).json({ error: 'Р­С‚РѕС‚ РёРіСЂРѕРІРѕР№ РЅРѕРјРµСЂ СѓР¶Рµ Р·Р°РЅСЏС‚ Р°РєС‚РёРІРЅС‹Рј РёРіСЂРѕРєРѕРј СЂРѕСЃС‚РµСЂР°' });
     }
 
     const teamRes = await pool.query(`SELECT club_id FROM teams WHERE id = $1`, [teamId]);
@@ -764,233 +950,9 @@ export const addTeamMemberToRoster = async (req, res) => {
       `, [clubId, teamId, memberId, position, jerseyNumber]);
     }
 
-    res.json({ success: true, message: 'Игрок успешно добавлен в активный ростер' });
+    res.json({ success: true, message: 'РРіСЂРѕРє СѓСЃРїРµС€РЅРѕ РґРѕР±Р°РІР»РµРЅ РІ Р°РєС‚РёРІРЅС‹Р№ СЂРѕСЃС‚РµСЂ' });
   } catch (error) {
     console.error('[Add Member To Roster Error]:', error);
-    res.status(500).json({ error: 'Internal server error' });
-  }
-};
-
-// =============================================================================
-// НОВЫЙ БЛОК: СИСТЕМА УПРАВЛЕНИЯ ВНЕШНИМИ ТУРНИРАМИ И ДИВИЗИОНАМИ КОМАНДЫ
-// =============================================================================
-
-// Получить список внешних турниров команды вместе со вложенными дивизионами
-export const getExternalTournaments = async (req, res) => {
-  const { teamId } = req.params;
-  try {
-    const query = `
-      SELECT t.id, t.team_id, t.name, t.short_name, t.logo_url, t.city, t.created_at,
-             COALESCE(
-               json_agg(
-                 json_build_object('id', d.id, 'name', d.name)
-               ) FILTER (WHERE d.id IS NOT NULL), '[]'
-             ) as divisions
-      FROM team_external_tournaments t
-      LEFT JOIN team_external_divisions d ON t.id = d.tournament_id
-      WHERE t.team_id = $1
-      GROUP BY t.id
-      ORDER BY t.name ASC
-    `;
-    const { rows } = await pool.query(query, [teamId]);
-    res.json({ success: true, tournaments: rows });
-  } catch (error) {
-    console.error('[Get External Tournaments Error]:', error);
-    res.status(500).json({ error: 'Internal server error' });
-  }
-};
-
-// Создать новый кастомный внешний турнир команды
-export const createExternalTournament = async (req, res) => {
-  const { teamId } = req.params;
-  const { name, short_name, city } = req.body;
-  const reqUserId = req.user?.id;
-
-  try {
-    const hasAccess = await checkPermissionInternal(reqUserId, teamId, 'TEAM_MANAGE_TAB_ALL');
-    if (!hasAccess) {
-      return res.status(403).json({ error: 'Недостаточно прав для создания внешнего турнира' });
-    }
-
-    let logo_url = null;
-    if (req.file) {
-      const ext = path.extname(req.file.originalname) || '.png';
-      const key = `uploads/teams_${teamId}_ext_tour_logo_${Date.now()}${ext}`;
-      await uploadBufferToS3(req.file, key);
-      logo_url = `/${key}`;
-    }
-
-    const query = `
-      INSERT INTO team_external_tournaments (team_id, name, short_name, logo_url, city)
-      VALUES ($1, $2, $3, $4, $5)
-      RETURNING *
-    `;
-    const { rows } = await pool.query(query, [teamId, name, short_name, logo_url, city]);
-    res.json({ success: true, tournament: rows[0] });
-  } catch (error) {
-    console.error('[Create External Tournament Error]:', error);
-    res.status(500).json({ error: 'Internal server error' });
-  }
-};
-
-// Полностью удалить внешний турнир (каскадом удалит и дивизионы)
-export const deleteExternalTournament = async (req, res) => {
-  const { teamId, id } = req.params;
-  const reqUserId = req.user?.id;
-
-  try {
-    const hasAccess = await checkPermissionInternal(reqUserId, teamId, 'TEAM_MANAGE_TAB_ALL');
-    if (!hasAccess) {
-      return res.status(403).json({ error: 'Недостаточно прав для удаления внешнего турнира' });
-    }
-
-    const query = `DELETE FROM team_external_tournaments WHERE id = $1 AND team_id = $2 RETURNING *`;
-    const { rowCount } = await pool.query(query, [id, teamId]);
-    
-    if (rowCount === 0) {
-      return res.status(404).json({ error: 'Внешний турнир не найден' });
-    }
-
-    res.json({ success: true, message: 'Внешний турнир успешно удален' });
-  } catch (error) {
-    console.error('[Delete External Tournament Error]:', error);
-    res.status(500).json({ error: 'Internal server error' });
-  }
-};
-
-// Создать кастомный дивизион внутри внешнего турнира
-export const createExternalDivision = async (req, res) => {
-  const { teamId, tournamentId } = req.params;
-  const { name } = req.body;
-  const reqUserId = req.user?.id;
-
-  try {
-    const hasAccess = await checkPermissionInternal(reqUserId, teamId, 'TEAM_MANAGE_TAB_ALL');
-    if (!hasAccess) {
-      return res.status(403).json({ error: 'Недостаточно прав для создания дивизиона' });
-    }
-
-    const tourCheck = await pool.query(
-      'SELECT 1 FROM team_external_tournaments WHERE id = $1 AND team_id = $2', 
-      [tournamentId, teamId]
-    );
-    if (tourCheck.rows.length === 0) {
-      return res.status(404).json({ error: 'Внешний турнир не найден для данной команды' });
-    }
-
-    const query = `
-      INSERT INTO team_external_divisions (tournament_id, name)
-      VALUES ($1, $2)
-      RETURNING *
-    `;
-    const { rows } = await pool.query(query, [tournamentId, name]);
-    res.json({ success: true, division: rows[0] });
-  } catch (error) {
-    console.error('[Create External Division Error]:', error);
-    res.status(500).json({ error: 'Internal server error' });
-  }
-};
-
-// Удалить кастомный дивизион внешнего турнира
-export const deleteExternalDivision = async (req, res) => {
-  const { teamId, id } = req.params;
-  const reqUserId = req.user?.id;
-
-  try {
-    const hasAccess = await checkPermissionInternal(reqUserId, teamId, 'TEAM_MANAGE_TAB_ALL');
-    if (!hasAccess) {
-      return res.status(403).json({ error: 'Недостаточно прав для удаления дивизиона' });
-    }
-
-    const divCheck = await pool.query(`
-      SELECT d.id FROM team_external_divisions d
-      JOIN team_external_tournaments t ON d.tournament_id = t.id
-      WHERE d.id = $1 AND t.team_id = $2
-    `, [id, teamId]);
-
-    if (divCheck.rows.length === 0) {
-      return res.status(404).json({ error: 'Дивизион не найден или не принадлежит вашей команде' });
-    }
-
-    await pool.query('DELETE FROM team_external_divisions WHERE id = $1', [id]);
-    res.json({ success: true, message: 'Дивизион успешно удален' });
-  } catch (error) {
-    console.error('[Delete External Division Error]:', error);
-    res.status(500).json({ error: 'Internal server error' });
-  }
-};
-
-// =============================================================================
-// НОВЫЙ БЛОК: СУЩНОСТЬ ЕДИНОГО СПРАВОЧНИКА ВНЕШНИХ СОПЕРНИКОВ КОМАНДЫ
-// =============================================================================
-
-// Получить список кастомных соперников команды
-export const getExternalOpponents = async (req, res) => {
-  const { teamId } = req.params;
-  try {
-    const query = `SELECT * FROM external_opponents WHERE team_id = $1 ORDER BY name ASC`;
-    const { rows } = await pool.query(query, [teamId]);
-    res.json({ success: true, opponents: rows });
-  } catch (error) {
-    console.error('[Get External Opponents Error]:', error);
-    res.status(500).json({ error: 'Internal server error' });
-  }
-};
-
-// Создать карточку внешнего соперника с загрузкой логотипа в S3
-export const createExternalOpponent = async (req, res) => {
-  const { teamId } = req.params;
-  const { name, short_name, city } = req.body;
-  const reqUserId = req.user?.id;
-
-  try {
-    const hasAccess = await checkPermissionInternal(reqUserId, teamId, 'TEAM_MANAGE_TAB_ALL');
-    if (!hasAccess) {
-      return res.status(403).json({ error: 'Недостаточно прав для добавления карточки соперника' });
-    }
-
-    let logo_url = null;
-    if (req.file) {
-      const ext = path.extname(req.file.originalname) || '.png';
-      const key = `uploads/teams_${teamId}_ext_opp_logo_${Date.now()}${ext}`;
-      await uploadBufferToS3(req.file, key);
-      logo_url = `/${key}`;
-    }
-
-    const query = `
-      INSERT INTO external_opponents (team_id, name, short_name, city, logo_url, status)
-      VALUES ($1, $2, $3, $4, $5, 'active')
-      RETURNING *
-    `;
-    const { rows } = await pool.query(query, [teamId, name, short_name, city, logo_url]);
-    res.json({ success: true, opponent: rows[0] });
-  } catch (error) {
-    console.error('[Create External Opponent Error]:', error);
-    res.status(500).json({ error: 'Internal server error' });
-  }
-};
-
-// Удалить карточку внешнего соперника из справочника команды
-export const deleteExternalOpponent = async (req, res) => {
-  const { teamId, id } = req.params;
-  const reqUserId = req.user?.id;
-
-  try {
-    const hasAccess = await checkPermissionInternal(reqUserId, teamId, 'TEAM_MANAGE_TAB_ALL');
-    if (!hasAccess) {
-      return res.status(403).json({ error: 'Недостаточно прав для удаления карточки соперника' });
-    }
-
-    const query = `DELETE FROM external_opponents WHERE id = $1 AND team_id = $2 RETURNING *`;
-    const { rowCount } = await pool.query(query, [id, teamId]);
-
-    if (rowCount === 0) {
-      return res.status(404).json({ error: 'Внешний соперник не найден' });
-    }
-
-    res.json({ success: true, message: 'Внешний соперник успешно удален из вашего справочника' });
-  } catch (error) {
-    console.error('[Delete External Opponent Error]:', error);
     res.status(500).json({ error: 'Internal server error' });
   }
 };

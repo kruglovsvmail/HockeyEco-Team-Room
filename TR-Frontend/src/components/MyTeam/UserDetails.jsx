@@ -84,7 +84,7 @@ const CustomBlock = ({ title, icon, isEditing, isManager, hasAccess = true, popo
   );
 };
 
-export const UserDetails = ({ data }) => {
+export const UserDetails = ({ data, openRightPanel, pushRightPanel }) => {
   const [profile, setProfile] = useState(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -183,25 +183,35 @@ export const UserDetails = ({ data }) => {
     { id: 'forward', label: 'Нападающий' }
   ];
 
-  const fetchDetails = () => {
-    setIsLoading(true);
+  // Кэш последней загруженной карточки участника (тот же приём, что и в
+  // EventDetailsTraining.jsx) — при возврате «назад» из профиля игрока панель
+  // отрисовывается мгновенно из кэша, а свежие данные подтягиваются в фоне.
+  const cacheKey = teamId && userId ? `tr_cached_member_${teamId}_${userId}` : null;
+
+  const applyProfileData = (resData) => {
+    setProfile(resData.member);
+    setIsManager(!!resData.isManager);
+    setIsOwnProfile(!!resData.isOwnProfile);
+    setFormData({
+      roles: resData.member.roles || '',
+      jersey_number: resData.member.jersey_number ?? '',
+      position: resData.member.position || '',
+      is_captain: !!resData.member.is_captain,
+      is_assistant: !!resData.member.is_assistant
+    });
+  };
+
+  const fetchDetails = (silent = false) => {
+    if (!silent) setIsLoading(true);
     fetch(`${import.meta.env.VITE_API_URL}/api/teams/${teamId}/members/${userId}`, {
       headers: getAuthHeaders()
     })
       .then(res => res.json())
       .then(resData => {
         if (resData.success) {
-          setProfile(resData.member);
-          setIsManager(!!resData.isManager);
-          setIsOwnProfile(!!resData.isOwnProfile); 
-          setFormData({
-            roles: resData.member.roles || '',
-            jersey_number: resData.member.jersey_number ?? '',
-            position: resData.member.position || '',
-            is_captain: !!resData.member.is_captain,
-            is_assistant: !!resData.member.is_assistant
-          });
+          applyProfileData(resData);
           setAssistantError('');
+          if (cacheKey) localStorage.setItem(cacheKey, JSON.stringify(resData));
         }
       })
       .catch(err => setError(err.message))
@@ -209,7 +219,23 @@ export const UserDetails = ({ data }) => {
   };
 
   useEffect(() => {
-    if (teamId && userId) fetchDetails();
+    if (!teamId || !userId) return;
+    setError(null);
+
+    const cached = cacheKey ? localStorage.getItem(cacheKey) : null;
+    if (cached) {
+      try {
+        const parsed = JSON.parse(cached);
+        if (parsed.success) {
+          applyProfileData(parsed);
+          setIsLoading(false);
+          fetchDetails(true); // тихое обновление в фоне
+          return;
+        }
+      } catch { /* игнорируем битый кэш */ }
+    }
+
+    fetchDetails(false);
   }, [teamId, userId]);
 
   const jerseyError = useMemo(() => {
@@ -257,19 +283,10 @@ export const UserDetails = ({ data }) => {
         headers: getAuthHeaders()
       })
         .then(r => r.json())
-        .then(d => { 
+        .then(d => {
           if (d.success) {
-            setProfile(d.member);
-            setIsManager(!!d.isManager);
-            setIsOwnProfile(!!d.isOwnProfile);
-            setFormData(prev => ({
-              ...prev,
-              roles: d.member.roles || '',
-              jersey_number: d.member.jersey_number ?? '',
-              position: d.member.position || '',
-              is_captain: !!d.member.is_captain,
-              is_assistant: !!d.member.is_assistant
-            }));
+            applyProfileData(d);
+            if (cacheKey) localStorage.setItem(cacheKey, JSON.stringify(d));
             data?.onRefresh?.();
           }
         });
@@ -367,6 +384,29 @@ export const UserDetails = ({ data }) => {
 
   const handleSelectPositionCheckbox = (posId) => {
     setFormData(prev => ({ ...prev, position: posId }));
+  };
+
+  // Переход в профиль игрока (сезоны/турниры) — открывается в том же слоте поверх
+  // текущей карточки участника; «назад» в шапке панели вернёт сюда же (pushRightPanel).
+  const handleOpenStats = () => {
+    if (!pushRightPanel) return;
+    pushRightPanel('playerProfile', {
+      playerId: userId,
+      activeBrandColor,
+      hasTeamColor: !!activeBrandColor,
+      hideBioTiles: true
+    }, 'Турниры и лиги');
+  };
+
+  // Переход в статистику игрока внутри этой команды (посещаемость тренировок и т.п.)
+  const handleOpenTeamStats = () => {
+    if (!pushRightPanel) return;
+    pushRightPanel('teamStats', {
+      teamId,
+      userId,
+      activeBrandColor,
+      hasTeamColor: !!activeBrandColor
+    }, 'Статистика в команде');
   };
 
   // ── Сохранение по блокам (по аналогии с EditEventPanel) ─────────────────
@@ -497,6 +537,21 @@ export const UserDetails = ({ data }) => {
           )}
         </div>
 
+        {/* КНОПКА ПЕРЕХОДА В СТАТИСТИКУ ИГРОКА ВНУТРИ КОМАНДЫ (посещаемость тренировок и т.п.) */}
+        {pushRightPanel && (
+          <button
+            type="button"
+            onClick={handleOpenTeamStats}
+            className="flex items-center justify-between gap-2 p-3.5 mb-3 bg-surface-level1 border border-surface-border rounded-2xl shadow-sm cursor-pointer active:scale-[0.98] transition-transform outline-none"
+          >
+            <div className="flex items-center gap-2.5">
+              <Icon name="metrics" className="w-4 h-4" style={{ color: brandColor }} />
+              <span className="text-[10px] font-black uppercase text-content-main tracking-widest">Статистика в команде</span>
+            </div>
+            <Icon name="chevron_right" className="w-4 h-4 text-content-subtle" />
+          </button>
+        )}
+
         {/* БЛОК 1: АДМИНИСТРАТИВНЫЙ СТАТУС РОЛЕЙ (Карандаш строго привязан к canSeeRolesEditBlock) */}
         <CustomBlock 
           title="Роли в команде" 
@@ -598,6 +653,21 @@ export const UserDetails = ({ data }) => {
             </div>
           )}
         </CustomBlock>
+
+        {/* КНОПКА ПЕРЕХОДА В ПРОФИЛЬ ИГРОКА (сезоны/турниры/статистика) */}
+        {pushRightPanel && (
+          <button
+            type="button"
+            onClick={handleOpenStats}
+            className="flex items-center justify-between gap-2 p-3.5 mb-3 bg-surface-level1 border border-surface-border rounded-2xl shadow-sm cursor-pointer active:scale-[0.98] transition-transform outline-none"
+          >
+            <div className="flex items-center gap-2.5">
+              <Icon name="standings" className="w-4 h-4" style={{ color: brandColor }} />
+              <span className="text-[10px] font-black uppercase text-content-main tracking-widest">Турниры и лиги</span>
+            </div>
+            <Icon name="chevron_right" className="w-4 h-4 text-content-subtle" />
+          </button>
+        )}
 
         {/* БЛОК 3: ФИЗИЧЕСКИЕ ДАННЫЕ */}
         <CustomBlock title="Физические данные" icon="player" isEditing={false} isManager={showAdminControls} onAction={null} activeBrandColor={activeBrandColor}>

@@ -330,7 +330,7 @@ export function TournamentPlayoff({
                                 <div className="w-6 h-6 bg-surface-level2 border border-surface-border text-[14px] text-content-muted font-bold shrink-0 flex items-center justify-center rounded-full">?</div>
                               )}
                               <span 
-                                className={clsx("uppercase tracking-tight text-[10px] truncate", isTeam1Winner ? "font-black" : "font-bold text-content-main")}
+                                className={clsx("uppercase tracking-wider tracking-tight text-[14px] truncate", isTeam1Winner ? "font-black" : "font-bold text-content-main")}
                                 style={isTeam1Winner ? { color: activeBrandColor } : {}}
                               >
                                 {homeName}
@@ -353,7 +353,7 @@ export function TournamentPlayoff({
                                 <div className="w-6 h-6 bg-surface-level2 border border-surface-border text-[14px] text-content-muted font-bold shrink-0 flex items-center justify-center rounded-full">?</div>
                               )}
                               <span 
-                                className={clsx("uppercase tracking-tight text-[10px] truncate", isTeam2Winner ? "font-black" : "font-bold text-content-main")}
+                                className={clsx("uppercase tracking-wider tracking-tight text-[14px] truncate", isTeam2Winner ? "font-black" : "font-bold text-content-main")}
                                 style={isTeam2Winner ? { color: activeBrandColor } : {}}
                               >
                                 {awayName}

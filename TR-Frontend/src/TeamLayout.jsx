@@ -44,6 +44,7 @@ import { PlayerDocsModal } from './components/Manager/Season/PlayerDocsModal';
 import { SeasonRostersDetailsPage } from './pages/SeasonRostersDetailsPage';
 
 import { PlayerProfilePanel } from './components/Player/PlayerProfilePanel';
+import { TeamStatsPanel } from './components/Player/TeamStatsPanel';
 
 dayjs.extend(utc);
 dayjs.extend(timezone);
@@ -60,8 +61,10 @@ function TeamLayoutContent() {
   const [isLoading, setIsLoading] = useState(true);
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
 
-  const [rightPanel, setRightPanel] = useState({ isOpen: false, type: null, data: null, title: '' });
+  const [rightPanel, setRightPanel] = useState({ isOpen: false, type: null, data: null, title: '', previous: null });
   const [panel100, setPanel100] = useState({ isOpen: false, type: null, data: null, title: '' });
+  // Направление анимации переключения содержимого rightPanel: 'forward' (pushRightPanel) | 'back' (backRightPanel)
+  const [rightPanelNavDirection, setRightPanelNavDirection] = useState('forward');
 
   const [isPanelReady, setIsPanelReady] = useState(false);
   const [isPanel100Ready, setIsPanel100Ready] = useState(false);
@@ -307,10 +310,41 @@ function TeamLayoutContent() {
         closeRightPanel();
       }
     };
-    setRightPanel({ isOpen: true, type, data: extendedData, title });
+    setRightPanelNavDirection('forward');
+    setRightPanel({ isOpen: true, type, data: extendedData, title, previous: null });
   };
 
-  const closeRightPanel = () => setRightPanel({ isOpen: false, type: null, data: null, title: '' });
+  // Открывает новую панель поверх текущей внутри того же слота, запоминая текущую
+  // как «предыдущую» — backRightPanel() вернётся к ней вместо полного закрытия.
+  const pushRightPanel = (type, data, title = 'Детали') => {
+    const extendedData = {
+      ...data,
+      onSelect: (selectedItem) => {
+        if (data && data.onSelect) data.onSelect(selectedItem);
+        closeRightPanel();
+      }
+    };
+    setRightPanelNavDirection('forward');
+    setRightPanel(prev => ({
+      isOpen: true,
+      type,
+      data: extendedData,
+      title,
+      previous: prev.isOpen ? { type: prev.type, data: prev.data, title: prev.title } : null
+    }));
+  };
+
+  // Кнопка «назад» в шапке панели: возвращает к предыдущей (если она есть через pushRightPanel),
+  // иначе закрывает панель целиком.
+  const backRightPanel = () => {
+    setRightPanelNavDirection('back');
+    setRightPanel(prev => {
+      if (!prev.previous) return { isOpen: false, type: null, data: null, title: '', previous: null };
+      return { isOpen: true, type: prev.previous.type, data: prev.previous.data, title: prev.previous.title, previous: null };
+    });
+  };
+
+  const closeRightPanel = () => setRightPanel({ isOpen: false, type: null, data: null, title: '', previous: null });
 
   const openPanel100 = (type, data, title = 'Детали') => {
     window.history.pushState({ panel: 'panel100' }, '');
@@ -405,16 +439,16 @@ function TeamLayoutContent() {
       {/* Правая панель: выезжает справа внутри 1000px-контейнера.
           eventEdit, playerDocs, playerProfile и userDetails подняты над оверлеями EventPage/SeasonRostersDetailsPage (z-100) и panel100 (z-60). */}
       <div className={clsx(
-        "absolute top-0 right-0 w-[80%] h-full bg-surface-level2 shadow-[-15px_0_30px_rgba(0,0,0,0.1)] flex flex-col overflow-hidden flex-shrink-0",
+        "absolute top-0 right-0 w-[80%] h-full bg-surface-level2 border-l border-white/10 shadow-[-15px_0_30px_rgba(0,0,0,0.1)] flex flex-col overflow-hidden flex-shrink-0",
         "transition-transform duration-300 ease-[cubic-bezier(0.32,0.72,0,1)]",
-        (rightPanel.type === 'eventEdit' || rightPanel.type === 'playerDocs' || rightPanel.type === 'playerProfile' || rightPanel.type === 'userDetails') ? "z-[110]" : "z-[40]",
+        (rightPanel.type === 'eventEdit' || rightPanel.type === 'playerDocs' || rightPanel.type === 'playerProfile' || rightPanel.type === 'userDetails' || rightPanel.type === 'teamStats') ? "z-[110]" : "z-[40]",
         rightPanel.isOpen ? "translate-x-0" : "translate-x-full"
       )}>
         <div className="w-full h-full flex flex-col overflow-hidden shrink-0">
           {rightPanel.isOpen && (
             <>
               <div className="flex items-center justify-between shadow-md p-4 h-[60px] shrink-0 z-[90]">
-                <button onClick={closeRightPanel} className="p-1.5 ml-1 bg-white/10 rounded-xl text-content-muted hover:text-brand transition-colors outline-none cursor-pointer active:scale-95 flex items-center">
+                <button onClick={backRightPanel} className="p-1.5 ml-1 bg-white/10 rounded-xl text-content-muted hover:text-brand transition-colors outline-none cursor-pointer active:scale-95 flex items-center">
                   <Icon name="chevron_left" className="w-6 h-6 text-content-main" />
                 </button>
                 <h3 className="text-[14px] font-bold text-content-main uppercase tracking-wider text-right truncate pl-4">
@@ -425,9 +459,17 @@ function TeamLayoutContent() {
                 {!isPanelReady ? (
                   <PageLoader />
                 ) : (
-                  <FadeIn className="h-full w-full">
+                  <AnimatePresence initial={false}>
+                    <motion.div
+                      key={rightPanel.type}
+                      initial={{ x: rightPanelNavDirection === 'back' ? '-100%' : '100%', opacity: 0 }}
+                      animate={{ x: 0, opacity: 1 }}
+                      exit={{ x: rightPanelNavDirection === 'back' ? '100%' : '-100%', opacity: 0 }}
+                      transition={{ duration: 0.28, ease: [0.32, 0.72, 0, 1] }}
+                      className="absolute inset-0 h-full w-full"
+                    >
                     {rightPanel.type === 'userDetails' && (
-                      <UserDetails data={rightPanel.data} />
+                      <UserDetails data={rightPanel.data} openRightPanel={openRightPanel} pushRightPanel={pushRightPanel} />
                     )}
                     {rightPanel.type === 'arenaSelector' && (
                       <ArenaSelector data={rightPanel.data} />
@@ -465,12 +507,16 @@ function TeamLayoutContent() {
                     {rightPanel.type === 'playerProfile' && (
                       <PlayerProfilePanel data={rightPanel.data} />
                     )}
+                    {rightPanel.type === 'teamStats' && (
+                      <TeamStatsPanel data={rightPanel.data} />
+                    )}
                     {rightPanel.type === 'eventEdit' && (
                       <Suspense fallback={<PageLoader />}>
                         <EditEventPanel data={rightPanel.data} onClose={closeRightPanel} />
                       </Suspense>
                     )}
-                  </FadeIn>
+                    </motion.div>
+                  </AnimatePresence>
                 )}
               </div>
             </>
@@ -485,7 +531,7 @@ function TeamLayoutContent() {
             key="event-overlay"
             className="absolute inset-0 z-[100] overflow-hidden"
             initial={{ x: '100%' }}
-            animate={{ x: rightPanel.isOpen && (rightPanel.type === 'eventEdit' || rightPanel.type === 'playerProfile' || rightPanel.type === 'userDetails') ? '-80%' : 0 }}
+            animate={{ x: rightPanel.isOpen && (rightPanel.type === 'eventEdit' || rightPanel.type === 'playerProfile' || rightPanel.type === 'userDetails' || rightPanel.type === 'teamStats') ? '-80%' : 0 }}
             exit={{ x: '100%' }}
             transition={{ duration: 0.35, ease: [0.32, 0.72, 0, 1] }}
           >
@@ -507,7 +553,7 @@ function TeamLayoutContent() {
 
       {/* Click-zone слева для закрытия панели редактирования/профиля игрока, когда поверх лежит EventPage, SeasonRostersDetailsPage или panel100.
           z-[105] — выше оверлея (z-100) и panel100 (z-60), но ниже самой панели (z-110). */}
-      {rightPanel.isOpen && ((rightPanel.type === 'eventEdit' && eventForOverlay) || (rightPanel.type === 'playerDocs' && applicationMatch) || ((rightPanel.type === 'playerProfile' || rightPanel.type === 'userDetails') && (eventForOverlay || panel100.isOpen))) && (
+      {rightPanel.isOpen && ((rightPanel.type === 'eventEdit' && eventForOverlay) || (rightPanel.type === 'playerDocs' && applicationMatch) || ((rightPanel.type === 'playerProfile' || rightPanel.type === 'userDetails' || rightPanel.type === 'teamStats') && (eventForOverlay || panel100.isOpen))) && (
         <div
           className="absolute top-0 bottom-0 left-0 w-[20%] z-[105] cursor-pointer"
           onClick={closeRightPanel}
@@ -544,7 +590,7 @@ function TeamLayoutContent() {
         "absolute inset-0 w-full h-full z-[60] bg-surface-level2 flex flex-col overflow-hidden",
         "transition-transform duration-300 ease-[cubic-bezier(0.32,0.72,0,1)]",
         panel100.isOpen
-          ? (rightPanel.isOpen && rightPanel.type === 'playerProfile' ? "-translate-x-[80%]" : "translate-x-0")
+          ? (rightPanel.isOpen && (rightPanel.type === 'playerProfile' || rightPanel.type === 'teamStats') ? "-translate-x-[80%]" : "translate-x-0")
           : "translate-x-full"
       )}>
         <div className="flex items-center justify-between shadow-md px-4 h-[60px] shrink-0 z-[90] border-b border-surface-border">

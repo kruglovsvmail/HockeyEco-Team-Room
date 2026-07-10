@@ -4,6 +4,7 @@ import { getImageUrl, getAuthHeaders } from '../../utils/helpers';
 import { Avatar } from '../../ui/Avatar';
 import { PageLoader } from '../../ui/Loader';
 import { SegmentedControl } from '../../ui/SegmentedControl';
+import { HintPopover } from '../../ui/HintPopover';
 
 const GRIP_LABELS = { left: 'Левый', right: 'Правый' };
 
@@ -31,84 +32,130 @@ const formatYears = (n) => {
 // hideLabel — для строки возраст/рост/вес значения самодостаточны (25 лет,
 // 180 см), подпись под ними только отнимала место.
 const StatTile = ({ label, value, compact, hideLabel }) => (
-  <div className={clsx("flex flex-col items-center justify-center bg-surface-level2 rounded-xl", compact ? "py-1.5" : "py-2")}>
-    <span className={clsx("font-bold text-content-main tabular-nums leading-tight", compact ? "text-[10px]" : "text-[14px]")}>{value ?? '—'}</span>
+  <div className={clsx("flex flex-col items-center justify-center bg-surface-level2 rounded-xl", compact ? "py-1.5" : "py-1.5")}>
+    <span className={clsx("font-bold text-content-main tabular-nums leading-tight", compact ? "text-[10px]" : "text-[16px]")}>{value ?? '—'}</span>
     {!hideLabel && (
-      <span className="text-[10px] font-semibold uppercase tracking-wider text-content-subtle mt-0.5 leading-none">{label}</span>
+      <span className="text-[10px] font-mibold uppercase tracking-wider text-content-subtle mt-1.5 leading-none">{label}</span>
     )}
   </div>
 );
 
-// Карточка одного сезона — вместо строки широкой таблицы (замена таблицам из
-// LMS, которые физически не влезают в узкую панель).
-const SeasonCard = ({ row, isGoalie }) => {
+// Всплывающая карточка команды (клик по короткому названию/лого) — крупный
+// логотип, полное название, город.
+const TeamPopoverContent = ({ row }) => (
+  <div className="flex flex-col items-center text-center">
+    {row.team_logo && (
+      <img src={getImageUrl(row.team_logo)} alt="" className="w-12 h-12 object-contain" />
+    )}
+    <div className="text-[14px] font-bold text-content-main leading-tight mt-2">{row.team_full_name || row.team_name}</div>
+    {row.team_city && <div className="text-[12px] text-content-muted">{row.team_city}</div>}
+  </div>
+);
+
+// Одна строка сезона — без собственного контейнера/тени, отделяется от
+// соседних строк горизонтальной линией (как в TeamStatsPanel.jsx: единая
+// карточка-группа с разделителями внутри, а не стопка отдельных карточек).
+const SeasonRow = ({ row, isGoalie, isLast }) => {
   const tiles = isGoalie
     ? [
-        { label: 'И', value: row.gp },
-        { label: 'Штр', value: row.pim },
+        { label: 'Игры', value: row.gp },
+        { label: 'Штраф', value: row.pim },
         { label: 'ПШ', value: row.ga },
         { label: 'Об', value: row.sv },
-        { label: '%Об', value: row.svp != null ? `${row.svp}%` : null },
+        { label: '%Об', value: row.svp != null ? `${row.svp}%` : null, span: 2 },
       ]
     : [
-        { label: 'И', value: row.gp },
-        { label: 'Ш', value: row.g },
-        { label: 'П', value: row.a },
-        { label: 'О', value: row.pts },
+        { label: 'Игры', value: row.gp },
+        { label: 'Шайбы', value: row.g },
+        { label: 'Передачи', value: row.a },
+        { label: 'Очки', value: row.pts },
         { label: '+/-', value: row.pm > 0 ? `+${row.pm}` : row.pm },
-        { label: 'Штр', value: row.pim },
+        { label: 'Штраф', value: row.pim },
       ];
 
+  // Поповер с полным названием лиги/турнира не нужен, если короткое и полное
+  // названия совпадают — показывать одно и то же во всплывашке бессмысленно.
+  const showLeaguePopover = !!row.league_full_name && row.league_full_name !== row.league_name;
+
   return (
-    <div className="bg-surface-level1 rounded-2xl p-3 shadow-md flex flex-col gap-2.5">
+    <div className={clsx("flex flex-col gap-2 py-3", !isLast && "border-b border-surface-border")}>
+      {/* Строка 1: «Сезон {название}» слева, короткое название команды + лого справа */}
       <div className="flex items-center justify-between gap-2">
-        <span className="text-[10px] font-bold uppercase tracking-widest text-brand truncate">{row.season_name || '—'}</span>
-        {row.qual_name && (
-          <span className="shrink-0 text-[10px] font-bold uppercase px-2 py-1 rounded-full bg-brand/10 text-brand">
-            {row.qual_name}
-          </span>
+        <span className="text-[10px] font-bold uppercase tracking-widest text-brand truncate">
+          Сезон {row.season_name || '—'}
+        </span>
+        {(row.team_short_name || row.team_name) && (
+          <HintPopover customContent={<TeamPopoverContent row={row} />} className="shrink-0 ">
+            <div className="flex items-center gap-1.5">
+              <span className="text-[14px] font-bold text-content-main truncate max-w-[110px]">
+                {row.team_short_name || row.team_name}
+              </span>
+              {row.team_logo && (
+                <img src={getImageUrl(row.team_logo)} alt="" className="w-5 h-5 object-contain shrink-0" />
+              )}
+            </div>
+          </HintPopover>
         )}
       </div>
-      <div className="flex items-center gap-2 min-w-0">
-        {row.team_logo && (
-          <img src={getImageUrl(row.team_logo)} alt="" className="w-7 h-7 rounded-full bg-surface-base object-contain shrink-0" />
+
+      {/* Строка 2: лого дивизиона слева, короткое название лиги + дивизион справа от него */}
+      <div className="flex items-center gap-4 min-w-0">
+        {row.division_logo && (
+          <img src={getImageUrl(row.division_logo)} alt="" className="w-10 h-10 rounded-xl p-0.5 bg-surface-level2 object-contain shrink-0" />
         )}
         <div className="min-w-0 flex-1">
-          <div className="text-[14px] font-bold text-content-main truncate">{row.team_name}</div>
-          <div className="text-[10px] text-content-muted truncate">
-            {row.league_name}{row.division_name ? ` · ${row.division_name}` : ''}
-          </div>
+          {showLeaguePopover ? (
+            <HintPopover customContent={<div className="text-[14px] font-bold text-content-main text-center">{row.league_full_name}</div>}>
+              <div className="text-[16px] font-semibold text-content-main truncate">{row.league_name}</div>
+            </HintPopover>
+          ) : (
+            <div className="text-[16px] font-semibold text-content-main truncate">{row.league_name}</div>
+          )}
+          {row.division_name && (
+            <div className="text-[12px] font-normal text-content-muted truncate -mt-1.5">{row.division_name}</div>
+          )}
         </div>
       </div>
+
       {/* Максимум 3 тайла в ряд — при 5 параметрах у вратаря (grid-cols-5) всё
           сжималось в кашу на узкой панели, поэтому всегда grid-cols-3 (вратарь
           переносится 3+2). */}
-      <div className="grid grid-cols-3 gap-1.5">
-        {tiles.map(t => <StatTile key={t.label} label={t.label} value={t.value} />)}
+      <div className="grid grid-cols-3 gap-1.5 mt-1">
+        {tiles.map(t => (
+          <div key={t.label} className={t.span === 2 ? 'col-span-2' : undefined}>
+            <StatTile label={t.label} value={t.value} />
+          </div>
+        ))}
       </div>
     </div>
   );
 };
 
+// Заголовок группы внутри самой карточки (шапка с разделителем), а не
+// отдельной плашкой над ней — тот же приём, что и в TeamStatsPanel.jsx. Фон
+// панели сам по себе surface-level2 (наследуется от TeamLayout), поэтому
+// карточка — surface-level1, иначе она сливается с фоном и становится невидимой.
 const SeasonGroup = ({ title, rows, isGoalie }) => (
-  <div>
-    <div className="text-[10px] font-bold uppercase tracking-widest text-content-subtle mb-2 px-1">{title}</div>
+  <div className="bg-surface-level1 rounded-xl p-4 shadow-md flex flex-col">
+    <div className="pb-2 px-1 border-b border-surface-border">
+      <span className="text-[10px] font-bold uppercase tracking-widest text-content-subtle">{title}</span>
+    </div>
     {rows.length === 0 ? (
-      <div className="text-center text-[11px] font-bold uppercase tracking-widest text-content-subtle py-6 bg-surface-level1 rounded-2xl border border-dashed border-surface-border">
+      <div className="text-center text-[11px] font-bold uppercase tracking-widest text-content-subtle py-6">
         Нет данных
       </div>
     ) : (
-      <div className="flex flex-col gap-2">
-        {rows.map((row, i) => <SeasonCard key={i} row={row} isGoalie={isGoalie} />)}
-      </div>
+      rows.map((row, i) => <SeasonRow key={i} row={row} isGoalie={isGoalie} isLast={i === rows.length - 1} />)
     )}
   </div>
 );
 
-// data: { playerId, activeBrandColor?, hasTeamColor? } — передаётся через
-// openRightPanel('playerProfile', data, 'Профиль игрока') из TeamLayout.jsx.
+// data: { playerId, activeBrandColor?, hasTeamColor?, hideBioTiles? } — передаётся
+// через openRightPanel/pushRightPanel('playerProfile', data, 'Профиль игрока').
+// hideBioTiles — скрывает блок возраст/рост/вес/хват: используется при переходе
+// из «Участника команды» (UserDetails.jsx), где эти же данные уже показаны.
 export function PlayerProfilePanel({ data }) {
-  const { playerId, activeBrandColor, hasTeamColor } = data || {};
+  const { playerId, activeBrandColor, hasTeamColor, hideBioTiles } = data || {};
 
   const [loading, setLoading] = useState(true);
   const [profile, setProfile] = useState(null);
@@ -211,10 +258,13 @@ export function PlayerProfilePanel({ data }) {
     >
       {/* ШАПКА */}
       <div className="p-4 flex flex-col gap-3 shrink-0">
-        <div className="flex items-center gap-4">
+        {/* КАРТОЧКА ШАПКИ ИГРОКА — тот же вид, что и в TeamStatsPanel.jsx/UserDetails.jsx,
+            но с сохранённой каруселью фото (клик по фото листает allPhotos) и
+            бейджем лого команды поверх текущего фото. */}
+        <div className="flex items-center gap-4 p-4 bg-surface-level1 border border-surface-border rounded-2xl shadow-sm">
           <div
             className={clsx(
-              "relative w-20 h-20 shrink-0 rounded-2xl overflow-hidden shadow-md bg-surface-level1",
+              "relative w-20 h-20 shrink-0 rounded-3xl bg-surface-base border border-surface-border p-0.5 shadow-sm overflow-hidden",
               allPhotos.length > 1 && "cursor-pointer active:scale-95 transition-transform"
             )}
             onClick={() => allPhotos.length > 1 && setPhotoIndex(p => (p + 1) % allPhotos.length)}
@@ -223,7 +273,7 @@ export function PlayerProfilePanel({ data }) {
               photoUrl={allPhotos[photoIndex]?.url || info.avatar_url}
               firstName={info.first_name}
               lastName={info.last_name}
-              className="w-full h-full rounded-2xl"
+              className="w-full h-full rounded-3xl"
               fallbackClassName="bg-surface-level1 text-content-muted"
             />
             {allPhotos[photoIndex]?.type === 'team' && allPhotos[photoIndex]?.teamLogo && (
@@ -237,14 +287,14 @@ export function PlayerProfilePanel({ data }) {
               </div>
             )}
           </div>
-          <div className="min-w-0 flex-1">
-            <div className="text-[16px] font-black text-content-main uppercase truncate leading-tight">{info.last_name}</div>
-            <div className="text-[16px] font-black text-content-main uppercase truncate leading-tight">{info.first_name}</div>
-            {info.middle_name && <div className="text-[14px] text-content-muted truncate mt-0.5">{info.middle_name}</div>}
+          <div className="flex flex-col text-left flex-1 min-w-0">
+            <h2 className="text-[16px] font-bold text-content-main uppercase truncate leading-tight">{info.last_name}</h2>
+            <h3 className="text-[12px] font-bold text-content-muted mt-0.5 capitalize">{info.first_name}</h3>
+            {info.middle_name && <h4 className="text-[12px] font-medium text-content-muted truncate opacity-60">{info.middle_name}</h4>}
           </div>
         </div>
 
-        {infoGridTiles.length > 0 && (
+        {!hideBioTiles && infoGridTiles.length > 0 && (
           <div className="bg-surface-level1 rounded-2xl p-3 shadow-md">
             <div className="grid grid-cols-3 gap-1.5">
               {infoGridTiles.map((t, i) => t

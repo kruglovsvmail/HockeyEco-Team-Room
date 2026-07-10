@@ -38,8 +38,10 @@ export const getPlayerProfile = async (req, res) => {
         l.city as league_city,
 
         d.name as division_name,
+        d.logo_url as division_logo,
 
         t.id as team_id,
+        t.short_name as team_short_name,
         t.name as team_name,
         t.name as team_full_name,
         t.logo_url as team_logo,
