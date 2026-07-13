@@ -2,9 +2,22 @@ import jwt from 'jsonwebtoken';
 import pool from '../config/db.js';
 import { ROLES, PERMISSIONS } from '../utils/permissions.js';
 
+// Троттлинг в памяти процесса: last_seen_at обновляется не чаще раза в LAST_SEEN_THROTTLE_MS
+// на пользователя, чтобы не писать в БД на каждый авторизованный запрос подряд.
+const lastSeenCache = new Map();
+const LAST_SEEN_THROTTLE_MS = 2 * 60 * 1000;
+
+const touchLastSeen = (userId) => {
+  const now = Date.now();
+  const prev = lastSeenCache.get(userId);
+  if (prev && now - prev < LAST_SEEN_THROTTLE_MS) return;
+  lastSeenCache.set(userId, now);
+  pool.query('UPDATE users SET last_seen_at = now() WHERE id = $1', [userId]).catch(() => {});
+};
+
 export const verifyToken = (req, res, next) => {
   const authHeader = req.headers['authorization'];
-  const token = authHeader && authHeader.split(' ')[1]; 
+  const token = authHeader && authHeader.split(' ')[1];
 
   if (!token) {
     return res.status(401).json({ message: 'Отсутствует токен доступа' });
@@ -16,7 +29,9 @@ export const verifyToken = (req, res, next) => {
     if (err) {
       return res.status(403).json({ message: 'Недействительный или просроченный токен' });
     }
-    req.user = decoded; 
+    req.user = decoded;
+    // Fire-and-forget — не блокирует и не может провалить основной запрос
+    touchLastSeen(decoded.id);
     next();
   });
 };
