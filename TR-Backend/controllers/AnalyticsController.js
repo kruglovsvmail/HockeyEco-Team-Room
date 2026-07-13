@@ -12,9 +12,12 @@ export const registerPageView = async (req, res) => {
 
     // Дедупликация "видели ли уже этого пользователя в этом разделе сегодня" —
     // нужна, чтобы unique_count ниже считал каждого человека за день не более одного раза.
+    // Календарный день — по часовому поясу клуба (Europe/Moscow), а не CURRENT_DATE,
+    // который зависит от таймзоны сессии Postgres (обычно UTC) и сдвигал сутки на границе
+    // полуночи по Москве.
     const dedupRes = await pool.query(
       `INSERT INTO page_visits_daily_seen (page, visit_date, user_id)
-       VALUES ($1, CURRENT_DATE, $2)
+       VALUES ($1, (now() AT TIME ZONE 'Europe/Moscow')::date, $2)
        ON CONFLICT DO NOTHING`,
       [page, userId]
     );
@@ -30,7 +33,7 @@ export const registerPageView = async (req, res) => {
       ),
       pool.query(
         `INSERT INTO page_visits_daily (page, visit_date, visit_count, unique_count)
-         VALUES ($1, CURRENT_DATE, 1, $2)
+         VALUES ($1, (now() AT TIME ZONE 'Europe/Moscow')::date, 1, $2)
          ON CONFLICT (page, visit_date)
          DO UPDATE SET visit_count = page_visits_daily.visit_count + 1,
                        unique_count = page_visits_daily.unique_count + $2`,
