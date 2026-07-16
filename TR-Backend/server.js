@@ -16,6 +16,8 @@ import tournamentRoutes from './routes/tournamentRoutes.js';
 import playerRoutes from './routes/playerRoutes.js';
 import pushRoutes from './routes/pushRoutes.js';
 import analyticsRoutes from './routes/analyticsRoutes.js';
+import subscriptionRoutes from './routes/subscriptionRoutes.js';
+import policyRoutes from './routes/policyRoutes.js';
 import { processScheduledNotifications, processBirthdays, pollLmsGames } from './services/pushService.js';
 
 // Импорт новых роутов управления командой
@@ -61,6 +63,8 @@ app.use('/api/tournaments', tournamentRoutes);
 app.use('/api/players', playerRoutes);
 app.use('/api/push', pushRoutes);
 app.use('/api/analytics', analyticsRoutes);
+app.use('/api/subscription', subscriptionRoutes);
+app.use('/api/policy', policyRoutes);
 app.use(profileRouter);
 
 // Новые эндпоинты раздела Руководства

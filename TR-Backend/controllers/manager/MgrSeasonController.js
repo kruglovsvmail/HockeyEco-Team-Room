@@ -24,7 +24,7 @@ const getFileExt = (originalname) => (originalname.split('.').pop() || 'bin');
  */
 const assertApplicationEditable = async (client, appId, teamId) => {
   const { rows } = await client.query(`
-    SELECT tt.id, tt.status, tt.team_id, tt.paper_roster_league_url, d.digital_applications_only
+    SELECT tt.id, tt.status, tt.team_id, tt.division_id, tt.paper_roster_league_url, d.digital_applications_only
     FROM tournament_teams tt
     JOIN divisions d ON tt.division_id = d.id
     WHERE tt.id = $1
@@ -71,7 +71,7 @@ export const getAvailableDivisions = async (req, res) => {
   try {
     const { teamId } = req.params;
     const { rows } = await pool.query(`
-      SELECT l.id as league_id, l.name as league_name, l.logo_url as league_logo,
+      SELECT l.id as league_id, l.name as league_name, l.short_name as league_short_name, l.logo_url as league_logo,
              s.id as season_id, s.name as season_name,
              json_agg(json_build_object(
                  'id', d.id, 'name', d.name,
@@ -86,7 +86,7 @@ export const getAvailableDivisions = async (req, res) => {
         AND NOT EXISTS (
           SELECT 1 FROM tournament_teams tt WHERE tt.team_id = $1 AND tt.division_id = d.id
         )
-      GROUP BY l.id, l.name, l.logo_url, s.id, s.name
+      GROUP BY l.id, l.name, l.short_name, l.logo_url, s.id, s.name
       ORDER BY l.name, s.name
     `, [teamId]);
     return res.json({ success: true, leagues: rows });
@@ -99,10 +99,14 @@ export const getAvailableDivisions = async (req, res) => {
 // Общий SELECT для карточки заявки (список и одиночная выборка используют одну и ту же форму)
 const APPLICATION_SELECT_SQL = `
   SELECT tt.id, tt.status, tt.created_at, tt.paper_roster_team_url, tt.paper_roster_league_url,
-         d.id as division_id, d.name as division_name, d.end_date as division_end_date,
+         d.id as division_id, d.name as division_name, d.short_name as division_short_name, d.end_date as division_end_date,
          d.digital_applications_only, d.req_med_cert, d.req_insurance, d.req_consent,
          s.name as season_name,
          l.name as league_name, l.logo_url as league_logo,
+
+         -- Как только в дивизионе сыгран хотя бы один матч (любой командой), полное удаление
+         -- игрока из заявки запрещаем — см. removePlayerFromApplication.
+         EXISTS (SELECT 1 FROM games g WHERE g.division_id = d.id AND g.status = 'finished') as division_has_games,
 
          COALESCE(
              (SELECT json_agg(json_build_object(
@@ -178,7 +182,13 @@ export const getApplicationById = async (req, res) => {
 export const getTeamRosterForPicker = async (req, res) => {
   try {
     const { teamId, appId } = req.params;
-    await assertApplicationOwnership(pool, appId, teamId);
+
+    // appId === 'new' — «виртуальная» заявка (записи в БД нет): отдаём полный состав команды
+    // без исключений. Используется шторками добавления игроков/штаба, пока заявка собирается
+    // локально на фронте (см. SeasonRosterDetails, виртуальный режим).
+    const isVirtual = appId === 'new';
+    if (!isVirtual) await assertApplicationOwnership(pool, appId, teamId);
+    const exclusionAppId = isVirtual ? -1 : appId;
 
     const playersRes = await pool.query(`
       SELECT tm.user_id as id, u.first_name, u.last_name, u.avatar_url, tm.photo_url,
@@ -192,7 +202,7 @@ export const getTeamRosterForPicker = async (req, res) => {
           WHERE ex.tournament_team_id = $2 AND ex.player_id = tm.user_id AND ex.period_end IS NULL
         )
       ORDER BY u.last_name ASC, u.first_name ASC
-    `, [teamId, appId]);
+    `, [teamId, exclusionAppId]);
 
     const staffRes = await pool.query(`
       SELECT tm.user_id as id, u.first_name, u.last_name, u.avatar_url, tm.photo_url,
@@ -207,7 +217,7 @@ export const getTeamRosterForPicker = async (req, res) => {
         )
       GROUP BY tm.user_id, u.first_name, u.last_name, u.avatar_url, tm.photo_url
       ORDER BY u.last_name ASC, u.first_name ASC
-    `, [teamId, appId]);
+    `, [teamId, exclusionAppId]);
 
     return res.json({ success: true, players: playersRes.rows, staff: staffRes.rows });
   } catch (err) {
@@ -222,7 +232,7 @@ export const createApplication = async (req, res) => {
   try {
     await client.query('BEGIN');
     const { teamId } = req.params;
-    let { divisionId, playerIds } = req.body;
+    let { divisionId, players, staff } = req.body;
 
     if (!divisionId) {
       const err = new Error('Не выбран дивизион для подачи заявки');
@@ -230,9 +240,13 @@ export const createApplication = async (req, res) => {
       throw err;
     }
 
-    if (typeof playerIds === 'string') {
-      try { playerIds = JSON.parse(playerIds); } catch (e) { playerIds = []; }
-    }
+    // Черновиков нет: фронт собирает заявку локально (виртуальный режим SeasonRosterDetails)
+    // и отправляет одним запросом — заявка создаётся сразу в статусе pending.
+    // players: [{ player_id, position, jersey_number, is_captain, is_assistant }], staff: [{ user_id, role }]
+    if (typeof players === 'string') { try { players = JSON.parse(players); } catch (e) { players = []; } }
+    if (!Array.isArray(players)) players = [];
+    if (typeof staff === 'string') { try { staff = JSON.parse(staff); } catch (e) { staff = []; } }
+    if (!Array.isArray(staff)) staff = [];
 
     const dupCheck = await client.query(
       `SELECT id FROM tournament_teams WHERE team_id = $1 AND division_id = $2`,
@@ -244,10 +258,28 @@ export const createApplication = async (req, res) => {
       throw err;
     }
 
-    const status = req.file ? 'pending' : 'draft';
+    const divRes = await client.query(`SELECT digital_applications_only FROM divisions WHERE id = $1`, [divisionId]);
+    if (divRes.rows.length === 0) {
+      const err = new Error('Дивизион не найден');
+      err.status = 400;
+      throw err;
+    }
+    const isDigital = divRes.rows[0].digital_applications_only;
+
+    if (!isDigital && !req.file) {
+      const err = new Error('Сначала загрузите скан заявочного листа');
+      err.status = 400;
+      throw err;
+    }
+    if (isDigital && staff.length === 0) {
+      const err = new Error('Нельзя отправить заявку: необходимо добавить хотя бы одного представителя команды (тренера или менеджера)');
+      err.status = 400;
+      throw err;
+    }
+
     const appRes = await client.query(
-      `INSERT INTO tournament_teams (division_id, team_id, status) VALUES ($1, $2, $3) RETURNING id`,
-      [divisionId, teamId, status]
+      `INSERT INTO tournament_teams (division_id, team_id, status) VALUES ($1, $2, 'pending') RETURNING id`,
+      [divisionId, teamId]
     );
     const appId = appRes.rows[0].id;
 
@@ -257,14 +289,26 @@ export const createApplication = async (req, res) => {
       await client.query(`UPDATE tournament_teams SET paper_roster_team_url = $1 WHERE id = $2`, [url, appId]);
     }
 
-    if (Array.isArray(playerIds) && playerIds.length > 0) {
+    if (isDigital && players.length > 0) {
+      // Валидность игроков подтверждаем членством в команде; амплуа/номер/капитанство берём из запроса
       await client.query(`
         INSERT INTO tournament_rosters (tournament_team_id, player_id, position, jersey_number, is_captain, is_assistant)
-        SELECT $1, tm.user_id, tr.position, tr.jersey_number, tr.is_captain, tr.is_assistant
-        FROM team_rosters tr
-        JOIN team_members tm ON tr.member_id = tm.id
-        WHERE tm.team_id = $2 AND tm.user_id = ANY($3::int[]) AND tm.left_at IS NULL AND tr.left_at IS NULL
-      `, [appId, teamId, playerIds]);
+        SELECT $1, tm.user_id, x.position, x.jersey_number, COALESCE(x.is_captain, false), COALESCE(x.is_assistant, false)
+        FROM jsonb_to_recordset($3::jsonb) AS x(player_id int, position varchar, jersey_number int, is_captain boolean, is_assistant boolean)
+        JOIN team_members tm ON tm.user_id = x.player_id AND tm.team_id = $2 AND tm.left_at IS NULL
+      `, [appId, teamId, JSON.stringify(players)]);
+    }
+
+    if (isDigital && staff.length > 0) {
+      // Штаб заявки формируется только из активного штата команды (team_roles)
+      await client.query(`
+        INSERT INTO tournament_team_roles (tournament_team_id, user_id, tournament_role)
+        SELECT $1, tm.user_id, x.role
+        FROM jsonb_to_recordset($3::jsonb) AS x(user_id int, role varchar)
+        JOIN team_members tm ON tm.user_id = x.user_id AND tm.team_id = $2 AND tm.left_at IS NULL
+        JOIN team_roles trole ON trole.member_id = tm.id AND trole.left_at IS NULL
+        GROUP BY tm.user_id, x.role
+      `, [appId, teamId, JSON.stringify(staff)]);
     }
 
     await client.query('COMMIT');
@@ -301,7 +345,7 @@ export const sendApplicationForReview = async (req, res) => {
   try {
     const { teamId, appId } = req.params;
     const { rows } = await pool.query(`
-      SELECT tt.status, tt.paper_roster_league_url, d.digital_applications_only,
+      SELECT tt.status, tt.paper_roster_team_url, tt.paper_roster_league_url, d.digital_applications_only,
              (SELECT COUNT(*) FROM tournament_team_roles WHERE tournament_team_id = tt.id AND left_at IS NULL) as staff_count
       FROM tournament_teams tt
       JOIN divisions d ON tt.division_id = d.id
@@ -315,6 +359,11 @@ export const sendApplicationForReview = async (req, res) => {
     const app = rows[0];
     if (!['draft', 'revision'].includes(app.status)) {
       return res.status(400).json({ success: false, error: 'Заявку можно отправить на проверку только из статуса «Формируется» или «На исправлении»' });
+    }
+
+    // Бумажный дивизион: пока лига не проверила скан, отправка возможна только с загруженным сканом
+    if (!app.digital_applications_only && app.paper_roster_league_url === null && !app.paper_roster_team_url) {
+      return res.status(400).json({ success: false, error: 'Сначала загрузите скан заявочного листа' });
     }
 
     if (app.digital_applications_only || app.paper_roster_league_url !== null) {
@@ -391,13 +440,15 @@ export const deleteApplicationPaper = async (req, res) => {
   }
 };
 
-// POST /:teamId/applications/:appId/roster  { playerIds: number[] }
+// POST /:teamId/applications/:appId/roster  { playerIds: number[], position?: varchar }
+// position — амплуа блока, из которого добавляют (перекрывает амплуа игрока в составе
+// команды): вратаря можно заявить нападающим и наоборот.
 export const addPlayersToApplication = async (req, res) => {
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
     const { teamId, appId } = req.params;
-    const { playerIds } = req.body;
+    const { playerIds, position } = req.body;
 
     await assertApplicationEditable(client, appId, teamId);
 
@@ -419,12 +470,13 @@ export const addPlayersToApplication = async (req, res) => {
       const updateValues = []; const updateParams = []; let updateIdx = 1;
 
       for (const row of pRes.rows) {
+        const effectivePosition = position || row.position;
         if (existingPids.has(row.pid)) {
           updateValues.push(`($${updateIdx++}, $${updateIdx++}, $${updateIdx++}, $${updateIdx++}, $${updateIdx++}, $${updateIdx++})`);
-          updateParams.push(appId, row.pid, row.position, row.jersey_number, row.is_captain || false, row.is_assistant || false);
+          updateParams.push(appId, row.pid, effectivePosition, row.jersey_number, row.is_captain || false, row.is_assistant || false);
         } else {
           insertValues.push(`($${insertIdx++}, $${insertIdx++}, $${insertIdx++}, $${insertIdx++}, $${insertIdx++}, $${insertIdx++})`);
-          insertParams.push(appId, row.pid, row.position, row.jersey_number, row.is_captain || false, row.is_assistant || false);
+          insertParams.push(appId, row.pid, effectivePosition, row.jersey_number, row.is_captain || false, row.is_assistant || false);
         }
       }
 
@@ -463,13 +515,24 @@ export const addPlayersToApplication = async (req, res) => {
 };
 
 // DELETE /:teamId/applications/:appId/roster/:rosterId
+// Полностью удаляет игрока из заявки (не soft-delete через period_end), но только пока
+// в дивизионе не сыгран ни один матч — проверяем ВЕСЬ дивизион, а не только эту команду,
+// так как исторические протоколы/статистика других команд тоже ссылаются на tournament_rosters.
 export const removePlayerFromApplication = async (req, res) => {
   try {
     const { teamId, appId, rosterId } = req.params;
-    await assertApplicationEditable(pool, appId, teamId);
+    const app = await assertApplicationEditable(pool, appId, teamId);
+
+    const gamesCheck = await pool.query(
+      `SELECT EXISTS (SELECT 1 FROM games WHERE division_id = $1 AND status = 'finished') as has_games`,
+      [app.division_id]
+    );
+    if (gamesCheck.rows[0].has_games) {
+      return res.status(400).json({ success: false, error: 'В дивизионе уже сыграны матчи — полное удаление игрока из заявки недоступно' });
+    }
 
     const { rows } = await pool.query(
-      `UPDATE tournament_rosters SET period_end = NOW() WHERE id = $1 AND tournament_team_id = $2 RETURNING id`,
+      `DELETE FROM tournament_rosters WHERE id = $1 AND tournament_team_id = $2 RETURNING id`,
       [rosterId, appId]
     );
     if (rows.length === 0) {

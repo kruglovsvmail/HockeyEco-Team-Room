@@ -48,6 +48,9 @@ export function Header({
     if (path.includes('profile')) {
       return 'Мой профиль';
     }
+    if (path.includes('subscription')) {
+      return 'Планы оплаты';
+    }
     if (path === '/' || path === '/manager' || path === '/manager/' || path.includes('schedule') || path.includes('calendar')) {
       return 'Календарь';
     }
@@ -85,6 +88,10 @@ export function Header({
 
     // Мой профиль
     if (path.includes('profile'))
+      return 'bg-surface-base';
+
+    // Подписка
+    if (path.includes('subscription'))
       return 'bg-surface-base';
 
     // Настройки

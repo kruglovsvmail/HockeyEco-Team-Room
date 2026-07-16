@@ -1,6 +1,8 @@
 import React, { useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import clsx from 'clsx';
 import { Icon } from './Icon';
+import { ButtonLP } from './Button-LP';
 
 /**
  * Универсальный полноэкранный экран-заглушка ограничения доступа по подписке.
@@ -14,8 +16,9 @@ export function SubscriptionStub({
   isOpen, 
   onClose, 
   title = 'Доступ ограничен', 
-  description = 'Для просмотра деталей и взаимодействия с данным разделом необходимо оформить или продлить подписку.' 
+  description = 'Для просмотра деталей и взаимодействия с данным разделом необходимо оформить или продлить подписку.'
 }) {
+  const navigate = useNavigate();
 
   // Блокируем скролл основного интерфейса PWA под шторкой, когда она открыта
   useEffect(() => {
@@ -74,6 +77,14 @@ export function SubscriptionStub({
         <p className="text-[14px] font-medium text-content-muted leading-relaxed max-w-sm mb-10 px-2 opacity-80">
           {description}
         </p>
+
+        <ButtonLP
+          variant="primary"
+          className="max-w-xs"
+          onClick={() => navigate('/subscription')}
+        >
+          Оформить подписку
+        </ButtonLP>
 
       </div>
 

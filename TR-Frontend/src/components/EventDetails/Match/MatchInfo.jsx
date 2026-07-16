@@ -164,7 +164,7 @@ export const MatchInfo = ({
     : null;
 
   let leagueValue   = localEvent.league_name || 'Официальный турнир';
-  let divisionValue = localEvent.division_name || null;
+  let divisionValue = localEvent.division_short_name || localEvent.division_name || null;
   let tournamentIcon = 'trophy';
   let tournamentLogo = localEvent.division_logo_url || localEvent.league_logo_url;
 
@@ -175,7 +175,7 @@ export const MatchInfo = ({
     tournamentLogo = null;
   } else if (localEvent.game_type === 'tournament_ext') {
     leagueValue    = localEvent.league_name || 'Внешний турнир';
-    divisionValue  = localEvent.division_name || null;
+    divisionValue  = localEvent.division_short_name || localEvent.division_name || null;
     tournamentIcon = 'trophy';
   }
 
@@ -325,7 +325,7 @@ export const MatchInfo = ({
                   <Icon name={tournamentIcon} className="w-5 h-5 text-content-muted" />
                 )}
               </div>
-              <span className="text-[14px] font-bold text-content-main leading-tight line-clamp-2 min-w-0">
+              <span className="text-[14px] font-bold text-content-main leading-tight line-clamp-3 min-w-0">
                 {leagueValue}
               </span>
             </div>

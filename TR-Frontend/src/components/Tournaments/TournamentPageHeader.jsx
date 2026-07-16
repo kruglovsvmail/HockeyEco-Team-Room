@@ -47,7 +47,7 @@ export function TournamentPageHeader({
                 <div className="flex items-center justify-between w-full mt-1.5 gap-2">
                   <div className="text-left min-w-0 flex-1">
                     <span className="text-[12px] font-semibold text-content-muted uppercase tracking-wide truncate block">
-                      {activeTournament.division_name}
+                      {activeTournament.division_short_name || activeTournament.division_name}
                     </span>
                   </div>
                   <div className="text-right shrink-0">

@@ -3,6 +3,7 @@ import { Icon } from '../../ui/Icon';
 import dayjs from 'dayjs';
 import clsx from 'clsx';
 import { getImageUrl } from '../../utils/helpers';
+import { HintPopover } from '../../ui/HintPopover';
 
 // ─── Основной компонент ───────────────────────────────────────────────────────
 export function TournamentCardGame({ game }) {
@@ -127,7 +128,34 @@ export function TournamentCardGame({ game }) {
           </div>
           <div ref={arenaGroupRef} className="flex items-center gap-3">
             <span className={clsx("text-content-muted font-mono", arenaWrapped && "invisible")}>•</span>
-            <span className="text-center">{game.arena_name || 'Арена не указана'}</span>
+            {(game.arena_city || game.arena_address) ? (
+              <HintPopover
+                customContent={
+                  <div className="flex flex-col gap-1 text-center">
+                    <span className="text-[13px] font-bold text-content-main leading-snug">{game.arena_name}</span>
+                    {game.arena_city && (
+                      <span className="text-[12px] font-semibold text-content-muted leading-snug">г. {game.arena_city}</span>
+                    )}
+                    {game.arena_address && (
+                      <span className="text-[11px] font-medium text-content-muted leading-snug">{game.arena_address}</span>
+                    )}
+                  </div>
+                }
+              >
+                <span className="text-center underline decoration-dotted decoration-content-subtle underline-offset-4">{game.arena_name}</span>
+              </HintPopover>
+            ) : (game.arena_name && game.location_url) ? (
+              <a
+                href={game.location_url}
+                target="_blank"
+                rel="noopener noreferrer"
+                onClick={(e) => e.stopPropagation()}
+              >
+                <span className="text-center underline decoration-dotted decoration-content-subtle underline-offset-4">{game.arena_name}</span>
+              </a>
+            ) : (
+              <span className="text-center">{game.arena_name || 'Арена не указана'}</span>
+            )}
           </div>
         </div>
         <div className="flex justify-end shrink-0 opacity-60 pr-2">

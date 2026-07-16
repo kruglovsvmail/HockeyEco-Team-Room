@@ -369,7 +369,7 @@ export const regVerifyCode = async (req, res) => {
 export const register = async (req, res) => {
   const client = await pool.connect();
   try {
-    const { phone, virtualCode, email, firstName, lastName, middleName, birthDate } = req.body;
+    const { phone, virtualCode, email, firstName, lastName, middleName, birthDate, policyAccepted } = req.body;
     const newPassword = Math.floor(1000 + Math.random() * 9000).toString();
     const passwordHash = await bcrypt.hash(newPassword, 10);
     const finalBirthDate = birthDate ? birthDate : null;
@@ -382,25 +382,52 @@ export const register = async (req, res) => {
       return res.status(400).json({ success: false, error: 'Этот Email уже привязан к другому аккаунту' });
     }
 
+    let registeredUserId = null;
+
     if (virtualCode) {
        const check = await client.query('SELECT id FROM users WHERE phone = $1 AND virtual_code = $2', [phone, virtualCode]);
        if (check.rows.length === 0) {
           await client.query('ROLLBACK');
           return res.status(400).json({ success: false, error: 'Неверный код или профиль не найден' });
        }
+       registeredUserId = check.rows[0].id;
        await client.query(`
          UPDATE users
          SET email = $1, first_name = $2, last_name = $3, middle_name = $4, birth_date = $5, password_hash = $6, updated_at = NOW()
          WHERE phone = $7 AND virtual_code = $8
        `, [email, firstName, lastName, middleName, finalBirthDate, passwordHash, phone, virtualCode]);
     } else {
-       await client.query(`
+       const insertRes = await client.query(`
          INSERT INTO users (phone, email, first_name, last_name, middle_name, birth_date, password_hash, status)
          VALUES ($1, $2, $3, $4, $5, $6, $7, 'active')
+         RETURNING id
        `, [phone, email, firstName, lastName, middleName, finalBirthDate, passwordHash]);
+       registeredUserId = insertRes.rows[0].id;
     }
 
     await client.query('COMMIT');
+
+    // Фиксация согласия с политикой обработки ПД, данного чекбоксом при активации аккаунта.
+    // Best-effort: сбой записи согласия не должен ломать саму регистрацию.
+    if (policyAccepted && registeredUserId) {
+      try {
+        const versionRes = await pool.query(
+          `SELECT id FROM policy_versions WHERE is_published = true ORDER BY published_at DESC LIMIT 1`
+        );
+        if (versionRes.rows.length > 0) {
+          const forwarded = req.headers['x-forwarded-for'];
+          const clientIp = forwarded ? String(forwarded).split(',')[0].trim() : (req.ip || null);
+          await pool.query(
+            `INSERT INTO user_consents (user_id, policy_version_id, ip, user_agent, source)
+             VALUES ($1, $2, $3, $4, 'registration')
+             ON CONFLICT (user_id, policy_version_id) DO NOTHING`,
+            [registeredUserId, versionRes.rows[0].id, clientIp, (req.headers['user-agent'] || '').slice(0, 255)]
+          );
+        }
+      } catch (consentErr) {
+        console.error('Не удалось зафиксировать согласие при регистрации:', consentErr.message);
+      }
+    }
 
     const htmlTemplate = `
       <div style="font-family: Arial, sans-serif; background-color: #F8F9FA; padding: 40px 20px; color: #2C2C2E;">

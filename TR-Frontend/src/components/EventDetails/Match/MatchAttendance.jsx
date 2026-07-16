@@ -620,8 +620,8 @@ export const MatchAttendance = ({ event, initialAttendees = [], initialTeamRoste
               </div>
             ) : (
               <div className="flex justify-center items-center h-24 text-[10px] font-black text-content-muted uppercase tracking-widest text-center py-4">
-                {sheetFilterType === 'goalie' 
-                  ? 'Все вратари состава уже отмечены' 
+                {sheetFilterType === 'goalie'
+                  ? 'Все вратари состава уже отмечены'
                   : 'Все полевые игроки состава уже отмечены'}
               </div>
             )}

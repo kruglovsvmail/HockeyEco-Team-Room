@@ -612,7 +612,13 @@ export const getMatchStats = async (req, res) => {
  
     // ── 2. Статистика полевых игроков ──────────────────────────────────
     const skatersQuery = `
-      SELECT 
+      WITH game_division AS (
+        SELECT g.division_id, d.hide_stats_unpaid
+        FROM "public"."games" g
+        LEFT JOIN "public"."divisions" d ON d.id = g.division_id
+        WHERE g.id = $1
+      )
+      SELECT
         gr.player_id::int,
         gr.team_id::int,
         gr.jersey_number::int,
@@ -623,10 +629,15 @@ export const getMatchStats = async (req, res) => {
         COALESCE(a.assists, 0)::int AS assists,
         (COALESCE(g.goals, 0) + COALESCE(a.assists, 0))::int AS points,
         COALESCE(pm.plus_minus, 0)::int AS plus_minus,
-        COALESCE(pen.penalty_minutes, 0)::int AS penalty_minutes
+        COALESCE(pen.penalty_minutes, 0)::int AS penalty_minutes,
+        tr.is_fee_paid,
+        gd.hide_stats_unpaid
       FROM "public"."game_rosters" gr
       JOIN "public"."users" u ON gr.player_id = u.id
+      CROSS JOIN game_division gd
       LEFT JOIN "public"."team_members" tm ON tm.user_id = u.id AND tm.team_id = gr.team_id
+      LEFT JOIN "public"."tournament_teams" trt ON trt.team_id = gr.team_id AND trt.division_id = gd.division_id
+      LEFT JOIN "public"."tournament_rosters" tr ON tr.tournament_team_id = trt.id AND tr.player_id = gr.player_id
       LEFT JOIN (
         SELECT scorer_id, team_id, COUNT(*)::int AS goals
         FROM "public"."game_events"
@@ -666,6 +677,12 @@ export const getMatchStats = async (req, res) => {
     const goaliesQuery = `
       WITH game_info AS (
         SELECT home_team_id, away_team_id FROM "public"."games" WHERE id = $1
+      ),
+      game_division AS (
+        SELECT g.division_id, d.hide_stats_unpaid
+        FROM "public"."games" g
+        LEFT JOIN "public"."divisions" d ON d.id = g.division_id
+        WHERE g.id = $1
       ),
       -- Для каждого гола определяем кто стоял в воротах команды-соперника
       -- через game_goalie_log: берём последнюю запись лога ДО момента гола
@@ -735,10 +752,15 @@ export const getMatchStats = async (req, res) => {
           ELSE NULL
         END::float AS save_percent,
         COALESCE(ga.goals_against, 0)::float AS goals_against_average,
-        CASE WHEN COALESCE(ga.goals_against, 0) = 0 AND COALESCE(s.shots_against, 0) > 0 THEN 1 ELSE 0 END::int AS shutouts
+        CASE WHEN COALESCE(ga.goals_against, 0) = 0 AND COALESCE(s.shots_against, 0) > 0 THEN 1 ELSE 0 END::int AS shutouts,
+        tr.is_fee_paid,
+        gd.hide_stats_unpaid
       FROM "public"."game_rosters" gr
       JOIN "public"."users" u ON gr.player_id = u.id
+      CROSS JOIN game_division gd
       LEFT JOIN "public"."team_members" tm ON tm.user_id = u.id AND tm.team_id = gr.team_id
+      LEFT JOIN "public"."tournament_teams" trt ON trt.team_id = gr.team_id AND trt.division_id = gd.division_id
+      LEFT JOIN "public"."tournament_rosters" tr ON tr.tournament_team_id = trt.id AND tr.player_id = gr.player_id
       LEFT JOIN (
         -- shots_count хранит ВСЕ броски в створ вратарю (включая ставшие голами с броска).
         SELECT goalie_id, team_id, SUM(shots_count)::int AS shots_against

@@ -5,6 +5,7 @@ import { Avatar } from '../ui/Avatar';
 import { getImageUrl } from '../utils/helpers';
 import { PERMISSIONS, ROLES } from '../utils/permissions';
 import { useAccess } from '../hooks/useAccess';
+import { getSubscriptionStatus } from '../utils/subscription';
 import clsx from 'clsx';
 
 export function Sidebar({ user, teams = [], selectedTeam, onTeamChange, onClose }) {
@@ -33,6 +34,9 @@ export function Sidebar({ user, teams = [], selectedTeam, onTeamChange, onClose 
 
   // Проверка глобального администратора
   const isGlobalAdmin = user?.globalRole === 'admin' || user?.global_role === 'admin';
+
+  // Статус личной подписки пользователя для бейджа над профилем
+  const subscriptionStatus = getSubscriptionStatus(user?.subscriptionExpiresAt || user?.subscription_expires_at);
 
   // Конфигурация 4-х менеджерских пунктов меню со своими гранулярными правами
   const managerSectionsConfig = [
@@ -390,8 +394,31 @@ export function Sidebar({ user, teams = [], selectedTeam, onTeamChange, onClose 
         </nav>
       </div>
 
+      {/* Бейдж-индикатор статуса личной подписки, ведёт на страницу оформления подписки */}
+      <button
+        onClick={() => handleSafeNavigate('/subscription')}
+        className={clsx(
+          "shrink-0 mx-3 mb-2 px-3 py-2 rounded-xl border flex items-start gap-2 text-left transition-all outline-none active:scale-[0.98]",
+          subscriptionStatus.tone === 'danger' && "border-danger-muted text-danger",
+          subscriptionStatus.tone === 'warning' && "border-amber-500/10 text-amber-500",
+          subscriptionStatus.tone === 'default' && "border-success-muted text-success"
+        )}
+      >
+  
+        <span className="flex flex-col min-w-0">
+          <span className="text-[12px] font-semibold tracking-wider leading-tight">
+            {subscriptionStatus.badgeTitle}
+          </span>
+          {subscriptionStatus.badgeSubtitle && (
+            <span className="text-[12px] font-semibold tracking-wider leading-tight">
+              {subscriptionStatus.badgeSubtitle}
+            </span>
+          )}
+        </span>
+      </button>
+
       {/* Профиль игрока */}
-      <button 
+      <button
         onClick={() => handleSafeNavigate('/profile')}
         className="shrink-0 p-4 border-t border-surface-border w-full flex items-center gap-4 bg-surface-level1 hover:bg-surface-level2 transition-colors type-button text-left outline-none cursor-pointer"
       >

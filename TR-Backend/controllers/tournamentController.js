@@ -14,6 +14,7 @@ class TournamentController {
           tt.status as application_status,
           d.id as division_id,
           d.name as division_name,
+          d.short_name as division_short_name,
           d.logo_url as division_logo,
           l.name as league_name,
           l.short_name as league_short_name,
@@ -69,7 +70,10 @@ class TournamentController {
           t_away.name as away_team_name,
           t_away.short_name as away_team_short_name,
           t_away.logo_url as away_team_logo,
-          a.name as arena_name,
+          COALESCE(a.name, g.location) as arena_name,
+          a.city as arena_city,
+          a.address as arena_address,
+          g.location_url,
           (
             SELECT pr.wins_needed 
             FROM playoff_brackets pb
@@ -219,7 +223,9 @@ class TournamentController {
             COALESCE(ps.assists, 0)           AS assists,
             COALESCE(ps.points, 0)            AS points,
             COALESCE(ps.plus_minus, 0)        AS plus_minus,
-            COALESCE(ps.penalty_minutes, 0)   AS penalty_minutes
+            COALESCE(ps.penalty_minutes, 0)   AS penalty_minutes,
+            tr.is_fee_paid,
+            (SELECT hide_stats_unpaid FROM divisions WHERE id = $1) AS hide_stats_unpaid
           FROM tournament_rosters tr
           JOIN tournament_teams tt    ON tr.tournament_team_id   = tt.id
           JOIN users u                ON tr.player_id            = u.id
@@ -249,7 +255,9 @@ class TournamentController {
             COALESCE(ps.goals_against_average, 0)   AS goals_against_average,
             COALESCE(ps.shutouts, 0)                AS shutouts,
             COALESCE(ps.minutes_played, 0)          AS minutes_played,
-            COALESCE(ps.shots_against, 0)           AS shots_against
+            COALESCE(ps.shots_against, 0)           AS shots_against,
+            tr.is_fee_paid,
+            (SELECT hide_stats_unpaid FROM divisions WHERE id = $1) AS hide_stats_unpaid
           FROM tournament_rosters tr
           JOIN tournament_teams tt    ON tr.tournament_team_id   = tt.id
           JOIN users u                ON tr.player_id            = u.id
@@ -328,7 +336,9 @@ class TournamentController {
             COALESCE(a.a, 0)                                     AS assists,
             COALESCE(g.g, 0) + COALESCE(a.a, 0)                 AS points,
             COALESCE(pm.pm, 0)                                   AS plus_minus,
-            COALESCE(p.pim, 0)                                   AS penalty_minutes
+            COALESCE(p.pim, 0)                                   AS penalty_minutes,
+            tr.is_fee_paid,
+            (SELECT hide_stats_unpaid FROM divisions WHERE id = $1) AS hide_stats_unpaid
           FROM tournament_rosters tr
           JOIN tournament_teams tt   ON tr.tournament_team_id = tt.id
           JOIN users u               ON tr.player_id          = u.id
@@ -489,7 +499,9 @@ class TournamentController {
                  )
                  ELSE 0.00 END                                    AS goals_against_average,
             COALESCE(sho.total_sho, 0)                           AS shutouts,
-            COALESCE(gm.total_secs, 0)                           AS minutes_played
+            COALESCE(gm.total_secs, 0)                           AS minutes_played,
+            tr.is_fee_paid,
+            (SELECT hide_stats_unpaid FROM divisions WHERE id = $1) AS hide_stats_unpaid
           FROM tournament_rosters tr
           JOIN tournament_teams tt   ON tr.tournament_team_id = tt.id
           JOIN users u               ON tr.player_id          = u.id

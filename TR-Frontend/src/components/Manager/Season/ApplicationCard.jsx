@@ -5,7 +5,7 @@ import { getImageUrl } from '../../../utils/helpers';
 import { STATUS_META } from './seasonUtils';
 
 // Карточка заявки в списке раздела «Заявки на сезон» — только сводка, клик ведёт на страницу деталей.
-// Название лиги часто длинное, поэтому идёт отдельной строкой (до 2 строк) над логотипом,
+// Название лиги часто длинное, поэтому идёт отдельной строкой (до 3 строк) над логотипом,
 // чтобы не спорить с ним за ширину.
 export function ApplicationCard({ app, onClick }) {
   const statusMeta = STATUS_META[app.status] || STATUS_META.draft;
@@ -16,7 +16,7 @@ export function ApplicationCard({ app, onClick }) {
       onClick={onClick}
       className="w-full bg-surface-level1 rounded-3xl shadow-md p-5 flex flex-col gap-3 text-left outline-none cursor-pointer active:scale-[0.99] transition-all"
     >
-      <span className="text-[16px] font-black text-content-main leading-snug line-clamp-2">{app.league_name}</span>
+      <span className="text-[16px] font-black text-content-main leading-snug line-clamp-3">{app.league_name}</span>
 
       <div className="flex items-center gap-4">
         {app.league_logo ? (
@@ -29,7 +29,7 @@ export function ApplicationCard({ app, onClick }) {
 
         <div className="flex-1 min-w-0 flex flex-col gap-1">
           <span className="text-[10px] font-bold text-content-muted uppercase tracking-wider truncate">{app.season_name}</span>
-          <span className="text-[14px] font-bold text-content-main truncate">{app.division_name}</span>
+          <span className="text-[14px] font-bold text-content-main truncate">{app.division_short_name || app.division_name}</span>
           <span className={clsx("self-start mt-1 flex items-center gap-1.5 text-[10px] font-black uppercase tracking-wider px-2.5 py-1 rounded-lg bg-surface-level2", statusMeta.text)}>
             <span className={clsx("w-1.5 h-1.5 rounded-full shrink-0", statusMeta.dot)} />
             {statusMeta.label}

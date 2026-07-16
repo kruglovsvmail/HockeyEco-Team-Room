@@ -16,6 +16,9 @@ export const removeToken = () => {
   sessionStorage.removeItem('teampwa_token');
   localStorage.removeItem('teampwa_user');
   sessionStorage.removeItem('teampwa_user');
+  // Оффлайн-кэш профиля тоже стираем, иначе после разлогина TeamLayout
+  // покажет старый профиль из кэша, как будто сессия ещё жива.
+  localStorage.removeItem('teampwa_cached_user');
   localStorage.removeItem('teampwa_selected_team');
 };
 
@@ -111,7 +114,14 @@ if (typeof window !== 'undefined' && !window.__fetchInterceptorInitialized) {
           })
           .then(res => {
             if (res.status === 401 || res.status === 403) {
-              return null; // Сессия полностью уничтожена
+              // Сессия полностью уничтожена (токен протух или отозван).
+              // Стираем токен и уводим на логин, иначе пользователь остаётся
+              // "залогиненным" с пустым приложением и цепочкой 403 в консоли.
+              removeToken();
+              if (typeof window !== 'undefined' && window.location?.pathname !== '/login') {
+                window.location.replace('/login');
+              }
+              return null;
             }
 
             // БЕЗОПАСНАЯ ПРОВЕРКА CONTENT-TYPE: Предотвращает краш парсинга HTML-страниц ошибок

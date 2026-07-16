@@ -86,6 +86,8 @@ export const getEvents = async (req, res) => {
           COALESCE(a.name, g.location, 'Арена не назначена')::varchar AS arena_name,
           COALESCE(a.timezone, g.custom_timezone, 'Europe/Moscow')::varchar AS arena_timezone,
           g.arena_id::int AS arena_id,
+          a.city::varchar AS arena_city,
+          a.address::varchar AS arena_address,
           g.location::varchar AS location,
           g.location_url::varchar AS location_url,
           
@@ -109,6 +111,7 @@ export const getEvents = async (req, res) => {
           g.end_type::varchar AS end_type,
           
           d.name::varchar AS division_name,
+          d.short_name::varchar AS division_short_name,
           COALESCE(l.name, ext_tour.name)::varchar AS league_name,
           l.short_name::varchar AS league_short_name,
           l.logo_url::varchar AS league_logo_url,
@@ -221,6 +224,8 @@ export const getEvents = async (req, res) => {
           COALESCE(a.name, tt.location, 'Локация не указана')::varchar AS arena_name,
           COALESCE(a.timezone, tt.custom_timezone, 'Europe/Moscow')::varchar AS arena_timezone,
           tt.arena_id::int AS arena_id,
+          a.city::varchar AS arena_city,
+          a.address::varchar AS arena_address,
           tt.location::varchar AS location,
           tt.location_url::varchar AS location_url,
           
@@ -243,6 +248,7 @@ export const getEvents = async (req, res) => {
           NULL::varchar AS end_type,
           
           NULL::varchar AS division_name,
+          NULL::varchar AS division_short_name,
           NULL::varchar AS league_name,
           NULL::varchar AS league_short_name,
           NULL::varchar AS league_logo_url,
@@ -305,6 +311,8 @@ export const getEvents = async (req, res) => {
           COALESCE(a.name, tm.location, 'Локация не указана')::varchar AS arena_name,
           COALESCE(a.timezone, tm.custom_timezone, 'Europe/Moscow')::varchar AS arena_timezone,
           tm.arena_id::int AS arena_id,
+          a.city::varchar AS arena_city,
+          a.address::varchar AS arena_address,
           tm.location::varchar AS location,
           tm.location_url::varchar AS location_url,
           
@@ -327,6 +335,7 @@ export const getEvents = async (req, res) => {
           NULL::varchar AS end_type,
           
           NULL::varchar AS division_name,
+          NULL::varchar AS division_short_name,
           NULL::varchar AS league_name,
           NULL::varchar AS league_short_name,
           NULL::varchar AS league_logo_url,
@@ -378,6 +387,8 @@ export const getEvents = async (req, res) => {
           COALESCE(a.name, ct.location, 'Локация не указана')::varchar AS arena_name,
           COALESCE(a.timezone, ct.custom_timezone, 'Europe/Moscow')::varchar AS arena_timezone,
           ct.arena_id::int AS arena_id,
+          a.city::varchar AS arena_city,
+          a.address::varchar AS arena_address,
           ct.location::varchar AS location,
           ct.location_url::varchar AS location_url,
           
@@ -400,6 +411,7 @@ export const getEvents = async (req, res) => {
           NULL::varchar AS end_type,
           
           NULL::varchar AS division_name,
+          NULL::varchar AS division_short_name,
           NULL::varchar AS league_name,
           NULL::varchar AS league_short_name,
           NULL::varchar AS league_logo_url,
@@ -448,6 +460,8 @@ export const getEvents = async (req, res) => {
           COALESCE(a.name, cm.location, 'Локация не указана')::varchar AS arena_name,
           COALESCE(a.timezone, cm.custom_timezone, 'Europe/Moscow')::varchar AS arena_timezone,
           cm.arena_id::int AS arena_id,
+          a.city::varchar AS arena_city,
+          a.address::varchar AS arena_address,
           cm.location::varchar AS location,
           cm.location_url::varchar AS location_url,
           
@@ -470,6 +484,7 @@ export const getEvents = async (req, res) => {
           NULL::varchar AS end_type,
           
           NULL::varchar AS division_name,
+          NULL::varchar AS division_short_name,
           NULL::varchar AS league_name,
           NULL::varchar AS league_short_name,
           NULL::varchar AS league_logo_url,

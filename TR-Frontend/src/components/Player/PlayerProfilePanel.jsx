@@ -31,9 +31,12 @@ const formatYears = (n) => {
 // полноразмерные тайлы статистики занимали слишком много места.
 // hideLabel — для строки возраст/рост/вес значения самодостаточны (25 лет,
 // 180 см), подпись под ними только отнимала место.
-const StatTile = ({ label, value, compact, hideLabel }) => (
+// blurred — размывает значение (не сам тайл), когда в дивизионе включено
+// "Скрывать статистику" (divisions.hide_stats_unpaid), а у игрока не отмечена
+// оплата взноса (tournament_rosters.is_fee_paid). Количество игр не размывается.
+const StatTile = ({ label, value, compact, hideLabel, blurred }) => (
   <div className={clsx("flex flex-col items-center justify-center bg-surface-level2 rounded-xl", compact ? "py-1.5" : "py-1.5")}>
-    <span className={clsx("font-bold text-content-main tabular-nums leading-tight", compact ? "text-[10px]" : "text-[16px]")}>{value ?? '—'}</span>
+    <span className={clsx("font-bold text-content-main tabular-nums leading-tight", compact ? "text-[10px]" : "text-[16px]", blurred && "blur-sm select-none")}>{value ?? '—'}</span>
     {!hideLabel && (
       <span className="text-[10px] font-mibold uppercase tracking-wider text-content-subtle mt-1.5 leading-none">{label}</span>
     )}
@@ -56,21 +59,25 @@ const TeamPopoverContent = ({ row }) => (
 // соседних строк горизонтальной линией (как в TeamStatsPanel.jsx: единая
 // карточка-группа с разделителями внутри, а не стопка отдельных карточек).
 const SeasonRow = ({ row, isGoalie, isLast }) => {
+  // Скрытие статистики (размытием) — если в дивизионе включено hide_stats_unpaid,
+  // а у игрока в этом дивизионе не отмечена оплата взноса. Количество игр не скрываем.
+  const shouldBlur = !!row.hide_stats_unpaid && !row.is_fee_paid;
+
   const tiles = isGoalie
     ? [
         { label: 'Игры', value: row.gp },
-        { label: 'Штраф', value: row.pim },
-        { label: 'ПШ', value: row.ga },
-        { label: 'Об', value: row.sv },
-        { label: '%Об', value: row.svp != null ? `${row.svp}%` : null, span: 2 },
+        { label: 'Штраф', value: row.pim, blurred: shouldBlur },
+        { label: 'ПШ', value: row.ga, blurred: shouldBlur },
+        { label: 'Об', value: row.sv, blurred: shouldBlur },
+        { label: '%Об', value: row.svp != null ? `${row.svp}%` : null, span: 2, blurred: shouldBlur },
       ]
     : [
         { label: 'Игры', value: row.gp },
-        { label: 'Шайбы', value: row.g },
-        { label: 'Передачи', value: row.a },
-        { label: 'Очки', value: row.pts },
-        { label: '+/-', value: row.pm > 0 ? `+${row.pm}` : row.pm },
-        { label: 'Штраф', value: row.pim },
+        { label: 'Шайбы', value: row.g, blurred: shouldBlur },
+        { label: 'Передачи', value: row.a, blurred: shouldBlur },
+        { label: 'Очки', value: row.pts, blurred: shouldBlur },
+        { label: '+/-', value: row.pm > 0 ? `+${row.pm}` : row.pm, blurred: shouldBlur },
+        { label: 'Штраф', value: row.pim, blurred: shouldBlur },
       ];
 
   // Поповер с полным названием лиги/турнира не нужен, если короткое и полное
@@ -111,8 +118,8 @@ const SeasonRow = ({ row, isGoalie, isLast }) => {
           ) : (
             <div className="text-[16px] font-semibold text-content-main truncate">{row.league_name}</div>
           )}
-          {row.division_name && (
-            <div className="text-[12px] font-normal text-content-muted truncate -mt-1.5">{row.division_name}</div>
+          {(row.division_short_name || row.division_name) && (
+            <div className="text-[12px] font-normal text-content-muted truncate -mt-1.5">{row.division_short_name || row.division_name}</div>
           )}
         </div>
       </div>
@@ -123,7 +130,7 @@ const SeasonRow = ({ row, isGoalie, isLast }) => {
       <div className="grid grid-cols-3 gap-1.5 mt-1">
         {tiles.map(t => (
           <div key={t.label} className={t.span === 2 ? 'col-span-2' : undefined}>
-            <StatTile label={t.label} value={t.value} />
+            <StatTile label={t.label} value={t.value} blurred={t.blurred} />
           </div>
         ))}
       </div>

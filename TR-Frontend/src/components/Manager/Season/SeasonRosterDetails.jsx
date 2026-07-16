@@ -26,12 +26,15 @@ const PILL_CLASS = "inline-flex items-center justify-center px-3 py-1.5 rounded-
 
 // Нижняя шторка редактирования игрока внутри заявки: амплуа, номер, капитанство, удаление.
 // Документы допуска редактируются отдельно — из таблицы состава, правой панелью (см. handleOpenDocs).
-function PlayerEditSheet({ isOpen, onClose, player, roster = [], canEdit, activeBrandColor, onSave, onRemove }) {
+// canRemove отдельно от canEdit: полное удаление из заявки запрещено, как только в дивизионе
+// сыгран хотя бы один матч (см. division_has_games на бэке) — кнопка в этом случае не рендерится.
+function PlayerEditSheet({ isOpen, onClose, player, roster = [], canEdit, canRemove, activeBrandColor, onSave, onRemove }) {
   const [position, setPosition] = useState('forward');
   const [jersey, setJersey] = useState('');
   const [isCaptain, setIsCaptain] = useState(false);
   const [isAssistant, setIsAssistant] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
+  const [isRemoving, setIsRemoving] = useState(false);
   const [displayedPlayer, setDisplayedPlayer] = useState(null);
   const [sheetError, setSheetError] = useState('');
 
@@ -43,8 +46,17 @@ function PlayerEditSheet({ isOpen, onClose, player, roster = [], canEdit, active
       setIsCaptain(!!player.is_captain);
       setIsAssistant(!!player.is_assistant);
       setSheetError('');
+      setIsRemoving(false);
     }
   }, [player]);
+
+  const handleRemove = async () => {
+    if (isRemoving) return;
+    setIsRemoving(true);
+    await onRemove(displayedPlayer.id);
+    setIsRemoving(false);
+    onClose();
+  };
 
   // Действующий капитан/ассистенты среди остальных игроков заявки (кроме текущего) —
   // нужно, чтобы предупредить менеджера, если роль уже занята
@@ -124,8 +136,10 @@ function PlayerEditSheet({ isOpen, onClose, player, roster = [], canEdit, active
 
           {canEdit && (
             <div className="flex flex-col gap-2 pt-1">
-              <ButtonLP onClick={handleSave} isLoading={isSaving} activeColor={activeBrandColor}>Сохранить</ButtonLP>
-              <ButtonLP variant="outline" onClick={() => { onRemove(displayedPlayer.id); onClose(); }} className="!text-danger">Убрать из заявки</ButtonLP>
+              <ButtonLP onClick={handleSave} isLoading={isSaving} disabled={isRemoving} activeColor={activeBrandColor}>Сохранить</ButtonLP>
+              {canRemove && (
+                <ButtonLP variant="outline" onClick={handleRemove} isLoading={isRemoving} disabled={isSaving} className="!text-danger">Убрать из заявки</ButtonLP>
+              )}
             </div>
           )}
         </div>
@@ -201,27 +215,33 @@ function StaffEditSheet({ isOpen, onClose, person, canEdit, activeBrandColor, on
   );
 }
 
-// Нижняя шторка добавления игрока в заявку из активного состава команды
-function AddPlayerSheet({ isOpen, onClose, teamId, appId, activeBrandColor, onSuccess }) {
+// Нижняя шторка добавления игрока в заявку из активного состава команды.
+// appId может быть null (виртуальная заявка): пикер тогда грузится по 'new' (без серверных
+// исключений, уже выбранные скрываются через excludeIds), а выбор возвращается родителю
+// через onAddLocal — заявка в БД при этом не создаётся.
+function AddPlayerSheet({ isOpen, onClose, teamId, appId, targetPosition, excludeIds, onAddLocal, activeBrandColor, onSuccess }) {
   const [isLoading, setIsLoading] = useState(false);
   const [players, setPlayers] = useState([]);
   const [search, setSearch] = useState('');
   const [selectedIds, setSelectedIds] = useState(new Set());
   const [isSaving, setIsSaving] = useState(false);
+  const [sheetError, setSheetError] = useState('');
 
   useEffect(() => {
     if (!isOpen) return;
     setSearch('');
     setSelectedIds(new Set());
+    setSheetError('');
     setIsLoading(true);
-    fetch(`${import.meta.env.VITE_API_URL}/api/manager/seasons/${teamId}/applications/${appId}/roster-picker`, { headers: getAuthHeaders() })
+    fetch(`${import.meta.env.VITE_API_URL}/api/manager/seasons/${teamId}/applications/${appId || 'new'}/roster-picker`, { headers: getAuthHeaders() })
       .then(r => r.json())
       .then(json => { if (json.success) setPlayers(json.players || []); })
       .catch(err => console.error('Ошибка загрузки состава команды:', err))
       .finally(() => setIsLoading(false));
   }, [isOpen, teamId, appId]);
 
-  const filtered = players.filter(p => `${p.last_name} ${p.first_name}`.toLowerCase().includes(search.trim().toLowerCase()));
+  const available = excludeIds ? players.filter(p => !excludeIds.has(p.id)) : players;
+  const filtered = available.filter(p => `${p.last_name} ${p.first_name}`.toLowerCase().includes(search.trim().toLowerCase()));
 
   const toggle = (id) => setSelectedIds(prev => {
     const next = new Set(prev);
@@ -231,14 +251,28 @@ function AddPlayerSheet({ isOpen, onClose, teamId, appId, activeBrandColor, onSu
 
   const handleSubmit = async () => {
     if (selectedIds.size === 0 || isSaving) return;
-    setIsSaving(true);
-    const json = await apiCall(`${import.meta.env.VITE_API_URL}/api/manager/seasons/${teamId}/applications/${appId}/roster`, {
-      method: 'POST', body: JSON.stringify({ playerIds: Array.from(selectedIds) })
-    });
-    setIsSaving(false);
-    if (json.success) {
-      await onSuccess();
+
+    // Виртуальная заявка: просто отдаём выбранных игроков родителю
+    if (!appId) {
+      onAddLocal(available.filter(p => selectedIds.has(p.id)));
       onClose();
+      return;
+    }
+
+    setIsSaving(true);
+    setSheetError('');
+    try {
+      const json = await apiCall(`${import.meta.env.VITE_API_URL}/api/manager/seasons/${teamId}/applications/${appId}/roster`, {
+        method: 'POST', body: JSON.stringify({ playerIds: Array.from(selectedIds), position: targetPosition })
+      });
+      if (json.success) {
+        await onSuccess();
+        onClose();
+      } else {
+        setSheetError(json.error || 'Не удалось добавить игроков');
+      }
+    } finally {
+      setIsSaving(false);
     }
   };
 
@@ -251,7 +285,7 @@ function AddPlayerSheet({ isOpen, onClose, teamId, appId, activeBrandColor, onSu
           <div className="py-8"><PageLoader /></div>
         ) : filtered.length === 0 ? (
           <div className="text-center py-6 text-[14px] font-bold text-content-muted opacity-60">
-            {players.length === 0 ? 'Все игроки состава уже добавлены в эту заявку' : 'Ничего не найдено'}
+            {available.length === 0 ? 'Все игроки состава уже добавлены в эту заявку' : 'Ничего не найдено'}
           </div>
         ) : (
           <div className="flex flex-col gap-2 max-h-[45vh] overflow-y-auto scrollbar-hide">
@@ -269,6 +303,9 @@ function AddPlayerSheet({ isOpen, onClose, teamId, appId, activeBrandColor, onSu
             ))}
           </div>
         )}
+        {sheetError && (
+          <div className="p-3 rounded-xl bg-danger/10 text-danger text-[14px] font-medium">{sheetError}</div>
+        )}
         <ButtonLP onClick={handleSubmit} isLoading={isSaving} disabled={selectedIds.size === 0 || isSaving} activeColor={activeBrandColor} className="mt-1">
           Добавить {selectedIds.size > 0 ? `(${selectedIds.size})` : ''}
         </ButtonLP>
@@ -277,27 +314,31 @@ function AddPlayerSheet({ isOpen, onClose, teamId, appId, activeBrandColor, onSu
   );
 }
 
-// Нижняя шторка добавления сотрудника штаба в заявку
-function AddStaffSheet({ isOpen, onClose, teamId, appId, activeBrandColor, onSuccess }) {
+// Нижняя шторка добавления сотрудника штаба в заявку.
+// appId может быть null (виртуальная заявка) — см. комментарий к AddPlayerSheet.
+function AddStaffSheet({ isOpen, onClose, teamId, appId, excludeIds, onAddLocal, activeBrandColor, onSuccess }) {
   const [isLoading, setIsLoading] = useState(false);
   const [staff, setStaff] = useState([]);
   const [search, setSearch] = useState('');
   const [selectedRoles, setSelectedRoles] = useState({});
   const [isSaving, setIsSaving] = useState(false);
+  const [sheetError, setSheetError] = useState('');
 
   useEffect(() => {
     if (!isOpen) return;
     setSearch('');
     setSelectedRoles({});
+    setSheetError('');
     setIsLoading(true);
-    fetch(`${import.meta.env.VITE_API_URL}/api/manager/seasons/${teamId}/applications/${appId}/roster-picker`, { headers: getAuthHeaders() })
+    fetch(`${import.meta.env.VITE_API_URL}/api/manager/seasons/${teamId}/applications/${appId || 'new'}/roster-picker`, { headers: getAuthHeaders() })
       .then(r => r.json())
       .then(json => { if (json.success) setStaff(json.staff || []); })
       .catch(err => console.error('Ошибка загрузки штаба команды:', err))
       .finally(() => setIsLoading(false));
   }, [isOpen, teamId, appId]);
 
-  const filtered = staff.filter(p => `${p.last_name} ${p.first_name}`.toLowerCase().includes(search.trim().toLowerCase()));
+  const availableStaff = excludeIds ? staff.filter(p => !excludeIds.has(p.id)) : staff;
+  const filtered = availableStaff.filter(p => `${p.last_name} ${p.first_name}`.toLowerCase().includes(search.trim().toLowerCase()));
 
   const toggle = (person) => setSelectedRoles(prev => {
     const next = { ...prev };
@@ -314,16 +355,33 @@ function AddStaffSheet({ isOpen, onClose, teamId, appId, activeBrandColor, onSuc
 
   const handleSubmit = async () => {
     if (selectedCount === 0 || isSaving) return;
-    setIsSaving(true);
-    const results = await Promise.all(Object.entries(selectedRoles).map(([userId, role]) =>
-      apiCall(`${import.meta.env.VITE_API_URL}/api/manager/seasons/${teamId}/applications/${appId}/staff`, {
-        method: 'POST', body: JSON.stringify({ userId: Number(userId), roles: [role] })
-      })
-    ));
-    setIsSaving(false);
-    if (!results.find(r => !r.success)) {
-      await onSuccess();
+
+    // Виртуальная заявка: отдаём выбранных сотрудников с ролями родителю
+    if (!appId) {
+      onAddLocal(Object.entries(selectedRoles)
+        .map(([personId, role]) => ({ person: availableStaff.find(p => String(p.id) === String(personId)), role }))
+        .filter(x => x.person));
       onClose();
+      return;
+    }
+
+    setIsSaving(true);
+    setSheetError('');
+    try {
+      const results = await Promise.all(Object.entries(selectedRoles).map(([userId, role]) =>
+        apiCall(`${import.meta.env.VITE_API_URL}/api/manager/seasons/${teamId}/applications/${appId}/staff`, {
+          method: 'POST', body: JSON.stringify({ userId: Number(userId), roles: [role] })
+        })
+      ));
+      const failed = results.find(r => !r.success);
+      if (!failed) {
+        await onSuccess();
+        onClose();
+      } else {
+        setSheetError(failed.error || 'Не удалось добавить сотрудников');
+      }
+    } finally {
+      setIsSaving(false);
     }
   };
 
@@ -336,7 +394,7 @@ function AddStaffSheet({ isOpen, onClose, teamId, appId, activeBrandColor, onSuc
           <div className="py-8"><PageLoader /></div>
         ) : filtered.length === 0 ? (
           <div className="text-center py-6 text-[14px] font-bold text-content-muted opacity-60">
-            {staff.length === 0 ? 'Весь штаб команды уже добавлен в эту заявку' : 'Ничего не найдено'}
+            {availableStaff.length === 0 ? 'Весь штаб команды уже добавлен в эту заявку' : 'Ничего не найдено'}
           </div>
         ) : (
           <div className="flex flex-col gap-2 max-h-[45vh] overflow-y-auto scrollbar-hide">
@@ -374,6 +432,9 @@ function AddStaffSheet({ isOpen, onClose, teamId, appId, activeBrandColor, onSuc
             })}
           </div>
         )}
+        {sheetError && (
+          <div className="p-3 rounded-xl bg-danger/10 text-danger text-[14px] font-medium">{sheetError}</div>
+        )}
         <ButtonLP onClick={handleSubmit} isLoading={isSaving} disabled={selectedCount === 0 || isSaving} activeColor={activeBrandColor} className="mt-1">
           Добавить {selectedCount > 0 ? `(${selectedCount})` : ''}
         </ButtonLP>
@@ -384,32 +445,95 @@ function AddStaffSheet({ isOpen, onClose, teamId, appId, activeBrandColor, onSuc
 
 // Содержательная часть экрана деталей заявки — карточка-сводка, бумажный блок, состав/штаб,
 // действия и все шторки редактирования. Рендерится внутри SeasonRostersDetailsPage.jsx (pages/).
-export function SeasonRosterDetails({ app, teamId, onClose, activeBrandColor, openRightPanel, loadData }) {
+// Виртуальный режим (app.id == null): заявки в БД нет — состав/штаб/скан собираются локально,
+// запись создаётся сразу в статусе pending по кнопке «Отправить на проверку» (handleSendReview).
+export function SeasonRosterDetails({ app, teamId, onClose, activeBrandColor, openRightPanel, loadData, onAppCreated }) {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isUploadingPaper, setIsUploadingPaper] = useState(false);
   const [selectedPlayer, setSelectedPlayer] = useState(null);
   const [selectedStaff, setSelectedStaff] = useState(null);
   const [isAddPlayerOpen, setIsAddPlayerOpen] = useState(false);
+  // Амплуа, с которым добавляются игроки: задаётся плюсом конкретного блока
+  // (Вратари/Защитники/Нападающие) и перекрывает амплуа игрока в составе команды
+  const [addPlayerPosition, setAddPlayerPosition] = useState('forward');
   const [isAddStaffOpen, setIsAddStaffOpen] = useState(false);
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
   const [deletePaperConfirmOpen, setDeletePaperConfirmOpen] = useState(false);
   const [isDeletingPaper, setIsDeletingPaper] = useState(false);
+  // Локально выбранный скан виртуальной заявки: на сервер уходит только при «Отправить на проверку»
+  const [pendingPaperFile, setPendingPaperFile] = useState(null);
   const [toast, setToast] = useState({ isOpen: false, message: '', type: 'success' });
 
   const triggerToast = (message, type = 'success') => setToast({ isOpen: true, message, type });
   const notifyError = (message) => triggerToast(message, 'danger');
 
-  const baseUrl = `${import.meta.env.VITE_API_URL}/api/manager/seasons/${teamId}/applications/${app.id}`;
+  const appsBaseUrl = `${import.meta.env.VITE_API_URL}/api/manager/seasons/${teamId}/applications`;
+  const baseUrl = `${appsBaseUrl}/${app.id}`;
+
+  // Виртуальный режим: заявки в БД нет вообще. Состав и штаб собираются локально
+  // (localRoster/localStaff), скан — локальным файлом (pendingPaperFile), а запись создаётся
+  // единственным запросом в handleSendReview — сразу в статусе pending («улетает в лигу»).
+  const isVirtual = !app.id;
+  const [localRoster, setLocalRoster] = useState([]);
+  const [localStaff, setLocalStaff] = useState([]);
+
+  const roster = isVirtual ? localRoster : (app.roster || []);
+  const staffList = isVirtual ? localStaff : (app.staff || []);
+
+  // Виртуальная заявка ещё не в БД — играть в дивизионе не могли, удаление всегда полное и без ограничений.
+  // Для существующей заявки полное удаление запрещено, если в дивизионе уже сыгран хоть один матч.
+  const canRemovePlayer = isVirtual || !app.division_has_games;
 
   const statusMeta = STATUS_META[app.status] || STATUS_META.draft;
   const isPaperBlocked = !app.digital_applications_only && !app.paper_roster_league_url;
-  const canEdit = ['draft', 'revision'].includes(app.status) && !isPaperBlocked;
-  const canDeleteApp = ['draft', 'rejected'].includes(app.status);
+  const isEditableStatus = ['draft', 'revision'].includes(app.status);
+  const canEdit = isEditableStatus && !isPaperBlocked;
+  // Скан заявочного листа команда загружает сама в статусах draft/revision —
+  // ещё до проверки лигой, поэтому isPaperBlocked здесь не учитывается.
+  const canEditPaper = isEditableStatus;
+  // Отправка: виртуальная бумажная — когда прикреплён скан; виртуальная цифровая — когда есть
+  // кто отправлять (состав/штаб); существующая заявка — по прежним правилам.
+  const canSend = isVirtual
+    ? (app.digital_applications_only ? (localRoster.length > 0 || localStaff.length > 0) : !!pendingPaperFile)
+    : isEditableStatus && (!isPaperBlocked || !!app.paper_roster_team_url);
+  const canDeleteApp = !isVirtual && ['draft', 'rejected'].includes(app.status);
 
   const handleSendReview = async () => {
     if (isSubmitting) return;
     setIsSubmitting(true);
     try {
+      // Виртуальная заявка: единственный момент, когда она создаётся в БД, — и сразу
+      // в статусе pending (улетает в лигу). Бумажная — со сканом, цифровая — с локально
+      // собранным составом и штабом. Никаких черновиков.
+      if (isVirtual) {
+        const formData = new FormData();
+        formData.append('divisionId', app.division_id);
+        if (!app.digital_applications_only) {
+          formData.append('file', pendingPaperFile);
+        } else {
+          formData.append('players', JSON.stringify(localRoster.map(p => ({
+            player_id: p.player_id,
+            position: p.position,
+            jersey_number: p.jersey_number,
+            is_captain: p.is_captain,
+            is_assistant: p.is_assistant,
+          }))));
+          formData.append('staff', JSON.stringify(localStaff.map(s => ({
+            user_id: s.user_id,
+            role: s.role,
+          }))));
+        }
+
+        const json = await apiCall(appsBaseUrl, { method: 'POST', body: formData });
+        if (json.success) {
+          triggerToast('Заявка отправлена на проверку', 'success');
+          onAppCreated?.(json.applicationId);
+        } else {
+          notifyError(json.error || 'Не удалось отправить заявку');
+        }
+        return;
+      }
+
       const json = await apiCall(`${baseUrl}/send-review`, { method: 'POST' });
       if (json.success) {
         await loadData();
@@ -422,27 +546,94 @@ export function SeasonRosterDetails({ app, teamId, onClose, activeBrandColor, op
     }
   };
 
+  // Добавление выбранных в пикере игроков в локальный (виртуальный) состав.
+  // Амплуа берётся из блока, чьим плюсом открыт пикер (addPlayerPosition), а не из состава
+  // команды — вратаря можно заявить нападающим и наоборот.
+  const handleAddLocalPlayers = (picked) => {
+    setLocalRoster(prev => [
+      ...prev,
+      ...picked.filter(p => !prev.some(x => x.player_id === p.id)).map(p => ({
+        id: `local-${p.id}`,
+        player_id: p.id,
+        first_name: p.first_name,
+        last_name: p.last_name,
+        user_avatar_url: p.avatar_url,
+        team_member_photo_url: p.photo_url,
+        position: addPlayerPosition,
+        jersey_number: p.jersey_number ?? null,
+        is_captain: false,
+        is_assistant: false,
+        application_status: 'draft',
+      }))
+    ]);
+  };
+
+  // Добавление выбранных в пикере сотрудников в локальный (виртуальный) штаб
+  const handleAddLocalStaff = (picked) => {
+    setLocalStaff(prev => [
+      ...prev,
+      ...picked.filter(({ person }) => !prev.some(x => x.user_id === person.id)).map(({ person, role }) => ({
+        user_id: person.id,
+        first_name: person.first_name,
+        last_name: person.last_name,
+        user_avatar_url: person.avatar_url,
+        team_member_photo_url: person.photo_url,
+        role,
+      }))
+    ]);
+  };
+
   const handleSavePlayer = async (rosterId, patch) => {
+    if (isVirtual) {
+      if (patch.jersey_number != null && localRoster.some(p => p.id !== rosterId && p.jersey_number === patch.jersey_number)) {
+        notifyError(`Номер ${patch.jersey_number} уже занят другим игроком в этой заявке`);
+        return;
+      }
+      setLocalRoster(prev => prev.map(p => {
+        if (p.id === rosterId) return { ...p, ...patch };
+        // Капитан в заявке один: назначение нового снимает флаг с остальных
+        if (patch.is_captain === true) return { ...p, is_captain: false };
+        return p;
+      }));
+      return;
+    }
     const json = await apiCall(`${baseUrl}/roster/${rosterId}`, { method: 'PATCH', body: JSON.stringify(patch) });
     if (json.success) { await loadData(); } else notifyError(json.error || 'Не удалось сохранить изменения');
   };
 
   const handleRemovePlayer = async (rosterId) => {
+    if (isVirtual) {
+      setLocalRoster(prev => prev.filter(p => p.id !== rosterId));
+      return;
+    }
     const json = await apiCall(`${baseUrl}/roster/${rosterId}`, { method: 'DELETE' });
     if (json.success) { await loadData(); } else notifyError(json.error || 'Не удалось убрать игрока из заявки');
   };
 
   const handleSaveStaff = async (userId, role) => {
+    if (isVirtual) {
+      setLocalStaff(prev => prev.map(s => s.user_id === userId ? { ...s, role } : s));
+      return;
+    }
     const json = await apiCall(`${baseUrl}/staff`, { method: 'POST', body: JSON.stringify({ userId, roles: [role] }) });
     if (json.success) { await loadData(); } else notifyError(json.error || 'Не удалось изменить роль сотрудника');
   };
 
   const handleRemoveStaff = async (userId) => {
+    if (isVirtual) {
+      setLocalStaff(prev => prev.filter(s => s.user_id !== userId));
+      return;
+    }
     const json = await apiCall(`${baseUrl}/staff/${userId}`, { method: 'DELETE' });
     if (json.success) { await loadData(); } else notifyError(json.error || 'Не удалось убрать сотрудника из заявки');
   };
 
   const handleUploadPaper = async (file) => {
+    // Виртуальная заявка: скан держим локально, на сервер он уйдёт при «Отправить на проверку»
+    if (isVirtual) {
+      setPendingPaperFile(file);
+      return;
+    }
     setIsUploadingPaper(true);
     try {
       const formData = new FormData();
@@ -465,6 +656,12 @@ export function SeasonRosterDetails({ app, teamId, onClose, activeBrandColor, op
   };
 
   const handleDeletePaper = async () => {
+    // Виртуальная заявка: просто сбрасываем локально выбранный файл
+    if (isVirtual) {
+      setPendingPaperFile(null);
+      setDeletePaperConfirmOpen(false);
+      return;
+    }
     setIsDeletingPaper(true);
     try {
       const json = await apiCall(`${baseUrl}/paper`, { method: 'DELETE' });
@@ -533,7 +730,7 @@ export function SeasonRosterDetails({ app, teamId, onClose, activeBrandColor, op
             onClick={(e) => handleOpenDocs(p, e)}
             className={clsx(PILL_CLASS, "gap-1.5 active:scale-95 transition-transform", summary.className)}
           >
-            <Icon name="file" className="w-5.5 h-3.5" />
+            <Icon name="file" className="w-5.5 h-5.5" />
             {summary.label}
           </button>
         );
@@ -583,7 +780,7 @@ export function SeasonRosterDetails({ app, teamId, onClose, activeBrandColor, op
     <div className="p-3 flex flex-col gap-4 pb-24">
 
       <div className="w-full bg-surface-level1 rounded-3xl shadow-md p-5 flex flex-col gap-3">
-        <span className="text-[16px] font-black text-content-main leading-snug line-clamp-2">{app.league_name}</span>
+        <span className="text-[16px] font-black text-content-main leading-snug line-clamp-3">{app.league_name}</span>
 
         <div className="flex items-center gap-4">
           {app.league_logo ? (
@@ -607,7 +804,11 @@ export function SeasonRosterDetails({ app, teamId, onClose, activeBrandColor, op
 
       {isPaperBlocked && (
         <div className="p-3 bg-danger/10 border border-danger/20 rounded-2xl text-[14px] font-medium text-danger leading-relaxed">
-          Ожидается проверка загруженного бумажного заявочного листа лигой. Редактирование состава и штаба будет доступно после публикации решения лиги.
+          {(!app.paper_roster_team_url && !pendingPaperFile)
+            ? 'Этот дивизион требует скан заявочного листа. Загрузите скан заполненного заявочного листа и отправьте заявку на проверку — после решения лиги вы сможете вести состав в электронном виде.'
+            : isEditableStatus
+              ? 'Скан прикреплён. Отправьте заявку на проверку — после решения лиги вы сможете вести состав и штаб в электронном виде.'
+              : 'Ожидается проверка загруженного бумажного заявочного листа лигой. Редактирование состава и штаба будет доступно после публикации решения лиги.'}
         </div>
       )}
 
@@ -615,9 +816,10 @@ export function SeasonRosterDetails({ app, teamId, onClose, activeBrandColor, op
         <div className="w-full bg-surface-level1 rounded-3xl shadow-md p-5 flex flex-col gap-3">
           <PaperDocTile
             url={app.paper_roster_team_url}
+            pendingLabel={pendingPaperFile?.name}
             doneLabel="Ваш скан"
-            emptyLabel={canEdit ? 'Загрузить скан заявки' : 'Файл не загружен'}
-            editable={canEdit}
+            emptyLabel={canEditPaper ? 'Загрузить скан заявки' : 'Файл не загружен'}
+            editable={canEditPaper}
             onUpload={handleUploadPaper}
             onDeleteClick={() => setDeletePaperConfirmOpen(true)}
             uploading={isUploadingPaper}
@@ -628,10 +830,12 @@ export function SeasonRosterDetails({ app, teamId, onClose, activeBrandColor, op
         </div>
       )}
 
-      {[
-        { key: 'goalie', label: 'Вратари', data: (app.roster || []).filter(p => p.position === 'goalie') },
-        { key: 'defense', label: 'Защитники', data: (app.roster || []).filter(p => p.position === 'defense') },
-        { key: 'forward', label: 'Нападающие', data: (app.roster || []).filter(p => p.position === 'forward') },
+      {/* Пока бумажная заявка не проверена лигой, электронное ведение состава и штаба недоступно —
+          пустые блоки Вратари/Защитники/Нападающие/Штаб не показываем вовсе */}
+      {!isPaperBlocked && [
+        { key: 'goalie', label: 'Вратари', data: roster.filter(p => p.position === 'goalie') },
+        { key: 'defense', label: 'Защитники', data: roster.filter(p => p.position === 'defense') },
+        { key: 'forward', label: 'Нападающие', data: roster.filter(p => p.position === 'forward') },
       ].map(group => (
         <ContainerContent
           key={group.key}
@@ -639,7 +843,7 @@ export function SeasonRosterDetails({ app, teamId, onClose, activeBrandColor, op
           count={group.data.length}
           activeBrandColor={activeBrandColor}
           action={canEdit ? (
-            <button type="button" onClick={(e) => { e.stopPropagation(); setIsAddPlayerOpen(true); }} className="p-1 text-content-muted hover:opacity-80 transition-colors" style={activeBrandColor ? { color: activeBrandColor } : {}}>
+            <button type="button" onClick={(e) => { e.stopPropagation(); setAddPlayerPosition(group.key); setIsAddPlayerOpen(true); }} className="p-1 text-content-muted hover:opacity-80 transition-colors" style={activeBrandColor ? { color: activeBrandColor } : {}}>
               <Icon name="user_plus" className="w-5 h-5" />
             </button>
           ) : null}
@@ -654,27 +858,29 @@ export function SeasonRosterDetails({ app, teamId, onClose, activeBrandColor, op
         </ContainerContent>
       ))}
 
-      <ContainerContent
-        title="Штаб"
-        count={(app.staff || []).length}
-        activeBrandColor={activeBrandColor}
-        action={canEdit ? (
-          <button type="button" onClick={(e) => { e.stopPropagation(); setIsAddStaffOpen(true); }} className="p-1 text-content-muted hover:opacity-80 transition-colors" style={activeBrandColor ? { color: activeBrandColor } : {}}>
-            <Icon name="user_plus" className="w-5 h-5" />
-          </button>
-        ) : null}
-      >
-        {(app.staff || []).length > 0 ? (
-          <Table columns={staffColumns} data={app.staff} rowKey="user_id" onRowClick={setSelectedStaff} />
-        ) : (
-          <div className="text-center py-4 text-[10px] font-bold uppercase tracking-widest text-content-subtle opacity-50">
-            Штаб ещё не добавлен
-          </div>
-        )}
-      </ContainerContent>
+      {!isPaperBlocked && (
+        <ContainerContent
+          title="Штаб"
+          count={staffList.length}
+          activeBrandColor={activeBrandColor}
+          action={canEdit ? (
+            <button type="button" onClick={(e) => { e.stopPropagation(); setIsAddStaffOpen(true); }} className="p-1 text-content-muted hover:opacity-80 transition-colors" style={activeBrandColor ? { color: activeBrandColor } : {}}>
+              <Icon name="user_plus" className="w-5 h-5" />
+            </button>
+          ) : null}
+        >
+          {staffList.length > 0 ? (
+            <Table columns={staffColumns} data={staffList} rowKey="user_id" onRowClick={setSelectedStaff} />
+          ) : (
+            <div className="text-center py-4 text-[10px] font-bold uppercase tracking-widest text-content-subtle opacity-50">
+              Штаб ещё не добавлен
+            </div>
+          )}
+        </ContainerContent>
+      )}
 
       <div className="flex flex-col gap-2">
-        {canEdit && (
+        {canSend && (
           <ButtonLP onClick={handleSendReview} isLoading={isSubmitting} disabled={isSubmitting} activeColor={activeBrandColor} className="py-4 mt-6">
             Отправить на проверку
           </ButtonLP>
@@ -690,8 +896,9 @@ export function SeasonRosterDetails({ app, teamId, onClose, activeBrandColor, op
         isOpen={!!selectedPlayer}
         onClose={() => setSelectedPlayer(null)}
         player={selectedPlayer}
-        roster={app.roster || []}
+        roster={roster}
         canEdit={canEdit}
+        canRemove={canRemovePlayer}
         activeBrandColor={activeBrandColor}
         onSave={handleSavePlayer}
         onRemove={handleRemovePlayer}
@@ -712,6 +919,9 @@ export function SeasonRosterDetails({ app, teamId, onClose, activeBrandColor, op
         onClose={() => setIsAddPlayerOpen(false)}
         teamId={teamId}
         appId={app.id}
+        targetPosition={addPlayerPosition}
+        excludeIds={isVirtual ? new Set(localRoster.map(p => p.player_id)) : null}
+        onAddLocal={handleAddLocalPlayers}
         activeBrandColor={activeBrandColor}
         onSuccess={loadData}
       />
@@ -721,6 +931,8 @@ export function SeasonRosterDetails({ app, teamId, onClose, activeBrandColor, op
         onClose={() => setIsAddStaffOpen(false)}
         teamId={teamId}
         appId={app.id}
+        excludeIds={isVirtual ? new Set(localStaff.map(s => s.user_id)) : null}
+        onAddLocal={handleAddLocalStaff}
         activeBrandColor={activeBrandColor}
         onSuccess={loadData}
       />

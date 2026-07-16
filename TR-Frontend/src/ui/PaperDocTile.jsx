@@ -41,7 +41,7 @@ export function PaperDocTile({
         />
       )}
       <div
-        className={clsx("shrink-0 w-9 h-9 rounded-lg flex items-center justify-center", hasContent ? toneClass : "bg-surface-level2 text-content-muted")}
+        className={clsx("shrink-0 w-9 h-9 rounded-lg flex items-center justify-center", hasContent ? toneClass : "text-content-muted")}
         style={iconStyle}
       >
         <Icon name={hasContent ? 'file' : (canUpload ? 'upload' : 'clock')} className="w-4.5 h-4.5" />

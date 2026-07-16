@@ -38,6 +38,7 @@ export const getPlayerProfile = async (req, res) => {
         l.city as league_city,
 
         d.name as division_name,
+        d.short_name as division_short_name,
         d.logo_url as division_logo,
 
         t.id as team_id,
@@ -51,6 +52,9 @@ export const getPlayerProfile = async (req, res) => {
         lq.short_name as qual_name,
         lq.name as qual_full_name,
         lq.description as qual_description,
+
+        tr.is_fee_paid,
+        d.hide_stats_unpaid,
 
         ps.games_played as gp,
         ps.goals as g,

@@ -5,6 +5,7 @@ import { getAuthHeaders, getImageUrl } from '../utils/helpers';
 import { SegmentedControl } from '../ui/SegmentedControl';
 import { FadeIn, StaggerContainer } from '../ui/FadeIn';
 import { Icon } from '../ui/Icon';
+import { PolicySheet } from '../ui/PolicySheet';
 import Toggle from '../ui/Toggle';
 import clsx from 'clsx';
 
@@ -28,6 +29,9 @@ const SettingsBlock = ({ title, icon, children }) => {
 export function SettingsPage() {
   // Навигационное состояние верхнего сегментного переключателя
   const [activeSubTab, setActiveSubTab] = useState('appearance');
+
+  // Шторка с текстом политики обработки персональных данных (ссылка в подвале)
+  const [isPolicyOpen, setIsPolicyOpen] = useState(false);
 
   // Инициализируем стейт из localStorage (по умолчанию true, если не выставлено 'false')
   const [useTeamColors, setUseTeamColors] = useState(() => {
@@ -146,7 +150,20 @@ export function SettingsPage() {
           )}
 
         </StaggerContainer>
+
+        {/* Юридический подвал настроек — вне вкладок, всегда последним элементом */}
+        <div className="flex flex-col items-center gap-1 mt-8 pb-2">
+          <button
+            type="button"
+            onClick={() => setIsPolicyOpen(true)}
+            className="text-[11px] text-content-muted opacity-60 hover:opacity-100 font-medium text-center underline underline-offset-4 outline-none cursor-pointer transition-opacity"
+          >
+            Политика о персональных данных и контакты
+          </button>
+        </div>
       </div>
+
+      <PolicySheet isOpen={isPolicyOpen} onClose={() => setIsPolicyOpen(false)} />
     </FadeIn>
   );
 }

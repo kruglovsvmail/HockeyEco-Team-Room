@@ -10,6 +10,7 @@ import 'dayjs/locale/ru';
 import { getToken, removeToken, getAuthHeaders, uiFixed } from './utils/helpers';
 import { Sidebar } from './components/Sidebar';
 import { Header } from './components/Header';
+import { ConsentModal } from './components/ConsentModal';
 import { Icon } from './ui/Icon';
 import { PageLoader } from './ui/Loader';
 import { FadeIn } from './ui/FadeIn';
@@ -76,6 +77,9 @@ function TeamLayoutContent() {
     window.addEventListener('tr_ui_scale_changed', handleScaleChange);
     return () => window.removeEventListener('tr_ui_scale_changed', handleScaleChange);
   }, []);
+
+  // Флаг необходимости показать блокирующую модалку согласия с политикой обработки ПД
+  const [needsConsent, setNeedsConsent] = useState(false);
 
   const [rightPanel, setRightPanel] = useState({ isOpen: false, type: null, data: null, title: '', previous: null });
   const [panel100, setPanel100] = useState({ isOpen: false, type: null, data: null, title: '' });
@@ -280,6 +284,14 @@ function TeamLayoutContent() {
 
         clearTimeout(timeoutId);
 
+        // Сервер явно отверг токен (протух/отозван) — это не сетевой сбой,
+        // поэтому кэшированный профиль не спасает: стираем сессию и уводим на логин.
+        if (res.status === 401 || res.status === 403) {
+          removeToken();
+          setIsLoading(false);
+          return navigate('/login');
+        }
+
         if (!res.ok) throw new Error('Not authorized');
 
         const data = await res.json();
@@ -312,6 +324,18 @@ function TeamLayoutContent() {
 
     fetchMe();
   }, [navigate]);
+
+  // Проверка, принял ли пользователь актуальную версию политики обработки ПД.
+  // При отрицательном ответе поверх приложения показывается блокирующая модалка согласия.
+  useEffect(() => {
+    if (!user?.id || !navigator.onLine) return;
+    fetch(`${import.meta.env.VITE_API_URL}/api/policy/status`, { headers: getAuthHeaders() })
+      .then(res => res.json())
+      .then(json => {
+        if (json.success) setNeedsConsent(!!json.needsConsent);
+      })
+      .catch(() => {});
+  }, [user?.id]);
 
   const handleTeamChange = (team) => {
     setSelectedTeam(team);
@@ -651,6 +675,9 @@ function TeamLayoutContent() {
           )}
         </div>
       </div>
+
+      {/* Блокирующая модалка согласия с политикой обработки персональных данных */}
+      <ConsentModal isOpen={needsConsent} onAccepted={() => setNeedsConsent(false)} />
 
     </div>
   );

@@ -57,6 +57,8 @@ const MyTeamPage = lazy(() => import('./pages/MyTeamPage').then(module => ({ def
 const TournamentsPage = lazy(() => import('./pages/TournamentsPage').then(module => ({ default: module.TournamentsPage })));
 const ProfilePage = lazy(() => import('./pages/ProfilePage').then(module => ({ default: module.ProfilePage })));
 const SettingsPage = lazy(() => import('./pages/SettingsPage').then(module => ({ default: module.SettingsPage })));
+const SubscriptionPage = lazy(() => import('./pages/SubscriptionPage').then(module => ({ default: module.SubscriptionPage })));
+const PrivacyPage = lazy(() => import('./pages/PrivacyPage').then(module => ({ default: module.PrivacyPage })));
 
 // Чанки страниц раздела Руководства — ИСПРАВЛЕНЫ пути импорта для сборщика Vite
 const CreateEventPage = lazy(() => import('./pages/manager/CreateEventPage').then(m => ({ default: m.CreateEventPage })));
@@ -214,6 +216,8 @@ export default function App() {
             <Suspense fallback={<PageLoader />}>
               <Routes>
                 <Route path="/login" element={<LoginPage />} />
+                {/* Публичная страница политики — доступна без авторизации (модерация платёжных систем) */}
+                <Route path="/privacy" element={<PrivacyPage />} />
 
                 <Route element={<TeamLayout />}>
                   <Route path="/" element={<SchedulePage />} />
@@ -222,6 +226,7 @@ export default function App() {
                   <Route path="/tournaments" element={<TournamentsPage />} />
                   <Route path="/profile" element={<ProfilePage />} />
                   <Route path="/settings" element={<SettingsPage />} />
+                  <Route path="/subscription" element={<SubscriptionPage />} />
 
                   <Route path="/manager/create-event" element={<CreateEventPage />} />
                   <Route path="/manager/season-rosters" element={<SeasonRostersPage />} />

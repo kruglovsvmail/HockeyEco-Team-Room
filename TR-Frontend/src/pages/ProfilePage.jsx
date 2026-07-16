@@ -347,13 +347,13 @@ export function ProfilePage() {
       
       {/* Навигационные вкладки */}
       <div className="px-4 pb-3 shrink-0 shadow-lg bg-surface-base">
-        <SegmentedControl 
+        <SegmentedControl
           options={[
             { value: 'general', label: 'Анкета' },
             { value: 'security', label: 'Безопасность' }
-          ]} 
-          value={activeTab} 
-          onChange={setActiveTab} 
+          ]}
+          value={activeTab}
+          onChange={setActiveTab}
         />
       </div>
 
@@ -363,7 +363,7 @@ export function ProfilePage() {
         {/* Ключ по activeTab перезапускает поочередную анимацию при смене вкладок */}
         <StaggerContainer key={activeTab}>
           
-          {activeTab === 'general' ? (
+          {activeTab === 'general' && (
             <>
               {/* БЛОК 1: ХОККЕЙНАЯ КАРТОЧКА АВАТАРА */}
               <div className="p-4 bg-surface-level1 border border-surface-border rounded-2xl flex items-center gap-5 shadow-md relative overflow-hidden text-left mb-3">
@@ -516,10 +516,12 @@ export function ProfilePage() {
                 )}
               </CustomBlock>
             </>
-          ) : (
+          )}
+
+          {activeTab === 'security' && (
             <>
               {/* БЛОК 5: ИЗМЕНЕНИЕ ПАРОЛЯ */}
-              <CustomBlock 
+              <CustomBlock
                 title="Авторизация и доступ" 
                 icon="lock"
                 isEditing={isEditPassword}

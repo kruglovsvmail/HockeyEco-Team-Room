@@ -6,6 +6,7 @@ import { PhoneInputLP, PasswordInputLP, EmailInputLP, TextInputLP } from '../ui/
 import { ButtonLP } from '../ui/Button-LP';
 import { CheckboxLP } from '../ui/Checkbox-LP';
 import { BottomSheet } from '../ui/BottomSheet';
+import { PolicySheet } from '../ui/PolicySheet';
 import { getToken } from '../utils/helpers';
 
 export default function LoginPage() {
@@ -33,6 +34,10 @@ export default function LoginPage() {
   const [regData, setRegData] = useState({ firstName: '', lastName: '', middleName: '', email: '', birthDate: '' });
   const [regError, setRegError] = useState('');
   const [isRegLoading, setIsRegLoading] = useState(false);
+
+  // Согласие с политикой обработки ПД при активации аккаунта + шторка с её текстом
+  const [policyChecked, setPolicyChecked] = useState(false);
+  const [isPolicyOpen, setIsPolicyOpen] = useState(false);
 
   // PWA states
   const [deferredPrompt, setDeferredPrompt] = useState(null);
@@ -246,6 +251,7 @@ export default function LoginPage() {
     setRegCode('');
     setRegData({ firstName: '', lastName: '', middleName: '', email: '', birthDate: '' });
     setRegError('');
+    setPolicyChecked(false);
   };
 
   const handleRegCheckPhone = async () => {
@@ -356,7 +362,8 @@ export default function LoginPage() {
           lastName: regData.lastName,
           middleName: regData.middleName,
           email: regData.email,
-          birthDate: finalBirthDate
+          birthDate: finalBirthDate,
+          policyAccepted: policyChecked
         }),
       });
       const data = await response.json();
@@ -537,13 +544,20 @@ export default function LoginPage() {
             className="tracking-widest">
             Активировать аккаунт
           </ButtonLP>
-          <ButtonLP 
-            variant="text" 
+          <ButtonLP
+            variant="text"
             onClick={() => setActiveSheet('pwa')}
             disabled={isInstalled}
           >
             {isInstalled ? 'Приложение установлено' : 'Установить PWA (Приложение)'}
           </ButtonLP>
+          <button
+            type="button"
+            onClick={() => setIsPolicyOpen(true)}
+            className="text-[10px] text-content-subtle hover:text-content-muted font-normal uppercase text-center underline underline-offset-4 outline-none cursor-pointer -mt-2"
+          >
+            Политика о персональных данных и контакты
+          </button>
         </div>
 
         <div className={clsx(
@@ -714,13 +728,26 @@ export default function LoginPage() {
 
             {regError && <div className="text-danger font-medium text-[14px] mt-4">{regError}</div>}
 
-            <p className="text-[10px] text-content-subtle leading-relaxed mt-6 mb-6">
-              Нажимая «Подтвердить аккаунт», вы даёте согласие на обработку персональных данных (ФИО, номер телефона, дата рождения) в рамках платформы <span className="font-semibold">HockeyEco</span> в соответствии с&nbsp;ФЗ&#8209;152 «О персональных данных».
-            </p>
-            
-            <ButtonLP 
-              type="submit" 
-              isLoading={isRegLoading} 
+            <div className="mt-6 mb-6 flex flex-col gap-2.5">
+              <CheckboxLP
+                checked={policyChecked}
+                onChange={setPolicyChecked}
+                label="Даю согласие на обработку персональных данных"
+                className="items-start [&>span]:text-[12px] [&>span]:leading-snug"
+              />
+              <button
+                type="button"
+                onClick={() => setIsPolicyOpen(true)}
+                className="text-[12px] text-brand hover:text-brand-hover font-medium text-left underline underline-offset-4 outline-none cursor-pointer pl-8"
+              >
+                Политика обработки персональных данных
+              </button>
+            </div>
+
+            <ButtonLP
+              type="submit"
+              isLoading={isRegLoading}
+              disabled={!policyChecked}
               className="mb-12"
             >
               Подтвердить аккаунт
@@ -745,6 +772,9 @@ export default function LoginPage() {
         )}
 
       </BottomSheet>
+
+      {/* Шторка с текстом политики — поверх всего, включая BottomSheet регистрации */}
+      <PolicySheet isOpen={isPolicyOpen} onClose={() => setIsPolicyOpen(false)} />
 
     </div>
   );
