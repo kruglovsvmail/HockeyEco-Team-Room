@@ -13,7 +13,7 @@ const formatPrice = (price) => `${Math.round(Number(price)).toLocaleString('ru-R
 
 // Временный флаг: онлайн-оплата ещё не подключена, карточки планов скрыты.
 // Когда платёжный провайдер будет готов — просто переключить на true.
-const PLANS_ENABLED = false;
+const PLANS_ENABLED = true;
 
 /**
  * Полноценный раздел оформления подписки.

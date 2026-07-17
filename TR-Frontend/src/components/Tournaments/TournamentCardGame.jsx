@@ -134,7 +134,7 @@ export function TournamentCardGame({ game }) {
                   <div className="flex flex-col gap-1 text-center">
                     <span className="text-[13px] font-bold text-content-main leading-snug">{game.arena_name}</span>
                     {game.arena_city && (
-                      <span className="text-[12px] font-semibold text-content-muted leading-snug">г. {game.arena_city}</span>
+                      <span className="text-[12px] font-semibold text-content-muted leading-snug">{game.arena_city}</span>
                     )}
                     {game.arena_address && (
                       <span className="text-[11px] font-medium text-content-muted leading-snug">{game.arena_address}</span>

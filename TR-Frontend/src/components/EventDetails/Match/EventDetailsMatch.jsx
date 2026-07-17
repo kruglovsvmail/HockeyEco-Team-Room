@@ -277,7 +277,7 @@ export const EventDetailsMatch = ({ event, user: userProp, selectedTeam: selecte
                     <div className="flex flex-col gap-1 text-center">
                       <span className="text-[13px] font-bold text-content-main leading-snug">{arenaDisplay}</span>
                       {localEvent.arena_city && (
-                        <span className="text-[12px] font-semibold text-content-muted leading-snug">г. {localEvent.arena_city}</span>
+                        <span className="text-[12px] font-semibold text-content-muted leading-snug">{localEvent.arena_city}</span>
                       )}
                       {localEvent.arena_address && (
                         <span className="text-[11px] font-medium text-content-muted leading-snug">{localEvent.arena_address}</span>
