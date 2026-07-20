@@ -26,6 +26,29 @@ function loadWidgetScript() {
   return widgetScriptPromise;
 }
 
+// ЮKassa принимает только 6-значный HEX — CSS-переменные темы иногда заданы
+// 8-значным (с альфа-каналом), поэтому альфу обрезаем
+const toHex6 = (value, fallback) => {
+  const hex = value?.trim().replace('#', '').slice(0, 6);
+  return hex && hex.length === 6 ? `#${hex}` : fallback;
+};
+
+// Читаем цвета из ЖИВЫХ CSS-переменных темы в момент открытия — так виджет автоматически
+// подстраивается и под светлую/тёмную тему, и под цвет активной команды (--color-brand
+// переопределяется в TeamLayout при выбранном командном цвете)
+function getWidgetColors() {
+  const styles = getComputedStyle(document.documentElement);
+  const read = (name, fallback) => toHex6(styles.getPropertyValue(name), fallback);
+
+  return {
+    control_primary: read('--color-brand', '#1794dd'),
+    background: read('--color-surface-level1', '#ffffff'),
+    text: read('--color-content-main', '#1f2937'),
+    border: read('--color-surface-border', '#e2e4e7'),
+    control_secondary: read('--color-surface-level2', '#e5e7eb'),
+  };
+}
+
 /**
  * Шторка со встроенным виджетом оплаты ЮKassa. Форма оплаты рендерится прямо здесь —
  * пользователь не покидает PWA. Успех/неудача попытки оплаты обрабатываются виджетом
@@ -71,6 +94,7 @@ export function PaymentWidgetSheet({ isOpen, confirmationToken, onClose, onError
         const widget = new window.YooMoneyCheckoutWidget({
           confirmation_token: confirmationToken,
           return_url: `${window.location.origin}/subscription?payment=return`,
+          customization: { colors: getWidgetColors() },
           error_callback: (err) => {
             console.error('Ошибка виджета ЮKassa:', err);
             if (!cancelled) onError();
