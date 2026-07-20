@@ -1,5 +1,5 @@
-import React, { useState, useEffect, useCallback } from 'react';
-import { useOutletContext } from 'react-router-dom';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
+import { useOutletContext, useSearchParams, useNavigate, useLocation } from 'react-router-dom';
 import clsx from 'clsx';
 import { getAuthHeaders } from '../utils/helpers';
 import { getSubscriptionStatus } from '../utils/subscription';
@@ -11,26 +11,86 @@ import { Toast } from '../ui/Toast';
 // Форматирует цену в рублях без копеек: "1 800 ₽"
 const formatPrice = (price) => `${Math.round(Number(price)).toLocaleString('ru-RU')} ₽`;
 
-// Временный флаг: онлайн-оплата ещё не подключена, карточки планов скрыты.
-// Когда платёжный провайдер будет готов — просто переключить на true.
+// Онлайн-оплата подключена (ЮKassa) — карточки тарифов активны.
 const PLANS_ENABLED = true;
+
+const POLL_ATTEMPTS = 8;
+const POLL_INTERVAL_MS = 2500;
 
 /**
  * Полноценный раздел оформления подписки.
  * Название раздела выводится в системной шапке (Header), статус — под заголовком страницы.
- * Оплата проходит на стороне внешнего платёжного сервиса (пока заглушка).
+ * Оплата проходит на стороне ЮKassa: «Оформить» создаёт заказ и уводит на её страницу оплаты,
+ * после чего ЮKassa возвращает пользователя сюда с ?payment=return.
  */
 export function SubscriptionPage() {
   const { user } = useOutletContext();
+  const [searchParams] = useSearchParams();
+  const navigate = useNavigate();
+  const location = useLocation();
 
   const [plans, setPlans] = useState([]);
   const [loading, setLoading] = useState(true);
   const [submittingId, setSubmittingId] = useState(null);
+  const [isCheckingPayment, setIsCheckingPayment] = useState(false);
   const [toast, setToast] = useState({ isOpen: false, message: '', type: 'success' });
 
   const status = getSubscriptionStatus(user?.subscriptionExpiresAt || user?.subscription_expires_at);
 
   const triggerToast = (message, type = 'success') => setToast({ isOpen: true, message, type });
+
+  // Запоминаем дату окончания подписки на момент открытия страницы —
+  // с ней сравниваем ответ /api/auth/me при опросе после возврата с оплаты
+  const baselineExpiresAtRef = useRef(user?.subscriptionExpiresAt || user?.subscription_expires_at || null);
+
+  // После редиректа обратно из ЮKassa (?payment=return) опрашиваем сервер,
+  // пока вебхук не продлит подписку — статус страницы обновится сам, без перезахода.
+  useEffect(() => {
+    if (searchParams.get('payment') !== 'return') return;
+
+    // Убираем query-параметр сразу, чтобы повторный заход/обновление страницы не запускал опрос заново
+    navigate(location.pathname, { replace: true });
+
+    let attempt = 0;
+    let cancelled = false;
+    setIsCheckingPayment(true);
+
+    const poll = async () => {
+      attempt += 1;
+      try {
+        const res = await fetch(`${import.meta.env.VITE_API_URL}/api/auth/me`, { headers: getAuthHeaders() });
+        const json = await res.json();
+        if (cancelled) return;
+
+        if (json.success && json.user) {
+          const freshExpiresAt = json.user.subscriptionExpiresAt;
+          if (freshExpiresAt && freshExpiresAt !== baselineExpiresAtRef.current) {
+            // Синхронизируем локальный кэш и остальные компоненты (сайдбар и т.д.) — тот же паттерн,
+            // что и в глобальном 403-интерцепторе (utils/helpers.js)
+            localStorage.setItem('teampwa_cached_user', JSON.stringify(json.user));
+            localStorage.setItem('teampwa_user', JSON.stringify(json.user));
+            window.dispatchEvent(new CustomEvent('pwa_auth_matrix_refresh', { detail: json.user }));
+            setIsCheckingPayment(false);
+            triggerToast('Оплата прошла успешно, подписка продлена!', 'success');
+            return;
+          }
+        }
+      } catch (err) {
+        console.error('Ошибка проверки статуса оплаты:', err);
+      }
+
+      if (!cancelled && attempt < POLL_ATTEMPTS) {
+        setTimeout(poll, POLL_INTERVAL_MS);
+      } else if (!cancelled) {
+        setIsCheckingPayment(false);
+        triggerToast('Платёж обрабатывается. Обновите страницу через минуту.', 'danger');
+      }
+    };
+
+    poll();
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchParams]);
 
   const loadPlans = useCallback(async () => {
     try {
@@ -66,9 +126,11 @@ export function SubscriptionPage() {
         body: JSON.stringify({ planId }),
       });
       const json = await res.json();
-      if (json.success) {
-        // Заглушка редиректа на платёжный шлюз — провайдер ещё не выбран
-        triggerToast('Заказ создан. Оплата онлайн скоро будет подключена.', 'success');
+      if (json.success && json.confirmationUrl) {
+        // Уводим пользователя на страницу оплаты ЮKassa. Не сбрасываем submittingId —
+        // кнопка должна оставаться в состоянии загрузки до фактического ухода со страницы.
+        window.location.href = json.confirmationUrl;
+        return;
       } else {
         triggerToast(json.error || 'Не удалось создать заказ', 'danger');
       }
@@ -83,6 +145,14 @@ export function SubscriptionPage() {
   return (
     <FadeIn className="flex flex-col h-full overflow-hidden">
       <div className="flex-1 overflow-y-auto scrollbar-hide px-3 pt-2 pb-24 bg-surface-base transition-colors duration-300">
+
+        {/* Индикатор ожидания подтверждения платежа после возврата с оплаты ЮKassa */}
+        {isCheckingPayment && (
+          <div className="flex items-center gap-2.5 px-4 py-3 rounded-2xl bg-brand/10 border border-brand/20 mb-3">
+            <div className="w-3.5 h-3.5 border-2 border-brand border-t-transparent rounded-full animate-spin shrink-0" />
+            <span className="text-[12px] font-bold text-brand">Проверяем статус оплаты…</span>
+          </div>
+        )}
 
         {/* Блок текущего статуса подписки — в каноничном стиле блоков Профиля/Настроек */}
         <div className="flex flex-col p-4 bg-surface-level1 border border-surface-border rounded-2xl shadow-md mb-3 text-left transition-colors duration-300">
