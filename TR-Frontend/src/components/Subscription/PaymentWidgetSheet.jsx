@@ -2,6 +2,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import clsx from 'clsx';
 import { Icon } from '../../ui/Icon';
+import { PageLoader } from '../../ui/Loader';
 import { getPortalRoot } from '../../utils/helpers';
 
 const WIDGET_SCRIPT_SRC = 'https://yookassa.ru/checkout-widget/v1/checkout-widget.js';
@@ -145,8 +146,12 @@ export function PaymentWidgetSheet({ isOpen, confirmationToken, onClose, onError
 
       <div className="flex-1 overflow-y-auto scrollbar-hide px-3 py-4">
         {status === 'loading' && (
-          <div className="flex items-center justify-center py-20">
-            <div className="w-5 h-5 border-2 border-brand border-t-transparent rounded-full animate-spin" />
+          <div className="flex flex-col items-center">
+            <PageLoader />
+            <p className="text-[12px] text-content-muted text-center px-6 -mt-6 leading-relaxed">
+              Форма оплаты загружается дольше обычного. Если включён VPN — попробуйте
+              отключить его или сменить сервер, обычно это ускоряет загрузку.
+            </p>
           </div>
         )}
         {status === 'error' && (
