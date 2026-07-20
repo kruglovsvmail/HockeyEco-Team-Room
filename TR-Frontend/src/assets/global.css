@@ -10,7 +10,6 @@
     --color-brand-dark: #267ec2;
     --color-brand-glow: #ffffff00;
     --color-brand-opacity: color-mix(in srgb, var(--color-brand) 10%, transparent);
-
     
     /* --- СТАТИЧНЫЕ ПОВЕРХНОСТИ (ГЛОБАЛЬНЫЕ) --- */
     --color-surface-base: #f3f4f6ff; /* Фон разных плашек */
