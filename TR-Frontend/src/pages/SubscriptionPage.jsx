@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { useOutletContext, useSearchParams } from 'react-router-dom';
+import { useOutletContext } from 'react-router-dom';
 import clsx from 'clsx';
 import { getAuthHeaders } from '../utils/helpers';
 import { getSubscriptionStatus } from '../utils/subscription';
@@ -22,12 +22,11 @@ const POLL_INTERVAL_MS = 2500;
  * Полноценный раздел оформления подписки.
  * Название раздела выводится в системной шапке (Header), статус — под заголовком страницы.
  * Оплата — встроенным виджетом ЮKassa (модалка поверх страницы, без ухода из PWA).
- * Резервный путь: способы оплаты, требующие внешнего приложения (СБП, T-Pay), уводят и
- * возвращают пользователя сюда через ?payment=return — на этот случай опрос статуса тоже работает.
+ * Результат ловим событиями виджета (success/fail) — редиректа на return_url нет,
+ * пользователь никогда не покидает страницу и не видит перезагрузку приложения.
  */
 export function SubscriptionPage() {
   const { user } = useOutletContext();
-  const [searchParams] = useSearchParams();
 
   const [plans, setPlans] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -46,8 +45,6 @@ export function SubscriptionPage() {
   // (без перезагрузки страницы) снова могла отследить продление.
   const baselineExpiresAtRef = useRef(user?.subscriptionExpiresAt || user?.subscription_expires_at || null);
 
-  // Значение параметра читаем один раз при монтировании
-  const isPaymentReturnRef = useRef(searchParams.get('payment') === 'return');
   const isMountedRef = useRef(true);
   useEffect(() => () => { isMountedRef.current = false; }, []);
 
@@ -90,15 +87,6 @@ export function SubscriptionPage() {
     };
 
     poll();
-  }, []);
-
-  // Резервный путь возврата (методы с уходом во внешнее приложение) — убираем query-параметр
-  // через History API напрямую (без navigate() роутера), чтобы не пересоздавать searchParams
-  useEffect(() => {
-    if (!isPaymentReturnRef.current) return;
-    window.history.replaceState(null, '', window.location.pathname);
-    startPaymentPolling();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const loadPlans = useCallback(async () => {
@@ -148,6 +136,19 @@ export function SubscriptionPage() {
       setSubmittingId(null);
     }
   };
+
+  // Платёж подтверждён (событие виджета 'success') — закрываем шторку и ждём,
+  // пока вебхук ЮKassa фактически продлит подписку в БД
+  const handleWidgetSuccess = useCallback(() => {
+    setIsWidgetOpen(false);
+    startPaymentPolling();
+  }, [startPaymentPolling]);
+
+  // Платёж не удался или истёк токен (событие виджета 'fail')
+  const handleWidgetFail = useCallback(() => {
+    setIsWidgetOpen(false);
+    triggerToast('Оплата не прошла. Попробуйте ещё раз.', 'danger');
+  }, []);
 
   // Технический сбой самого виджета (не о неудачной попытке оплаты — те виджет
   // обрабатывает внутри себя сам, давая повторить попытку другим способом)
@@ -289,6 +290,8 @@ export function SubscriptionPage() {
         isOpen={isWidgetOpen}
         confirmationToken={widgetToken}
         onClose={() => setIsWidgetOpen(false)}
+        onSuccess={handleWidgetSuccess}
+        onFail={handleWidgetFail}
         onError={handleWidgetError}
       />
 

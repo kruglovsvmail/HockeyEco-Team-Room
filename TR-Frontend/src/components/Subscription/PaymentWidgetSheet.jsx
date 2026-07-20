@@ -27,44 +27,34 @@ function loadWidgetScript() {
   return widgetScriptPromise;
 }
 
-// ЮKassa принимает только 6-значный HEX — CSS-переменные темы иногда заданы
-// 8-значным (с альфа-каналом), поэтому альфу обрезаем
-const toHex6 = (value, fallback) => {
-  const hex = value?.trim().replace('#', '').slice(0, 6);
-  return hex && hex.length === 6 ? `#${hex}` : fallback;
+// Форма самой ЮKassa всегда светлая (тёмную тему для неё они по факту не применяют
+// корректно — проверено), поэтому и шапку, и тело шторки, и цвета виджета фиксируем
+// на светлой палитре напрямую, не завязываясь на CSS-переменные темы приложения
+const WIDGET_COLORS = {
+  control_primary: '#1794dd',
+  control_primary_content: '#ffffff',
+  background: '#ffffff',
+  text: '#1f2937',
+  border: '#e2e4e7',
+  control_secondary: '#e5e7eb',
 };
-
-// Читаем цвета из ЖИВЫХ CSS-переменных темы в момент открытия — так виджет автоматически
-// подстраивается и под светлую/тёмную тему, и под цвет активной команды (--color-brand
-// переопределяется в TeamLayout при выбранном командном цвете)
-function getWidgetColors() {
-  const styles = getComputedStyle(document.documentElement);
-  const read = (name, fallback) => toHex6(styles.getPropertyValue(name), fallback);
-
-  return {
-    control_primary: read('--color-brand', '#1794dd'),
-    background: read('--color-surface-level1', '#ffffff'),
-    text: read('--color-content-main', '#1f2937'),
-    border: read('--color-surface-border', '#e2e4e7'),
-    control_secondary: read('--color-surface-level2', '#e5e7eb'),
-  };
-}
 
 /**
  * Шторка со встроенным виджетом оплаты ЮKassa. Форма оплаты рендерится прямо здесь —
- * пользователь не покидает PWA. Успех/неудача попытки оплаты обрабатываются виджетом
- * ВНУТРИ себя (страница успеха, либо сообщение об ошибке с повтором выбора способа) —
- * никаких JS-событий success/fail у виджета нет. После успешной оплаты виджет сам
- * переходит на return_url — туда же, куда возвращают и внешние способы (СБП/T-Pay),
- * и именно там (SubscriptionPage, ?payment=return) уже реализован опрос статуса.
- * onError здесь — только про технические сбои самого виджета (не о неудачном платеже).
+ * пользователь не покидает PWA. Результат оплаты ловим событиями виджета (`success`/`fail`),
+ * поэтому return_url НЕ передаём — при его наличии ЮKassa эти события не генерирует и вместо
+ * этого просто делает редирект, а нам нужна реакция без ухода со страницы.
+ * onError — технический сбой самого виджета (невалидный токен, обрыв сети), не о неудачной
+ * попытке оплаты (её виджет обычно обрабатывает сам, предлагая повторить другим способом).
  *
  * @param {boolean} isOpen
  * @param {string} confirmationToken - токен подтверждения из ответа /api/subscription/orders
  * @param {function} onClose - закрытие без результата (пользователь передумал)
- * @param {function} onError - технический сбой виджета (невалидный токен, обрыв сети)
+ * @param {function} onSuccess - платёж подтверждён успешно (событие виджета 'success')
+ * @param {function} onFail - платёж не удался/токен истёк (событие виджета 'fail')
+ * @param {function} onError - технический сбой виджета
  */
-export function PaymentWidgetSheet({ isOpen, confirmationToken, onClose, onError }) {
+export function PaymentWidgetSheet({ isOpen, confirmationToken, onClose, onSuccess, onFail, onError }) {
   const [status, setStatus] = useState('loading'); // 'loading' | 'ready' | 'error'
   const widgetRef = useRef(null);
 
@@ -94,14 +84,17 @@ export function PaymentWidgetSheet({ isOpen, confirmationToken, onClose, onError
 
         const widget = new window.YooMoneyCheckoutWidget({
           confirmation_token: confirmationToken,
-          return_url: `${window.location.origin}/subscription?payment=return`,
-          customization: { colors: getWidgetColors() },
+          customization: { colors: WIDGET_COLORS },
           error_callback: (err) => {
             console.error('Ошибка виджета ЮKassa:', err);
             if (!cancelled) onError();
           },
         });
         widgetRef.current = widget;
+
+        widget.on('success', () => { if (!cancelled) onSuccess(); });
+        widget.on('fail', () => { if (!cancelled) onFail(); });
+
         widget.render(WIDGET_CONTAINER_ID);
       })
       .then(() => {
@@ -125,20 +118,22 @@ export function PaymentWidgetSheet({ isOpen, confirmationToken, onClose, onError
   return createPortal(
     <div
       className={clsx(
-        "absolute inset-0 z-[450] flex flex-col w-full h-full bg-surface-base transition-transform duration-500",
+        "absolute inset-0 z-[450] flex flex-col w-full h-full bg-white transition-transform duration-500",
         "ease-[cubic-bezier(0.32,0.72,0,1)] will-change-transform overscroll-none",
         isOpen ? "translate-x-0 pointer-events-auto" : "translate-x-full pointer-events-none"
       )}
     >
-      <header className="flex items-center justify-between px-4 h-[60px] border-b border-surface-border shrink-0 bg-surface-level1/60 backdrop-blur-md">
+      {/* Шапка всегда светлая — независимо от темы приложения, чтобы не контрастировать
+          со всегда-светлой формой ЮKassa под ней */}
+      <header className="flex items-center justify-between px-4 h-[60px] border-b border-[#e2e4e7] shrink-0 bg-white/80 backdrop-blur-md">
         <button
           type="button"
           onClick={onClose}
-          className="p-2 -ml-2 text-content-muted hover:text-brand active:scale-95 transition-all outline-none cursor-pointer flex items-center justify-center rounded-full"
+          className="p-2 -ml-2 text-[#6b7280] hover:text-brand active:scale-95 transition-all outline-none cursor-pointer flex items-center justify-center rounded-full"
         >
-          <Icon name="chevron_left" className="w-7 h-7 text-content-main" />
+          <Icon name="chevron_left" className="w-7 h-7 text-[#1f2937]" />
         </button>
-        <span className="text-[10px] font-bold uppercase tracking-widest text-content-muted">
+        <span className="text-[10px] font-bold uppercase tracking-widest text-[#6b7280]">
           Оплата подписки
         </span>
         <div className="w-7 h-7 opacity-0 pointer-events-none" />
@@ -148,7 +143,7 @@ export function PaymentWidgetSheet({ isOpen, confirmationToken, onClose, onError
         {status === 'loading' && (
           <div className="flex flex-col items-center">
             <PageLoader />
-            <p className="text-[12px] text-content-muted text-center px-6 -mt-6 leading-relaxed">
+            <p className="text-[12px] text-[#6b7280] text-center px-6 -mt-6 leading-relaxed">
               Форма оплаты загружается дольше обычного. Если включён VPN — попробуйте
               отключить его или сменить сервер, обычно это ускоряет загрузку.
             </p>
