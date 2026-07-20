@@ -8,6 +8,12 @@ import { getPortalRoot } from '../../utils/helpers';
 const WIDGET_SCRIPT_SRC = 'https://yookassa.ru/checkout-widget/v1/checkout-widget.js';
 const WIDGET_CONTAINER_ID = 'yookassa-widget-container';
 
+// Сколько держим подсказку про VPN после открытия шторки. У виджета нет события
+// «список способов оплаты загружен» — их собственная загрузка идёт уже ПОСЛЕ того,
+// как наш status переключается на 'ready', поэтому подсказку не привязываем к status,
+// а держим отдельным таймером, перекрывающим и нашу загрузку скрипта, и их внутреннюю
+const VPN_HINT_DURATION_MS = 20000;
+
 let widgetScriptPromise = null;
 
 // Скрипт виджета грузим один раз за всю жизнь вкладки и переиспользуем промис,
@@ -56,7 +62,20 @@ const WIDGET_COLORS = {
  */
 export function PaymentWidgetSheet({ isOpen, confirmationToken, onClose, onSuccess, onFail, onError }) {
   const [status, setStatus] = useState('loading'); // 'loading' | 'ready' | 'error'
+  const [showVpnHint, setShowVpnHint] = useState(false);
   const widgetRef = useRef(null);
+
+  // Подсказка про VPN — по таймеру от момента открытия, не от статуса загрузки
+  // (см. комментарий у VPN_HINT_DURATION_MS)
+  useEffect(() => {
+    if (!isOpen || !confirmationToken) {
+      setShowVpnHint(false);
+      return;
+    }
+    setShowVpnHint(true);
+    const timer = setTimeout(() => setShowVpnHint(false), VPN_HINT_DURATION_MS);
+    return () => clearTimeout(timer);
+  }, [isOpen, confirmationToken]);
 
   useEffect(() => {
     if (isOpen) {
@@ -140,13 +159,17 @@ export function PaymentWidgetSheet({ isOpen, confirmationToken, onClose, onSucce
       </header>
 
       <div className="flex-1 overflow-y-auto scrollbar-hide px-3 py-4">
+        {/* Подсказка про VPN — видна первые секунды после открытия независимо от того,
+            наша это загрузка (скрипт) или уже внутренняя загрузка виджета (список методов) */}
+        {showVpnHint && (
+          <p className="text-[12px] text-[#6b7280] text-center px-6 mb-3 leading-relaxed">
+            Форма оплаты может загружаться дольше обычного. Если включён VPN — попробуйте
+            отключить его или сменить сервер, обычно это ускоряет загрузку.
+          </p>
+        )}
         {status === 'loading' && (
-          <div className="flex flex-col items-center">
+          <div className="flex items-center justify-center">
             <PageLoader />
-            <p className="text-[12px] text-[#6b7280] text-center px-6 -mt-6 leading-relaxed">
-              Форма оплаты загружается дольше обычного. Если включён VPN — попробуйте
-              отключить его или сменить сервер, обычно это ускоряет загрузку.
-            </p>
           </div>
         )}
         {status === 'error' && (
