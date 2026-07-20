@@ -8,8 +8,10 @@ const authHeader = () => {
   return `Basic ${Buffer.from(`${shopId}:${secretKey}`).toString('base64')}`;
 };
 
-// Создаёт платёж в ЮKassa и возвращает объект платежа (с confirmation.confirmation_url)
-export async function createPayment({ amount, description, returnUrl, metadata }) {
+// Создаёт платёж в ЮKassa с типом подтверждения "embedded" — виджет рендерится
+// прямо на странице (модалкой), пользователь не покидает PWA. return_url для этого
+// типа передаётся не сюда, а самому виджету на фронте при инициализации.
+export async function createPayment({ amount, description, metadata }) {
   const res = await fetch(`${API_BASE}/payments`, {
     method: 'POST',
     headers: {
@@ -20,7 +22,7 @@ export async function createPayment({ amount, description, returnUrl, metadata }
     body: JSON.stringify({
       amount: { value: Number(amount).toFixed(2), currency: 'RUB' },
       capture: true,
-      confirmation: { type: 'redirect', return_url: returnUrl },
+      confirmation: { type: 'embedded' },
       description,
       metadata,
     }),

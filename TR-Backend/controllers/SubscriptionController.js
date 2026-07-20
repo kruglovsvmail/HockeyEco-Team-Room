@@ -19,7 +19,7 @@ class SubscriptionController {
     }
   }
 
-  // Создаёт заказ (pending), затем платёж в ЮKassa и возвращает ссылку на оплату.
+  // Создаёт заказ (pending), затем платёж в ЮKassa и возвращает токен для встроенного виджета оплаты.
   async createOrder(req, res) {
     try {
       const userId = req.user.id;
@@ -42,12 +42,9 @@ class SubscriptionController {
       );
       const orderId = orderResult.rows[0].id;
 
-      const frontendUrl = process.env.FRONTEND_URL || 'https://hockeyeco.ru';
-
       const payment = await createPayment({
         amount: plan.price,
         description: `Подписка HockeyEco — ${plan.name}`,
-        returnUrl: `${frontendUrl}/subscription?payment=return`,
         metadata: { order_id: String(orderId), user_id: String(userId) },
       });
 
@@ -56,7 +53,7 @@ class SubscriptionController {
         [payment.id, orderId]
       );
 
-      res.json({ success: true, confirmationUrl: payment.confirmation?.confirmation_url });
+      res.json({ success: true, confirmationToken: payment.confirmation?.confirmation_token });
     } catch (err) {
       console.error('Ошибка создания заказа подписки:', err);
       res.status(500).json({ success: false, error: 'Не удалось создать платёж. Попробуйте ещё раз.' });
