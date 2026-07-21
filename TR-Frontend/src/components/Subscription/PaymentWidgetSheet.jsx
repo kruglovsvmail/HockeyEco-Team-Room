@@ -158,7 +158,7 @@ export function PaymentWidgetSheet({ isOpen, confirmationToken, onClose, onSucce
         <div className="w-7 h-7 opacity-0 pointer-events-none" />
       </header>
 
-      <div className="flex-1 overflow-y-auto scrollbar-hide px-3 py-4">
+      <div className="flex-1 overflow-y-auto overflow-x-hidden scrollbar-hide px-3 py-4">
         {/* Подсказка про VPN — видна первые секунды после открытия независимо от того,
             наша это загрузка (скрипт) или уже внутренняя загрузка виджета (список методов) */}
         {showVpnHint && (
@@ -177,8 +177,9 @@ export function PaymentWidgetSheet({ isOpen, confirmationToken, onClose, onSucce
             Не удалось загрузить форму оплаты. Проверьте соединение и попробуйте ещё раз.
           </p>
         )}
-        {/* Контейнер виджета существует всегда (нужен виджету для рендера), просто скрыт до готовности */}
-        <div id={WIDGET_CONTAINER_ID} className={status === 'ready' ? 'block' : 'hidden'} />
+        {/* Контейнер виджета существует всегда (нужен виджету для рендера), просто скрыт до готовности.
+            w-full задан явно — виджет сам должен подстроиться под ширину контейнера */}
+        <div id={WIDGET_CONTAINER_ID} className={clsx('w-full', status === 'ready' ? 'block' : 'hidden')} />
       </div>
     </div>,
     getPortalRoot()
