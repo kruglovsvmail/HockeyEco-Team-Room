@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { useOutletContext } from 'react-router-dom';
+import dayjs from 'dayjs';
 import clsx from 'clsx';
 import { getAuthHeaders } from '../utils/helpers';
 import { getSubscriptionStatus } from '../utils/subscription';
@@ -110,8 +111,15 @@ export function SubscriptionPage() {
   }, [loadPlans]);
 
   // Цена базового месячного тарифа — для расчета выгоды на длинных тарифах
-  const basePlan = plans.find(p => p.duration_days <= 31) || plans[0];
-  const basePricePerDay = basePlan ? Number(basePlan.price) / basePlan.duration_days : null;
+  const basePlan = plans.find(p => p.duration_months === 1) || plans[0];
+  const basePricePerMonth = basePlan ? Number(basePlan.price) / basePlan.duration_months : null;
+
+  // От какой даты считать продление для предпросмотра «Подписка до …» на карточках:
+  // если подписка ещё активна — от её текущей даты окончания, иначе от сегодня
+  // (тот же принцип, что и в webhook на бэкенде — GREATEST(expires_at, now))
+  const previewBaseDate = status.active && user?.subscriptionExpiresAt
+    ? dayjs(user.subscriptionExpiresAt)
+    : dayjs();
 
   const handleSubscribe = async (planId) => {
     if (submittingId) return;
@@ -205,12 +213,12 @@ export function SubscriptionPage() {
             {/* Карточки тарифов */}
             <div className="flex flex-col gap-3">
               {plans.map(plan => {
-                const pricePerDay = Number(plan.price) / plan.duration_days;
-                const discountPct = basePricePerDay && pricePerDay < basePricePerDay
-                  ? Math.round((1 - pricePerDay / basePricePerDay) * 100)
+                const pricePerMonthExact = Number(plan.price) / plan.duration_months;
+                const discountPct = basePricePerMonth && pricePerMonthExact < basePricePerMonth
+                  ? Math.round((1 - pricePerMonthExact / basePricePerMonth) * 100)
                   : 0;
-                const months = Math.round(plan.duration_days / 30);
-                const pricePerMonth = months > 1 ? Math.round(Number(plan.price) / months) : null;
+                const pricePerMonth = plan.duration_months > 1 ? Math.round(pricePerMonthExact) : null;
+                const previewExpiry = previewBaseDate.add(plan.duration_months, 'month').format('D MMMM YYYY');
 
                 return (
                   <div
@@ -227,19 +235,18 @@ export function SubscriptionPage() {
 
                     {/* Цена и выгода */}
                     <div className="flex items-center justify-between mb-1">
-                      <span className="text-[24px] font-black text-content-main leading-none">
+                      <span className="text-[22px] font-bold text-content-main leading-none">
                         {formatPrice(plan.price)}
                       </span>
                       {discountPct > 0 && (
-                        <span className="text-[10px] font-bold uppercase tracking-wide px-2.5 py-1 rounded-full bg-brand/15 text-brand shrink-0">
+                        <span className="text-[12px] font-black uppercase tracking-wide px-2.5 py-1 rounded-full bg-brand/15 text-brand shrink-0">
                           Выгода {discountPct}%
                         </span>
                       )}
                     </div>
                     <span className="text-[12px] font-medium text-content-muted mb-4">
-                      {pricePerMonth
-                        ? `≈ ${formatPrice(pricePerMonth)} в месяц · доступ на ${plan.duration_days} дней`
-                        : `Доступ на ${plan.duration_days} дней`}
+                      {pricePerMonth && `≈ ${formatPrice(pricePerMonth)} в месяц · `}
+                      Подписка до {previewExpiry}
                     </span>
 
                     <ButtonLP
@@ -259,7 +266,7 @@ export function SubscriptionPage() {
             {/* Дисклеймер о механике продления и стороннем платёжном сервисе */}
             <p className="text-[11px] font-medium text-content-muted leading-relaxed mt-5 px-1 opacity-70 text-left">
               Оплата производится через защищённый сторонний платёжный сервис.
-              При продлении оплаченные дни добавляются к текущей дате окончания подписки — ни один день не сгорает.
+              При продлении оплаченный период добавляется к текущей дате окончания подписки — ничего не сгорает.
             </p>
             </>
             ) : (

@@ -7,7 +7,7 @@ class SubscriptionController {
   async getPlans(req, res) {
     try {
       const result = await pool.query(
-        `SELECT id, code, name, duration_days, price
+        `SELECT id, code, name, duration_months, price
          FROM subscription_plans
          WHERE is_active = true
          ORDER BY sort_order ASC`
@@ -26,7 +26,7 @@ class SubscriptionController {
       const { planId } = req.body;
 
       const planResult = await pool.query(
-        `SELECT id, name, price, duration_days FROM subscription_plans WHERE id = $1 AND is_active = true`,
+        `SELECT id, name, price FROM subscription_plans WHERE id = $1 AND is_active = true`,
         [planId]
       );
       if (planResult.rows.length === 0) {
@@ -78,7 +78,7 @@ class SubscriptionController {
       }
 
       const orderResult = await pool.query(
-        `SELECT so.id, so.status, so.user_id, sp.duration_days
+        `SELECT so.id, so.status, so.user_id, sp.duration_months
          FROM subscription_orders so
          JOIN subscription_plans sp ON sp.id = so.plan_id
          WHERE so.id = $1`,
@@ -102,14 +102,16 @@ class SubscriptionController {
             `UPDATE subscription_orders SET status = 'paid', paid_at = NOW() WHERE id = $1`,
             [order.id]
           );
-          // Дни продления прибавляются к максимуму из текущей даты окончания и «сейчас» —
+          // Месяцы продления прибавляются к максимуму из текущей даты окончания и «сейчас» —
           // если подписка уже истекла, продление считается от текущего момента, а не от прошлой даты.
+          // interval 'N months' — календарная арифметика Postgres, сама корректно учитывает
+          // длину конкретного месяца и високосный год.
           await client.query(
             `UPDATE users
              SET subscription_expires_at = GREATEST(COALESCE(subscription_expires_at, NOW()), NOW())
-                                            + ($1 || ' days')::interval
+                                            + ($1 || ' months')::interval
              WHERE id = $2`,
-            [order.duration_days, order.user_id]
+            [order.duration_months, order.user_id]
           );
           await client.query('COMMIT');
         } catch (txErr) {
