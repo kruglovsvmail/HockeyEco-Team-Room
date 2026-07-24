@@ -339,7 +339,7 @@ export const getMemberTeamStats = async (req, res) => {
       FROM team_training tt
       JOIN periods p ON tt.training_date >= p.joined_at AND (p.left_at IS NULL OR tt.training_date < p.left_at)
       LEFT JOIN team_training_attendance ta ON ta.team_training_id = tt.id AND ta.user_id = $2
-      WHERE tt.team_id = $1
+      WHERE tt.team_id = $1 AND tt.training_date < NOW()
     `;
 
     // Р•РґРёРЅС‹Р№ СЃРїРёСЃРѕРє Р’РЎР•РҐ РґРѕСЃС‚СѓРїРЅС‹С… РґР»СЏ РїРѕРґСЃС‡С‘С‚Р° РјР°С‚С‡РµР№ (РЅРµ С‚РѕР»СЊРєРѕ СЃС‹РіСЂР°РЅРЅС‹С…)

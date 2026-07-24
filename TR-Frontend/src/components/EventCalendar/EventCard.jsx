@@ -37,6 +37,12 @@ const EventCard = ({
     event.status === 'finished_no_result' ||
     (isMatchType && isNonOfficial && event.status === 'scheduled' && gameDatePassed);
 
+  // Официальный матч (свой жизненный цикл, см. matchStatus.js) дата которого прошла,
+  // а результат ещё не внесён вручную — статус остаётся 'scheduled'. Ничего не меняем
+  // в БД, просто визуально показываем прочерки вместо «предстоящего» вида карточки.
+  const isPendingOfficialResult =
+    isMatchType && !isNonOfficial && event.status === 'scheduled' && gameDatePassed;
+
   const fullDateStr = eventDate.format('D MMMM, dd');
   const displayDateStr = fullDateStr.length > 12 ? eventDate.format('D MMM, dd') : fullDateStr;
 
@@ -152,7 +158,7 @@ const EventCard = ({
       }
       
       if (event.end_type === 'ot') matchEndTypeText = 'ОТ';
-      else if (event.end_type === 'so') matchEndTypeText = 'БУЛ.';
+      else if (event.end_type === 'so') matchEndTypeText = 'Б';
       else matchEndTypeText = '';
     }
   }
@@ -188,7 +194,7 @@ const EventCard = ({
     >
       
       {/* Верхняя часть карточки — серая у завершённых (включая finished_no_result) */}
-      <div className={(isFinished || isNoResult) ? 'opacity-60 grayscale transition-all duration-300' : ''}>
+      <div className={(isFinished || isNoResult || isPendingOfficialResult) ? 'opacity-60 grayscale transition-all duration-300' : ''}>
 
       {/* 1. ШАПКА: Локация и Челка Даты */}
       <div className="flex justify-between items-stretch w-full h-[28px]">
@@ -383,6 +389,12 @@ const EventCard = ({
               Результаты ещё не внесены
             </span>
           </div>
+        ) : isMatch && isPendingOfficialResult ? (
+          <div className="w-full grid grid-cols-3 items-center">
+            <span className="text-[14px] font-black uppercase tracking-widest text-content-muted">-</span>
+            <span className="text-[18px] font-black text-content-muted tracking-widest text-end">- : -</span>
+            <span className="text-[10px] font-bold text-content-muted uppercase tracking-widest text-right max-w-[80px] leading-tight justify-self-end"></span>
+          </div>
         ) : isMatch && isFinished ? (
           <div className="w-full grid grid-cols-3 items-center">
   <span
@@ -425,7 +437,7 @@ const EventCard = ({
                 event.toggle_status === 'allowed' ? (
                   <Toggle
                     checked={event.is_attending}
-                    disabled={isFinished}
+                    disabled={isFinished || gameDatePassed}
                     activeColor={activeBrandColor}
                     onChange={(val) => onToggleAttendance(event.event_id, event.event_type, val, event.my_team_id)}
                   />

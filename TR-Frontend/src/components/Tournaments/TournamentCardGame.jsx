@@ -86,11 +86,11 @@ export function TournamentCardGame({ game }) {
 
           {isFinished && (isOvertime || isShootout || isTech) && (
             <span className={clsx(
-              'text-[12px] font-bold uppercase tracking-widest mt-1.5 px-1.5 py-0.5 rounded leading-none border shadow-xs',
-              isTech ? 'text-red-500 bg-red-500/5 border-red-500/10' : 'text-brand bg-brand-opacity border-brand/10'
+              'text-[12px] font-bold uppercase tracking-widest mt-1.5 px-1.5 py-0.5 rounded leading-none shadow-xs',
+              isTech ? 'text-red-500 bg-red-500/5' : 'text-brand bg-brand-opacity'
             )}>
               {isOvertime && 'от'}
-              {isShootout && 'булл'}
+              {isShootout && 'б'}
               {isTech && 'тех'}
             </span>
           )}

@@ -297,7 +297,7 @@ export const MatchInfo = ({
                       : { color: activeBrandColor, backgroundColor: `${activeBrandColor}14`, borderColor: `${activeBrandColor}1a` }}
                   >
                     {isOvertime && 'от'}
-                    {isShootout && 'булл'}
+                    {isShootout && 'Б'}
                     {isTech && 'тех'}
                   </span>
                 )}
@@ -332,7 +332,7 @@ export const MatchInfo = ({
 
             {[
               { icon: 'calendar',   label: 'Сезон',    value: seasonValue },
-              { icon: 'divisions',  label: 'Дивизион', value: divisionValue },
+              { icon: 'divisions',  label: localEvent.is_tournament ? 'Турнир' : 'Дивизион', value: divisionValue },
               { icon: 'swap',       label: stageRowLabel,  value: stageRowValue },
               { icon: 'puck',       label: seriesRowLabel, value: seriesRowValue },
             ]

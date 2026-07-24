@@ -3,8 +3,8 @@ import React from 'react';
 
 const Toggle = ({ checked, onChange, disabled, activeColor }) => {
   // ИСПРАВЛЕНО: Динамический перекрас активного фона в цвет команды через inline-style
-  const buttonStyle = checked && activeColor 
-    ? { backgroundColor: activeColor } 
+  const buttonStyle = checked && activeColor && !disabled
+    ? { backgroundColor: activeColor }
     : {};
 
   return (
@@ -16,11 +16,11 @@ const Toggle = ({ checked, onChange, disabled, activeColor }) => {
       onClick={() => onChange(!checked)}
       style={buttonStyle}
       className={`
-        relative inline-flex h-7 w-14 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent 
+        relative inline-flex h-7 w-14 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent
         transition-colors duration-200 ease-in-out focus:outline-none
-        ${disabled ? 'opacity-50 cursor-not-allowed' : ''}
-        ${checked && !activeColor ? 'bg-brand' : ''}
-        ${!checked ? 'bg-surface-level3' : ''}
+        ${disabled ? 'opacity-50 cursor-not-allowed bg-surface-level3' : ''}
+        ${!disabled && checked && !activeColor ? 'bg-brand' : ''}
+        ${!disabled && !checked ? 'bg-surface-level3' : ''}
       `}
     >
       <span

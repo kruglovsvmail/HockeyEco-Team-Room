@@ -112,6 +112,7 @@ export const getEvents = async (req, res) => {
           
           d.name::varchar AS division_name,
           d.short_name::varchar AS division_short_name,
+          COALESCE(d.is_tournament, false)::boolean AS is_tournament,
           COALESCE(l.name, ext_tour.name)::varchar AS league_name,
           l.short_name::varchar AS league_short_name,
           l.logo_url::varchar AS league_logo_url,
