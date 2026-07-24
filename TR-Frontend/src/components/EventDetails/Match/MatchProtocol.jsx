@@ -12,12 +12,14 @@ import { StepperLP } from '../../../ui/Input-LP';
 import { CheckboxLP } from '../../../ui/Checkbox-LP';
 import { useAccess } from '../../../hooks/useAccess';
 import { MatchEventSheet } from './MatchEventSheet';
+import { OfficialGoalPlusMinusSheet } from './OfficialGoalPlusMinusSheet';
+import { OfficialGoalieShotsSheet } from './OfficialGoalieShotsSheet';
 import { ShotsSheet } from './ShotsSheet';
 import { GoalieChangeSheet } from './GoalieChangeSheet';
 import { decodeGoalieLog, encodeGoalieLog, removeGoalieChange, periodKeyForTime } from './goalieLogModel';
 
 const PERIOD_ORDER = ['1', '2', '3', 'OT', 'SO'];
-const PERIOD_LABELS = { '1': '1-й период', '2': '2-й период', '3': '3-й период', OT: 'Овертайм', SO: 'Серия бросков' };
+const PERIOD_LABELS = { '1': '1-й период', '2': '2-й период', '3': '3-й период', OT: 'Овертайм', SO: 'Серия послематчевых буллитов' };
 
 // ─── Утилиты ──────────────────────────────────────────────────────────
 
@@ -203,7 +205,7 @@ const EventCenter = ({ event }) => {
 // ОДНО СОБЫТИЕ — трёхколоночная карточка [home | center | away]
 // Высота боковых колонок выравнивается по наибольшей через ResizeObserver
 // ═══════════════════════════════════════════════════════════════════════
-const EventCard = ({ event, homeTeamId, canEdit, editRole, myTeamId, onEdit, onDelete, openRightPanel, activeBrandColor, hasTeamColor }) => {
+const EventCard = ({ event, homeTeamId, canEdit, editRole, myTeamId, onEdit, onDelete, openRightPanel, activeBrandColor, hasTeamColor, officialPmEditable, onOfficialPmEdit }) => {
   const isHome = event.team_id === homeTeamId;
   const side = isHome ? 'home' : 'away';
 
@@ -226,6 +228,10 @@ const EventCard = ({ event, homeTeamId, canEdit, editRole, myTeamId, onEdit, onD
     ))
   );
   const showActions = canEditThis || canDelete;
+
+  // Официальный матч: команда может проставить своё +/- по этому голу, если лига
+  // сама эту статистику не ведёт. Независимо от isEditMode/canEdit выше.
+  const showOfficialPm = !!officialPmEditable && event.event_type === 'goal';
 
   const homeRef = React.useRef(null);
   const awayRef = React.useRef(null);
@@ -291,6 +297,16 @@ const EventCard = ({ event, homeTeamId, canEdit, editRole, myTeamId, onEdit, onD
           <Icon name="delete" className="w-4 h-4" />
         </button>
       )}
+      {showOfficialPm && (
+        <button
+          type="button"
+          onClick={(e) => { e.stopPropagation(); onOfficialPmEdit && onOfficialPmEdit(event); }}
+          title="Указать своих игроков на площадке (+/-)"
+          className="w-9 h-9 rounded-full text-content-muted flex items-center justify-center transition-all active:scale-90 outline-none opacity-50 text-[13px] font-black"
+        >
+          +/-
+        </button>
+      )}
     </div>
   );
 
@@ -300,7 +316,7 @@ const EventCard = ({ event, homeTeamId, canEdit, editRole, myTeamId, onEdit, onD
       <div ref={homeRef} className="flex-1 min-w-0 flex items-start" style={colStyle}>
         {isHome
           ? renderPlayer()
-          : (showActions ? <ActionButtons alignRight={true} /> : null)}
+          : ((showActions || showOfficialPm) ? <ActionButtons alignRight={true} /> : null)}
       </div>
 
       {/* Центр — время + бейдж */}
@@ -310,14 +326,14 @@ const EventCard = ({ event, homeTeamId, canEdit, editRole, myTeamId, onEdit, onD
       <div ref={awayRef} className="flex-1 min-w-0 flex items-start" style={colStyle}>
         {!isHome
           ? renderPlayer()
-          : (showActions ? <ActionButtons alignRight={false} /> : null)}
+          : ((showActions || showOfficialPm) ? <ActionButtons alignRight={false} /> : null)}
       </div>
     </div>
   );
 };
 
 // ─── Блок периода ─────────────────────────────────────────────────────
-const PeriodBlock = ({ label, events, homeTeamId, canEdit, editRole, myTeamId, onEdit, onDelete, openRightPanel, activeBrandColor, hasTeamColor }) => (
+const PeriodBlock = ({ label, events, homeTeamId, canEdit, editRole, myTeamId, onEdit, onDelete, openRightPanel, activeBrandColor, hasTeamColor, officialPmEditable, onOfficialPmEdit }) => (
   <div className="flex flex-col gap-2">
     <div className="flex items-center gap-3 px-1">
       <div className="flex-1 h-px bg-surface-border" />
@@ -339,6 +355,8 @@ const PeriodBlock = ({ label, events, homeTeamId, canEdit, editRole, myTeamId, o
         openRightPanel={openRightPanel}
         activeBrandColor={activeBrandColor}
         hasTeamColor={hasTeamColor}
+        officialPmEditable={officialPmEditable}
+        onOfficialPmEdit={onOfficialPmEdit}
       />
     ))}
   </div>
@@ -441,6 +459,9 @@ export const MatchProtocol = ({ event, user, selectedTeam, openRightPanel }) => 
   const [isEditMode, setIsEditMode] = useState(false);
   // Шторка добавления/редактирования события: { mode, scoringTeamId, existingEvent? } | null
   const [eventSheet, setEventSheet] = useState(null);
+  // Шторка самостоятельного ввода +/- для официального матча: { event } | null.
+  // Отдельная от eventSheet — сохраняет сразу на сервер (без черновика/isEditMode).
+  const [officialPmSheet, setOfficialPmSheet] = useState(null);
   // событие, для которого открыто подтверждение удаления
   const [deleteConfirmEvent, setDeleteConfirmEvent] = useState(null);
 
@@ -456,7 +477,7 @@ export const MatchProtocol = ({ event, user, selectedTeam, openRightPanel }) => 
   const [draftShots, setDraftShots] = useState(null);
 
   // ── Регламент матча (количество периодов / длина / ОТ) ──────────────────
-  const [regulation, setRegulation] = useState({ period_length: 20, ot_length: 0, periods_count: 3, opponent_can_edit: true });
+  const [regulation, setRegulation] = useState({ period_length: 20, ot_length: 0, periods_count: 3, opponent_can_edit: true, track_plus_minus: null, track_shots: null });
   const [showRegulation, setShowRegulation] = useState(false);
   const [regDraft, setRegDraft] = useState({ period_length: 20, ot_length: 5, periods_count: 3, has_ot: false, opponent_can_edit: true });
   const [isSavingReg, setIsSavingReg] = useState(false);
@@ -477,6 +498,17 @@ export const MatchProtocol = ({ event, user, selectedTeam, openRightPanel }) => 
   const myTeamId = event?.my_team_id;
   // Сторона моей команды (для скоупа смены вратаря у соперника).
   const mySide = Number(event?.home_team_id) === Number(myTeamId) ? 'home' : 'away';
+
+  // ── Самостоятельный ввод +/- в официальном матче (если лига сама +/- не ведёт) ──
+  // Путь полностью аддитивный, не пересекается с editRole/isEditMode выше — команда
+  // не входит в общий режим правки, просто открывает конкретный гол точечно.
+  const isOfficial = event?.game_type === 'official';
+  const canAccessOfficialPM = isOfficial && isMatchOver
+    && checkAccess('MATCH_FILL_RESULTS_OFFICIAL', event?.my_team_id);
+  const canFillOfficialPM = canAccessOfficialPM && regulation.track_plus_minus === false;
+  // Броски по своему вратарю — тот же доступ (MATCH_FILL_RESULTS_OFFICIAL), но своя
+  // независимая шторка (не привязана к конкретному голу, весь матч сразу).
+  const canFillOfficialShots = canAccessOfficialPM && regulation.track_shots === false;
 
   // ── Кэшированный ростер (для inline-композера) ───────────────────────────
   const [rosters, setRosters] = useState({ home: [], away: [], home_team_id: null, away_team_id: null });
@@ -510,7 +542,9 @@ export const MatchProtocol = ({ event, user, selectedTeam, openRightPanel }) => 
   // ── Журнал смен вратарей (нужен для строки «В воротах» и привязки бросков) ─
   const [goalieLog, setGoalieLog] = useState([]);
   const fetchGoalieLog = useCallback(async () => {
-    if (!canFillResults || !event?.event_id || !event?.my_team_id) return;
+    // Официальному матчу журнал вратарей тоже нужен (кто стоял) — для шторки бросков
+    // по своему вратарю, даже если сам журнал самой команде недоступен на правку.
+    if ((!canFillResults && !canAccessOfficialPM) || !event?.event_id || !event?.my_team_id) return;
     const apiUrl = import.meta.env.VITE_API_URL || '';
     try {
       const r = await fetch(
@@ -520,7 +554,7 @@ export const MatchProtocol = ({ event, user, selectedTeam, openRightPanel }) => 
       const j = await r.json();
       if (j?.success) setGoalieLog(j.log || []);
     } catch { /* пусто */ }
-  }, [canFillResults, event?.event_id, event?.my_team_id]);
+  }, [canFillResults, canAccessOfficialPM, event?.event_id, event?.my_team_id]);
 
   useEffect(() => { fetchGoalieLog(); }, [fetchGoalieLog]);
 
@@ -547,8 +581,11 @@ export const MatchProtocol = ({ event, user, selectedTeam, openRightPanel }) => 
   }, [event?.event_id, event?.my_team_id]);
 
   // Загружаем регламент + ростеры одним запросом /rosters.
+  // Для официальных матчей грузим тоже — не только когда canFillResults (тот флаг
+  // всегда false для official), а ещё и когда есть доступ MATCH_FILL_RESULTS_OFFICIAL,
+  // чтобы узнать regulation.track_plus_minus и подгрузить свой ростер для +/-.
   useEffect(() => {
-    if (!canFillResults || !event?.event_id || !event?.my_team_id) return;
+    if ((!canFillResults && !canAccessOfficialPM) || !event?.event_id || !event?.my_team_id) return;
     const apiUrl = import.meta.env.VITE_API_URL || '';
     fetch(`${apiUrl}/api/matches/${event.event_id}/results/rosters?teamId=${event.my_team_id}`, {
       headers: getAuthHeaders(),
@@ -565,7 +602,7 @@ export const MatchProtocol = ({ event, user, selectedTeam, openRightPanel }) => 
         });
       })
       .catch(() => {});
-  }, [event?.event_id, event?.my_team_id, canFillResults]);
+  }, [event?.event_id, event?.my_team_id, canFillResults, canAccessOfficialPM]);
 
   const handleOpenRegulation = () => {
     setRegDraft({
@@ -777,7 +814,7 @@ export const MatchProtocol = ({ event, user, selectedTeam, openRightPanel }) => 
             type="button"
             onClick={handleCancelEdit}
             disabled={isPublishing}
-            className="flex min-w-0 justify-center items-center gap-1 px-2 py-2 rounded-full text-[14px] font-semibold bg-surface-base text-danger transition-all active:scale-95 hover:bg-surface-border outline-none cursor-pointer select-none disabled:opacity-50"
+            className="flex min-w-0 justify-center items-center gap-1 px-2 py-2 rounded-full text-[14px] font-semibold bg-surface-base text-danger transition-all active:scale-95  outline-none cursor-pointer select-none disabled:opacity-50"
           >
             <Icon name="close" className="w-4 h-4 shrink-0" strokeWidth={3} />
             <span className="truncate">Отмена</span>
@@ -786,7 +823,7 @@ export const MatchProtocol = ({ event, user, selectedTeam, openRightPanel }) => 
             type="button"
             onClick={handleSaveResults}
             disabled={isPublishing}
-            className="flex min-w-0 justify-center items-center gap-1 px-2 py-2 rounded-full text-[14px] font-semibold bg-surface-base text-success transition-all active:scale-95 hover:bg-surface-border outline-none cursor-pointer select-none shadow-sm disabled:opacity-50"
+            className="flex min-w-0 justify-center items-center gap-1 px-2 py-2 rounded-full text-[14px] font-semibold bg-surface-base text-success transition-all active:scale-95  outline-none cursor-pointer select-none shadow-sm disabled:opacity-50"
           >
             {isPublishing ? (
               <div className="w-3.5 h-3.5 rounded-full border-2 border-success border-t-transparent animate-spin shrink-0" />
@@ -802,7 +839,7 @@ export const MatchProtocol = ({ event, user, selectedTeam, openRightPanel }) => 
             <button
               type="button"
               onClick={handleOpenRegulation}
-              className="flex min-w-0 justify-center items-center gap-1 px-2 py-2 rounded-full text-[14px] font-semibold bg-surface-base border border-brand text-brand transition-all active:scale-95 hover:bg-surface-border outline-none cursor-pointer select-none"
+              className="flex min-w-0 justify-center items-center gap-1 px-2 py-2 rounded-full text-[14px] font-semibold bg-surface-base border border-brand text-brand transition-all active:scale-95  outline-none cursor-pointer select-none"
             >
               <Icon name="settings" className="w-4 h-4 shrink-0" />
               <span className="truncate">Настройки</span>
@@ -811,7 +848,7 @@ export const MatchProtocol = ({ event, user, selectedTeam, openRightPanel }) => 
           <button
             type="button"
             onClick={handleEnterEdit}
-            className="flex min-w-0 justify-center items-center gap-1 px-2 py-2 rounded-full text-[14px] font-semibold border border-brand text-brand bg-surface-base transition-all active:scale-95 hover:bg-surface-border outline-none cursor-pointer select-none"
+            className="flex min-w-0 justify-center items-center gap-1 px-2 py-2 rounded-full text-[14px] font-semibold border border-brand text-brand bg-surface-base transition-all active:scale-95  outline-none cursor-pointer select-none"
           >
             <Icon name="edit" className="w-4 h-4 shrink-0" />
             <span className="truncate">Ввод результатов</span>
@@ -840,6 +877,55 @@ export const MatchProtocol = ({ event, user, selectedTeam, openRightPanel }) => 
   // Открыть шторку добавления нового события (из entry-block).
   const handleOpenAddEvent = (mode, teamId) => {
     setEventSheet({ mode, scoringTeamId: teamId, existingEvent: null });
+  };
+
+  // Официальный матч: открыть гол для проставления +/- своей команды.
+  const handleOpenOfficialPm = (ev) => setOfficialPmSheet({ event: ev });
+
+  // Сохранение +/- официального матча — сразу на сервер (без черновика/publish,
+  // это не полноценный режим правки товарищеского матча).
+  const handleSaveOfficialPm = async (rowId, plusMinusHome, plusMinusAway) => {
+    const apiUrl = import.meta.env.VITE_API_URL || '';
+    await fetch(`${apiUrl}/api/matches/${event.event_id}/results/events/${rowId}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
+      body: JSON.stringify({
+        teamId: myTeamId,
+        plus_minus_home: plusMinusHome,
+        plus_minus_away: plusMinusAway,
+      }),
+    });
+    setOfficialPmSheet(null);
+    fetchProtocol();
+  };
+
+  // Официальный матч: открыть шторку бросков по своему вратарю (весь матч сразу,
+  // не привязано к конкретному голу — в отличие от +/-). Подгружаем снимок текущих
+  // бросков (уже существующий fetchShotsSnapshot, тот же формат, что и у ShotsSheet).
+  const [officialShotsOpen, setOfficialShotsOpen] = useState(false);
+  const [officialShotsInitial, setOfficialShotsInitial] = useState({});
+  const [officialShotsLoading, setOfficialShotsLoading] = useState(false);
+  // Шторка открывается СРАЗУ (без ожидания сети) — снимок бросков подгружается
+  // уже внутри, пока пользователь видит лоадер вместо мгновенного зависания UI.
+  const handleOpenOfficialShots = () => {
+    setOfficialShotsInitial({});
+    setOfficialShotsLoading(true);
+    setOfficialShotsOpen(true);
+    fetchShotsSnapshot().then(snapshot => {
+      setOfficialShotsInitial(snapshot);
+      setOfficialShotsLoading(false);
+    });
+  };
+
+  // Сохранение бросков официального матча — сразу на сервер, только своя команда.
+  const handleSaveOfficialShots = async (entries) => {
+    const apiUrl = import.meta.env.VITE_API_URL || '';
+    await fetch(`${apiUrl}/api/matches/${event.event_id}/results/goalie-shots`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
+      body: JSON.stringify({ teamId: myTeamId, entries }),
+    });
+    setOfficialShotsOpen(false);
   };
 
   // Патч от MatchEventSheet — только локальный черновик, никакой сети.
@@ -1036,7 +1122,7 @@ export const MatchProtocol = ({ event, user, selectedTeam, openRightPanel }) => 
           "h-11 w-full flex items-center justify-center gap-2 rounded-xl bg-surface-base text-[14px] font-bold uppercase tracking-wide transition-all outline-none select-none",
           disabled
             ? "border-surface-border text-content-subtle opacity-40 cursor-not-allowed"
-            : `${tone} active:scale-[0.97] cursor-pointer hover:bg-surface-border`
+            : `${tone} active:scale-[0.97] cursor-pointer `
         )}
       >
         <Icon name={icon} className="w-6 h-6 shrink-0" />
@@ -1146,8 +1232,19 @@ export const MatchProtocol = ({ event, user, selectedTeam, openRightPanel }) => 
               openRightPanel={openRightPanel}
               activeBrandColor={activeBrandColor}
               hasTeamColor={hasTeamColor}
+              officialPmEditable={canFillOfficialPM}
+              onOfficialPmEdit={handleOpenOfficialPm}
             />
           ))}
+        </div>
+      )}
+
+      {/* Официальный матч: самостоятельный ввод бросков по своему вратарю, когда
+          лига сама эту статистику не ведёт. Не привязано к isEditMode/editRole —
+          отдельный аддитивный путь, как и +/- по голам. Снизу всех событий. */}
+      {canFillOfficialShots && (
+        <div className="mt-4">
+          <ActionButton type="shots" label="Броски" icon="puck" onClick={handleOpenOfficialShots} />
         </div>
       )}
 
@@ -1170,6 +1267,31 @@ export const MatchProtocol = ({ event, user, selectedTeam, openRightPanel }) => 
         myTeamId={myTeamId}
         onClose={() => setEventSheet(null)}
         onSave={handleEventDraftSave}
+      />
+
+      <OfficialGoalPlusMinusSheet
+        isOpen={!!officialPmSheet}
+        event={officialPmSheet?.event}
+        myTeamId={myTeamId}
+        homeTeamId={event?.home_team_id}
+        roster={Number(event?.home_team_id) === Number(myTeamId) ? rosters.home : rosters.away}
+        activeColor={activeBrandColor}
+        onClose={() => setOfficialPmSheet(null)}
+        onSave={handleSaveOfficialPm}
+      />
+
+      <OfficialGoalieShotsSheet
+        isOpen={officialShotsOpen}
+        isLoading={officialShotsLoading}
+        myTeamId={myTeamId}
+        homeTeamId={event?.home_team_id}
+        roster={Number(event?.home_team_id) === Number(myTeamId) ? rosters.home : rosters.away}
+        goalieLog={goalieLog}
+        regulation={regulation}
+        initialShots={officialShotsInitial}
+        activeColor={activeBrandColor}
+        onClose={() => setOfficialShotsOpen(false)}
+        onSave={handleSaveOfficialShots}
       />
 
       <ShotsSheet

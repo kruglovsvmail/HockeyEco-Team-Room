@@ -34,9 +34,19 @@ const formatYears = (n) => {
 // blurred — размывает значение (не сам тайл), когда в дивизионе включено
 // "Скрывать статистику" (divisions.hide_stats_unpaid), а у игрока не отмечена
 // оплата взноса (tournament_rosters.is_fee_paid). Количество игр не размывается.
-const StatTile = ({ label, value, compact, hideLabel, blurred }) => (
+// unofficial — часть значения набрана из данных, которые дозаполнила сама команда
+// (лига эту стату не ведёт для этой стадии — значит строки в game_plus_minus могла
+// создать только сама команда, отдельного флага-маркера в БД для этого не заводили,
+// см. playerController.js) — ненавязчиво красим цифру в акцентный цвет и добавляем
+// title-подсказку, показывается только "своим" (is_own_team в playerController.js).
+const StatTile = ({ label, value, compact, hideLabel, blurred, unofficial }) => (
   <div className={clsx("flex flex-col items-center justify-center bg-surface-level2 rounded-xl", compact ? "py-1.5" : "py-1.5")}>
-    <span className={clsx("font-bold text-content-main tabular-nums leading-tight", compact ? "text-[10px]" : "text-[16px]", blurred && "blur-sm select-none")}>{value ?? '—'}</span>
+    <span
+      className={clsx("font-bold tabular-nums leading-tight", compact ? "text-[10px]" : "text-[16px]", blurred && "blur-sm select-none", unofficial ? "text-amber-500" : "text-content-main")}
+      title={unofficial ? 'Включает данные, введённые командой самостоятельно (лига эту статистику не ведёт)' : undefined}
+    >
+      {value ?? '—'}
+    </span>
     {!hideLabel && (
       <span className="text-[10px] font-mibold uppercase tracking-wider text-content-subtle mt-1.5 leading-none">{label}</span>
     )}
@@ -68,15 +78,16 @@ const SeasonRow = ({ row, isGoalie, isLast }) => {
         { label: 'Игры', value: row.gp },
         { label: 'Штраф', value: row.pim, blurred: shouldBlur },
         { label: 'ПШ', value: row.ga, blurred: shouldBlur },
-        { label: 'Об', value: row.sv, blurred: shouldBlur },
-        { label: '%Об', value: row.svp != null ? `${row.svp}%` : null, span: 2, blurred: shouldBlur },
+        { label: 'Броски', value: row.sa, blurred: shouldBlur, unofficial: row.shots_is_unofficial },
+        { label: 'Об', value: row.sv, blurred: shouldBlur, unofficial: row.shots_is_unofficial },
+        { label: '%Об', value: row.svp != null ? `${row.svp}%` : null, blurred: shouldBlur, unofficial: row.shots_is_unofficial },
       ]
     : [
         { label: 'Игры', value: row.gp },
         { label: 'Шайбы', value: row.g, blurred: shouldBlur },
         { label: 'Передачи', value: row.a, blurred: shouldBlur },
         { label: 'Очки', value: row.pts, blurred: shouldBlur },
-        { label: '+/-', value: row.pm > 0 ? `+${row.pm}` : row.pm, blurred: shouldBlur },
+        { label: '+/-', value: row.pm > 0 ? `+${row.pm}` : row.pm, blurred: shouldBlur, unofficial: row.pm_is_unofficial },
         { label: 'Штраф', value: row.pim, blurred: shouldBlur },
       ];
 
@@ -130,7 +141,7 @@ const SeasonRow = ({ row, isGoalie, isLast }) => {
       <div className="grid grid-cols-3 gap-1.5 mt-1">
         {tiles.map(t => (
           <div key={t.label} className={t.span === 2 ? 'col-span-2' : undefined}>
-            <StatTile label={t.label} value={t.value} blurred={t.blurred} />
+            <StatTile label={t.label} value={t.value} blurred={t.blurred} unofficial={t.unofficial} />
           </div>
         ))}
       </div>

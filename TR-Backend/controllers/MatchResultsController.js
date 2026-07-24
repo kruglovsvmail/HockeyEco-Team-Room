@@ -11,14 +11,28 @@ const EDIT_WINDOW_HOURS = 72;
 // opponent_can_edit включён). Конкретные ограничения для соперника навешиваются
 // в самих обработчиках: add/delete/regulation/goalie-log — только инициатору;
 // updateEvent/goalie-shots/publish — обоим, но со скоупом «своя команда».
+//
+// Для game_type='official' — отдельная роль 'official_team': команда-участник
+// (home/away) официального завершённого матча лиги, если лига сама не ведёт +/-
+// (divisions.reg_track_plus_minus/playoff_track_plus_minus = false, читается ЖИВЬЁМ
+// по g.stage_type — не кэш из game_timers). Team-scoped, без initiator —
+// разрешена ТОЛЬКО правка своего +/- по уже существующим голам лиги, никогда
+// создание/удаление событий, журнал вратарей или регламент (см. явные guard'ы
+// в конкретных обработчиках). Без ограничения по времени (EDIT_WINDOW_HOURS не
+// применяется — это флоу лиги, не самостоятельный товарищеский матч).
 const assertEditable = async (client, gameId, teamId, userId) => {
   const { rows } = await client.query(
     `SELECT g.game_type, g.status, g.initiator_team_id, g.game_date,
             g.home_team_id, g.away_team_id,
             COALESCE(gt.opponent_can_edit, true) AS opponent_can_edit,
+            -- Живое значение из divisions (не застывший снимок game_timers, скопированный
+            -- при создании матча) — актуально даже если лига поменяла флаг позже.
+            CASE WHEN g.stage_type = 'playoff' THEN d.playoff_track_plus_minus ELSE d.reg_track_plus_minus END AS track_plus_minus,
+            CASE WHEN g.stage_type = 'playoff' THEN d.playoff_track_shots ELSE d.reg_track_shots END AS track_shots,
             u.global_role
        FROM "public"."games" g
        LEFT JOIN "public"."game_timers" gt ON gt.game_id = g.id
+       LEFT JOIN "public"."divisions" d ON d.id = g.division_id
        LEFT JOIN "public"."users" u ON u.id = $2
       WHERE g.id = $1`,
     [gameId, userId]
@@ -28,7 +42,15 @@ const assertEditable = async (client, gameId, teamId, userId) => {
   }
   const g = rows[0];
   if (g.game_type === 'official') {
-    return { ok: false, code: 400, error: 'Для официальных матчей результаты ведутся через лигу' };
+    const tid = Number(teamId);
+    const isParticipant = Number(g.home_team_id) === tid || Number(g.away_team_id) === tid;
+    if (!isParticipant) {
+      return { ok: false, code: 403, error: 'Команда не является участником этого матча' };
+    }
+    if (g.status !== 'finished') {
+      return { ok: false, code: 400, error: 'Официальный матч ещё не завершён' };
+    }
+    return { ok: true, role: 'official_team', game: g };
   }
   if (new Date(g.game_date) > new Date()) {
     return { ok: false, code: 400, error: 'Результаты можно вносить только после начала матча' };
@@ -127,8 +149,16 @@ export const getMatchRosters = async (req, res) => {
       ORDER BY gr.team_id ASC, gr.jersey_number ASC NULLS LAST, u.last_name ASC
     `, [gameId]);
 
+    // track_plus_minus — живое значение из divisions (см. assertEditable), не застывший
+    // снимок game_timers.
     const { rows: regRows } = await pool.query(
-      'SELECT period_length, ot_length, periods_count, opponent_can_edit FROM "public"."game_timers" WHERE game_id = $1',
+      `SELECT gt.period_length, gt.ot_length, gt.periods_count, gt.opponent_can_edit,
+              CASE WHEN g.stage_type = 'playoff' THEN d.playoff_track_plus_minus ELSE d.reg_track_plus_minus END AS track_plus_minus,
+              CASE WHEN g.stage_type = 'playoff' THEN d.playoff_track_shots ELSE d.reg_track_shots END AS track_shots
+         FROM "public"."game_timers" gt
+         JOIN "public"."games" g ON g.id = gt.game_id
+         LEFT JOIN "public"."divisions" d ON d.id = g.division_id
+        WHERE gt.game_id = $1`,
       [gameId]
     );
     const reg = regRows[0] || {};
@@ -138,6 +168,10 @@ export const getMatchRosters = async (req, res) => {
       periods_count: Number(reg.periods_count) || 3,
       // Разрешено ли сопернику редактировать свою статистику (дефолт — да).
       opponent_can_edit: reg.opponent_can_edit ?? true,
+      // Ведёт ли лига +/-/броски для этого официального матча (нужно фронту, чтобы понять,
+      // доступен ли самостоятельный ввод командой — см. MATCH_FILL_RESULTS_OFFICIAL).
+      track_plus_minus: reg.track_plus_minus ?? false,
+      track_shots: reg.track_shots ?? false,
     };
 
     res.json({
@@ -264,23 +298,6 @@ export const updateMatchEvent = async (req, res) => {
     plus_minus_home, plus_minus_away
   } = req.body || {};
 
-  if (!['1','2','3','OT'].includes(String(period))) {
-    return res.status(400).json({ success: false, error: 'Некорректный период' });
-  }
-  if (!['goal','penalty','failed_ps'].includes(event_type)) {
-    return res.status(400).json({ success: false, error: 'Некорректный тип события' });
-  }
-  if (time_seconds == null || Number(time_seconds) < 0) {
-    return res.status(400).json({ success: false, error: 'Некорректное время события' });
-  }
-  if (team_id === undefined) {
-    return res.status(400).json({ success: false, error: 'Не указана команда события' });
-  }
-  // team_id === null допустим — сторона внешнего соперника.
-  const eventTeamId = team_id != null ? Number(team_id) : null;
-
-  const fromShotValue = event_type === 'goal' ? (from_shot !== false) : true;
-
   const client = await pool.connect();
   try {
     const check = await assertEditable(client, gameId, teamId, req.user.id);
@@ -297,6 +314,28 @@ export const updateMatchEvent = async (req, res) => {
     }
     const existing = existsRes.rows[0];
 
+    // Валидация полей из тела запроса имеет смысл только для initiator/opponent —
+    // они реально используются ниже для UPDATE. Для official_team тело не используется
+    // вовсе (все не-+/- поля берутся из existing), поэтому эти проверки для неё пропускаем.
+    let eventTeamId, fromShotValue;
+    if (check.role !== 'official_team') {
+      if (!['1','2','3','OT'].includes(String(period))) {
+        return res.status(400).json({ success: false, error: 'Некорректный период' });
+      }
+      if (!['goal','penalty','failed_ps'].includes(event_type)) {
+        return res.status(400).json({ success: false, error: 'Некорректный тип события' });
+      }
+      if (time_seconds == null || Number(time_seconds) < 0) {
+        return res.status(400).json({ success: false, error: 'Некорректное время события' });
+      }
+      if (team_id === undefined) {
+        return res.status(400).json({ success: false, error: 'Не указана команда события' });
+      }
+      // team_id === null допустим — сторона внешнего соперника.
+      eventTeamId = team_id != null ? Number(team_id) : null;
+      fromShotValue = event_type === 'goal' ? (from_shot !== false) : true;
+    }
+
     const homeTeamId = check.game.home_team_id;
     const awayTeamId = check.game.away_team_id;
     const myTeamId = Number(teamId);
@@ -304,7 +343,23 @@ export const updateMatchEvent = async (req, res) => {
     let vals;          // параметры UPDATE в порядке SET ниже
     let pmReplaceTeam; // null = заменить весь +/- (инициатор); иначе только эта команда
 
-    if (check.role === 'opponent') {
+    if (check.role === 'official_team') {
+      // Официальный матч лиги: команда может только проставить своё +/- на уже
+      // существующем голе. Ничего из авторства/времени/типа события не меняется.
+      if (existing.event_type !== 'goal') {
+        return res.status(403).json({ success: false, error: 'Для официальных матчей доступно только редактирование +/- по голам' });
+      }
+      if (check.game.track_plus_minus) {
+        return res.status(403).json({ success: false, error: 'Лига ведёт статистику +/- для этого дивизиона — самостоятельный ввод недоступен' });
+      }
+      vals = [
+        existing.period, existing.time_seconds, existing.event_type, existing.team_id,
+        existing.scorer_id, existing.assist1_id, existing.assist2_id, existing.goal_strength,
+        existing.penalty_player_id, existing.penalty_violation, existing.penalty_minutes, existing.penalty_class, existing.penalty_end_time,
+        existing.against_goalie_id, rowId, existing.from_shot,
+      ];
+      pmReplaceTeam = myTeamId; // команда правит только своё +/-
+    } else if (check.role === 'opponent') {
       if (existing.event_type !== 'goal' && existing.event_type !== 'penalty') {
         return res.status(403).json({ success: false, error: 'Это событие недоступно для редактирования' });
       }
@@ -362,8 +417,8 @@ export const updateMatchEvent = async (req, res) => {
        WHERE id = $15
     `, vals);
 
-    // +/- : инициатор — полная замена; соперник — только своя сторона.
-    const isGoalNow = (check.role === 'opponent' ? existing.event_type : event_type) === 'goal';
+    // +/- : инициатор — полная замена; соперник/official_team — только своя сторона.
+    const isGoalNow = (check.role === 'opponent' || check.role === 'official_team' ? existing.event_type : event_type) === 'goal';
 
     if (pmReplaceTeam == null) {
       await client.query('DELETE FROM "public"."game_plus_minus" WHERE event_id = $1', [rowId]);
@@ -475,6 +530,9 @@ export const saveGoalieLog = async (req, res) => {
   try {
     const check = await assertEditable(client, gameId, teamId, req.user.id);
     if (!check.ok) return res.status(check.code).json({ success: false, error: check.error });
+    if (check.role === 'official_team') {
+      return res.status(403).json({ success: false, error: 'Журнал вратарей официального матча ведёт лига' });
+    }
 
     await client.query('BEGIN');
 
@@ -557,18 +615,23 @@ export const saveGoalieShots = async (req, res) => {
   if (!entries) {
     return res.status(400).json({ success: false, error: 'Не передан массив entries' });
   }
+  // Диапазон периодов — как у game_shots_by_goalie_period_check в БД (официальные матчи с
+  // расширенным плей-офф регламентом могут доходить до 4-5 периодов; буллиты не бросаются).
   for (const e of entries) {
-    if (!e.team_id || !['1','2','3','OT'].includes(String(e.period))) {
-      return res.status(400).json({ success: false, error: 'Каждая запись должна иметь team_id и допустимый period (1/2/3/OT)' });
+    if (!e.team_id || !['1','2','3','4','5','OT'].includes(String(e.period))) {
+      return res.status(400).json({ success: false, error: 'Каждая запись должна иметь team_id и допустимый period (1-5/OT)' });
     }
   }
   const client = await pool.connect();
   try {
     const check = await assertEditable(client, gameId, teamId, req.user.id);
     if (!check.ok) return res.status(check.code).json({ success: false, error: check.error });
+    if (check.role === 'official_team' && check.game.track_shots) {
+      return res.status(403).json({ success: false, error: 'Лига ведёт статистику бросков для этого дивизиона — самостоятельный ввод недоступен' });
+    }
 
-    // Соперник может вводить броски только по своему вратарю (своей команде).
-    if (check.role === 'opponent') {
+    // Соперник/official_team могут вводить броски только по своему вратарю (своей команде).
+    if (check.role === 'opponent' || check.role === 'official_team') {
       const bad = entries.find(e => Number(e.team_id) !== Number(teamId));
       if (bad) {
         return res.status(403).json({ success: false, error: 'Можно вводить броски только по своему вратарю' });
@@ -576,7 +639,7 @@ export const saveGoalieShots = async (req, res) => {
     }
 
     await client.query('BEGIN');
-    if (check.role === 'opponent') {
+    if (check.role === 'opponent' || check.role === 'official_team') {
       // Чужие броски не трогаем — переписываем только свою команду.
       await client.query('DELETE FROM "public"."game_shots_by_goalie" WHERE game_id = $1 AND team_id = $2', [gameId, Number(teamId)]);
     } else {

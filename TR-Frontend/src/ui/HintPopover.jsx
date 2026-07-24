@@ -4,6 +4,16 @@ import { Icon } from './Icon';
 import { DEADLINES } from '../utils/permissions';
 import clsx from 'clsx';
 
+// Склонение "минута" ПОСЛЕ "меньше" — это родительный падеж всей числовой группы,
+// поэтому форма отличается от обычного счётного согласования (1 минута/2 минуты/5 минут):
+// "меньше 1 минуты" (род. ед.), но "меньше 2/3/4 минут" (род. мн., а не "минуты").
+const pluralizeMinutesGenitive = (n) => {
+  const mod10 = n % 10;
+  const mod100 = n % 100;
+  if (mod10 === 1 && mod100 !== 11) return 'минуты';
+  return 'минут';
+};
+
 export function HintPopover({ status, customContent, children, className }) {
   const [isOpen, setIsOpen] = useState(false);
   const [isRendered, setIsRendered] = useState(false);
@@ -23,9 +33,11 @@ export function HintPopover({ status, customContent, children, className }) {
     not_in_team: 'Вы не состоите в игровом составе.',
     not_in_tournament: 'Вы не заявлены на этот турнир.',
     disqualified: 'У вас активная дисквалификация в этом турнире.',
-    deadline_lines_edit: `Изменение пятерок заблокировано. До игры осталось меньше ${DEADLINES?.MIDDLE_EDIT_MINUTES || 60} минут.`,
-    deadline_roster_submit: `Отправка заблокирована. До игры осталось меньше ${DEADLINES?.ROSTER_SUBMIT_MINUTES || 120} минут.`,
-    deadline_player_params: `Изменение параметров игрока заблокировано. До игры осталось меньше ${DEADLINES?.ROSTER_SUBMIT_MINUTES || 120} минут.`,
+    deadline_lines_edit: `Изменение пятерок заблокировано. До игры осталось меньше ${DEADLINES?.MIDDLE_EDIT_MINUTES || 60} ${pluralizeMinutesGenitive(DEADLINES?.MIDDLE_EDIT_MINUTES || 60)}.`,
+    deadline_roster_submit: `Отправка заблокирована. До игры осталось меньше ${DEADLINES?.ROSTER_SUBMIT_MINUTES || 120} ${pluralizeMinutesGenitive(DEADLINES?.ROSTER_SUBMIT_MINUTES || 120)}.`,
+    deadline_player_params: `Изменение параметров игрока заблокировано. До игры осталось меньше ${DEADLINES?.ROSTER_SUBMIT_MINUTES || 120} ${pluralizeMinutesGenitive(DEADLINES?.ROSTER_SUBMIT_MINUTES || 120)}.`,
+    match_started: 'Действие недоступно. Матч уже начался.',
+    match_finished: 'Действие недоступно. Матч уже завершён.',
     not_in_roster: 'Не доступно. Пользователь не в ростере команды',
     match_locked: 'У этой командой есть запланированые или сыграные матчи.'
   }), []);

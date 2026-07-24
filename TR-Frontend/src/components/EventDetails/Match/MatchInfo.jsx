@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { Icon } from '../../../ui/Icon';
-import { getImageUrl, getAuthHeaders } from '../../../utils/helpers';
+import { getImageUrl, getAuthHeaders, getStreamPlatformLabel, getPlayoffStageDisplayLabel } from '../../../utils/helpers';
 import { ContainerContent } from '../../../ui/ContainerContent';
 import clsx from 'clsx';
 
@@ -153,7 +153,7 @@ export const MatchInfo = ({
   // Лейбл строки «Круг/Раунд» зависит от типа этапа турнира.
   // Для товарищеских матчей стадия не показывается.
   const stageRowLabel = isPlayoff ? 'Раунд' : isGroup ? 'Группа' : 'Круг';
-  const stageRowValue = isFriendly ? null : (localEvent.stage_label || null);
+  const stageRowValue = isFriendly ? null : (getPlayoffStageDisplayLabel(localEvent.stage_label, localEvent.playoff_match_type) || null);
 
   // Лейбл строки «Тур/Номер матча»: в регулярке — это тур, в плей-офф — номер матча в серии
   const seriesRowLabel = isPlayoff ? 'Номер матча' : 'Тур';
@@ -397,7 +397,7 @@ export const MatchInfo = ({
                           <div className="w-8 h-8 rounded-lg bg-surface-level2 flex items-center justify-center shrink-0 group-hover:bg-surface-level3 transition-colors">
                             <Icon name="live_stream" className="w-5 h-5" style={{ color: activeBrandColor }} />
                           </div>
-                          <span className="text-[14px] font-bold text-content-main truncate">Трансляция 1</span>
+                          <span className="text-[14px] font-bold text-content-main truncate">{getStreamPlatformLabel(localEvent.video_yt_url)}</span>
                         </a>
                         <button type="button" onClick={(e) => handleShare(e, localEvent.video_yt_url)}
                           className="w-8 h-8 rounded-lg text-content-muted flex items-center justify-center shrink-0 active:scale-90 transition-all cursor-pointer">
@@ -411,7 +411,7 @@ export const MatchInfo = ({
                           <div className="w-8 h-8 rounded-lg bg-surface-level2 flex items-center justify-center shrink-0 group-hover:bg-surface-level3 transition-colors">
                             <Icon name="live_stream" className="w-5 h-5" style={{ color: activeBrandColor }} />
                           </div>
-                          <span className="text-[14px] font-bold text-content-main truncate">Трансляция 2</span>
+                          <span className="text-[14px] font-bold text-content-main truncate">{getStreamPlatformLabel(localEvent.video_vk_url)}</span>
                         </a>
                         <button type="button" onClick={(e) => handleShare(e, localEvent.video_vk_url)}
                           className="w-8 h-8 rounded-lg text-content-muted flex items-center justify-center shrink-0 active:scale-90 transition-all cursor-pointer">

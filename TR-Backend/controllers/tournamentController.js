@@ -55,6 +55,7 @@ class TournamentController {
           g.status,
           g.stage_type,
           g.stage_label,
+          g.playoff_match_type,
           g.series_number,
           g.game_date,
           g.home_score,
@@ -197,86 +198,17 @@ class TournamentController {
     }
   }
 
-  // Статистика игроков и вратарей дивизиона.
-  // stageType = 'all'     → читаем из player_statistics (быстро, точно, данные из калькулятора)
-  // stageType = 'regular' | 'playoff' → динамический расчёт из событий с правильной логикой
+  // Статистика игроков и вратарей дивизиона — всегда живой расчёт по стадии(ям).
+  // stageType = 'regular' | 'playoff' → один динамический запрос, замаскированный по флагу стадии.
+  // stageType = 'all' → оба запроса (regular + playoff) отдельно (каждый со своей маской),
+  //   затем мёрдж по player_id+team_id: сырые числа суммируются, %/ставки пересчитываются
+  //   из объединённых сумм — так замаскированная стадия не "протекает" в общий итог.
   async getDivisionStats(req, res) {
     try {
       const { divisionId } = req.params;
       const stageType = req.query.stageType || 'all';
 
-      let skatersResult, goaliesResult;
-
-      if (stageType === 'all') {
-        // ── Читаем из player_statistics ──────────────────────────────────────
-        const skatersAllQuery = `
-          SELECT
-            u.id                              AS player_id,
-            u.first_name,
-            u.last_name,
-            tm.photo_url                      AS photo_url,
-            tt.team_id                        AS team_id,
-            t.name                            AS team_name,
-            t.logo_url                        AS team_logo,
-            COALESCE(ps.games_played, 0)      AS games_played,
-            COALESCE(ps.goals, 0)             AS goals,
-            COALESCE(ps.assists, 0)           AS assists,
-            COALESCE(ps.points, 0)            AS points,
-            COALESCE(ps.plus_minus, 0)        AS plus_minus,
-            COALESCE(ps.penalty_minutes, 0)   AS penalty_minutes,
-            tr.is_fee_paid,
-            (SELECT hide_stats_unpaid FROM divisions WHERE id = $1) AS hide_stats_unpaid
-          FROM tournament_rosters tr
-          JOIN tournament_teams tt    ON tr.tournament_team_id   = tt.id
-          JOIN users u                ON tr.player_id            = u.id
-          JOIN teams t                ON tt.team_id              = t.id
-          LEFT JOIN team_members tm   ON tm.user_id = u.id AND tm.team_id = t.id
-          LEFT JOIN player_statistics ps ON ps.tournament_roster_id = tr.id
-          -- Только полевые игроки (включая заявленных но не сыгравших — gp=0)
-          WHERE tt.division_id = $1
-            AND tr.application_status = 'approved'
-            AND tr.position != 'goalie'
-          ORDER BY points DESC, goals DESC, games_played ASC
-        `;
-
-        const goaliesAllQuery = `
-          SELECT
-            u.id                                    AS player_id,
-            u.first_name,
-            u.last_name,
-            tm.photo_url                            AS photo_url,
-            tt.team_id                              AS team_id,
-            t.name                                  AS team_name,
-            t.logo_url                              AS team_logo,
-            COALESCE(ps.games_played, 0)            AS games_played,
-            COALESCE(ps.goals_against, 0)           AS goals_against,
-            COALESCE(ps.saves, 0)                   AS saves,
-            COALESCE(ps.save_percent, 0)            AS save_percent,
-            COALESCE(ps.goals_against_average, 0)   AS goals_against_average,
-            COALESCE(ps.shutouts, 0)                AS shutouts,
-            COALESCE(ps.minutes_played, 0)          AS minutes_played,
-            COALESCE(ps.shots_against, 0)           AS shots_against,
-            tr.is_fee_paid,
-            (SELECT hide_stats_unpaid FROM divisions WHERE id = $1) AS hide_stats_unpaid
-          FROM tournament_rosters tr
-          JOIN tournament_teams tt    ON tr.tournament_team_id   = tt.id
-          JOIN users u                ON tr.player_id            = u.id
-          JOIN teams t                ON tt.team_id              = t.id
-          LEFT JOIN team_members tm   ON tm.user_id = u.id AND tm.team_id = t.id
-          LEFT JOIN player_statistics ps ON ps.tournament_roster_id = tr.id
-          -- Только вратари (включая заявленных но не сыгравших — gp=0)
-          WHERE tt.division_id = $1
-            AND tr.application_status = 'approved'
-            AND tr.position = 'goalie'
-          ORDER BY save_percent DESC, goals_against_average ASC
-        `;
-
-        [skatersResult, goaliesResult] = await Promise.all([
-          pool.query(skatersAllQuery, [divisionId]),
-          pool.query(goaliesAllQuery, [divisionId])
-        ]);
-
-      } else {
+      {
         // ── Динамический расчёт для regular / playoff ─────────────────────────
         const skatersQuery = `
           WITH ValidGames AS (
@@ -520,17 +452,120 @@ class TournamentController {
           ORDER BY save_percent DESC, goals_against_average ASC
         `;
 
-        [skatersResult, goaliesResult] = await Promise.all([
-          pool.query(skatersQuery, [divisionId, stageType]),
-          pool.query(goaliesQuery, [divisionId, stageType])
-        ]);
-      }
+        const flagsQuery = `
+          SELECT reg_track_plus_minus, playoff_track_plus_minus,
+                 reg_track_shots, playoff_track_shots,
+                 COALESCE(reg_periods_count, 3) * COALESCE(reg_period_length, 20) * 60 AS norm_seconds
+          FROM divisions WHERE id = $1
+        `;
 
-      return res.json({
-        success: true,
-        skaters: skatersResult.rows,
-        goalies: goaliesResult.rows
-      });
+        const stagesToFetch = stageType === 'all' ? ['regular', 'playoff'] : [stageType];
+
+        const [flagsResult, skaterStageResults, goalieStageResults] = await Promise.all([
+          pool.query(flagsQuery, [divisionId]),
+          Promise.all(stagesToFetch.map(st => pool.query(skatersQuery, [divisionId, st]))),
+          Promise.all(stagesToFetch.map(st => pool.query(goaliesQuery, [divisionId, st])))
+        ]);
+
+        const flags = flagsResult.rows[0] || {};
+        const trackPMByStage = {
+          regular: flags.reg_track_plus_minus ?? false,
+          playoff: flags.playoff_track_plus_minus ?? false,
+        };
+        const trackShotsByStage = {
+          regular: flags.reg_track_shots ?? false,
+          playoff: flags.playoff_track_shots ?? false,
+        };
+        const normSecondsReg = Number(flags.norm_seconds || 3 * 20 * 60);
+
+        // Маскируем по флагу СВОЕЙ стадии — до мёрджа, чтобы выключенная стадия не
+        // "протекала" в комбинированный итог при stageType='all'.
+        const maskSkaterRow = (row, st) => (trackPMByStage[st] ? row : { ...row, plus_minus: null });
+        const maskGoalieRow = (row, st) => (
+          trackShotsByStage[st]
+            ? row
+            : { ...row, saves: null, shots_against: null, save_percent: null }
+        );
+
+        const maskedSkaterStages = stagesToFetch.map((st, i) =>
+          skaterStageResults[i].rows.map(row => maskSkaterRow(row, st))
+        );
+        const maskedGoalieStages = stagesToFetch.map((st, i) =>
+          goalieStageResults[i].rows.map(row => maskGoalieRow(row, st))
+        );
+
+        let skaters, goalies;
+
+        if (stagesToFetch.length === 1) {
+          skaters = maskedSkaterStages[0];
+          goalies = maskedGoalieStages[0];
+        } else {
+          // stageType='all' — мёрдж regular+playoff по player_id+team_id: сырые числа
+          // суммируются, %/ставки пересчитываются из объединённых сумм (никогда не
+          // складываем сами %).
+          const n = (v) => Number(v || 0);
+          const key = (row) => `${row.player_id}_${row.team_id}`;
+
+          const skaterMap = new Map();
+          maskedSkaterStages.flat().forEach(row => {
+            const k = key(row);
+            if (!skaterMap.has(k)) {
+              skaterMap.set(k, {
+                ...row,
+                games_played: 0, goals: 0, assists: 0, points: 0,
+                penalty_minutes: 0, plus_minus: null,
+              });
+            }
+            const acc = skaterMap.get(k);
+            acc.games_played += n(row.games_played);
+            acc.goals += n(row.goals);
+            acc.assists += n(row.assists);
+            acc.points += n(row.points);
+            acc.penalty_minutes += n(row.penalty_minutes);
+            if (row.plus_minus != null) {
+              acc.plus_minus = n(acc.plus_minus) + n(row.plus_minus);
+            }
+          });
+          skaters = Array.from(skaterMap.values())
+            .sort((a, b) => b.points - a.points || b.goals - a.goals || a.games_played - b.games_played);
+
+          const goalieMap = new Map();
+          maskedGoalieStages.flat().forEach(row => {
+            const k = key(row);
+            if (!goalieMap.has(k)) {
+              goalieMap.set(k, {
+                ...row,
+                games_played: 0, goals_against: 0, shutouts: 0, minutes_played: 0,
+                saves: null, shots_against: null,
+              });
+            }
+            const acc = goalieMap.get(k);
+            acc.games_played += n(row.games_played);
+            acc.goals_against += n(row.goals_against);
+            acc.shutouts += n(row.shutouts);
+            acc.minutes_played += n(row.minutes_played);
+            if (row.shots_against != null) {
+              acc.saves = n(acc.saves) + n(row.saves);
+              acc.shots_against = n(acc.shots_against) + n(row.shots_against);
+            }
+          });
+          goalies = Array.from(goalieMap.values()).map(g => {
+            g.save_percent = g.shots_against > 0
+              ? Math.round((g.saves / g.shots_against) * 10000) / 100
+              : (g.shots_against != null ? 0 : null);
+            g.goals_against_average = g.minutes_played > 0
+              ? Math.round((g.goals_against / g.minutes_played) * normSecondsReg * 100) / 100
+              : 0;
+            return g;
+          }).sort((a, b) => (b.save_percent ?? -1) - (a.save_percent ?? -1) || a.goals_against_average - b.goals_against_average);
+        }
+
+        return res.json({
+          success: true,
+          skaters,
+          goalies
+        });
+      }
     } catch (err) {
       console.error('Ошибка в TournamentController.getDivisionStats:', err);
       return res.status(500).json({
@@ -642,12 +677,84 @@ class TournamentController {
              GoalsAgainst ga, GoalsAgainstFromShot gafs, PPOpportunities ppo
       `;
 
-      const { rows } = await pool.query(query, [divisionId, stageType, teamId]);
+      const flagsResult = await pool.query(
+        `SELECT reg_track_shots, playoff_track_shots FROM divisions WHERE id = $1`,
+        [divisionId]
+      );
+      const flags = flagsResult.rows[0] || {};
+      const trackShotsByStage = {
+        regular: flags.reg_track_shots ?? false,
+        playoff: flags.playoff_track_shots ?? false,
+      };
 
-      return res.json({
-        success: true,
-        stats: rows[0] || null
-      });
+      // Для 'all' считаем регулярку и плей-офф ОТДЕЛЬНЫМИ запросами (тем же SQL), чтобы
+      // маскировать броски-поля по флагу каждой стадии независимо, прежде чем их сложить —
+      // иначе замаскированная стадия "протекала" бы в объединённый итог.
+      const stagesToFetch = stageType === 'all' ? ['regular', 'playoff'] : [stageType];
+      const stageResults = await Promise.all(
+        stagesToFetch.map(st => pool.query(query, [divisionId, st, teamId]))
+      );
+
+      const maskStage = (row, st) => {
+        if (trackShotsByStage[st]) return row;
+        return {
+          ...row,
+          shots_on_goal: null,
+          shooting_pct: null,
+          shots_against: null,
+          saves: null,
+          save_pct: null,
+        };
+      };
+
+      const rows = stagesToFetch
+        .map((st, i) => (stageResults[i].rows[0] ? maskStage(stageResults[i].rows[0], st) : null))
+        .filter(Boolean);
+
+      if (rows.length === 0) {
+        return res.json({ success: true, stats: null });
+      }
+
+      if (rows.length === 1) {
+        return res.json({ success: true, stats: rows[0] });
+      }
+
+      // stageType='all' — суммируем сырые числа по обеим стадиям, проценты пересчитываем
+      // из объединённых сумм (никогда не складываем сами проценты).
+      const n = (v) => Number(v || 0);
+      const anyShotsOn = rows.some(r => r.shots_on_goal != null);
+      const anyShotsAgainst = rows.some(r => r.shots_against != null);
+
+      const merged = {
+        games_played: rows.reduce((s, r) => s + n(r.games_played), 0),
+        goals: rows.reduce((s, r) => s + n(r.goals), 0),
+        pp_goals: rows.reduce((s, r) => s + n(r.pp_goals), 0),
+        pp_opportunities: rows.reduce((s, r) => s + n(r.pp_opportunities), 0),
+        sh_goals: rows.reduce((s, r) => s + n(r.sh_goals), 0),
+        pim: rows.reduce((s, r) => s + n(r.pim), 0),
+        goals_against: rows.reduce((s, r) => s + n(r.goals_against), 0),
+        shots_on_goal: anyShotsOn ? rows.reduce((s, r) => s + n(r.shots_on_goal), 0) : null,
+        shots_against: anyShotsAgainst ? rows.reduce((s, r) => s + n(r.shots_against), 0) : null,
+        saves: anyShotsAgainst ? rows.reduce((s, r) => s + n(r.saves), 0) : null,
+      };
+
+      // Числитель для %бросков — голы ТОЛЬКО из стадий, где броски вообще считаются:
+      // "goals" сам по себе не бросковая статистика и суммируется по всем стадиям всегда,
+      // а знаменатель shots_on_goal — только из немаскированных, иначе % будет несогласован.
+      const shootingGoals = anyShotsOn
+        ? rows.reduce((s, r) => s + (r.shots_on_goal != null ? n(r.goals) : 0), 0)
+        : null;
+      merged.shooting_pct = merged.shots_on_goal > 0
+        ? Math.round((shootingGoals / merged.shots_on_goal) * 1000) / 10
+        : (merged.shots_on_goal != null ? 0 : null);
+      merged.pp_pct = merged.pp_opportunities > 0
+        ? Math.round((merged.pp_goals / merged.pp_opportunities) * 1000) / 10
+        : 0;
+      merged.save_pct = merged.shots_against > 0
+        ? Math.round((merged.saves / merged.shots_against) * 1000) / 10
+        : (merged.shots_against != null ? 0 : null);
+
+      return res.json({ success: true, stats: merged });
     } catch (err) {
       console.error('Ошибка в TournamentController.getDivisionTeamStats:', err);
       return res.status(500).json({

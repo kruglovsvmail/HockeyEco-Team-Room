@@ -60,6 +60,39 @@ export const getContrastTextColor = (hexColor) => {
   return yiq >= 184 ? 'text-content-main' : 'text-white';
 };
 
+/**
+ * Определяет площадку трансляции по домену ссылки (пользователь может вставить
+ * любую ссылку в любое из полей video_yt_url/video_vk_url — поле само по себе
+ * не гарантирует платформу), чтобы показать реальное название вместо родового
+ * «Трансляция N».
+ */
+export const getStreamPlatformLabel = (url) => {
+  if (!url) return null;
+  let host = '';
+  try {
+    host = new URL(url).hostname.toLowerCase();
+  } catch {
+    return 'Трансляция';
+  }
+  if (host.includes('youtube.com') || host.includes('youtu.be')) return 'YouTube';
+  if (host.includes('vk.com') || host.includes('vkvideo.ru') || host.includes('vk.ru')) return 'VK Видео';
+  if (host.includes('rutube.ru')) return 'RuTube';
+  return 'Трансляция';
+};
+
+/**
+ * Раунд плей-офф (event.stage_label, например "Финал") может физически содержать
+ * несколько разных пар (playoff_matchups) — за 1-е место и за 3-е место и т.д.
+ * games.playoff_match_type хранит это (NULL — обычная/главная пара, используем
+ * stage_label как есть; "place_3"/"place_5"/... — переопределяем текст на "Матч за
+ * N-е место"), заполняется в LMS (GameCard.jsx) при назначении игры на раунд.
+ */
+export const getPlayoffStageDisplayLabel = (stageLabel, playoffMatchType) => {
+  if (!playoffMatchType) return stageLabel;
+  const n = playoffMatchType.replace('place_', '');
+  return `Матч за ${n}-е место`;
+};
+
 // =============================================================================
 // СЕТЕВОЙ ГЛОБАЛЬНЫЙ ИНТЕРЦЕПТОР 403 ОШИБОК (БЕЗБЛИКОВАЯ РЕВАЛИДАЦИЯ UX)
 // =============================================================================

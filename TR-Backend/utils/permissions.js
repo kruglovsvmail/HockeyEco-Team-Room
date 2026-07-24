@@ -181,6 +181,14 @@ export const PERMISSIONS = {
     requiresSubscription: [ROLES.TEAM_MANAGER, ROLES.TEAM_ADMIN]
   },
 
+  // Заполнение результатов официального матча (+/-, броски по своему вратарю), если лига
+  // сама эту статистику не ведёт (см. divisions.reg_track_plus_minus/reg_track_shots).
+  // Доступ строго team-scoped — только своя команда, только своя часть данных.
+  MATCH_FILL_RESULTS_OFFICIAL: {
+    allowedRoles: [ROLES.OWNER, ROLES.TEAM_MANAGER, ROLES.TEAM_ADMIN],
+    requiresSubscription: [ROLES.TEAM_MANAGER, ROLES.TEAM_ADMIN]
+  },
+
   // Редактирование медиа-ссылок трансляций матча (Блок 1 - YouTube, VK Видео)
   MATCH_EDIT_MEDIA: {
     allowedRoles: [

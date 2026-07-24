@@ -5,7 +5,7 @@ import clsx from 'clsx';
 import { FadeIn } from '../ui/FadeIn';
 import { Icon } from '../ui/Icon';
 import { TournamentPageHeader } from '../components/Tournaments/TournamentPageHeader';
-import { getAuthHeaders } from '../utils/helpers';
+import { getAuthHeaders, getPlayoffStageDisplayLabel } from '../utils/helpers';
 import { PageLoader } from '../ui/Loader';
 import { TournamentCardGame } from '../components/Tournaments/TournamentCardGame';
 import { TournamentTable } from '../components/Tournaments/TournamentTable';
@@ -197,7 +197,7 @@ export function TournamentsPage() {
     const playoff = {};
     games.forEach((game) => {
       const isPlayoff = game.stage_type === 'playoff';
-      const label = game.stage_label || (isPlayoff ? 'Плей-офф' : 'Регулярный чемпионат');
+      const label = getPlayoffStageDisplayLabel(game.stage_label, game.playoff_match_type) || (isPlayoff ? 'Плей-офф' : 'Регулярный чемпионат');
       const seriesNum = game.series_number || 0;
       const target = isPlayoff ? playoff : regular;
       if (!target[label]) target[label] = {};

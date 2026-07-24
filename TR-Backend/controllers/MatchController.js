@@ -774,18 +774,43 @@ export const getMatchStats = async (req, res) => {
       ORDER BY gr.team_id, COALESCE(s.shots_against, 0) DESC;
     `;
  
+    // Флаги дивизиона для ЭТОЙ стадии матча (живьём, не кэш) — гейтят +/- и броски
+    // независимо от того, есть ли уже данные в game_plus_minus/game_shots_by_goalie
+    // (в т.ч. самостоятельно введённые командой через official_team — их тоже не
+    // показываем здесь, в отличие от профиля игрока, где для своей команды исключение есть).
+    const flagsQuery = `
+      SELECT
+        CASE WHEN g.stage_type = 'playoff' THEN d.playoff_track_plus_minus ELSE d.reg_track_plus_minus END AS track_plus_minus,
+        CASE WHEN g.stage_type = 'playoff' THEN d.playoff_track_shots ELSE d.reg_track_shots END AS track_shots
+      FROM "public"."games" g
+      LEFT JOIN "public"."divisions" d ON d.id = g.division_id
+      WHERE g.id = $1
+    `;
+
     // ── Параллельное выполнение всех запросов ──────────────────────────
-    const [teamResult, skatersResult, goaliesResult] = await Promise.all([
+    const [teamResult, skatersResult, goaliesResult, flagsResult] = await Promise.all([
       pool.query(teamQuery, [eventId]),
       pool.query(skatersQuery, [eventId]),
-      pool.query(goaliesQuery, [eventId])
+      pool.query(goaliesQuery, [eventId]),
+      pool.query(flagsQuery, [eventId])
     ]);
- 
+
     if (teamResult.rows.length === 0) {
       return res.status(404).json({ success: false, error: 'Матч не найден' });
     }
- 
+
     const r = teamResult.rows[0];
+    const trackPM = flagsResult.rows[0]?.track_plus_minus ?? false;
+    const trackShots = flagsResult.rows[0]?.track_shots ?? false;
+
+    // Маскируем прямо в сырых результатах — дальше по функции всё считается из них,
+    // поэтому и командные производные (SOG/saves/%), и построчные данные останутся «—».
+    if (!trackPM) {
+      skatersResult.rows.forEach(row => { row.plus_minus = null; });
+    }
+    if (!trackShots) {
+      goaliesResult.rows.forEach(row => { row.saves = null; row.save_percent = null; });
+    }
 
     // Статистику отдаём всегда (даже до публикации) — фронт показывает составы
     // команд из заявок с пустой статистикой. Командные метрики у несыгранного
@@ -828,10 +853,12 @@ export const getMatchStats = async (req, res) => {
     // Если броски не заполнены — отдаём null (фронт покажет «—», а не ноль).
     // shots_on_goal / shooting_pct зависят от бросков в створ команды (её атака),
     // saves / save_pct — от бросков в створ ПО ВРАТАРЯМ этой команды (её оборона).
-    const homeHasFor = homeShotsOnGoal > 0;
-    const awayHasFor = awayShotsOnGoal > 0;
-    const homeHasAgainst = r.home_shots_faced > 0;
-    const awayHasAgainst = r.away_shots_faced > 0;
+    // Плюс: если лига для этой стадии броски вообще не ведёт (trackShots=false) — «—»
+    // независимо от того, есть ли фактические данные (в т.ч. введённые командой самой).
+    const homeHasFor = trackShots && homeShotsOnGoal > 0;
+    const awayHasFor = trackShots && awayShotsOnGoal > 0;
+    const homeHasAgainst = trackShots && r.home_shots_faced > 0;
+    const awayHasAgainst = trackShots && r.away_shots_faced > 0;
 
     res.json({
       success: true,
@@ -975,7 +1002,7 @@ export const getMatchProtocol = async (req, res) => {
       '2': '2-й период',
       '3': '3-й период',
       'OT': 'Овертайм',
-      'SO': 'Серия бросков',
+      'SO': 'Серия послематчевых буллитов',
     };
 
     const grouped = {};

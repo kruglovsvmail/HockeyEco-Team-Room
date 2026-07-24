@@ -67,7 +67,16 @@ export const MatchLines = ({ event, initialAttendees = [], initialDraftLines = [
   const [isSharing, setIsSharing] = useState(false);
   const [isSubmittingRoster, setIsSubmittingRoster] = useState(false);
   const [timeToMatch, setTimeToMatch] = useState(999);
-  
+
+  // Когда дедлайн уже наступил (timeToMatch ушёл в минус и останется отрицательным
+  // навсегда), вместо "осталось меньше N минут" показываем актуальную причину —
+  // матч уже начался или уже завершён.
+  const getDeadlineHintStatus = (baseStatus) => {
+    if (event?.status === 'finished' || event?.status === 'finished_no_result') return 'match_finished';
+    if (timeToMatch <= 0) return 'match_started';
+    return baseStatus;
+  };
+
   // Состояние кастомного тост-уведомления
   const [toast, setToast] = useState({ isOpen: false, message: '', type: 'success' });
 
@@ -843,7 +852,7 @@ export const MatchLines = ({ event, initialAttendees = [], initialDraftLines = [
       }
       if (timeToMatch < DEADLINES.ROSTER_SUBMIT_MINUTES) {
         return (
-          <HintPopover status="deadline_player_params" key={`${lineNum}-${pos}`}>
+          <HintPopover status={getDeadlineHintStatus('deadline_player_params')} key={`${lineNum}-${pos}`}>
             {slotContent}
           </HintPopover>
         );
@@ -954,7 +963,7 @@ export const MatchLines = ({ event, initialAttendees = [], initialDraftLines = [
               {hasAdminAccess && (
                 hasRosterSubmitAccess ? (
                   timeToMatch < DEADLINES.ROSTER_SUBMIT_MINUTES ? (
-                    <HintPopover status="deadline_roster_submit" className="flex-1">
+                    <HintPopover status={getDeadlineHintStatus('deadline_roster_submit')} className="flex-1">
                       <button
                         type="button"
                         className="flex w-full justify-center items-center gap-1 px-3 py-2 rounded-full text-[14px] font-semibold bg-surface-base border border-content-subtle text-content-muted opacity-40 cursor-pointer select-none outline-none"
@@ -1025,7 +1034,7 @@ export const MatchLines = ({ event, initialAttendees = [], initialDraftLines = [
               {hasCoachAccess && (
                 hasLinesManageAccess ? (
                   timeToMatch <= DEADLINES.MIDDLE_EDIT_MINUTES ? (
-                    <HintPopover status="deadline_lines_edit" className="flex-1">
+                    <HintPopover status={getDeadlineHintStatus('deadline_lines_edit')} className="flex-1">
                       <button
                         type="button"
                         className="flex w-full justify-center items-center gap-1 px-3 py-2 rounded-full text-[14px] font-semibold border border-content-subtle bg-surface-base text-content-muted opacity-40 cursor-pointer select-none outline-none"

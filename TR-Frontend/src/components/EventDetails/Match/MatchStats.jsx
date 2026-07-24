@@ -319,8 +319,8 @@ const PlayerAccordion = ({ teamName, teamLogo, goalies, skaters, rosterSubmitted
                 <div className={clsx("w-10 shrink-0", shouldBlur && "blur-sm select-none")}>{row.goals}</div>
                 <div className={clsx("w-10 shrink-0", shouldBlur && "blur-sm select-none")}>{row.assists}</div>
                 <div className={clsx("w-11 shrink-0 text-brand font-black text-[14px]", shouldBlur && "blur-sm select-none")} style={hasTeamColor ? { color: activeBrandColor } : {}}>{row.points}</div>
-                <div className={clsx("w-11 shrink-0", (row.plus_minus || 0) > 0 ? "text-emerald-500" : (row.plus_minus || 0) < 0 ? "text-red-500" : "text-content-muted", shouldBlur && "blur-sm select-none")}>
-                  {(row.plus_minus || 0) > 0 ? `+${row.plus_minus}` : row.plus_minus || 0}
+                <div className={clsx("w-11 shrink-0", row.plus_minus == null ? "text-content-muted" : (row.plus_minus || 0) > 0 ? "text-emerald-500" : (row.plus_minus || 0) < 0 ? "text-red-500" : "text-content-muted", shouldBlur && "blur-sm select-none")}>
+                  {row.plus_minus == null ? '—' : (row.plus_minus || 0) > 0 ? `+${row.plus_minus}` : row.plus_minus || 0}
                 </div>
                 <div className={clsx("w-12 shrink-0", shouldBlur && "blur-sm select-none")}>{row.penalty_minutes}</div>
               </div>

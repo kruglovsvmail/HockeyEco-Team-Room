@@ -4,7 +4,7 @@ import dayjs from 'dayjs';
 import utc from 'dayjs/plugin/utc';
 import timezone from 'dayjs/plugin/timezone';
 
-import { getAuthHeaders } from '../../utils/helpers';
+import { getAuthHeaders, getStreamPlatformLabel } from '../../utils/helpers';
 import { useAccess } from '../../hooks/useAccess';
 import { computeEventEditAccess } from './computeEventEditAccess';
 
@@ -652,8 +652,8 @@ export const EditEventPanel = ({ data, onClose }) => {
             </div>
           ) : (
             <div className="flex flex-col gap-2">
-              <InfoRow label="Трансляция 1" value={event.video_yt_url ? 'Есть ссылка' : 'Нет ссылки'} />
-              <InfoRow label="Трансляция 2" value={event.video_vk_url ? 'Есть ссылка' : 'Нет ссылки'} />
+              <InfoRow label="Трансляция 1" value={event.video_yt_url ? getStreamPlatformLabel(event.video_yt_url) : 'Нет ссылки'} />
+              <InfoRow label="Трансляция 2" value={event.video_vk_url ? getStreamPlatformLabel(event.video_vk_url) : 'Нет ссылки'} />
             </div>
           )}
         </EventBlock>

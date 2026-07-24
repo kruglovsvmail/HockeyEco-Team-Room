@@ -504,8 +504,8 @@ export function TournamentStat({
                         <div className={clsx("w-10 shrink-0", shouldBlur && "blur-sm select-none")}>{row.goals}</div>
                         <div className={clsx("w-10 shrink-0", shouldBlur && "blur-sm select-none")}>{row.assists}</div>
                         <div className={clsx("w-11 shrink-0 text-brand font-black text-[14px]", shouldBlur && "blur-sm select-none")} style={hasTeamColor ? { color: activeBrandColor } : {}}>{row.points}</div>
-                        <div className={clsx("w-11 shrink-0", (row.plus_minus || 0) > 0 ? "text-emerald-500" : (row.plus_minus || 0) < 0 ? "text-red-500" : "text-content-muted", shouldBlur && "blur-sm select-none")}>
-                          {(row.plus_minus || 0) > 0 ? `+${row.plus_minus}` : row.plus_minus || 0}
+                        <div className={clsx("w-11 shrink-0", row.plus_minus == null ? "text-content-muted" : (row.plus_minus || 0) > 0 ? "text-emerald-500" : (row.plus_minus || 0) < 0 ? "text-red-500" : "text-content-muted", shouldBlur && "blur-sm select-none")}>
+                          {row.plus_minus == null ? '—' : (row.plus_minus || 0) > 0 ? `+${row.plus_minus}` : row.plus_minus || 0}
                         </div>
                         <div className={clsx("w-12 shrink-0", shouldBlur && "blur-sm select-none")}>{row.penalty_minutes}</div>
                       </div>
@@ -592,8 +592,8 @@ export function TournamentStat({
                       <div key={row.player_id} className="h-16 flex items-center text-center text-[14px] font-bold text-content-main border-b border-surface-border last:border-0 min-w-[270px]">
                         <div className="w-9 shrink-0">{row.games_played}</div>
                         <div className={clsx("w-10 shrink-0", shouldBlur && "blur-sm select-none")}>{row.goals_against}</div>
-                        <div className={clsx("w-10 shrink-0", shouldBlur && "blur-sm select-none")}>{row.saves}</div>
-                        <div className={clsx("w-14 shrink-0 text-brand font-black text-[14px] font-mono", shouldBlur && "blur-sm select-none")} style={hasTeamColor ? { color: activeBrandColor } : {}}>{row.save_percent}%</div>
+                        <div className={clsx("w-10 shrink-0", shouldBlur && "blur-sm select-none")}>{row.saves == null ? '—' : row.saves}</div>
+                        <div className={clsx("w-14 shrink-0 text-brand font-black text-[14px] font-mono", shouldBlur && "blur-sm select-none")} style={hasTeamColor ? { color: activeBrandColor } : {}}>{row.save_percent == null ? '—' : `${row.save_percent}%`}</div>
                         <div className={clsx("w-11 shrink-0 text-[14px]", shouldBlur && "blur-sm select-none")}>{row.goals_against_average}</div>
                         <div className={clsx("w-10 shrink-0 text-emerald-500", shouldBlur && "blur-sm select-none")}>{row.shutouts}</div>
                       </div>

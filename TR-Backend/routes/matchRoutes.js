@@ -124,8 +124,10 @@ router.get('/:eventId/results/rosters', verifyToken, requireTeamPermission('INTE
 // Добавить событие в протокол (гол / штраф / нереализованный буллит) + +/-
 router.post('/:eventId/results/events', verifyToken, requireTeamPermission('MATCH_FILL_RESULTS'), addMatchEvent);
 
-// Обновить существующее событие (полная замена + переписывание +/-)
-router.put('/:eventId/results/events/:rowId', verifyToken, requireTeamPermission('MATCH_FILL_RESULTS'), updateMatchEvent);
+// Обновить существующее событие (полная замена + переписывание +/-).
+// Для официальных матчей (роль official_team в assertEditable) сюда же попадает
+// самостоятельный ввод +/- командой — отдельный permission-ключ MATCH_FILL_RESULTS_OFFICIAL.
+router.put('/:eventId/results/events/:rowId', verifyToken, requireTeamPermission(['MATCH_FILL_RESULTS', 'MATCH_FILL_RESULTS_OFFICIAL']), updateMatchEvent);
 
 // Удалить событие из протокола (game_plus_minus уходит каскадом)
 router.delete('/:eventId/results/events/:rowId', verifyToken, requireTeamPermission('MATCH_FILL_RESULTS'), deleteMatchEvent);
@@ -137,7 +139,7 @@ router.put('/:eventId/results/goalie-log', verifyToken, requireTeamPermission('M
 // Броски в створ вратарю по периодам: чтение и bulk-PUT.
 // shots_count = все броски в створ на этого вратаря (отражённые вычисляются на лету).
 router.get('/:eventId/results/goalie-shots', verifyToken, requireTeamPermission('INTERNAL_VIEW'), getGoalieShots);
-router.put('/:eventId/results/goalie-shots', verifyToken, requireTeamPermission('MATCH_FILL_RESULTS'), saveGoalieShots);
+router.put('/:eventId/results/goalie-shots', verifyToken, requireTeamPermission(['MATCH_FILL_RESULTS', 'MATCH_FILL_RESULTS_OFFICIAL']), saveGoalieShots);
 
 // Регламент матча (периоды / длина периода / ОТ) с автопересчётом всех событий
 router.put('/:eventId/results/regulation', verifyToken, requireTeamPermission('MATCH_FILL_RESULTS'), saveRegulation);

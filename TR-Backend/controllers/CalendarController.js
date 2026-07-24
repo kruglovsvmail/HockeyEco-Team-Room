@@ -121,6 +121,7 @@ export const getEvents = async (req, res) => {
           
           g.stage_type::varchar AS stage_type,
           g.stage_label::varchar AS stage_label,
+          g.playoff_match_type::varchar AS playoff_match_type,
           g.series_number::int AS series_number,
           (
             SELECT pr.wins_needed
@@ -250,29 +251,31 @@ export const getEvents = async (req, res) => {
           
           NULL::varchar AS division_name,
           NULL::varchar AS division_short_name,
+          NULL::boolean AS is_tournament,
           NULL::varchar AS league_name,
           NULL::varchar AS league_short_name,
           NULL::varchar AS league_logo_url,
-          NULL::varchar AS division_logo_url, 
+          NULL::varchar AS division_logo_url,
           NULL::varchar AS season_name,
           NULL::varchar AS stage_type,
           NULL::varchar AS stage_label,
+          NULL::varchar AS playoff_match_type,
           NULL::int AS series_number,
           NULL::int AS wins_needed,
-          
+
           NULL::varchar AS home_jersey,
           NULL::varchar AS away_jersey,
-          
+
           NULL::varchar AS video_yt_url,
           NULL::varchar AS video_vk_url,
-          
+
           COALESCE(my_team.jersey_dark_url, '/default/jersey_dark.webp')::varchar AS my_team_jersey_dark_url,
           COALESCE(my_team.jersey_light_url, '/default/jersey_light.webp')::varchar AS my_team_jersey_light_url,
           '/default/jersey_dark.webp'::varchar AS opponent_jersey_dark_url,
           '/default/jersey_light.webp'::varchar AS opponent_jersey_light_url,
 
           (CASE WHEN (SELECT active_clubs FROM user_context) = 0 AND (SELECT active_teams FROM user_context) = 1 THEN false ELSE true END)::boolean AS show_team_context,
-          
+
           (EXISTS (SELECT 1 FROM team_training_attendance tta WHERE tta.team_training_id = tt.id AND tta.user_id = $1))::boolean AS is_attending,
           
           (COALESCE(
@@ -337,22 +340,24 @@ export const getEvents = async (req, res) => {
           
           NULL::varchar AS division_name,
           NULL::varchar AS division_short_name,
+          NULL::boolean AS is_tournament,
           NULL::varchar AS league_name,
           NULL::varchar AS league_short_name,
           NULL::varchar AS league_logo_url,
-          NULL::varchar AS division_logo_url, 
+          NULL::varchar AS division_logo_url,
           NULL::varchar AS season_name,
           NULL::varchar AS stage_type,
           NULL::varchar AS stage_label,
+          NULL::varchar AS playoff_match_type,
           NULL::int AS series_number,
           NULL::int AS wins_needed,
-          
+
           NULL::varchar AS home_jersey,
           NULL::varchar AS away_jersey,
-          
+
           NULL::varchar AS video_yt_url,
           NULL::varchar AS video_vk_url,
-          
+
           COALESCE(my_team.jersey_dark_url, '/default/jersey_dark.webp')::varchar AS my_team_jersey_dark_url,
           COALESCE(my_team.jersey_light_url, '/default/jersey_light.webp')::varchar AS my_team_jersey_light_url,
           '/default/jersey_dark.webp'::varchar AS opponent_jersey_dark_url,
@@ -413,28 +418,30 @@ export const getEvents = async (req, res) => {
           
           NULL::varchar AS division_name,
           NULL::varchar AS division_short_name,
+          NULL::boolean AS is_tournament,
           NULL::varchar AS league_name,
           NULL::varchar AS league_short_name,
           NULL::varchar AS league_logo_url,
-          NULL::varchar AS division_logo_url, 
+          NULL::varchar AS division_logo_url,
           NULL::varchar AS season_name,
           NULL::varchar AS stage_type,
           NULL::varchar AS stage_label,
+          NULL::varchar AS playoff_match_type,
           NULL::int AS series_number,
           NULL::int AS wins_needed,
-          
+
           NULL::varchar AS home_jersey,
           NULL::varchar AS away_jersey,
-          
+
           NULL::varchar AS video_yt_url,
           NULL::varchar AS video_vk_url,
-          
+
           '/default/jersey_dark.webp'::varchar AS my_team_jersey_dark_url,
           '/default/jersey_light.webp'::varchar AS my_team_jersey_light_url,
           '/default/jersey_dark.webp'::varchar AS opponent_jersey_dark_url,
           '/default/jersey_light.webp'::varchar AS opponent_jersey_light_url,
 
-          false::boolean AS show_team_context, 
+          false::boolean AS show_team_context,
           (EXISTS (SELECT 1 FROM club_training_attendance cta WHERE cta.club_training_id = ct.id AND cta.user_id = $1))::boolean AS is_attending,
           (CASE WHEN NOT (SELECT has_subscription FROM user_context) THEN 'no_subscription' ELSE 'allowed' END)::varchar AS toggle_status,
           'player'::varchar AS user_role,
@@ -486,22 +493,24 @@ export const getEvents = async (req, res) => {
           
           NULL::varchar AS division_name,
           NULL::varchar AS division_short_name,
+          NULL::boolean AS is_tournament,
           NULL::varchar AS league_name,
           NULL::varchar AS league_short_name,
           NULL::varchar AS league_logo_url,
-          NULL::varchar AS division_logo_url, 
+          NULL::varchar AS division_logo_url,
           NULL::varchar AS season_name,
           NULL::varchar AS stage_type,
           NULL::varchar AS stage_label,
+          NULL::varchar AS playoff_match_type,
           NULL::int AS series_number,
           NULL::int AS wins_needed,
-          
+
           NULL::varchar AS home_jersey,
           NULL::varchar AS away_jersey,
-          
+
           NULL::varchar AS video_yt_url,
           NULL::varchar AS video_vk_url,
-          
+
           '/default/jersey_dark.webp'::varchar AS my_team_jersey_dark_url,
           '/default/jersey_light.webp'::varchar AS my_team_jersey_light_url,
           '/default/jersey_dark.webp'::varchar AS opponent_jersey_dark_url,
