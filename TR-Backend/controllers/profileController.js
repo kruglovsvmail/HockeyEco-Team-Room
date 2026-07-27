@@ -112,8 +112,10 @@ class ProfileController {
         return res.status(400).json({ success: false, error: 'Файл изображения не передан' });
       }
 
-      const s3Key = `uploads/users_${userId}_avatar.webp`;
-      const dbPath = `/uploads/users_${userId}_avatar.webp`;
+      // Дата в ключе — чтобы при замене аватарки URL менялся и браузер не показывал
+      // старую картинку из кэша (старый детерминированный ключ этим страдал).
+      const s3Key = `uploads/users_${userId}_avatar_${Date.now()}.webp`;
+      const dbPath = `/${s3Key}`;
 
       // Ресайз до 400×400 + конвертация в WebP перед заливкой
       const processedBuffer = await processAvatar(req.file.buffer);
@@ -132,9 +134,15 @@ class ProfileController {
   async deleteAvatar(req, res) {
     try {
       const userId = req.user.id;
-      const s3Key = `uploads/users_${userId}_avatar.webp`;
+
+      // Ключ теперь содержит таймстамп загрузки, поэтому его нельзя пересобрать
+      // по userId — берём актуальный путь из БД.
+      const userRes = await pool.query('SELECT avatar_url FROM users WHERE id = $1', [userId]);
+      const avatarUrl = userRes.rows[0]?.avatar_url;
+      const s3Key = avatarUrl ? avatarUrl.replace(/^\//, '') : null;
 
       try {
+        if (!s3Key) throw new Error('Аватар не найден');
         if (s3 && typeof s3.send === 'function') {
           const { DeleteObjectCommand } = await import('@aws-sdk/client-s3');
           await s3.send(new DeleteObjectCommand({

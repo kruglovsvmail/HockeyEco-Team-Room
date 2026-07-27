@@ -648,7 +648,7 @@ export const updateMemberPhoto = async (req, res) => {
     const userId = memberRes.rows[0].user_id;
 
     // Р РµСЃР°Р№Р· РґРѕ 400Г—400 + РєРѕРЅРІРµСЂС‚Р°С†РёСЏ РІ WebP РїРµСЂРµРґ Р·Р°Р»РёРІРєРѕР№ (РІСЃРµРіРґР° .webp)
-    const bucketKey = `uploads/teams_${teamId}_users_${userId}_photo.webp`;
+    const bucketKey = `uploads/teams_${teamId}_users_${userId}_photo_${Date.now()}.webp`;
 
     const processedBuffer = await processAvatar(req.file.buffer);
     await uploadBufferToS3({ buffer: processedBuffer, mimetype: 'image/webp' }, bucketKey);
@@ -698,7 +698,7 @@ export const updateTeamProfile = async (req, res) => {
     if (req.files?.['logo']?.[0]) {
       const file = req.files['logo'][0];
       const ext = path.extname(file.originalname) || '.png';
-      const key = `uploads/teams_${teamId}_logo${ext}`;
+      const key = `uploads/teams_${teamId}_logo_${Date.now()}${ext}`;
       await uploadBufferToS3(file, key);
       logo_url = `/${key}`;
     } else if (delete_logo === 'true') {
@@ -708,7 +708,7 @@ export const updateTeamProfile = async (req, res) => {
     if (req.files?.['jersey_dark']?.[0]) {
       const file = req.files['jersey_dark'][0];
       const ext = path.extname(file.originalname) || '.png';
-      const key = `uploads/teams_${teamId}_jersey_dark${ext}`;
+      const key = `uploads/teams_${teamId}_jersey_dark_${Date.now()}${ext}`;
       await uploadBufferToS3(file, key);
       jersey_dark_url = `/${key}`;
     } else if (delete_jersey_dark === 'true') {
@@ -718,7 +718,7 @@ export const updateTeamProfile = async (req, res) => {
     if (req.files?.['jersey_light']?.[0]) {
       const file = req.files['jersey_light'][0];
       const ext = path.extname(file.originalname) || '.png';
-      const key = `uploads/teams_${teamId}_jersey_light${ext}`;
+      const key = `uploads/teams_${teamId}_jersey_light_${Date.now()}${ext}`;
       await uploadBufferToS3(file, key);
       jersey_light_url = `/${key}`;
     } else if (delete_jersey_light === 'true') {
