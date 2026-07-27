@@ -127,6 +127,23 @@ export const toggleMatchAttendance = async (req, res) => {
     }
 
     if (isAttending) {
+      const gameCheck = await pool.query(`SELECT game_type, division_id FROM games WHERE id = $1`, [eventId]);
+      const { game_type, division_id } = gameCheck.rows[0] || {};
+
+      if (game_type === 'official' && division_id) {
+        const dqCheck = await pool.query(`
+          SELECT 1 FROM disqualifications dq
+          JOIN tournament_rosters tr ON dq.tournament_roster_id = tr.id
+          JOIN tournament_teams tt ON tr.tournament_team_id = tt.id
+          WHERE tt.division_id = $1 AND tt.team_id = $2 AND tr.player_id = $3 AND dq.status = 'active'
+          LIMIT 1
+        `, [division_id, teamId, targetId]);
+
+        if (dqCheck.rows.length > 0) {
+          return res.status(403).json({ success: false, error: 'Игрок дисквалифицирован и не может быть отмечен на матч', disqualified: true });
+        }
+      }
+
       await pool.query(
         `INSERT INTO team_game_attendance (game_id, user_id, team_id) VALUES ($1, $2, $3) ON CONFLICT ON CONSTRAINT team_game_att_unique DO NOTHING`,
         [eventId, targetId, teamId]

@@ -237,11 +237,11 @@ export function HintPopover({ status, customContent, children, className }) {
       {children ? (
         children
       ) : (
-        <button 
+        <button
           type="button"
           className="text-danger/80 hover:text-danger active:scale-95 transition-all p-1 flex items-center justify-center outline-none cursor-pointer"
         >
-          <Icon name="shield_alert" className="w-7 h-7" />
+          <Icon name={status === 'disqualified' ? 'lock' : 'shield_alert'} className="w-7 h-7" />
         </button>
       )}
       {popoverContent}
