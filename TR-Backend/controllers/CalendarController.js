@@ -157,10 +157,8 @@ export const getEvents = async (req, res) => {
                 ) THEN 'not_in_team'
                 
                 WHEN EXISTS (
-                  SELECT 1 FROM disqualifications dq 
-                  JOIN tournament_rosters tr_dq ON dq.tournament_roster_id = tr_dq.id
-                  JOIN tournament_teams tt_dq ON tr_dq.tournament_team_id = tt_dq.id
-                  WHERE tr_dq.player_id = $1 AND tt_dq.division_id = g.division_id AND dq.status = 'active' AND tr_dq.period_end IS NULL
+                  SELECT 1 FROM disqualifications dq
+                  WHERE dq.user_id = $1 AND dq.league_id = s.league_id AND dq.status = 'active'
                 ) THEN 'disqualified'
                 
                 ELSE COALESCE(

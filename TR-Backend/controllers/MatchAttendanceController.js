@@ -39,14 +39,16 @@ export const getAvailableRoster = async (req, res) => {
           tr.is_captain,
           tr.is_assistant,
           EXISTS (
-            SELECT 1 FROM disqualifications dq 
-            WHERE dq.tournament_roster_id = tr.id AND dq.status = 'active'
+            SELECT 1 FROM disqualifications dq
+            WHERE dq.user_id = tr.player_id AND dq.league_id = s.league_id AND dq.status = 'active'
           ) AS is_disqualified
         FROM tournament_rosters tr
         JOIN users u ON tr.player_id = u.id
         JOIN tournament_teams tt ON tr.tournament_team_id = tt.id
+        JOIN divisions div ON tt.division_id = div.id
+        JOIN seasons s ON div.season_id = s.id
         LEFT JOIN team_members tm ON tm.user_id = u.id AND tm.team_id = $2 AND tm.left_at IS NULL
-        WHERE tt.division_id = $1 
+        WHERE tt.division_id = $1
           AND tt.team_id = $2
           AND tr.period_end IS NULL
           AND tr.application_status = 'approved'
@@ -133,11 +135,11 @@ export const toggleMatchAttendance = async (req, res) => {
       if (game_type === 'official' && division_id) {
         const dqCheck = await pool.query(`
           SELECT 1 FROM disqualifications dq
-          JOIN tournament_rosters tr ON dq.tournament_roster_id = tr.id
-          JOIN tournament_teams tt ON tr.tournament_team_id = tt.id
-          WHERE tt.division_id = $1 AND tt.team_id = $2 AND tr.player_id = $3 AND dq.status = 'active'
+          JOIN divisions div ON div.id = $1
+          JOIN seasons s ON div.season_id = s.id
+          WHERE dq.user_id = $2 AND dq.league_id = s.league_id AND dq.status = 'active'
           LIMIT 1
-        `, [division_id, teamId, targetId]);
+        `, [division_id, targetId]);
 
         if (dqCheck.rows.length > 0) {
           return res.status(403).json({ success: false, error: 'Игрок дисквалифицирован и не может быть отмечен на матч', disqualified: true });
