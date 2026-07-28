@@ -38,10 +38,17 @@ export const getAvailableRoster = async (req, res) => {
           tr.jersey_number,
           tr.is_captain,
           tr.is_assistant,
-          EXISTS (
-            SELECT 1 FROM disqualifications dq
-            WHERE dq.user_id = tr.player_id AND dq.league_id = s.league_id AND dq.status = 'active'
-          ) AS is_disqualified
+          COALESCE(
+            (SELECT json_agg(json_build_object(
+              'reason', dq.reason, 'penalty_type', dq.penalty_type,
+              'games_assigned', dq.games_assigned, 'games_served', dq.games_served, 'end_date', dq.end_date,
+              'mandatory_games', dq.mandatory_games, 'additional_games', dq.additional_games,
+              'penalty_amount', dq.penalty_amount, 'penalty_amount_paid', dq.penalty_amount_paid
+            ))
+            FROM disqualifications dq
+            WHERE dq.user_id = tr.player_id AND dq.league_id = s.league_id AND dq.status = 'active'),
+            '[]'::json
+          ) AS active_disqualifications
         FROM tournament_rosters tr
         JOIN users u ON tr.player_id = u.id
         JOIN tournament_teams tt ON tr.tournament_team_id = tt.id
@@ -68,7 +75,7 @@ export const getAvailableRoster = async (req, res) => {
           tr.jersey_number,
           tr.is_captain,
           tr.is_assistant,
-          false AS is_disqualified
+          '[]'::json AS active_disqualifications
         FROM team_rosters tr
         JOIN team_members tm ON tr.member_id = tm.id
         JOIN users u ON tm.user_id = u.id

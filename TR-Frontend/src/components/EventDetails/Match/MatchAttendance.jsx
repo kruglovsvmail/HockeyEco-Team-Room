@@ -9,6 +9,7 @@ import { Avatar } from '../../../ui/Avatar';
 import { Icon } from '../../../ui/Icon';
 import { ContainerContent } from '../../../ui/ContainerContent';
 import { HintPopover } from '../../../ui/HintPopover';
+import { DisqualificationBadge } from '../../../ui/DisqualificationBadge';
 import clsx from 'clsx';
 import { PageLoader } from '../../../ui/Loader';
 import { FadeIn } from '../../../ui/FadeIn';
@@ -598,10 +599,8 @@ export const MatchAttendance = ({ event, initialAttendees = [], initialTeamRoste
                         </div>
                       </div>
                       
-                      {player.is_disqualified ? (
-                        <span className="text-[10px] font-black text-red-500 uppercase tracking-wider bg-red-500/10 border border-red-500/20 px-2.5 py-1.5 rounded-lg">
-                          Дисквал.
-                        </span>
+                      {player.active_disqualifications?.length > 0 ? (
+                        <DisqualificationBadge activeDisqualifications={player.active_disqualifications} className="ml-2 shrink-0" />
                       ) : (
                         <ButtonLP
                           onClick={() => handleMarkUser(player)}

@@ -32,7 +32,7 @@ export function HintPopover({ status, customContent, children, className }) {
     not_approved: 'Ваша заявка на турнир еще не одобрена организатором.',
     not_in_team: 'Вы не состоите в игровом составе.',
     not_in_tournament: 'Вы не заявлены на этот турнир.',
-    disqualified: 'У вас активная дисквалификация в этом турнире.',
+    disqualified: 'У вас активная дисквалификация в этом турнире. За подробностями обратитесь к организаторам лиги/турнира.',
     deadline_lines_edit: `Изменение пятерок заблокировано. До игры осталось меньше ${DEADLINES?.MIDDLE_EDIT_MINUTES || 60} ${pluralizeMinutesGenitive(DEADLINES?.MIDDLE_EDIT_MINUTES || 60)}.`,
     deadline_roster_submit: `Отправка заблокирована. До игры осталось меньше ${DEADLINES?.ROSTER_SUBMIT_MINUTES || 120} ${pluralizeMinutesGenitive(DEADLINES?.ROSTER_SUBMIT_MINUTES || 120)}.`,
     deadline_player_params: `Изменение параметров игрока заблокировано. До игры осталось меньше ${DEADLINES?.ROSTER_SUBMIT_MINUTES || 120} ${pluralizeMinutesGenitive(DEADLINES?.ROSTER_SUBMIT_MINUTES || 120)}.`,
