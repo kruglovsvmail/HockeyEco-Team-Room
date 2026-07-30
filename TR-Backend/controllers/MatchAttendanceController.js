@@ -38,17 +38,8 @@ export const getAvailableRoster = async (req, res) => {
           tr.jersey_number,
           tr.is_captain,
           tr.is_assistant,
-          COALESCE(
-            (SELECT json_agg(json_build_object(
-              'reason', dq.reason, 'penalty_type', dq.penalty_type,
-              'games_assigned', dq.games_assigned, 'games_served', dq.games_served, 'end_date', dq.end_date,
-              'mandatory_games', dq.mandatory_games, 'additional_games', dq.additional_games,
-              'penalty_amount', dq.penalty_amount, 'penalty_amount_paid', dq.penalty_amount_paid
-            ))
-            FROM disqualifications dq
-            WHERE dq.user_id = tr.player_id AND dq.league_id = s.league_id AND dq.status = 'active'),
-            '[]'::json
-          ) AS active_disqualifications
+          -- Личные наказания + командный штраф (ограничивает всех, кроме тренеров)
+          user_active_disqualifications(tr.player_id, s.league_id) AS active_disqualifications
         FROM tournament_rosters tr
         JOIN users u ON tr.player_id = u.id
         JOIN tournament_teams tt ON tr.tournament_team_id = tt.id
@@ -141,10 +132,11 @@ export const toggleMatchAttendance = async (req, res) => {
 
       if (game_type === 'official' && division_id) {
         const dqCheck = await pool.query(`
-          SELECT 1 FROM disqualifications dq
-          JOIN divisions div ON div.id = $1
+          SELECT 1
+          FROM divisions div
           JOIN seasons s ON div.season_id = s.id
-          WHERE dq.user_id = $2 AND dq.league_id = s.league_id AND dq.status = 'active'
+          WHERE div.id = $1
+            AND json_array_length(user_active_disqualifications($2, s.league_id)) > 0
           LIMIT 1
         `, [division_id, targetId]);
 

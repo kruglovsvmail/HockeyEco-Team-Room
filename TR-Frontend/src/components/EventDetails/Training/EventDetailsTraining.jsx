@@ -379,7 +379,26 @@ export const EventDetailsTraining = ({ event, openRightPanel }) => {
             </div>
             <div className="flex items-center gap-3 min-w-0">
               <Icon name="location_pin" className="w-4 h-4 shrink-0 text-content-main" />
-              <span className="text-[18px] font-normal text-content-main leading-none truncate">{arenaName}</span>
+              {(localEvent?.arena_city || localEvent?.arena_address) ? (
+                <HintPopover
+                  className="min-w-0 max-w-full"
+                  customContent={
+                    <div className="flex flex-col gap-1 text-center">
+                      <span className="text-[13px] font-bold text-content-main leading-snug">{arenaName}</span>
+                      {localEvent.arena_city && (
+                        <span className="text-[12px] font-semibold text-content-muted leading-snug">{localEvent.arena_city}</span>
+                      )}
+                      {localEvent.arena_address && (
+                        <span className="text-[11px] font-medium text-content-muted leading-snug">{localEvent.arena_address}</span>
+                      )}
+                    </div>
+                  }
+                >
+                  <span className="text-[18px] font-normal text-content-main leading-none truncate block">{arenaName}</span>
+                </HintPopover>
+              ) : (
+                <span className="text-[18px] font-normal text-content-main leading-none truncate">{arenaName}</span>
+              )}
             </div>
             {localEvent?.location_url && (
               <a

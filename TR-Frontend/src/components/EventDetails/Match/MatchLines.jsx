@@ -1145,11 +1145,17 @@ export const MatchLines = ({ event, initialAttendees = [], initialDraftLines = [
         </div>
       ) : (
         <div className="flex flex-col gap-4 w-full">
-          {[1, 2, 3, 4].map(lineNum => (
-            <ContainerContent key={`view-line-${lineNum}`} title={`Звено #${lineNum}`} className="shadow-sm">
-              {renderLineBlock(lineNum)}
-            </ContainerContent>
-          ))}
+          {/* В просмотре показываем только звенья, где занят хотя бы один слот.
+              Нумерация остаётся исходной — возможен разрыв («Звено #1», «Звено #3»). */}
+          {[1, 2, 3, 4].map(lineNum => {
+            const hasPlayers = draftLines.some(l => l.line_number === lineNum && l.position_in_line !== 'G');
+            if (!hasPlayers) return null;
+            return (
+              <ContainerContent key={`view-line-${lineNum}`} title={`Звено #${lineNum}`} className="shadow-sm">
+                {renderLineBlock(lineNum)}
+              </ContainerContent>
+            );
+          })}
           <ContainerContent title="Вратари" className="shadow-sm">
             {renderGoaliesBlock()}
           </ContainerContent>

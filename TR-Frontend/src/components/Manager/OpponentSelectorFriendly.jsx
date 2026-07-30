@@ -6,7 +6,25 @@ import { BottomSheet } from '../../ui/BottomSheet';
 import { FadeIn } from '../../ui/FadeIn';
 import { Icon } from '../../ui/Icon';
 import { PageLoader } from '../../ui/Loader';
-import { getAuthHeaders } from '../../utils/helpers';
+import { getAuthHeaders, getImageUrl } from '../../utils/helpers';
+
+// Логотип соперника в списке выбора — заглушка «нет лого», если файл не загружен
+function OpponentLogo({ logoUrl, name }) {
+  if (logoUrl) {
+    return (
+      <img
+        src={getImageUrl(logoUrl)}
+        alt={name}
+        className="w-12 h-12 object-contain shrink-0"
+      />
+    );
+  }
+  return (
+    <div className="flex items-center justify-center w-12 h-12 rounded-xl bg-surface-level3 text-content-subtle font-semibold text-[9px] text-center leading-tight shrink-0">
+      нет лого
+    </div>
+  );
+}
 
 export function OpponentSelectorFriendly({ data }) {
   // ИСПРАВЛЕНО: Извлекаем стандартизированный teamId
@@ -137,11 +155,14 @@ export function OpponentSelectorFriendly({ data }) {
                 key={team.id} 
                 type="button"
                 onClick={() => onSelect({ ...team, isPwa: true })}
-                className="w-full p-4 bg-surface-level1 border border-surface-border rounded-2xl text-left flex items-center justify-between outline-none cursor-pointer hover:border-brand/30 transition-all active:scale-[0.99]"
+                className="w-full p-4 bg-surface-level1 border border-surface-border rounded-2xl text-left flex items-center justify-between gap-3 outline-none cursor-pointer hover:border-brand/30 transition-all active:scale-[0.99]"
               >
-                <div className="flex flex-col">
-                  <span className="text-[14px] font-bold text-content-main">{team.name}</span>
-                  <span className="text-[10px] text-content-muted mt-0.5">{team.city}</span>
+                <div className="flex items-center gap-3 min-w-0">
+                  <OpponentLogo logoUrl={team.logo_url} name={team.name} />
+                  <div className="flex flex-col min-w-0">
+                    <span className="text-[14px] font-bold text-content-main truncate">{team.name}</span>
+                    <span className="text-[10px] text-content-muted mt-0.5 truncate">{team.city}</span>
+                  </div>
                 </div>
                 <Icon name="chevron_right" className="w-4 h-4 text-content-subtle shrink-0" />
               </button>
@@ -161,11 +182,14 @@ export function OpponentSelectorFriendly({ data }) {
                   key={opp.id} 
                   type="button"
                   onClick={() => onSelect({ ...opp, isPwa: false })}
-                  className="w-full p-4 bg-surface-level1 border border-surface-border rounded-2xl text-left flex items-center justify-between outline-none cursor-pointer hover:border-brand/30 transition-all active:scale-[0.99]"
+                  className="w-full p-4 bg-surface-level1 border border-surface-border rounded-2xl text-left flex items-center justify-between gap-3 outline-none cursor-pointer hover:border-brand/30 transition-all active:scale-[0.99]"
                 >
-                  <div className="flex flex-col">
-                    <span className="text-[14px] font-bold text-content-main">{opp.name}</span>
-                    <span className="text-[10px] text-content-muted mt-0.5">{opp.city}</span>
+                  <div className="flex items-center gap-3 min-w-0">
+                    <OpponentLogo logoUrl={opp.logo_url} name={opp.name} />
+                    <div className="flex flex-col min-w-0">
+                      <span className="text-[14px] font-bold text-content-main truncate">{opp.name}</span>
+                      <span className="text-[10px] text-content-muted mt-0.5 truncate">{opp.city}</span>
+                    </div>
                   </div>
                   <Icon name="chevron_right" className="w-4 h-4 text-content-subtle shrink-0" />
                 </button>

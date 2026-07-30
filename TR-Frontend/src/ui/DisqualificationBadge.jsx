@@ -29,6 +29,9 @@ function DisqualificationPills({ d }) {
 
   return (
     <div className="flex flex-wrap gap-1">
+      {d.is_team_wide && (
+        <Pill className="bg-surface-level2 text-content-muted">Штраф команды</Pill>
+      )}
       {hasSplit && d.mandatory_games != null && (
         <Pill className="bg-danger/10 text-danger">Обяз. матчи: {mandatoryServed}/{d.mandatory_games}</Pill>
       )}

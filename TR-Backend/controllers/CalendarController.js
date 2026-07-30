@@ -156,10 +156,8 @@ export const getEvents = async (req, res) => {
                   SELECT 1 FROM team_members WHERE user_id = $1 AND team_id = ut.team_id AND left_at IS NULL
                 ) THEN 'not_in_team'
                 
-                WHEN EXISTS (
-                  SELECT 1 FROM disqualifications dq
-                  WHERE dq.user_id = $1 AND dq.league_id = s.league_id AND dq.status = 'active'
-                ) THEN 'disqualified'
+                WHEN json_array_length(user_active_disqualifications($1, s.league_id)) > 0
+                  THEN 'disqualified'
                 
                 ELSE COALESCE(
                   (SELECT CASE 
