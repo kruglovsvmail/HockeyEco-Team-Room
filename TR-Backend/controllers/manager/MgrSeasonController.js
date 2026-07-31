@@ -17,6 +17,25 @@ const uploadBufferToS3 = async (file, key) => {
 const getFileExt = (originalname) => (originalname.split('.').pop() || 'bin');
 
 /**
+ * Роли представителя в турнирной заявке. Их ровно три — в отличие от ролей внутри команды
+ * (team_roles), где дополнительно живёт head_coach. Главный тренер и тренер команды
+ * подаются в заявку одной ролью 'coach'.
+ * Один человек может занимать несколько ролей сразу — на каждую роль заводится своя строка
+ * в tournament_team_roles (уникальность по тройке заявка+человек+роль).
+ */
+export const TOURNAMENT_ROLES = ['team_manager', 'team_admin', 'coach'];
+
+// Роль в команде -> роль в заявке. head_coach схлопывается в тренера: в заявке
+// разделения на главного и рядового тренера нет.
+const toTournamentRole = (teamRole) => (teamRole === 'head_coach' ? 'coach' : teamRole);
+
+// Нормализация набора ролей из запроса: только валидные значения, без дублей
+const normalizeRoles = (roles) => {
+  if (!Array.isArray(roles)) return [];
+  return [...new Set(roles.map(toTournamentRole))].filter(r => TOURNAMENT_ROLES.includes(r));
+};
+
+/**
  * Проверяет, что заявка appId принадлежит команде teamId, и что она сейчас
  * редактируема: статус draft/revision и не заблокирована ожиданием проверки
  * бумажной заявки лигой (paper_roster_league_url ещё не загружен лигой).
@@ -127,6 +146,7 @@ const APPLICATION_SELECT_SQL = `
 
          COALESCE(
              (SELECT json_agg(json_build_object(
+                 'id', ttr.id,
                  'user_id', ttr.user_id,
                  'role', ttr.tournament_role,
                  'first_name', u.first_name, 'last_name', u.last_name,
@@ -190,6 +210,11 @@ export const getTeamRosterForPicker = async (req, res) => {
     if (!isVirtual) await assertApplicationOwnership(pool, appId, teamId);
     const exclusionAppId = isVirtual ? -1 : appId;
 
+    // Штаб добавляется в заявку отдельно на каждую роль, поэтому из списка прячем не всех,
+    // кто уже в заявке, а только тех, у кого уже есть ИМЕННО ЭТА роль. Без ?role= (старое
+    // поведение и пикер игроков) прячем любого, кто уже есть в штабе.
+    const roleFilter = TOURNAMENT_ROLES.includes(req.query.role) ? req.query.role : null;
+
     const playersRes = await pool.query(`
       SELECT tm.user_id as id, u.first_name, u.last_name, u.avatar_url, tm.photo_url,
              tr.position, tr.jersey_number
@@ -214,10 +239,11 @@ export const getTeamRosterForPicker = async (req, res) => {
         AND NOT EXISTS (
           SELECT 1 FROM tournament_team_roles ex
           WHERE ex.tournament_team_id = $2 AND ex.user_id = tm.user_id AND ex.left_at IS NULL
+            AND ($3::varchar IS NULL OR ex.tournament_role = $3)
         )
       GROUP BY tm.user_id, u.first_name, u.last_name, u.avatar_url, tm.photo_url
       ORDER BY u.last_name ASC, u.first_name ASC
-    `, [teamId, exclusionAppId]);
+    `, [teamId, exclusionAppId, roleFilter]);
 
     return res.json({ success: true, players: playersRes.rows, staff: staffRes.rows });
   } catch (err) {
@@ -248,6 +274,13 @@ export const createApplication = async (req, res) => {
     if (typeof staff === 'string') { try { staff = JSON.parse(staff); } catch (e) { staff = []; } }
     if (!Array.isArray(staff)) staff = [];
 
+    // Одна строка = одна пара «человек + роль», поэтому один и тот же user_id может прийти
+    // несколько раз с разными ролями. Невалидные роли отсекаем сразу, чтобы проверка
+    // «заявка без представителей» ниже считала реально пригодные записи.
+    const staffRows = staff
+      .map(s => ({ user_id: Number(s.user_id), role: toTournamentRole(s.role) }))
+      .filter(s => s.user_id && TOURNAMENT_ROLES.includes(s.role));
+
     const dupCheck = await client.query(
       `SELECT id FROM tournament_teams WHERE team_id = $1 AND division_id = $2`,
       [teamId, divisionId]
@@ -271,8 +304,8 @@ export const createApplication = async (req, res) => {
       err.status = 400;
       throw err;
     }
-    if (isDigital && staff.length === 0) {
-      const err = new Error('Нельзя отправить заявку: необходимо добавить хотя бы одного представителя команды (тренера или менеджера)');
+    if (isDigital && staffRows.length === 0) {
+      const err = new Error('Нельзя отправить заявку: необходимо добавить хотя бы одного представителя команды (тренера или руководителя)');
       err.status = 400;
       throw err;
     }
@@ -299,7 +332,7 @@ export const createApplication = async (req, res) => {
       `, [appId, teamId, JSON.stringify(players)]);
     }
 
-    if (isDigital && staff.length > 0) {
+    if (isDigital && staffRows.length > 0) {
       // Штаб заявки формируется только из активного штата команды (team_roles)
       await client.query(`
         INSERT INTO tournament_team_roles (tournament_team_id, user_id, tournament_role)
@@ -308,7 +341,8 @@ export const createApplication = async (req, res) => {
         JOIN team_members tm ON tm.user_id = x.user_id AND tm.team_id = $2 AND tm.left_at IS NULL
         JOIN team_roles trole ON trole.member_id = tm.id AND trole.left_at IS NULL
         GROUP BY tm.user_id, x.role
-      `, [appId, teamId, JSON.stringify(staff)]);
+        ON CONFLICT (tournament_team_id, user_id, tournament_role) DO UPDATE SET left_at = NULL
+      `, [appId, teamId, JSON.stringify(staffRows)]);
     }
 
     await client.query('COMMIT');
@@ -368,7 +402,7 @@ export const sendApplicationForReview = async (req, res) => {
 
     if (app.digital_applications_only || app.paper_roster_league_url !== null) {
       if (parseInt(app.staff_count, 10) === 0) {
-        return res.status(400).json({ success: false, error: 'Нельзя отправить заявку: необходимо добавить хотя бы одного представителя команды (тренера или менеджера)' });
+        return res.status(400).json({ success: false, error: 'Нельзя отправить заявку: необходимо добавить хотя бы одного представителя команды (тренера или руководителя)' });
       }
     }
 
@@ -677,27 +711,26 @@ export const addStaffToApplication = async (req, res) => {
       throw err;
     }
 
-    if (!roles || roles.length === 0) {
-      await client.query(
-        `UPDATE tournament_team_roles SET left_at = NOW() WHERE tournament_team_id = $1 AND user_id = $2 AND left_at IS NULL`,
-        [appId, userId]
-      );
-      await client.query('COMMIT');
-      return res.json({ success: true });
-    }
+    // roles — ПОЛНЫЙ набор ролей этого человека в заявке, а не одна роль: человек может быть
+    // одновременно руководителем, тренером и администратором. Приводим состояние в БД к набору:
+    // лишние роли закрываем, недостающие открываем. Пустой набор = убрать из заявки совсем.
+    const nextRoles = normalizeRoles(roles);
 
-    const primaryRole = roles[0];
-    const existing = await client.query(
-      `SELECT id FROM tournament_team_roles WHERE tournament_team_id = $1 AND user_id = $2 AND left_at IS NULL`,
-      [appId, userId]
+    await client.query(
+      `UPDATE tournament_team_roles SET left_at = NOW()
+       WHERE tournament_team_id = $1 AND user_id = $2 AND left_at IS NULL
+         AND NOT (tournament_role = ANY($3::varchar[]))`,
+      [appId, userId, nextRoles]
     );
 
-    if (existing.rows.length > 0) {
-      await client.query(`UPDATE tournament_team_roles SET tournament_role = $1 WHERE id = $2`, [primaryRole, existing.rows[0].id]);
-    } else {
+    if (nextRoles.length > 0) {
+      // Повторное добавление ранее убранной роли переоткрывает ту же строку (left_at = NULL),
+      // а не плодит дубли — уникальность по тройке заявка+человек+роль.
       await client.query(
-        `INSERT INTO tournament_team_roles (tournament_team_id, user_id, tournament_role) VALUES ($1, $2, $3)`,
-        [appId, userId, primaryRole]
+        `INSERT INTO tournament_team_roles (tournament_team_id, user_id, tournament_role)
+         SELECT $1, $2, r FROM unnest($3::varchar[]) AS r
+         ON CONFLICT (tournament_team_id, user_id, tournament_role) DO UPDATE SET left_at = NULL`,
+        [appId, userId, nextRoles]
       );
     }
 
@@ -712,15 +745,20 @@ export const addStaffToApplication = async (req, res) => {
   }
 };
 
-// DELETE /:teamId/applications/:appId/staff/:userId
+// DELETE /:teamId/applications/:appId/staff/:userId       — убрать человека из заявки целиком
+// DELETE /:teamId/applications/:appId/staff/:userId/:role — снять только одну его роль
 export const removeStaffFromApplication = async (req, res) => {
   try {
-    const { teamId, appId, userId } = req.params;
+    const { teamId, appId, userId, role } = req.params;
     await assertApplicationEditable(pool, appId, teamId);
 
+    const roleFilter = TOURNAMENT_ROLES.includes(role) ? role : null;
+
     await pool.query(
-      `UPDATE tournament_team_roles SET left_at = NOW() WHERE tournament_team_id = $1 AND user_id = $2 AND left_at IS NULL`,
-      [appId, userId]
+      `UPDATE tournament_team_roles SET left_at = NOW()
+       WHERE tournament_team_id = $1 AND user_id = $2 AND left_at IS NULL
+         AND ($3::varchar IS NULL OR tournament_role = $3)`,
+      [appId, userId, roleFilter]
     );
     return res.json({ success: true });
   } catch (err) {

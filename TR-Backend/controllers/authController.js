@@ -40,7 +40,17 @@ const fetchPwaUserProfile = async (userId) => {
   // Рассчитываем глобальный статус подписки пользователя
   const hasSubscription = user.subscription_expires_at && new Date(user.subscription_expires_at) > new Date();
 
-  // Извлекаем все команды, к которым пользователь имеет прямое или косвенное отношение
+  // Извлекаем все команды, к которым пользователь имеет прямое или косвенное отношение.
+  //
+  // ВАЖНО: user_role (и собираемый из него accessMatrix) намеренно НЕ включает роли из
+  // tournament_team_roles. Роль в турнирной заявке — информативная: она нужна для подписи
+  // протокола матча и отображения в нём, но прав в Team Room не даёт. Тот же принцип
+  // соблюдают checkPermissionInternal (utils/checkPermission.js) и getMyTeams
+  // (TeamController.js) — если подмешать турнирные роли здесь, фронт начнёт рисовать
+  // кнопки, которые сервер потом отклонит.
+  //
+  // Ниже в WHERE обращение к tournament_team_roles остаётся: заявленный на турнир человек
+  // должен видеть команду в списке, просто с пустым набором ролей.
   const teamsResult = await pool.query(`
     SELECT t.id, t.name, t.short_name, t.logo_url, t.owner_id,
       (
@@ -54,16 +64,10 @@ const fetchPwaUserProfile = async (userId) => {
           SELECT tr.role FROM team_roles tr 
           JOIN team_members tm ON tr.member_id = tm.id 
           WHERE tm.team_id = t.id AND tm.user_id = $1 AND tr.left_at IS NULL AND tm.left_at IS NULL
-          
+
           UNION
-          
-          SELECT ttr.tournament_role as role FROM tournament_team_roles ttr 
-          JOIN tournament_teams tt ON ttr.tournament_team_id = tt.id 
-          WHERE tt.team_id = t.id AND ttr.user_id = $1 AND ttr.left_at IS NULL
-          
-          UNION
-          
-          SELECT 'player' as role FROM team_members tm 
+
+          SELECT 'player' as role FROM team_members tm
           WHERE tm.team_id = t.id AND tm.user_id = $1 AND tm.left_at IS NULL
 
           UNION

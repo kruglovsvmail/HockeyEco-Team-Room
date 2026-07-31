@@ -41,6 +41,8 @@ router.post('/:teamId/applications/:appId/roster/:rosterId/docs', verifyToken, r
 ]), uploadRosterDocs);
 
 router.post('/:teamId/applications/:appId/staff', verifyToken, requireTeamPermission('MGR_SEASON_ROSTERS'), addStaffToApplication);
+// Без :role — человек убирается из заявки целиком, с :role — снимается только эта его роль
 router.delete('/:teamId/applications/:appId/staff/:userId', verifyToken, requireTeamPermission('MGR_SEASON_ROSTERS'), removeStaffFromApplication);
+router.delete('/:teamId/applications/:appId/staff/:userId/:role', verifyToken, requireTeamPermission('MGR_SEASON_ROSTERS'), removeStaffFromApplication);
 
 export default router;

@@ -148,7 +148,10 @@ function PlayerEditSheet({ isOpen, onClose, player, roster = [], canEdit, canRem
   );
 }
 
-// Нижняя шторка редактирования роли сотрудника штаба внутри заявки
+// Нижняя шторка редактирования сотрудника штаба внутри заявки.
+// person — это пара «человек + роль» (одна строка блока), а не человек целиком: если он занимает
+// несколько ролей, у него столько же строк. Смена роли переносит его в другой блок,
+// «Убрать из заявки» снимает только эту роль — остальные остаются.
 function StaffEditSheet({ isOpen, onClose, person, canEdit, activeBrandColor, onSave, onRemove }) {
   const [role, setRole] = useState('coach');
   const [isSaving, setIsSaving] = useState(false);
@@ -163,8 +166,9 @@ function StaffEditSheet({ isOpen, onClose, person, canEdit, activeBrandColor, on
 
   const handleSave = async () => {
     if (!displayedPerson) return;
+    if (role === displayedPerson.role) { onClose(); return; }
     setIsSaving(true);
-    await onSave(displayedPerson.user_id, role);
+    await onSave(displayedPerson.user_id, displayedPerson.role, role);
     setIsSaving(false);
     onClose();
   };
@@ -206,7 +210,7 @@ function StaffEditSheet({ isOpen, onClose, person, canEdit, activeBrandColor, on
           {canEdit && (
             <div className="flex flex-col gap-2 pt-1">
               <ButtonLP onClick={handleSave} isLoading={isSaving} activeColor={activeBrandColor}>Сохранить</ButtonLP>
-              <ButtonLP variant="outline" onClick={() => { onRemove(displayedPerson.user_id); onClose(); }} className="!text-danger">Убрать из заявки</ButtonLP>
+              <ButtonLP variant="outline" onClick={() => { onRemove(displayedPerson.user_id, displayedPerson.role); onClose(); }} className="!text-danger">Убрать из заявки</ButtonLP>
             </div>
           )}
         </div>
@@ -314,129 +318,103 @@ function AddPlayerSheet({ isOpen, onClose, teamId, appId, targetPosition, exclud
   );
 }
 
-// Нижняя шторка добавления сотрудника штаба в заявку.
+// Нижняя шторка добавления сотрудников в ОДНУ роль заявки.
+// Роль не выбирается здесь — она задана блоком, из которого открыта шторка (targetRole).
+// Поэтому одного и того же человека можно завести сразу в несколько ролей: по разу из каждого
+// блока. Уже добавленные в ЭТУ роль скрыты (excludeIds + серверный фильтр ?role=).
 // appId может быть null (виртуальная заявка) — см. комментарий к AddPlayerSheet.
-function AddStaffSheet({ isOpen, onClose, teamId, appId, excludeIds, onAddLocal, activeBrandColor, onSuccess }) {
+function AddStaffSheet({ isOpen, onClose, teamId, appId, targetRole, excludeIds, onSubmit, activeBrandColor }) {
   const [isLoading, setIsLoading] = useState(false);
   const [staff, setStaff] = useState([]);
   const [search, setSearch] = useState('');
-  const [selectedRoles, setSelectedRoles] = useState({});
+  const [selectedIds, setSelectedIds] = useState(new Set());
   const [isSaving, setIsSaving] = useState(false);
   const [sheetError, setSheetError] = useState('');
 
   useEffect(() => {
-    if (!isOpen) return;
+    if (!isOpen || !targetRole) return;
     setSearch('');
-    setSelectedRoles({});
+    setSelectedIds(new Set());
     setSheetError('');
     setIsLoading(true);
-    fetch(`${import.meta.env.VITE_API_URL}/api/manager/seasons/${teamId}/applications/${appId || 'new'}/roster-picker`, { headers: getAuthHeaders() })
+    fetch(`${import.meta.env.VITE_API_URL}/api/manager/seasons/${teamId}/applications/${appId || 'new'}/roster-picker?role=${targetRole}`, { headers: getAuthHeaders() })
       .then(r => r.json())
       .then(json => { if (json.success) setStaff(json.staff || []); })
       .catch(err => console.error('Ошибка загрузки штаба команды:', err))
       .finally(() => setIsLoading(false));
-  }, [isOpen, teamId, appId]);
+  }, [isOpen, teamId, appId, targetRole]);
 
   const availableStaff = excludeIds ? staff.filter(p => !excludeIds.has(p.id)) : staff;
   const filtered = availableStaff.filter(p => `${p.last_name} ${p.first_name}`.toLowerCase().includes(search.trim().toLowerCase()));
 
-  const toggle = (person) => setSelectedRoles(prev => {
-    const next = { ...prev };
-    if (next[person.id]) {
-      delete next[person.id];
-    } else {
-      const teamRoles = (person.roles || '').split(',').map(r => r.trim());
-      next[person.id] = ROLE_OPTIONS.find(o => teamRoles.includes(o.value))?.value || ROLE_OPTIONS[0].value;
-    }
+  const toggle = (personId) => setSelectedIds(prev => {
+    const next = new Set(prev);
+    if (next.has(personId)) next.delete(personId); else next.add(personId);
     return next;
   });
 
-  const selectedCount = Object.keys(selectedRoles).length;
-
   const handleSubmit = async () => {
-    if (selectedCount === 0 || isSaving) return;
-
-    // Виртуальная заявка: отдаём выбранных сотрудников с ролями родителю
-    if (!appId) {
-      onAddLocal(Object.entries(selectedRoles)
-        .map(([personId, role]) => ({ person: availableStaff.find(p => String(p.id) === String(personId)), role }))
-        .filter(x => x.person));
-      onClose();
-      return;
-    }
+    if (selectedIds.size === 0 || isSaving) return;
+    const picked = availableStaff.filter(p => selectedIds.has(p.id));
 
     setIsSaving(true);
     setSheetError('');
     try {
-      const results = await Promise.all(Object.entries(selectedRoles).map(([userId, role]) =>
-        apiCall(`${import.meta.env.VITE_API_URL}/api/manager/seasons/${teamId}/applications/${appId}/staff`, {
-          method: 'POST', body: JSON.stringify({ userId: Number(userId), roles: [role] })
-        })
-      ));
-      const failed = results.find(r => !r.success);
-      if (!failed) {
-        await onSuccess();
-        onClose();
+      // Сохранение живёт у родителя: только он знает остальные роли этих людей в заявке
+      // (API принимает полный набор ролей человека) и умеет виртуальный режим.
+      const result = await onSubmit(picked, targetRole);
+      if (result?.success === false) {
+        setSheetError(result.error || 'Не удалось добавить сотрудников');
       } else {
-        setSheetError(failed.error || 'Не удалось добавить сотрудников');
+        onClose();
       }
     } finally {
       setIsSaving(false);
     }
   };
 
+  const roleLabel = ROLE_LABELS[targetRole] || '';
+
   return (
     <BottomSheet isOpen={isOpen} onClose={onClose}>
       <div className="flex flex-col gap-4 text-left">
-        <h3 className="text-[18px] font-black text-content-main">Добавить сотрудника</h3>
+        <div className="flex flex-col gap-1">
+          <h3 className="text-[18px] font-black text-content-main">Добавить сотрудника</h3>
+          {roleLabel && (
+            <span className="text-[10px] font-black uppercase tracking-widest text-content-subtle" style={activeBrandColor ? { color: activeBrandColor } : {}}>
+              {roleLabel}
+            </span>
+          )}
+        </div>
         <TextInputLP placeholder="Фамилия или имя..." value={search} onChange={setSearch} activeColor={activeBrandColor} />
         {isLoading ? (
           <div className="py-8"><PageLoader /></div>
         ) : filtered.length === 0 ? (
           <div className="text-center py-6 text-[14px] font-bold text-content-muted opacity-60">
-            {availableStaff.length === 0 ? 'Весь штаб команды уже добавлен в эту заявку' : 'Ничего не найдено'}
+            {availableStaff.length === 0 ? 'Весь штаб команды уже добавлен в эту роль' : 'Ничего не найдено'}
           </div>
         ) : (
           <div className="flex flex-col gap-2 max-h-[45vh] overflow-y-auto scrollbar-hide">
-            {filtered.map(person => {
-              const isSelected = !!selectedRoles[person.id];
-              return (
-                <div key={person.id} className="w-full p-3 border border-surface-border rounded-xl bg-surface-level2 flex flex-col gap-3">
-                  <div onClick={() => toggle(person)} className="flex items-center justify-between cursor-pointer select-none active:scale-[0.995] transition-all">
-                    <div className="flex items-center gap-3 min-w-0">
-                      <Avatar photoUrl={person.photo_url || person.avatar_url} firstName={person.first_name} lastName={person.last_name} className="w-10 h-10 rounded-xl" />
-                      <span className="text-[14px] font-bold text-content-main truncate">{person.last_name} {person.first_name}</span>
-                    </div>
-                    <CheckboxLP checked={isSelected} onChange={() => toggle(person)} activeColor={activeBrandColor} />
-                  </div>
-                  {isSelected && (
-                    <div className="flex flex-wrap gap-1.5 pl-1">
-                      {ROLE_OPTIONS.map(o => (
-                        <button
-                          key={o.value}
-                          type="button"
-                          onClick={() => setSelectedRoles(prev => ({ ...prev, [person.id]: o.value }))}
-                          style={selectedRoles[person.id] === o.value && activeBrandColor ? { borderColor: activeBrandColor, color: activeBrandColor, backgroundColor: `${activeBrandColor}1a` } : {}}
-                          className={clsx(
-                            "px-2.5 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-wider border",
-                            selectedRoles[person.id] === o.value ? (!activeBrandColor && "border-brand text-brand bg-brand/10") : "border-surface-border text-content-muted"
-                          )}
-                        >
-                          {o.label}
-                        </button>
-                      ))}
-                    </div>
-                  )}
+            {filtered.map(person => (
+              <div
+                key={person.id}
+                onClick={() => toggle(person.id)}
+                className="w-full p-3 border border-surface-border rounded-xl bg-surface-level2 flex items-center justify-between cursor-pointer select-none active:scale-[0.995] transition-all"
+              >
+                <div className="flex items-center gap-3 min-w-0">
+                  <Avatar photoUrl={person.photo_url || person.avatar_url} firstName={person.first_name} lastName={person.last_name} className="w-10 h-10 rounded-xl" />
+                  <span className="text-[14px] font-bold text-content-main truncate">{person.last_name} {person.first_name}</span>
                 </div>
-              );
-            })}
+                <CheckboxLP checked={selectedIds.has(person.id)} onChange={() => toggle(person.id)} activeColor={activeBrandColor} />
+              </div>
+            ))}
           </div>
         )}
         {sheetError && (
           <div className="p-3 rounded-xl bg-danger/10 text-danger text-[14px] font-medium">{sheetError}</div>
         )}
-        <ButtonLP onClick={handleSubmit} isLoading={isSaving} disabled={selectedCount === 0 || isSaving} activeColor={activeBrandColor} className="mt-1">
-          Добавить {selectedCount > 0 ? `(${selectedCount})` : ''}
+        <ButtonLP onClick={handleSubmit} isLoading={isSaving} disabled={selectedIds.size === 0 || isSaving} activeColor={activeBrandColor} className="mt-1">
+          Добавить {selectedIds.size > 0 ? `(${selectedIds.size})` : ''}
         </ButtonLP>
       </div>
     </BottomSheet>
@@ -457,6 +435,9 @@ export function SeasonRosterDetails({ app, teamId, onClose, activeBrandColor, op
   // (Вратари/Защитники/Нападающие) и перекрывает амплуа игрока в составе команды
   const [addPlayerPosition, setAddPlayerPosition] = useState('forward');
   const [isAddStaffOpen, setIsAddStaffOpen] = useState(false);
+  // Роль, в которую добавляется сотрудник: задаётся плюсом конкретного блока штаба
+  // (Руководитель/Тренер/Администратор). Один человек может быть добавлен в несколько ролей.
+  const [addStaffRole, setAddStaffRole] = useState(ROLE_OPTIONS[0].value);
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
   const [deletePaperConfirmOpen, setDeletePaperConfirmOpen] = useState(false);
   const [isDeletingPaper, setIsDeletingPaper] = useState(false);
@@ -568,19 +549,44 @@ export function SeasonRosterDetails({ app, teamId, onClose, activeBrandColor, op
     ]);
   };
 
-  // Добавление выбранных в пикере сотрудников в локальный (виртуальный) штаб
-  const handleAddLocalStaff = (picked) => {
-    setLocalStaff(prev => [
-      ...prev,
-      ...picked.filter(({ person }) => !prev.some(x => x.user_id === person.id)).map(({ person, role }) => ({
-        user_id: person.id,
-        first_name: person.first_name,
-        last_name: person.last_name,
-        user_avatar_url: person.avatar_url,
-        team_member_photo_url: person.photo_url,
-        role,
-      }))
-    ]);
+  // Все роли человека в заявке. API штаба принимает ПОЛНЫЙ набор ролей, поэтому добавление
+  // роли — это отправка «старые роли + новая», а снятие — «старые роли минус эта».
+  const rolesOfUser = (userId) => staffList
+    .filter(s => String(s.user_id) === String(userId))
+    .map(s => s.role);
+
+  // Добавление выбранных в пикере сотрудников в одну роль (в блок, из которого открыт пикер)
+  const handleAddStaff = async (picked, role) => {
+    if (isVirtual) {
+      setLocalStaff(prev => [
+        ...prev,
+        ...picked
+          .filter(person => !prev.some(x => String(x.user_id) === String(person.id) && x.role === role))
+          .map(person => ({
+            // Ключ строки таблицы: у серверных записей это ttr.id, у локальных — синтетический,
+            // обязательно с ролью, иначе строки одного человека в разных блоках схлопнутся
+            id: `local-${person.id}-${role}`,
+            user_id: person.id,
+            first_name: person.first_name,
+            last_name: person.last_name,
+            user_avatar_url: person.avatar_url,
+            team_member_photo_url: person.photo_url,
+            role,
+          }))
+      ]);
+      return { success: true };
+    }
+
+    const results = await Promise.all(picked.map(person =>
+      apiCall(`${baseUrl}/staff`, {
+        method: 'POST',
+        body: JSON.stringify({ userId: Number(person.id), roles: [...new Set([...rolesOfUser(person.id), role])] })
+      })
+    ));
+    const failed = results.find(r => !r.success);
+    if (failed) return { success: false, error: failed.error };
+    await loadData();
+    return { success: true };
   };
 
   const handleSavePlayer = async (rosterId, patch) => {
@@ -610,21 +616,33 @@ export function SeasonRosterDetails({ app, teamId, onClose, activeBrandColor, op
     if (json.success) { await loadData(); } else notifyError(json.error || 'Не удалось убрать игрока из заявки');
   };
 
-  const handleSaveStaff = async (userId, role) => {
+  // Перенос сотрудника из одной роли в другую: старая роль снимается, новая добавляется.
+  // Остальные его роли в заявке не трогаем.
+  const handleSaveStaff = async (userId, oldRole, newRole) => {
     if (isVirtual) {
-      setLocalStaff(prev => prev.map(s => s.user_id === userId ? { ...s, role } : s));
+      setLocalStaff(prev => {
+        // Уже есть в целевой роли — просто убираем дублирующую строку старой роли
+        if (prev.some(s => String(s.user_id) === String(userId) && s.role === newRole)) {
+          return prev.filter(s => !(String(s.user_id) === String(userId) && s.role === oldRole));
+        }
+        return prev.map(s => (String(s.user_id) === String(userId) && s.role === oldRole)
+          ? { ...s, role: newRole, id: `local-${s.user_id}-${newRole}` }
+          : s);
+      });
       return;
     }
-    const json = await apiCall(`${baseUrl}/staff`, { method: 'POST', body: JSON.stringify({ userId, roles: [role] }) });
+    const nextRoles = [...new Set([...rolesOfUser(userId).filter(r => r !== oldRole), newRole])];
+    const json = await apiCall(`${baseUrl}/staff`, { method: 'POST', body: JSON.stringify({ userId, roles: nextRoles }) });
     if (json.success) { await loadData(); } else notifyError(json.error || 'Не удалось изменить роль сотрудника');
   };
 
-  const handleRemoveStaff = async (userId) => {
+  // Снимает одну роль. Человек остаётся в заявке, если занимает и другие роли.
+  const handleRemoveStaff = async (userId, role) => {
     if (isVirtual) {
-      setLocalStaff(prev => prev.filter(s => s.user_id !== userId));
+      setLocalStaff(prev => prev.filter(s => !(String(s.user_id) === String(userId) && s.role === role)));
       return;
     }
-    const json = await apiCall(`${baseUrl}/staff/${userId}`, { method: 'DELETE' });
+    const json = await apiCall(`${baseUrl}/staff/${userId}/${role}`, { method: 'DELETE' });
     if (json.success) { await loadData(); } else notifyError(json.error || 'Не удалось убрать сотрудника из заявки');
   };
 
@@ -765,15 +783,6 @@ export function SeasonRosterDetails({ app, teamId, onClose, activeBrandColor, op
         </div>
       )
     },
-    {
-      key: 'role', title: 'Роль', align: 'right', sortable: true,
-      sortValue: (s) => ROLE_LABELS[s.role] || s.role || '',
-      render: (s) => (
-        <span className="text-[10px] font-black uppercase tracking-widest" style={activeBrandColor ? { color: activeBrandColor } : {}}>
-          {ROLE_LABELS[s.role] || s.role}
-        </span>
-      )
-    },
   ];
 
   return (
@@ -858,26 +867,32 @@ export function SeasonRosterDetails({ app, teamId, onClose, activeBrandColor, op
         </ContainerContent>
       ))}
 
-      {!isPaperBlocked && (
-        <ContainerContent
-          title="Штаб"
-          count={staffList.length}
-          activeBrandColor={activeBrandColor}
-          action={canEdit ? (
-            <button type="button" onClick={(e) => { e.stopPropagation(); setIsAddStaffOpen(true); }} className="p-1 text-content-muted hover:opacity-80 transition-colors" style={activeBrandColor ? { color: activeBrandColor } : {}}>
-              <Icon name="user_plus" className="w-5 h-5" />
-            </button>
-          ) : null}
-        >
-          {staffList.length > 0 ? (
-            <Table columns={staffColumns} data={staffList} rowKey="user_id" onRowClick={setSelectedStaff} />
-          ) : (
-            <div className="text-center py-4 text-[10px] font-bold uppercase tracking-widest text-content-subtle opacity-50">
-              Штаб ещё не добавлен
-            </div>
-          )}
-        </ContainerContent>
-      )}
+      {/* Штаб разложен по ролям: свой блок и своя кнопка «+» на каждую. Один и тот же человек
+          может стоять сразу в нескольких блоках — в заявке это отдельные строки. */}
+      {!isPaperBlocked && ROLE_OPTIONS.map(role => {
+        const group = staffList.filter(s => s.role === role.value);
+        return (
+          <ContainerContent
+            key={role.value}
+            title={role.label}
+            count={group.length}
+            activeBrandColor={activeBrandColor}
+            action={canEdit ? (
+              <button type="button" onClick={(e) => { e.stopPropagation(); setAddStaffRole(role.value); setIsAddStaffOpen(true); }} className="p-1 text-content-muted hover:opacity-80 transition-colors" style={activeBrandColor ? { color: activeBrandColor } : {}}>
+                <Icon name="user_plus" className="w-5 h-5" />
+              </button>
+            ) : null}
+          >
+            {group.length > 0 ? (
+              <Table columns={staffColumns} data={group} rowKey="id" onRowClick={setSelectedStaff} />
+            ) : (
+              <div className="text-center py-4 text-[10px] font-bold uppercase tracking-widest text-content-subtle opacity-50">
+                Ещё не добавлен
+              </div>
+            )}
+          </ContainerContent>
+        );
+      })}
 
       <div className="flex flex-col gap-2">
         {canSend && (
@@ -931,10 +946,11 @@ export function SeasonRosterDetails({ app, teamId, onClose, activeBrandColor, op
         onClose={() => setIsAddStaffOpen(false)}
         teamId={teamId}
         appId={app.id}
-        excludeIds={isVirtual ? new Set(localStaff.map(s => s.user_id)) : null}
-        onAddLocal={handleAddLocalStaff}
+        targetRole={addStaffRole}
+        // Прячем только тех, кто уже стоит в ЭТОЙ роли — в остальные его добавить можно
+        excludeIds={new Set(staffList.filter(s => s.role === addStaffRole).map(s => s.user_id))}
+        onSubmit={handleAddStaff}
         activeBrandColor={activeBrandColor}
-        onSuccess={loadData}
       />
 
       <ConfirmSheet

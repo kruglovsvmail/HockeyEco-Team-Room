@@ -10,13 +10,19 @@ export const STATUS_META = {
   rejected: { label: 'Отклонена',      dot: 'bg-danger',                      text: 'text-danger' },
 };
 
+// Роли представителя в турнирной заявке — их ровно три. Внутри команды (team_roles) ролей
+// четыре: там отдельно живёт главный тренер. В заявке этого деления нет — оба тренера
+// подаются как «Тренер команды» (см. toTournamentRole).
 export const ROLE_OPTIONS = [
-  { value: 'head_coach', label: 'Главный тренер' },
-  { value: 'coach', label: 'Тренер' },
-  { value: 'team_manager', label: 'Менеджер' },
-  { value: 'team_admin', label: 'Администратор' },
+  { value: 'team_manager', label: 'Руководитель команды' },
+  { value: 'coach', label: 'Тренер команды' },
+  { value: 'team_admin', label: 'Администратор команды' },
 ];
 export const ROLE_LABELS = Object.fromEntries(ROLE_OPTIONS.map(o => [o.value, o.label]));
+
+// Роль в команде -> роль в заявке. Нужна при автоподстановке роли в пикере штаба:
+// человек с ролью «Главный тренер» в команде добавляется в заявку тренером.
+export const toTournamentRole = (teamRole) => (teamRole === 'head_coach' ? 'coach' : teamRole);
 
 export const POSITION_OPTIONS_SHORT = [
   { value: 'goalie', label: 'Вр' },
