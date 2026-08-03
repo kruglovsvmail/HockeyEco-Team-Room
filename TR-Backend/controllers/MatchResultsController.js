@@ -98,8 +98,11 @@ function decodeGoalieLog(rows) {
   }
   return { home, away };
 }
+// Дефолт — «не указан», а НЕ «пустые ворота» (зеркалит goalieLogModel.js на фронте):
+// нет точки до момента t → про вратаря просто ничего не известно. Пустые ворота
+// задаются явной точкой таймлайна.
 function sampleGoalieAt(timeline, t) {
-  let v = { goalie_id: null, unspecified: false };
+  let v = { goalie_id: null, unspecified: true };
   for (const p of timeline) { if (p.time_seconds <= t) v = p; else break; }
   return v;
 }

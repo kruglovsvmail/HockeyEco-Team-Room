@@ -20,6 +20,10 @@ export const removeToken = () => {
   // покажет старый профиль из кэша, как будто сессия ещё жива.
   localStorage.removeItem('teampwa_cached_user');
   localStorage.removeItem('teampwa_selected_team');
+  // Непоказанное приветствие о пробном периоде не должно достаться
+  // следующему пользователю этого же устройства.
+  localStorage.removeItem('teampwa_welcome_trial');
+  sessionStorage.removeItem('teampwa_welcome_trial');
 };
 
 export const getAuthHeaders = () => {

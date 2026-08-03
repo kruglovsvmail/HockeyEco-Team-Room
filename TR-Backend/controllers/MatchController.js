@@ -523,7 +523,13 @@ export const getMatchStats = async (req, res) => {
       ),
       shots_faced_stats AS (
         -- Все броски в створ по вратарям команды (team_id = команда вратаря).
-        SELECT team_id, COALESCE(SUM(shots_count), 0)::int AS shots_faced
+        -- shots_entries — сколько ячеек вообще заполнено. Различать сумму и факт
+        -- заполнения обязательно: введённый 0 («по этому вратарю не бросали») —
+        -- это результат, а отсутствие строк — это отсутствие данных, и показывать
+        -- их одинаково нельзя (см. *_has_shots_data ниже).
+        SELECT team_id,
+               COALESCE(SUM(shots_count), 0)::int AS shots_faced,
+               COUNT(*)::int AS shots_entries
         FROM "public"."game_shots_by_goalie"
         WHERE game_id = $1
         GROUP BY team_id
@@ -536,15 +542,29 @@ export const getMatchStats = async (req, res) => {
         -- team_id у события может быть NULL (сторона внешнего соперника без
         -- команды в системе) — сравниваем через IS NOT DISTINCT FROM, иначе
         -- CASE всегда уходит в ELSE и голы внешнего соперника считаются «за дом».
+        --
+        -- Три состояния ворот, и их нельзя путать:
+        --   вратарь известен          → бросок учтён в game_shots_by_goalie;
+        --   «не указан» (unspecified) → вратарь БЫЛ, просто анонимный: бросок тоже
+        --                               учтён (вводится по псевдо-вратарю команды);
+        --   пустые ворота             → вратаря нет, вводить броски некуда, и любой
+        --                               бросок в створ там равен голу.
+        -- LEFT JOIN: если записи журнала до момента гола нет вовсе — это тоже
+        -- «не указан» (данных нет), а не пустые ворота.
         SELECT DISTINCT ON (ge.id)
           ge.id AS event_id,
           ge.team_id AS scoring_team_id,
           CASE WHEN ge.team_id IS NOT DISTINCT FROM gi.home_team_id THEN gi.away_team_id ELSE gi.home_team_id END AS conceding_team_id,
           COALESCE(ge.from_shot, true) AS from_shot,
-          CASE WHEN ge.team_id IS NOT DISTINCT FROM gi.home_team_id THEN gl.away_goalie_id ELSE gl.home_goalie_id END AS conceding_goalie_id
+          CASE WHEN ge.team_id IS NOT DISTINCT FROM gi.home_team_id THEN gl.away_goalie_id ELSE gl.home_goalie_id END AS conceding_goalie_id,
+          CASE
+            WHEN gl.id IS NULL THEN true
+            WHEN ge.team_id IS NOT DISTINCT FROM gi.home_team_id THEN gl.away_goalie_unspecified
+            ELSE gl.home_goalie_unspecified
+          END AS conceding_unspecified
         FROM "public"."game_events" ge
         CROSS JOIN game_info gi
-        JOIN "public"."game_goalie_log" gl
+        LEFT JOIN "public"."game_goalie_log" gl
           ON gl.game_id = ge.game_id
          AND gl.time_seconds <= ge.time_seconds
         WHERE ge.game_id = $1
@@ -553,21 +573,25 @@ export const getMatchStats = async (req, res) => {
         ORDER BY ge.id, gl.time_seconds DESC
       ),
       ga_from_shot_stats AS (
-        -- Голы С БРОСКА, забитые против КОНКРЕТНОГО вратаря (не пустые ворота).
-        -- Уменьшают saves команды, против вратаря которой забили.
+        -- Голы С БРОСКА, пропущенные командой, у которой в воротах КТО-ТО был —
+        -- известный вратарь или «не указан». И то и другое уменьшает отражённые
+        -- команды: бросок был в створ и учтён в game_shots_by_goalie. Голы в
+        -- пустые ворота не уменьшают — отражать было некому.
         SELECT conceding_team_id, COUNT(*)::int AS ga_from_shot
         FROM goal_to_goalie
-        WHERE conceding_goalie_id IS NOT NULL
+        WHERE (conceding_goalie_id IS NOT NULL OR conceding_unspecified)
           AND from_shot = true
         GROUP BY conceding_team_id
       ),
       empty_net_goals_scored AS (
-        -- Голы в пустые ворота С БРОСКА (на момент гола в журнале у соперника NULL-вратарь).
-        -- Засчитываются в SOG атакующей команды как +1 бросок в створ ворот.
+        -- Голы в НАСТОЯЩИЕ пустые ворота С БРОСКА: вратаря нет И это не «не указан».
+        -- Засчитываются в SOG атакующей команды как +1 бросок в створ — в
+        -- game_shots_by_goalie их записать некуда, вратаря-то нет.
         -- Голы без броска (закатили, рикошет) в SOG не идут.
         SELECT scoring_team_id AS team_id, COUNT(*)::int AS empty_net_goals
         FROM goal_to_goalie
         WHERE conceding_goalie_id IS NULL
+          AND NOT conceding_unspecified
           AND from_shot = true
         GROUP BY scoring_team_id
       )
@@ -587,6 +611,8 @@ export const getMatchStats = async (req, res) => {
         COALESCE(ap.pim, 0)::int          AS away_pim,
         COALESCE(hsf.shots_faced, 0)::int AS home_shots_faced,
         COALESCE(asf.shots_faced, 0)::int AS away_shots_faced,
+        COALESCE(hsf.shots_entries, 0)::int AS home_shots_entries,
+        COALESCE(asf.shots_entries, 0)::int AS away_shots_entries,
         COALESCE(hga.ga_from_shot, 0)::int AS home_ga_from_shot,
         COALESCE(aga.ga_from_shot, 0)::int AS away_ga_from_shot,
         COALESCE(heng.empty_net_goals, 0)::int AS home_empty_net_goals,
@@ -736,18 +762,20 @@ export const getMatchStats = async (req, res) => {
         u.last_name::varchar,
         tm.photo_url::varchar,
         -- Отражённые броски = (все броски в створ вратарю) − (голы С БРОСКА против него).
-        -- Если бросков по вратарю нет — NULL (фронт покажет «—», а не 0).
+        -- Ячейку НЕ ЗАПОЛНЯЛИ (строки нет, s.shots_against IS NULL) → NULL, фронт
+        -- покажет «—». Заполнили нулём → 0: это результат, а не отсутствие данных.
         CASE
-          WHEN COALESCE(s.shots_against, 0) > 0
-          THEN GREATEST(COALESCE(s.shots_against, 0) - COALESCE(gfs.ga_fs, 0), 0)
+          WHEN s.shots_against IS NOT NULL
+          THEN GREATEST(s.shots_against - COALESCE(gfs.ga_fs, 0), 0)
           ELSE NULL
         END::int AS saves,
         COALESCE(ga.goals_against, 0)::int AS goals_against,
+        -- %ОБ при нуле бросков не определён (делить не на что) — тоже «—».
         CASE
           WHEN COALESCE(s.shots_against, 0) > 0
           THEN ROUND(
-                 GREATEST(COALESCE(s.shots_against, 0) - COALESCE(gfs.ga_fs, 0), 0)::numeric
-                 / COALESCE(s.shots_against, 0) * 100, 1
+                 GREATEST(s.shots_against - COALESCE(gfs.ga_fs, 0), 0)::numeric
+                 / s.shots_against * 100, 1
                )
           ELSE NULL
         END::float AS save_percent,
@@ -778,10 +806,26 @@ export const getMatchStats = async (req, res) => {
     // независимо от того, есть ли уже данные в game_plus_minus/game_shots_by_goalie
     // (в т.ч. самостоятельно введённые командой через official_team — их тоже не
     // показываем здесь, в отличие от профиля игрока, где для своей команды исключение есть).
+    //
+    // У матчей ВНЕ ЛИГ (friendly_pwa / friendly_ext / tournament_ext) дивизиона нет,
+    // поэтому оба флага приходят NULL. Трактовать NULL как «лига не ведёт» тут нельзя:
+    // лиги вообще нет, статистику ведёт сама команда и сама решает, вносить её или нет.
+    // Для таких матчей гейт снимаем и опираемся только на фактические данные.
+    // has_plus_minus нужен ровно для этого: если +/- не вносили ни на одном голе,
+    // показывать всем нули нельзя (выглядит как заполненная статистика) — ставим «—».
+    // Броскам такой флаг не нужен: у них «нет данных» уже отдаётся как NULL и в
+    // построчной выдаче (saves/save_percent), и в командной (has*-проверки ниже).
     const flagsQuery = `
       SELECT
+        (g.division_id IS NULL) AS is_leagueless,
         CASE WHEN g.stage_type = 'playoff' THEN d.playoff_track_plus_minus ELSE d.reg_track_plus_minus END AS track_plus_minus,
-        CASE WHEN g.stage_type = 'playoff' THEN d.playoff_track_shots ELSE d.reg_track_shots END AS track_shots
+        CASE WHEN g.stage_type = 'playoff' THEN d.playoff_track_shots ELSE d.reg_track_shots END AS track_shots,
+        EXISTS (
+          SELECT 1
+            FROM "public"."game_plus_minus" pm
+            JOIN "public"."game_events" ge ON ge.id = pm.event_id
+           WHERE ge.game_id = g.id
+        ) AS has_plus_minus
       FROM "public"."games" g
       LEFT JOIN "public"."divisions" d ON d.id = g.division_id
       WHERE g.id = $1
@@ -800,8 +844,12 @@ export const getMatchStats = async (req, res) => {
     }
 
     const r = teamResult.rows[0];
-    const trackPM = flagsResult.rows[0]?.track_plus_minus ?? false;
-    const trackShots = flagsResult.rows[0]?.track_shots ?? false;
+    const flags = flagsResult.rows[0] || {};
+    const isLeagueless = !!flags.is_leagueless;
+    // Вне лиги: +/- показываем, если команда его хоть где-то внесла; броски — всегда
+    // (пустые сами по себе отдаются как NULL). В лиге — как и раньше, по флагам дивизиона.
+    const trackPM = isLeagueless ? !!flags.has_plus_minus : (flags.track_plus_minus ?? false);
+    const trackShots = isLeagueless ? true : (flags.track_shots ?? false);
 
     // Маскируем прямо в сырых результатах — дальше по функции всё считается из них,
     // поэтому и командные производные (SOG/saves/%), и построчные данные останутся «—».
@@ -811,14 +859,25 @@ export const getMatchStats = async (req, res) => {
     if (!trackShots) {
       goaliesResult.rows.forEach(row => { row.saves = null; row.save_percent = null; });
     }
+    // КН (коэффициент надёжности) вне лиги не считаем: товарищеские матчи в надёжность
+    // вратаря не идут. ОБ/%ОБ при этом остаются — их команда ведёт для себя.
+    if (isLeagueless) {
+      goaliesResult.rows.forEach(row => { row.goals_against_average = null; });
+    }
 
     // Статистику отдаём всегда (даже до публикации) — фронт показывает составы
     // команд из заявок с пустой статистикой. Командные метрики у несыгранного
     // матча = 0 / «—» (см. флаги has* ниже).
 
     // ── Вычисляемые командные параметры ────────────────────────────────
+    // Факт «команда вводила броски» = есть хотя бы одна заполненная ячейка у любого
+    // её вратаря (включая «не указанного»), неважно 0 там или 32. Ноль — результат,
+    // пустая ячейка — отсутствие данных.
+    const homeHasShotsData = r.home_shots_entries > 0;
+    const awayHasShotsData = r.away_shots_entries > 0;
+
     // Командные броски в створ атакующей команды = сумма бросков по вратарям соперника
-    // + голы атакующей команды в пустые ворота соперника.
+    // + голы атакующей команды в НАСТОЯЩИЕ пустые ворота соперника.
     const homeShotsOnGoal = r.away_shots_faced + r.home_empty_net_goals;
     const awayShotsOnGoal = r.home_shots_faced + r.away_empty_net_goals;
 
@@ -851,38 +910,41 @@ export const getMatchStats = async (req, res) => {
     const awayRosterSubmitted = awaySkaters.length > 0 || awayGoalies.length > 0;
  
     // Если броски не заполнены — отдаём null (фронт покажет «—», а не ноль).
-    // shots_on_goal / shooting_pct зависят от бросков в створ команды (её атака),
-    // saves / save_pct — от бросков в створ ПО ВРАТАРЯМ этой команды (её оборона).
+    // Ключевое: смотрим на ФАКТ заполнения, а не на сумму. Моя атака (shots_on_goal /
+    // shooting_pct) держится на данных СОПЕРНИКА — это броски по его вратарям; не
+    // заполнил их — у меня «—», и голы в пустые ворота сами по себе статистику не
+    // создают. Моя оборона (saves / save_pct) — на моих собственных данных.
     // Плюс: если лига для этой стадии броски вообще не ведёт (trackShots=false) — «—»
     // независимо от того, есть ли фактические данные (в т.ч. введённые командой самой).
-    const homeHasFor = trackShots && homeShotsOnGoal > 0;
-    const awayHasFor = trackShots && awayShotsOnGoal > 0;
-    const homeHasAgainst = trackShots && r.home_shots_faced > 0;
-    const awayHasAgainst = trackShots && r.away_shots_faced > 0;
+    const homeHasFor = trackShots && awayHasShotsData;
+    const awayHasFor = trackShots && homeHasShotsData;
+    const homeHasAgainst = trackShots && homeHasShotsData;
+    const awayHasAgainst = trackShots && awayHasShotsData;
 
     res.json({
       success: true,
       stats: {
         home: {
+          // Проценты при нулевом знаменателе не определены — «—», а не 0%.
           shots_on_goal: homeHasFor ? homeShotsOnGoal : null,
-          shooting_pct: homeHasFor ? homeShootingPct : null,
+          shooting_pct: homeHasFor && homeShotsOnGoal > 0 ? homeShootingPct : null,
           pp_goals: r.home_pp_goals,
           sh_goals: r.home_sh_goals,
           pim: r.home_pim,
           saves: homeHasAgainst ? homeSaves : null,
-          save_pct: homeHasAgainst ? homeSavePct : null,
+          save_pct: homeHasAgainst && r.home_shots_faced > 0 ? homeSavePct : null,
           roster_submitted: homeRosterSubmitted,
           skaters: homeSkaters,
           goalies: homeGoalies
         },
         away: {
           shots_on_goal: awayHasFor ? awayShotsOnGoal : null,
-          shooting_pct: awayHasFor ? awayShootingPct : null,
+          shooting_pct: awayHasFor && awayShotsOnGoal > 0 ? awayShootingPct : null,
           pp_goals: r.away_pp_goals,
           sh_goals: r.away_sh_goals,
           pim: r.away_pim,
           saves: awayHasAgainst ? awaySaves : null,
-          save_pct: awayHasAgainst ? awaySavePct : null,
+          save_pct: awayHasAgainst && r.away_shots_faced > 0 ? awaySavePct : null,
           roster_submitted: awayRosterSubmitted,
           skaters: awaySkaters,
           goalies: awayGoalies

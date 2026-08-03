@@ -25,6 +25,31 @@ dayjs.extend(utc);
 dayjs.extend(timezone);
 dayjs.locale('ru');
 
+// Геометрия слота игрока в составе. Раньше стояла жёсткая ширина 94px: на экранах
+// шире 375px под фамилию появлялось свободное место, но слот его не забирал — и
+// длинные фамилии резались многоточием всегда, хоть на 390px, хоть на 420px.
+//   basis 94  — прежняя ширина, минимум не изменился;
+//   grow 1    — забирает свободное место ряда поровну с соседями;
+//   shrink 0  — на узких экранах поведение ровно как раньше;
+//   max 130   — потолок: без него ряд защитников (их двое, gap-8) расползся бы на всю
+//               ширину, а в ПК-оболочке 800px слоты стали бы неадекватно широкими.
+// justify-center у ряда продолжает работать: упёрлись в потолок — группа центрируется.
+//
+// width продублирован намеренно — на случай выкладки слота не флексом (в TrainingLines
+// такие сетки на CSS-grid уже есть, там flex-свойства игнорируются). Во флекс-ряду
+// главную ось считает flex-basis, а width в расчёте не участвует.
+const SLOT_BOX_STYLE = {
+  width: uiFixed(94),
+  flexGrow: 1,
+  flexShrink: 0,
+  flexBasis: uiFixed(94),
+  maxWidth: uiFixed(130),
+};
+
+// Когда слот обёрнут в HintPopover, флекс-элементом ряда становится обёртка — геометрия
+// (SLOT_BOX_STYLE) уезжает на неё, а сам слот просто заполняет её по ширине.
+const SLOT_FILL_STYLE = { width: '100%' };
+
 const getSafeUserFromToken = () => {
   try {
     const auth = getAuthHeaders().Authorization;
@@ -725,6 +750,18 @@ export const MatchLines = ({ event, initialAttendees = [], initialDraftLines = [
     const jiggleDelay = (lineNum + (pos === 'LW' ? 0 : pos === 'C' ? 1 : 2)) % 3;
     const jiggleClass = isDeleteMode && player && !isRemoving ? `animate-jiggle jiggle-delay-${jiggleDelay}` : '';
 
+    // Статус подсказки считаем ДО разметки: от него зависит, кто в ряду будет флекс-элементом
+    // (обёртка HintPopover или сам слот) и, значит, кому отдать геометрию SLOT_BOX_STYLE.
+    // Порядок приоритетов сохранён: подписка важнее временного дедлайна.
+    const hintStatus = (!isEditMode && player && hasAdminAccess)
+      ? (!hasPlayerParamsAccess
+          ? 'no_subscription'
+          : timeToMatch < DEADLINES.ROSTER_SUBMIT_MINUTES
+            ? getDeadlineHintStatus('deadline_player_params')
+            : null)
+      : null;
+    const isHintWrapped = hintStatus != null;
+
     const slotContent = (
       <div 
         key={`${lineNum}-${pos}`}
@@ -759,7 +796,7 @@ export const MatchLines = ({ event, initialAttendees = [], initialDraftLines = [
           (isEditMode && !player && !isSelected && !isDeleteMode) ? "opacity-70 hover:opacity-100" : "opacity-100",
           jiggleClass
         )}
-        style={{ width: uiFixed(94) }}
+        style={isHintWrapped ? SLOT_FILL_STYLE : SLOT_BOX_STYLE}
       >
         <div
           style={{
@@ -824,13 +861,21 @@ export const MatchLines = ({ event, initialAttendees = [], initialDraftLines = [
             </span>
           )}
         </div>
-        <div className="w-full mt-4 flex flex-col items-center justify-center h-6 overflow-visible">
+        {/* leading-[1.3], а НЕ leading-none: у truncate внутри overflow:hidden, а при
+            line-height:1 строчный бокс равен кеглю и ниже базовой линии места не остаётся —
+            подрезались нижние выносные элементы (Щ, Ц, Д, у, р). Высота задана через
+            uiFixed, как и кегль, иначе при масштабе интерфейса < 1 бокс сжимался бы,
+            а текст нет, и обрезка возвращалась. */}
+        <div
+          className="w-full mt-4 flex flex-col items-center justify-center overflow-visible"
+          style={{ minHeight: uiFixed(36) }}
+        >
           {player ? (
             <>
-              <span className="font-bold text-content-main leading-none w-full text-center pointer-events-none truncate px-0.5" style={{ fontSize: uiFixed(14) }}>
+              <span className="font-bold text-content-main leading-[1.3] w-full text-center pointer-events-none truncate px-0.5" style={{ fontSize: uiFixed(14) }}>
                 {player.last_name}
               </span>
-              <span className="font-medium text-content-muted leading-none w-full text-center pointer-events-none truncate px-0.5 mt-1" style={{ fontSize: uiFixed(10) }}>
+              <span className="font-medium text-content-muted leading-[1.3] w-full text-center pointer-events-none truncate px-0.5" style={{ fontSize: uiFixed(10) }}>
                 {player.first_name}
               </span>
             </>
@@ -842,21 +887,13 @@ export const MatchLines = ({ event, initialAttendees = [], initialDraftLines = [
     );
 
     // ДЕКЛАРАТИВНАЯ ОЧЕРЕДЬ КЛИЕНТСКИХ ОГРАНИЧЕНИЙ: Подписка в приоритете, затем временной дедлайн
-    if (!isEditMode && player && hasAdminAccess) {
-      if (!hasPlayerParamsAccess) {
-        return (
-          <HintPopover status="no_subscription" key={`${lineNum}-${pos}`}>
-            {slotContent}
-          </HintPopover>
-        );
-      }
-      if (timeToMatch < DEADLINES.ROSTER_SUBMIT_MINUTES) {
-        return (
-          <HintPopover status={getDeadlineHintStatus('deadline_player_params')} key={`${lineNum}-${pos}`}>
-            {slotContent}
-          </HintPopover>
-        );
-      }
+    // (сам выбор статуса — в hintStatus выше). Геометрию отдаём обёртке: это она флекс-элемент.
+    if (isHintWrapped) {
+      return (
+        <HintPopover status={hintStatus} key={`${lineNum}-${pos}`} style={SLOT_BOX_STYLE}>
+          {slotContent}
+        </HintPopover>
+      );
     }
     return slotContent;
   };

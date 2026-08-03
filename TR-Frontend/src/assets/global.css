@@ -17,6 +17,10 @@
     --color-surface-level2: #e5e7ebff;
     --color-surface-level3: #e7e7e7;
     --color-surface-border: #e2e4e7;  /* Основной фон */
+    /* Поля слева/справа от приложения на широком экране (ПК). На телефоне не видны —
+       там оболочка занимает всю ширину. Отдельный токен, чтобы цвет вокруг можно было
+       настраивать, не задевая границы (--color-surface-border). */
+    --color-surface-canvas: #bfbfbf;
 
     /* --- ВСПЛЫВАЮЩИЕ ЭЛЕМЕНТЫ (ШТОРКИ, МОДАЛКИ) --- */
     --color-sheet-bg: #ffffff;
@@ -82,6 +86,7 @@
     --color-surface-level2: #2c2c29;     /* вторичные поверхности */
     --color-surface-level3: #3a3a36;     /* третичные */
     --color-surface-border: #2e2e2b;     /* границы */
+    --color-surface-canvas: #181818;     /* поля вокруг приложения на ПК — темнее оболочки */
 
     --color-sheet-bg: #1f1f1d;
     --color-sheet-border: rgba(255, 255, 255, 0.08);

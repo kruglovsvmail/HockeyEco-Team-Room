@@ -1,5 +1,5 @@
 // Склонение слова "день" для русского языка (1 день, 2 дня, 5 дней)
-const pluralizeDays = (n) => {
+export const pluralizeDays = (n) => {
   const mod10 = n % 10;
   const mod100 = n % 100;
   if (mod10 === 1 && mod100 !== 11) return 'день';

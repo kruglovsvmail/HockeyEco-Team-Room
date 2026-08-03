@@ -14,7 +14,10 @@ const pluralizeMinutesGenitive = (n) => {
   return 'минут';
 };
 
-export function HintPopover({ status, customContent, children, className }) {
+// style пробрасывается на обёртку триггера: она — реальный флекс/grid-элемент своего
+// родителя, поэтому геометрию (flex-basis/grow, ширину) задавать нужно именно ей, а не
+// содержимому. Без этого обёрнутый элемент не может тянуться по доступной ширине.
+export function HintPopover({ status, customContent, children, className, style }) {
   const [isOpen, setIsOpen] = useState(false);
   const [isRendered, setIsRendered] = useState(false);
   const [isExiting, setIsExiting] = useState(false);
@@ -229,8 +232,9 @@ export function HintPopover({ status, customContent, children, className }) {
   );
 
   return (
-    <div 
-      className={clsx("relative inline-block cursor-pointer select-none", className)} 
+    <div
+      className={clsx("relative inline-block cursor-pointer select-none", className)}
+      style={style}
       ref={triggerRef}
       onClick={handleToggle}
     >

@@ -11,6 +11,7 @@ import { getToken, removeToken, getAuthHeaders, uiFixed } from './utils/helpers'
 import { Sidebar } from './components/Sidebar';
 import { Header } from './components/Header';
 import { ConsentModal } from './components/ConsentModal';
+import { WelcomeTrialModal } from './components/WelcomeTrialModal';
 import { Icon } from './ui/Icon';
 import { PageLoader } from './ui/Loader';
 import { FadeIn } from './ui/FadeIn';
@@ -80,6 +81,18 @@ function TeamLayoutContent() {
 
   // Флаг необходимости показать блокирующую модалку согласия с политикой обработки ПД
   const [needsConsent, setNeedsConsent] = useState(false);
+
+  // Приветствие о пробном периоде. Флаг ставит LoginPage при первом входе после активации;
+  // читаем его синхронно при монтировании, чтобы окно не мигало после отрисовки лейаута.
+  const [showWelcomeTrial, setShowWelcomeTrial] = useState(
+    () => !!(localStorage.getItem('teampwa_welcome_trial') || sessionStorage.getItem('teampwa_welcome_trial'))
+  );
+
+  const dismissWelcomeTrial = () => {
+    localStorage.removeItem('teampwa_welcome_trial');
+    sessionStorage.removeItem('teampwa_welcome_trial');
+    setShowWelcomeTrial(false);
+  };
 
   const [rightPanel, setRightPanel] = useState({ isOpen: false, type: null, data: null, title: '', previous: null });
   const [panel100, setPanel100] = useState({ isOpen: false, type: null, data: null, title: '' });
@@ -422,7 +435,7 @@ function TeamLayoutContent() {
       style={hasTeamColor ? { '--color-brand': selectedTeam.color_home_1 } : {}}
     >
 
-      {/* Сайдбар: выезжает слева внутри 1000px-контейнера */}
+      {/* Сайдбар: выезжает слева внутри 800px-контейнера */}
       <aside
         className={clsx(
           "absolute inset-y-0 left-0 z-40 h-full bg-surface-level1 flex-shrink-0",
@@ -485,7 +498,7 @@ function TeamLayoutContent() {
         </main>
       </div>
 
-      {/* Правая панель: выезжает справа внутри 1000px-контейнера.
+      {/* Правая панель: выезжает справа внутри 800px-контейнера.
           eventEdit, playerDocs, playerProfile и userDetails подняты над оверлеями EventPage/SeasonRostersDetailsPage (z-100) и panel100 (z-60). */}
       <div
         className={clsx(
@@ -678,6 +691,14 @@ function TeamLayoutContent() {
 
       {/* Блокирующая модалка согласия с политикой обработки персональных данных */}
       <ConsentModal isOpen={needsConsent} onAccepted={() => setNeedsConsent(false)} />
+
+      {/* Приветствие о пробном периоде — уступает очередь согласию с политикой,
+          чтобы два окна не наложились друг на друга при первом входе */}
+      <WelcomeTrialModal
+        isOpen={showWelcomeTrial && !needsConsent}
+        expiresAt={user?.subscriptionExpiresAt || user?.subscription_expires_at}
+        onClose={dismissWelcomeTrial}
+      />
 
     </div>
   );

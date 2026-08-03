@@ -38,6 +38,23 @@ const getSafeUserFromToken = () => {
 };
 
 // ── Константы ────────────────────────────────────────────────────────────
+// Геометрия слота игрока — зеркалит MatchLines.jsx. Вместо жёстких 94px слот забирает
+// свободную ширину ряда, иначе длинные фамилии резались многоточием и на 390px, и на 420px.
+// basis = прежняя ширина (минимум не изменился), shrink 0 — узкие экраны как раньше,
+// max 130 — потолок, чтобы ряд из двух защитников не расползался на всю ширину.
+//
+// width здесь ОБЯЗАТЕЛЕН и не дублирует basis: блоки групп и вторая сетка вратарей
+// (renderGroupBlock / renderGoaliesBlock) выложены на CSS-grid, а там flex-свойства
+// игнорируются — без width слот схлопнулся бы до ширины аватара. Во флекс-рядах,
+// наоборот, приоритет у flex-basis, а width не участвует в расчёте главной оси.
+const SLOT_BOX_STYLE = {
+  width: uiFixed(94),
+  flexGrow: 1,
+  flexShrink: 0,
+  flexBasis: uiFixed(94),
+  maxWidth: uiFixed(130),
+};
+
 const LINE_POSITIONS = ['LW', 'C', 'RW', 'LD', 'RD'];
 const LINE_LABELS    = { LW: 'ЛН', C: 'ЦН', RW: 'ПН', LD: 'ЛЗ', RD: 'ПЗ' };
 const SLOT_POSITIONS = ['S1','S2','S3','S4','S5','S6','S7','S8','S9'];
@@ -704,7 +721,7 @@ export const TrainingLines = ({ event, initialAttendees = [], initialStaffMember
           isEditMode && !player && !isSelected && !isDeleteMode ? "opacity-70 hover:opacity-100" : "opacity-100",
           jiggleClass
         )}
-        style={{ width: uiFixed(94) }}
+        style={SLOT_BOX_STYLE}
       >
         <div
           style={{
@@ -737,11 +754,19 @@ export const TrainingLines = ({ event, initialAttendees = [], initialStaffMember
             <span className="font-black text-content-muted uppercase tracking-widest select-none" style={{ fontSize: uiFixed(14) }}>{labelText || pos}</span>
           )}
         </div>
-        <div className="w-full mt-4 flex flex-col items-center justify-center h-6 overflow-visible">
+        {/* leading-[1.3], а НЕ leading-none: у truncate внутри overflow:hidden, а при
+            line-height:1 строчный бокс равен кеглю и ниже базовой линии места не остаётся —
+            подрезались нижние выносные элементы (Щ, Ц, Д, у, р). Высота задана через
+            uiFixed, как и кегль, иначе при масштабе интерфейса < 1 бокс сжимался бы,
+            а текст нет, и обрезка возвращалась. Зеркалит MatchLines.jsx. */}
+        <div
+          className="w-full mt-4 flex flex-col items-center justify-center overflow-visible"
+          style={{ minHeight: uiFixed(36) }}
+        >
           {player ? (
             <>
-              <span className="font-bold text-content-main leading-none w-full text-center pointer-events-none truncate px-0.5" style={{ fontSize: uiFixed(14) }}>{player.last_name}</span>
-              <span className="font-medium text-content-muted leading-none w-full text-center pointer-events-none truncate px-0.5 mt-1" style={{ fontSize: uiFixed(10) }}>{player.first_name}</span>
+              <span className="font-bold text-content-main leading-[1.3] w-full text-center pointer-events-none truncate px-0.5" style={{ fontSize: uiFixed(14) }}>{player.last_name}</span>
+              <span className="font-medium text-content-muted leading-[1.3] w-full text-center pointer-events-none truncate px-0.5" style={{ fontSize: uiFixed(10) }}>{player.first_name}</span>
             </>
           ) : (
             <span className="text-[10px] font-bold text-transparent leading-none select-none">_</span>

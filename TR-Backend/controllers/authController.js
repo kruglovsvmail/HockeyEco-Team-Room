@@ -202,14 +202,17 @@ export const login = async (req, res) => {
       return res.status(401).json({ success: false, error: 'Неверный пароль' });
     }
 
-    // Снятие статуса "Виртуальный", если пользователь впервые логинится после claim profile
-    await pool.query(`UPDATE users SET virtual_code = NULL WHERE id = $1 AND virtual_code IS NOT NULL`, [user.id]);
+    // Снятие статуса "Виртуальный", если пользователь впервые логинится после claim profile.
+    // Код гасится ровно один раз, поэтому rowCount = 1 и есть признак самого первого входа
+    // после активации — по нему фронт показывает приветственное окно с пробным периодом.
+    const claimRes = await pool.query(`UPDATE users SET virtual_code = NULL WHERE id = $1 AND virtual_code IS NOT NULL`, [user.id]);
+    const isFirstLogin = claimRes.rowCount === 1;
 
     const userData = await fetchPwaUserProfile(user.id);
     const secret = process.env.JWT_SECRET || 'hockeyeco_pwa_secret_key';
     const token = jwt.sign({ id: user.id }, secret, { expiresIn: '30d' });
 
-    res.json({ success: true, user: userData, token });
+    res.json({ success: true, user: userData, token, isFirstLogin });
   } catch (err) {
     console.error('Login error:', err);
     res.status(500).json({ success: false, error: 'Ошибка сервера' });
@@ -370,6 +373,9 @@ export const regVerifyCode = async (req, res) => {
   }
 };
 
+// Длительность пробного периода, выдаваемого в момент активации аккаунта
+const TRIAL_PERIOD_DAYS = 15;
+
 export const register = async (req, res) => {
   const client = await pool.connect();
   try {
@@ -395,17 +401,20 @@ export const register = async (req, res) => {
           return res.status(400).json({ success: false, error: 'Неверный код или профиль не найден' });
        }
        registeredUserId = check.rows[0].id;
+       // Пробный период выдаётся от текущего момента, но через GREATEST — чтобы активация
+       // не урезала уже оплаченную подписку, если она у профиля есть и длиннее пробной.
        await client.query(`
          UPDATE users
-         SET email = $1, first_name = $2, last_name = $3, middle_name = $4, birth_date = $5, password_hash = $6, updated_at = NOW()
+         SET email = $1, first_name = $2, last_name = $3, middle_name = $4, birth_date = $5, password_hash = $6, updated_at = NOW(),
+             subscription_expires_at = GREATEST(COALESCE(subscription_expires_at, NOW()), NOW() + ($9 || ' days')::interval)
          WHERE phone = $7 AND virtual_code = $8
-       `, [email, firstName, lastName, middleName, finalBirthDate, passwordHash, phone, virtualCode]);
+       `, [email, firstName, lastName, middleName, finalBirthDate, passwordHash, phone, virtualCode, TRIAL_PERIOD_DAYS]);
     } else {
        const insertRes = await client.query(`
-         INSERT INTO users (phone, email, first_name, last_name, middle_name, birth_date, password_hash, status)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, 'active')
+         INSERT INTO users (phone, email, first_name, last_name, middle_name, birth_date, password_hash, status, subscription_expires_at)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, 'active', NOW() + ($8 || ' days')::interval)
          RETURNING id
-       `, [phone, email, firstName, lastName, middleName, finalBirthDate, passwordHash]);
+       `, [phone, email, firstName, lastName, middleName, finalBirthDate, passwordHash, TRIAL_PERIOD_DAYS]);
        registeredUserId = insertRes.rows[0].id;
     }
 

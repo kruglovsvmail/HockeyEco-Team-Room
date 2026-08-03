@@ -280,7 +280,7 @@ const PlayerAccordion = ({ teamName, teamLogo, goalies, skaters, rosterSubmitted
                 <div className={clsx("w-10 shrink-0", shouldBlur && "blur-sm select-none")}>{row.goals_against}</div>
                 <div className={clsx("w-10 shrink-0", shouldBlur && "blur-sm select-none")}>{row.saves == null ? '—' : row.saves}</div>
                 <div className={clsx("w-14 shrink-0 text-brand font-black text-[14px] font-mono", shouldBlur && "blur-sm select-none")} style={hasTeamColor ? { color: activeBrandColor } : {}}>{row.save_percent == null ? '—' : `${row.save_percent}%`}</div>
-                <div className={clsx("w-11 shrink-0 text-[14px]", shouldBlur && "blur-sm select-none")}>{row.goals_against_average}</div>
+                <div className={clsx("w-11 shrink-0 text-[14px]", shouldBlur && "blur-sm select-none")}>{row.goals_against_average == null ? '—' : row.goals_against_average}</div>
                 <div className={clsx("w-10 shrink-0 text-emerald-500", shouldBlur && "blur-sm select-none")}>{row.shutouts}</div>
               </div>
               );

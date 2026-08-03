@@ -168,6 +168,15 @@ export default function LoginPage() {
       storage.setItem('teampwa_token', data.token);
       storage.setItem('teampwa_user', JSON.stringify(data.user));
 
+      // Самый первый вход после активации — просим лейаут показать приветственное окно.
+      // Флаг живёт в хранилище, а не в состоянии роутера: если пользователь перезагрузит
+      // страницу, не закрыв окно, приветствие не потеряется.
+      localStorage.removeItem('teampwa_welcome_trial');
+      sessionStorage.removeItem('teampwa_welcome_trial');
+      if (data.isFirstLogin) {
+        storage.setItem('teampwa_welcome_trial', '1');
+      }
+
       navigate('/');
     } catch (err) {
       const msg = err.message.toLowerCase();

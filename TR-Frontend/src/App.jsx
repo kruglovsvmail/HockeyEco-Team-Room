@@ -243,12 +243,18 @@ export default function App() {
     },
   });
 
+  // Фон полей вокруг приложения (видны только на ПК, где оболочка сужена до 800px).
+  // Задан инлайном, а не классом bg-surface-canvas: класс требует, чтобы Tailwind
+  // пересобрал конфиг, а переменная из global.css подхватывается браузером напрямую —
+  // цвет можно править без перезапуска dev-сервера.
+  // Важно: этот div обязан иметь фон. Он лежит поверх body, у которого в index.html
+  // цвет зашит жёстко (#f3f4f6 / #242424) — без своего фона поля показывали бы body
+  // и на правку переменной не реагировали.
   return (
-    <div className="fixed inset-0 w-full h-[100dvh] flex flex-col bg-surface-border text-content font-sans overflow-hidden overscroll-none transition-colors duration-300">
-      
-      {/* Фоновые decorative элементы */}
-      <div className="absolute top-1/4 right-[-20%] w-80 h-80 bg-brand-glow saturate-[40%] blur-ambient rounded-full pointer-events-none z-0 opacity-100"></div>
-      <div className="absolute inset-0 w-full h-full bg-noise mix-blend-overlay z-0"></div>
+    <div
+      className="fixed inset-0 w-full h-[100dvh] flex flex-col text-content font-sans overflow-hidden overscroll-none transition-colors duration-300"
+      style={{ backgroundColor: 'var(--color-surface-canvas)' }}
+    >
 
       {/* Заливка системных safe-area зон (edge-to-edge, viewport-fit=cover):
           верх = статус-бар, низ = системная панель навигации Android.
@@ -258,16 +264,31 @@ export default function App() {
 
       {/* Edge-to-edge: контент сдвигаем внутрь безопасной зоны через padding на оболочке.
           Порталы (тосты/шторки) лежат в #app-portal-root и сами учитывают env() — их не трогаем. */}
+      {/* bg-surface-border на оболочке обязателен: TeamLayout и страницы прозрачные,
+          раньше фон приложения давал корневой div. Теперь корень красится в
+          surface-canvas (поля на ПК), поэтому собственный фон переехал сюда — иначе
+          на тёмной теме приложение потемнело бы до цвета полей. */}
       <div
         id="app-shell"
-        className="relative z-10 w-full h-full max-w-[1000px] mx-auto overflow-hidden shadow-2xl"
+        className="relative z-10 w-full h-full max-w-[800px] mx-auto overflow-hidden bg-surface-border shadow-[0_0_80px_rgba(0,0,0,0.07)] min-[800px]:shadow-none"
         style={{ paddingTop: 'env(safe-area-inset-top)', paddingBottom: 'env(safe-area-inset-bottom)' }}
       >
+        {/* Фоновые decorative элементы — ВНУТРИ оболочки, а не под ней. Рисовались для
+            мобильного вида, где оболочка занимает весь экран; на ПК она сужена до 800px,
+            и снаружи эти слои читались как грязь на полях. Клипуются overflow-hidden
+            оболочки; на телефоне вид не меняется.
+            Порог min-[800px] = ширина самой оболочки: ровно с этой точки экран шире
+            приложения, то есть начинается «версия для ПК». Шум там убран совсем —
+            на большой площади зерно читается как загрязнение, а не как текстура. */}
+        <div className="absolute top-1/4 right-[-20%] w-80 h-80 bg-brand-glow saturate-[40%] blur-ambient rounded-full pointer-events-none z-0 opacity-100"></div>
+        <div className="absolute inset-0 w-full h-full bg-noise mix-blend-overlay pointer-events-none z-0 min-[800px]:hidden"></div>
+
         {/* Масштабирующий слой: компенсированный transform-scale, управляемый переменной --ui-scale
             (настройка размера шрифта в SettingsPage). Отступы safe-area специально оставлены на
-            внешнем #app-shell — они физические и не должны увеличиваться вместе с интерфейсом. */}
+            внешнем #app-shell — они физические и не должны увеличиваться вместе с интерфейсом.
+            relative z-10 — чтобы контент лёг поверх декоративных слоёв выше. */}
         <div
-          className="flex flex-col overflow-hidden overflow-x-hidden scrollbar-hide"
+          className="relative z-10 flex flex-col overflow-hidden overflow-x-hidden scrollbar-hide"
           style={{
             width: 'calc(100% / var(--ui-scale, 1))',
             height: 'calc(100% / var(--ui-scale, 1))',
@@ -275,7 +296,7 @@ export default function App() {
             transformOrigin: 'top left',
           }}
         >
-          {/* Точка монтирования всех порталов (шторки, тосты, попперы), чтобы они оставались внутри 1000px-контейнера */}
+          {/* Точка монтирования всех порталов (шторки, тосты, попперы), чтобы они оставались внутри 800px-контейнера */}
           <div id="app-portal-root" className="absolute inset-0 z-[200] pointer-events-none" />
 
           <BrowserRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
