@@ -16,6 +16,11 @@ import { getPortalRoot } from './utils/helpers';
 // Обновляется пингом к /api/health — не navigator.onLine.
 export const networkState = { serverReachable: navigator.onLine };
 
+// Маршруты авторизации перехватчик не блокирует никогда: сам запрос входа — самая честная
+// проверка доступности сервера. Если бэкенд жив, а офлайн-флаг взведён ошибочно (медленный
+// мобильный интернет, таймаут пинга), пользователь всё равно войдёт, а не упрётся в стену.
+const OFFLINE_BYPASS_PATTERN = '/api/auth/';
+
 if (typeof window !== 'undefined' && !window.__fetch_mutation_patched__) {
   window.__fetch_mutation_patched__ = true;
   const originalFetch = window.fetch;
@@ -23,9 +28,12 @@ if (typeof window !== 'undefined' && !window.__fetch_mutation_patched__) {
   window.fetch = async function (...args) {
     const [resource, config] = args;
     const method = (config?.method || 'GET').toUpperCase();
+    // resource приходит строкой, объектом URL или Request — приводим к строке любой из вариантов
+    const url = typeof resource === 'string' ? resource : String(resource?.url ?? resource ?? '');
+    const isBypassed = url.includes(OFFLINE_BYPASS_PATTERN);
 
     // Если сервер недоступен и совершается попытка изменить БД (мутация)
-    if (!networkState.serverReachable && ['POST', 'PUT', 'DELETE', 'PATCH'].includes(method)) {
+    if (!networkState.serverReachable && !isBypassed && ['POST', 'PUT', 'DELETE', 'PATCH'].includes(method)) {
       // Генерируем глобальное событие для вызова Тоста о блокировке записи
       window.dispatchEvent(
         new CustomEvent('show-offline-mutation-toast', {
@@ -34,9 +42,10 @@ if (typeof window !== 'undefined' && !window.__fetch_mutation_patched__) {
       );
 
       // Возвращаем структурированный ответ с кодом 503, чтобы в вызывающих компонентах
-      // сработали проверки (!res.ok) или блоки catch, сбросив лоадеры на кнопках
+      // сработали проверки (!res.ok) или блоки catch, сбросив лоадеры на кнопках.
+      // Текст ошибки — по-русски: компоненты нередко показывают error как есть.
       return new Response(
-        JSON.stringify({ success: false, error: 'Database mutation blocked due to offline state' }),
+        JSON.stringify({ success: false, error: 'Нет подключения к серверу. Изменения не сохранены.' }),
         {
           status: 503,
           statusText: 'Service Unavailable',
@@ -75,19 +84,41 @@ const PageLoader = () => (
   </div>
 );
 
-const PING_INTERVAL_MS = 15000;
-const PING_TIMEOUT_MS = 4000;
+const PING_INTERVAL_MS = 15000;       // обычный интервал опроса, когда сервер отвечает
+const PING_RETRY_INTERVAL_MS = 4000;  // ускоренный опрос, пока связи нет
+const PING_TIMEOUT_MS = 10000;        // холодный старт мобильной сети (DNS + TCP + TLS) легко занимает 3-5 с
+const PING_TIMEOUTS_TO_OFFLINE = 3;   // одиночный таймаут — не повод блокировать запись
+
+// Исход пинга различаем по природе сбоя, а не просто «получилось / не получилось»:
+//   PING_OK      — сервер ответил;
+//   PING_TIMEOUT — не уложился в PING_TIMEOUT_MS: сеть может быть просто медленной;
+//   PING_FAILED  — соединение отбито сразу (нет маршрута, DNS, RST, CORS) или сервер вернул
+//                  ошибку. Это определённый ответ «связи нет», ждать подтверждений незачем.
+const PING_OK = 'ok';
+const PING_TIMEOUT = 'timeout';
+const PING_FAILED = 'failed';
 
 const pingServer = async () => {
+  // AbortController вместо AbortSignal.timeout: последний появился только в Safari 16,
+  // а на iOS 15 бросает TypeError прямо здесь — приложение навсегда уходило в офлайн.
+  const controller = new AbortController();
+  let didTimeout = false;
+  const timeoutId = setTimeout(() => {
+    didTimeout = true;
+    controller.abort();
+  }, PING_TIMEOUT_MS);
+
   try {
     const res = await fetch(`${import.meta.env.VITE_API_URL}/api/health`, {
       method: 'GET',
       cache: 'no-store',
-      signal: AbortSignal.timeout(PING_TIMEOUT_MS),
+      signal: controller.signal,
     });
-    return res.ok;
+    return res.ok ? PING_OK : PING_FAILED;
   } catch {
-    return false;
+    return didTimeout ? PING_TIMEOUT : PING_FAILED;
+  } finally {
+    clearTimeout(timeoutId);
   }
 };
 
@@ -105,29 +136,64 @@ export default function App() {
   };
 
   useEffect(() => {
-    let intervalId;
+    let timeoutId;
+    let cancelled = false;
+    let timeouts = 0;
+    // Номер поколения цикла: событие online перезапускает опрос, и уже висящий в ожидании
+    // ответа пинг не должен после возврата запустить второй параллельный цикл.
+    let generation = 0;
 
-    const check = async () => {
-      const reachable = await pingServer();
-      applyReachability(reachable);
+    // Самопланирующийся цикл вместо setInterval: пока сервер молчит, опрашиваем чаще,
+    // чтобы связь восстанавливалась быстро, а не раз в 15 секунд.
+    const check = async (gen) => {
+      const result = await pingServer();
+      if (cancelled || gen !== generation) return;
+
+      if (result === PING_OK) {
+        timeouts = 0;
+        applyReachability(true);
+      } else if (result === PING_FAILED) {
+        // Сеть ответила отказом сразу — это не медленный канал, а его отсутствие
+        // (в том числе ограничения мобильного оператора). Показываем офлайн немедленно.
+        timeouts = 0;
+        applyReachability(false);
+      } else {
+        // Таймаут: канал может быть просто медленным. В офлайн уходим только после
+        // нескольких подряд, чтобы холодный LTE не блокировал запись в БД.
+        timeouts += 1;
+        if (timeouts >= PING_TIMEOUTS_TO_OFFLINE) applyReachability(false);
+      }
+
+      timeoutId = setTimeout(
+        () => check(gen),
+        result === PING_OK ? PING_INTERVAL_MS : PING_RETRY_INTERVAL_MS
+      );
     };
 
     // Физически нет сети — сразу скрываем, без пинга
-    const handleOffline = () => applyReachability(false);
+    const handleOffline = () => {
+      timeouts = PING_TIMEOUTS_TO_OFFLINE;
+      applyReachability(false);
+    };
     // Сеть появилась — проверяем сервер немедленно, не ждём интервала
-    const handleOnline = () => check();
+    const handleOnline = () => {
+      clearTimeout(timeoutId);
+      timeouts = 0;
+      generation += 1;
+      check(generation);
+    };
 
     window.addEventListener('offline', handleOffline);
     window.addEventListener('online', handleOnline);
 
-    // Первая проверка при старте и периодический пинг
-    check();
-    intervalId = setInterval(check, PING_INTERVAL_MS);
+    // Первая проверка при старте, дальше цикл планирует себя сам
+    check(generation);
 
     return () => {
+      cancelled = true;
       window.removeEventListener('offline', handleOffline);
       window.removeEventListener('online', handleOnline);
-      clearInterval(intervalId);
+      clearTimeout(timeoutId);
     };
   }, []);
 

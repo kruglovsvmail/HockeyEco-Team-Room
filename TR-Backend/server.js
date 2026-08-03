@@ -83,49 +83,46 @@ app.use((err, req, res, next) => {
   });
 });
 
-const startServer = async () => {
-  try {
-    const res = pool.query('SELECT NOW()');
-    console.log('PostgreSQL connected:', (await res).rows[0].now);
-    
-    app.listen(PORT, '0.0.0.0', () => {
-      console.log(`Server running on port ${PORT}`);
+// Порт открываем сразу, не дожидаясь БД — /api/health в неё не ходит, и проверка связи с
+// фронтенда (как и healthcheck платформы) не должна зависеть от того, насколько быстро
+// отвечает Postgres. Раньше сбой на этом шаге ронял процесс через process.exit(1), и любая
+// сетевая заминка до БД оставляла сайт без бэкенда — фронтенд уходил в офлайн целиком.
+app.listen(PORT, '0.0.0.0', () => {
+  console.log(`Server running on port ${PORT}`);
 
-      // Крон: обработка очереди отложенных push-уведомлений каждые 60 секунд
+  // Крон: обработка очереди отложенных push-уведомлений каждые 60 секунд
+  setInterval(() => {
+    processScheduledNotifications().catch(err =>
+      console.error('Ошибка обработки отложенных уведомлений:', err.message)
+    );
+  }, 60_000);
+
+  // Крон: дни рождения — планируем в 05:00 UTC (достаточно рано для всех RU-таймзон),
+  // а каждое уведомление уже запланировано на 08:00 по локальному времени получателя.
+  const scheduleBirthdayCron = () => {
+    const now = new Date();
+    const next5am = new Date(now);
+    next5am.setUTCHours(5, 0, 0, 0);
+    if (next5am <= now) next5am.setUTCDate(next5am.getUTCDate() + 1);
+    const delay = next5am.getTime() - now.getTime();
+    setTimeout(() => {
+      processBirthdays().catch(err => console.error('Ошибка обработки дней рождения:', err.message));
       setInterval(() => {
-        processScheduledNotifications().catch(err =>
-          console.error('Ошибка обработки отложенных уведомлений:', err.message)
-        );
-      }, 60_000);
+        processBirthdays().catch(err => console.error('Ошибка обработки дней рождения:', err.message));
+      }, 24 * 60 * 60_000);
+    }, delay);
+  };
+  scheduleBirthdayCron();
 
-      // Крон: дни рождения — планируем в 05:00 UTC (достаточно рано для всех RU-таймзон),
-      // а каждое уведомление уже запланировано на 08:00 по локальному времени получателя.
-      const scheduleBirthdayCron = () => {
-        const now = new Date();
-        const next5am = new Date(now);
-        next5am.setUTCHours(5, 0, 0, 0);
-        if (next5am <= now) next5am.setUTCDate(next5am.getUTCDate() + 1);
-        const delay = next5am.getTime() - now.getTime();
-        setTimeout(() => {
-          processBirthdays().catch(err => console.error('Ошибка обработки дней рождения:', err.message));
-          setInterval(() => {
-            processBirthdays().catch(err => console.error('Ошибка обработки дней рождения:', err.message));
-          }, 24 * 60 * 60_000);
-        }, delay);
-      };
-      scheduleBirthdayCron();
+  // Крон: поллинг LMS-матчей (official) каждые 5 минут
+  setInterval(() => {
+    pollLmsGames().catch(err =>
+      console.error('Ошибка поллинга LMS-матчей:', err.message)
+    );
+  }, 5 * 60_000);
+});
 
-      // Крон: поллинг LMS-матчей (official) каждые 5 минут
-      setInterval(() => {
-        pollLmsGames().catch(err =>
-          console.error('Ошибка поллинга LMS-матчей:', err.message)
-        );
-      }, 5 * 60_000);
-    });
-  } catch (err) {
-    console.error('Failed to start server:', err);
-    process.exit(1);
-  }
-};
-
-startServer();
+// Проверка соединения с БД — фоновая, только для лога.
+pool.query('SELECT NOW()')
+  .then((res) => console.log('PostgreSQL connected:', res.rows[0].now))
+  .catch((err) => console.error('PostgreSQL connection check failed:', err.message));
