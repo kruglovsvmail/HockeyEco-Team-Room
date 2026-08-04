@@ -573,13 +573,17 @@ export function TournamentStat({
                   className="overflow-x-auto scrollbar-hide flex flex-col mr-2"
                 >
                   {/* Шапка цифр вратарей */}
-                  <div className="h-[38px] flex items-center bg-surface-level1 text-[10px] font-normal uppercase tracking-wider text-content-muted text-center select-none border-b border-surface-border min-w-[270px]">
+                  {/* БР/ОБ/%ОБ показываем всегда: если лига броски не ведёт, бэкенд
+                      отдаёт по ним null и в ячейке встаёт прочерк */}
+                  <div className="h-[38px] flex items-center bg-surface-level1 text-[10px] font-normal uppercase tracking-wider text-content-muted text-center select-none border-b border-surface-border min-w-[320px]">
                     <div onClick={() => handleGoalieSortClick('games_played')} className="w-9 shrink-0 cursor-pointer active:opacity-60">И{renderSortIndicator(goalieSort, 'games_played')}</div>
+                    <div onClick={() => handleGoalieSortClick('shutouts')} className="w-10 shrink-0 cursor-pointer active:opacity-60">И"0"{renderSortIndicator(goalieSort, 'shutouts')}</div>
+                    <div onClick={() => handleGoalieSortClick('assists')} className="w-10 shrink-0 cursor-pointer active:opacity-60">П{renderSortIndicator(goalieSort, 'assists')}</div>
                     <div onClick={() => handleGoalieSortClick('goals_against')} className="w-10 shrink-0 cursor-pointer active:opacity-60">ПШ{renderSortIndicator(goalieSort, 'goals_against')}</div>
+                    <div onClick={() => handleGoalieSortClick('penalty_minutes')} className="w-10 shrink-0 cursor-pointer active:opacity-60">ШТР{renderSortIndicator(goalieSort, 'penalty_minutes')}</div>
+                    <div onClick={() => handleGoalieSortClick('shots_against')} className="w-10 shrink-0 cursor-pointer active:opacity-60">БР{renderSortIndicator(goalieSort, 'shots_against')}</div>
                     <div onClick={() => handleGoalieSortClick('saves')} className="w-10 shrink-0 cursor-pointer active:opacity-60">ОБ{renderSortIndicator(goalieSort, 'saves')}</div>
                     <div onClick={() => handleGoalieSortClick('save_percent')} className="w-14 shrink-0 cursor-pointer active:opacity-60 text-brand" style={hasTeamColor ? { color: activeBrandColor } : {}}>%ОБ{renderSortIndicator(goalieSort, 'save_percent')}</div>
-                    <div onClick={() => handleGoalieSortClick('goals_against_average')} className="w-11 shrink-0 cursor-pointer active:opacity-60">КН{renderSortIndicator(goalieSort, 'goals_against_average')}</div>
-                    <div onClick={() => handleGoalieSortClick('shutouts')} className="w-10 shrink-0 cursor-pointer active:opacity-60">И"0"{renderSortIndicator(goalieSort, 'shutouts')}</div>
                   </div>
                   
                   {/* Строки цифр вратарей */}
@@ -589,13 +593,15 @@ export function TournamentStat({
                     sortedGoalies.map((row) => {
                       const shouldBlur = !!row.hide_stats_unpaid && !row.is_fee_paid;
                       return (
-                      <div key={row.player_id} className="h-16 flex items-center text-center text-[14px] font-bold text-content-main border-b border-surface-border last:border-0 min-w-[270px]">
+                      <div key={row.player_id} className="h-16 flex items-center text-center text-[14px] font-bold text-content-main border-b border-surface-border last:border-0 min-w-[320px]">
                         <div className="w-9 shrink-0">{row.games_played}</div>
+                        <div className={clsx("w-10 shrink-0 text-emerald-500", shouldBlur && "blur-sm select-none")}>{row.shutouts}</div>
+                        <div className={clsx("w-10 shrink-0", shouldBlur && "blur-sm select-none")}>{row.assists}</div>
                         <div className={clsx("w-10 shrink-0", shouldBlur && "blur-sm select-none")}>{row.goals_against}</div>
+                        <div className={clsx("w-10 shrink-0", shouldBlur && "blur-sm select-none")}>{row.penalty_minutes}</div>
+                        <div className={clsx("w-10 shrink-0", shouldBlur && "blur-sm select-none")}>{row.shots_against == null ? '—' : row.shots_against}</div>
                         <div className={clsx("w-10 shrink-0", shouldBlur && "blur-sm select-none")}>{row.saves == null ? '—' : row.saves}</div>
                         <div className={clsx("w-14 shrink-0 text-brand font-black text-[14px] font-mono", shouldBlur && "blur-sm select-none")} style={hasTeamColor ? { color: activeBrandColor } : {}}>{row.save_percent == null ? '—' : `${row.save_percent}%`}</div>
-                        <div className={clsx("w-11 shrink-0 text-[14px]", shouldBlur && "blur-sm select-none")}>{row.goals_against_average}</div>
-                        <div className={clsx("w-10 shrink-0 text-emerald-500", shouldBlur && "blur-sm select-none")}>{row.shutouts}</div>
                       </div>
                       );
                     })

@@ -264,24 +264,28 @@ const PlayerAccordion = ({ teamName, teamLogo, goalies, skaters, rosterSubmitted
             ))}
           </div>
           <ScrollFade onTouchStart={handleTouchIsolation} onTouchMove={handleTouchIsolation}>
-            <div className="h-[38px] flex items-center bg-surface-level1 text-[10px] font-normal uppercase tracking-wider text-content-muted text-center select-none border-b border-surface-border min-w-[220px]">
+            {/* Бр/ОБ/%ОБ показываем всегда: если лига броски не ведёт — прочерк,
+                чтобы таблица не меняла форму от дивизиона к дивизиону */}
+            <div className="h-[38px] flex items-center bg-surface-level1 text-[10px] font-normal uppercase tracking-wider text-content-muted text-center select-none border-b border-surface-border min-w-[280px]">
+              <div onClick={() => handleGoalieSort('assists')} className="w-10 shrink-0 cursor-pointer active:opacity-60">П<SortIndicator sortState={goalieSort} columnKey="assists" /></div>
               <div onClick={() => handleGoalieSort('goals_against')} className="w-10 shrink-0 cursor-pointer active:opacity-60">ПШ<SortIndicator sortState={goalieSort} columnKey="goals_against" /></div>
+              <div onClick={() => handleGoalieSort('penalty_minutes')} className="w-10 shrink-0 cursor-pointer active:opacity-60">ШТР<SortIndicator sortState={goalieSort} columnKey="penalty_minutes" /></div>
+              <div onClick={() => handleGoalieSort('shots_against')} className="w-10 shrink-0 cursor-pointer active:opacity-60">БР<SortIndicator sortState={goalieSort} columnKey="shots_against" /></div>
               <div onClick={() => handleGoalieSort('saves')} className="w-10 shrink-0 cursor-pointer active:opacity-60">ОБ<SortIndicator sortState={goalieSort} columnKey="saves" /></div>
               <div onClick={() => handleGoalieSort('save_percent')} className="w-14 shrink-0 cursor-pointer active:opacity-60 text-brand" style={hasTeamColor ? { color: activeBrandColor } : {}}>%ОБ<SortIndicator sortState={goalieSort} columnKey="save_percent" /></div>
-              <div onClick={() => handleGoalieSort('goals_against_average')} className="w-11 shrink-0 cursor-pointer active:opacity-60">КН<SortIndicator sortState={goalieSort} columnKey="goals_against_average" /></div>
-              <div onClick={() => handleGoalieSort('shutouts')} className="w-10 shrink-0 cursor-pointer active:opacity-60">И"0"<SortIndicator sortState={goalieSort} columnKey="shutouts" /></div>
             </div>
             {sortedGoalies.map((row) => {
               // Скрытие статистики (размытием): дивизион требует оплату взноса,
               // а у игрока нет отметки об оплате.
               const shouldBlur = !!row.hide_stats_unpaid && !row.is_fee_paid;
               return (
-              <div key={row.player_id} className="h-14 flex items-center text-center text-[14px] font-bold text-content-main border-b border-surface-border last:border-0 min-w-[220px]">
+              <div key={row.player_id} className="h-14 flex items-center text-center text-[14px] font-bold text-content-main border-b border-surface-border last:border-0 min-w-[280px]">
+                <div className={clsx("w-10 shrink-0", shouldBlur && "blur-sm select-none")}>{row.assists}</div>
                 <div className={clsx("w-10 shrink-0", shouldBlur && "blur-sm select-none")}>{row.goals_against}</div>
+                <div className={clsx("w-10 shrink-0", shouldBlur && "blur-sm select-none")}>{row.penalty_minutes}</div>
+                <div className={clsx("w-10 shrink-0", shouldBlur && "blur-sm select-none")}>{row.shots_against == null ? '—' : row.shots_against}</div>
                 <div className={clsx("w-10 shrink-0", shouldBlur && "blur-sm select-none")}>{row.saves == null ? '—' : row.saves}</div>
                 <div className={clsx("w-14 shrink-0 text-brand font-black text-[14px] font-mono", shouldBlur && "blur-sm select-none")} style={hasTeamColor ? { color: activeBrandColor } : {}}>{row.save_percent == null ? '—' : `${row.save_percent}%`}</div>
-                <div className={clsx("w-11 shrink-0 text-[14px]", shouldBlur && "blur-sm select-none")}>{row.goals_against_average == null ? '—' : row.goals_against_average}</div>
-                <div className={clsx("w-10 shrink-0 text-emerald-500", shouldBlur && "blur-sm select-none")}>{row.shutouts}</div>
               </div>
               );
             })}

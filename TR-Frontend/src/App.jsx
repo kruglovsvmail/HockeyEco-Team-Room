@@ -130,6 +130,27 @@ const PING_FAILED = 'failed';
 const REFRESH_BANNER_DELAY_MS = 300;  // короткие обновления плашку не показывают — иначе она мигает
 const REFRESH_STALL_MS = 10000;       // дольше этого — это уже не «обновляем», а «связи нет»
 
+// Длительность ухода плашки вверх. Обязана совпадать с длительностью анимации
+// tr-banner-out: по этому таймеру элемент выносится из дерева.
+const BANNER_EXIT_MS = 260;
+
+// Три состояния одной плашки. Скрыта она только тогда, когда данные на экране
+// подтверждены сервером — «пусто» больше не может означать «не знаем».
+const BANNER_VARIANTS = {
+  offline: {
+    text: 'Нет подключения',
+    shell: 'bg-[#1a080a]/90 border-red-500/20',
+    dot: 'bg-red-500',
+    label: 'text-red-400',
+  },
+  refreshing: {
+    text: 'Обновляем данные',
+    shell: 'bg-[#0d1017]/90 border-white/15',
+    dot: 'bg-slate-300',
+    label: 'text-slate-300',
+  },
+};
+
 const pingServer = async () => {
   // AbortController вместо AbortSignal.timeout: последний появился только в Safari 16,
   // а на iOS 15 бросает TypeError прямо здесь — приложение навсегда уходило в офлайн.
@@ -322,23 +343,36 @@ export default function App() {
     },
   });
 
-  // Три состояния одной плашки. Скрыта она только тогда, когда данные на экране
-  // подтверждены сервером — «пусто» больше не может означать «не знаем».
-  const connectionBanner = !isOnline
-    ? {
-        text: 'Нет подключения',
-        shell: 'bg-[#1a080a]/90 border-red-500/20',
-        dot: 'bg-red-500',
-        label: 'text-red-400',
-      }
-    : isRefreshing
-      ? {
-          text: 'Обновляем данные',
-          shell: 'bg-[#0d1017]/90 border-white/15',
-          dot: 'bg-slate-300',
-          label: 'text-slate-300',
-        }
-      : null;
+  // Что реально висит в дереве: при скрытии плашка задерживается здесь на время
+  // анимации ухода вверх, иначе она пропадала бы рывком.
+  const [renderedBannerKey, setRenderedBannerKey] = useState(null);
+  const [isBannerLeaving, setIsBannerLeaving] = useState(false);
+
+  // Какое состояние плашки требуется прямо сейчас (null — плашка не нужна)
+  const bannerKey = !isOnline ? 'offline' : isRefreshing ? 'refreshing' : null;
+
+  useEffect(() => {
+    // Плашка нужна: показываем сразу и отменяем начатый уход, если он был
+    if (bannerKey) {
+      setRenderedBannerKey(bannerKey);
+      setIsBannerLeaving(false);
+      return;
+    }
+
+    // Показывать нечего и нечего убирать — выходим, чтобы не дёргать состояние на старте
+    if (!renderedBannerKey) return;
+
+    // Даём анимации доиграть и только потом выносим плашку из дерева
+    setIsBannerLeaving(true);
+    const exitTimerId = setTimeout(() => {
+      setRenderedBannerKey(null);
+      setIsBannerLeaving(false);
+    }, BANNER_EXIT_MS);
+
+    return () => clearTimeout(exitTimerId);
+  }, [bannerKey]);
+
+  const connectionBanner = renderedBannerKey ? BANNER_VARIANTS[renderedBannerKey] : null;
 
   // Фон полей вокруг приложения (видны только на ПК, где оболочка сужена до 800px).
   // Задан инлайном, а не классом bg-surface-canvas: класс требует, чтобы Tailwind
@@ -432,9 +466,12 @@ export default function App() {
         <div
           className="absolute left-0 right-0 mx-auto w-max z-[999999] pointer-events-none"
           style={{
-            animationName: 'tr-pure-layout-offline',
-            animationDuration: '300ms',
-            animationTimingFunction: 'cubic-bezier(0.21, 1.02, 0.43, 1.01)',
+            animationName: isBannerLeaving ? 'tr-banner-out' : 'tr-pure-layout-offline',
+            animationDuration: isBannerLeaving ? `${BANNER_EXIT_MS}ms` : '300ms',
+            // На входе — мягкий выброс с лёгким перелётом, на выходе — разгон вверх
+            animationTimingFunction: isBannerLeaving
+              ? 'cubic-bezier(0.55, 0, 1, 0.45)'
+              : 'cubic-bezier(0.21, 1.02, 0.43, 1.01)',
             animationFillMode: 'both'
           }}
         >
@@ -450,10 +487,23 @@ export default function App() {
                   opacity: 1;
                 }
               }
+
+              @keyframes tr-banner-out {
+                0% {
+                  top: calc(env(safe-area-inset-top, 0px) + 12px);
+                  opacity: 1;
+                }
+                100% {
+                  top: -50px;
+                  opacity: 0;
+                }
+              }
             `}
           </style>
 
-          <div className={`flex items-center gap-2 px-3 py-1.5 rounded-full backdrop-blur-md border shadow-xl shadow-black/50 ${connectionBanner.shell}`}>
+          {/* transition-colors: переход «обновляем» → «нет подключения» происходит без
+              ухода плашки, поэтому смену цвета сглаживаем, чтобы она не щёлкала */}
+          <div className={`flex items-center gap-2 px-3 py-1.5 rounded-full backdrop-blur-md border shadow-xl shadow-black/50 transition-colors duration-300 ${connectionBanner.shell}`}>
             <span className={`w-1.5 h-1.5 rounded-full animate-pulse shrink-0 ${connectionBanner.dot}`} />
             <span className={`text-[10px] font-black uppercase tracking-widest select-none whitespace-nowrap ${connectionBanner.label}`}>
               {connectionBanner.text}

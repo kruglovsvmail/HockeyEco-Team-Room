@@ -403,6 +403,27 @@ class TournamentController {
           ),
           ShutoutsAgg AS (
             SELECT player_id, SUM(sho) AS total_sho FROM Shutouts GROUP BY player_id
+          ),
+          -- Передачи и штрафные минуты вратаря считаются ровно так же, как у полевых:
+          -- в протоколе его можно поставить ассистентом и удалить наравне со всеми
+          GoalieAssists AS (
+            SELECT player_id, team_id, COUNT(*) AS a
+            FROM (
+              SELECT ge.assist1_id AS player_id, ge.team_id
+              FROM game_events ge JOIN ValidGames vg ON ge.game_id = vg.id
+              WHERE ge.event_type = 'goal' AND ge.assist1_id IS NOT NULL
+              UNION ALL
+              SELECT ge.assist2_id AS player_id, ge.team_id
+              FROM game_events ge JOIN ValidGames vg ON ge.game_id = vg.id
+              WHERE ge.event_type = 'goal' AND ge.assist2_id IS NOT NULL
+            ) sub
+            GROUP BY player_id, team_id
+          ),
+          GoaliePenalties AS (
+            SELECT ge.penalty_player_id AS player_id, ge.team_id, SUM(ge.penalty_minutes) AS pim
+            FROM game_events ge JOIN ValidGames vg ON ge.game_id = vg.id
+            WHERE ge.event_type = 'penalty' AND ge.penalty_player_id IS NOT NULL
+            GROUP BY ge.penalty_player_id, ge.team_id
           )
           SELECT
             u.id AS player_id,
@@ -432,6 +453,8 @@ class TournamentController {
                  ELSE 0.00 END                                    AS goals_against_average,
             COALESCE(sho.total_sho, 0)                           AS shutouts,
             COALESCE(gm.total_secs, 0)                           AS minutes_played,
+            COALESCE(gass.a, 0)                                  AS assists,
+            COALESCE(gpen.pim, 0)                                AS penalty_minutes,
             tr.is_fee_paid,
             (SELECT hide_stats_unpaid FROM divisions WHERE id = $1) AS hide_stats_unpaid
           FROM tournament_rosters tr
@@ -446,6 +469,8 @@ class TournamentController {
           LEFT JOIN GoaliesShotsAgainst  gsa ON gsa.player_id = tr.player_id
           LEFT JOIN GoalieMinutesAgg     gm  ON gm.player_id  = tr.player_id
           LEFT JOIN ShutoutsAgg          sho ON sho.player_id = tr.player_id
+          LEFT JOIN GoalieAssists        gass ON gass.player_id = tr.player_id AND gass.team_id = tt.team_id
+          LEFT JOIN GoaliePenalties      gpen ON gpen.player_id = tr.player_id AND gpen.team_id = tt.team_id
           WHERE tt.division_id = $1
             AND tr.application_status = 'approved'
             AND tr.position = 'goalie'
@@ -536,6 +561,7 @@ class TournamentController {
               goalieMap.set(k, {
                 ...row,
                 games_played: 0, goals_against: 0, shutouts: 0, minutes_played: 0,
+                assists: 0, penalty_minutes: 0,
                 saves: null, shots_against: null,
               });
             }
@@ -544,6 +570,8 @@ class TournamentController {
             acc.goals_against += n(row.goals_against);
             acc.shutouts += n(row.shutouts);
             acc.minutes_played += n(row.minutes_played);
+            acc.assists += n(row.assists);
+            acc.penalty_minutes += n(row.penalty_minutes);
             if (row.shots_against != null) {
               acc.saves = n(acc.saves) + n(row.saves);
               acc.shots_against = n(acc.shots_against) + n(row.shots_against);

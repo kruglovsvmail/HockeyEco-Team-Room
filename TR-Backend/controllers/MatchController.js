@@ -781,12 +781,33 @@ export const getMatchStats = async (req, res) => {
         END::float AS save_percent,
         COALESCE(ga.goals_against, 0)::float AS goals_against_average,
         CASE WHEN COALESCE(ga.goals_against, 0) = 0 AND COALESCE(s.shots_against, 0) > 0 THEN 1 ELSE 0 END::int AS shutouts,
+        -- Броски в створ по вратарю — то, что ввёл секретарь. Не заполняли → «—».
+        s.shots_against::int AS shots_against,
+        -- Передачи и штрафные минуты у вратаря считаются так же, как у полевых:
+        -- в протоколе его можно поставить ассистентом и удалить наравне со всеми
+        COALESCE(a.assists, 0)::int AS assists,
+        COALESCE(pen.penalty_minutes, 0)::int AS penalty_minutes,
         tr.is_fee_paid,
         gd.hide_stats_unpaid
       FROM "public"."game_rosters" gr
       JOIN "public"."users" u ON gr.player_id = u.id
       CROSS JOIN game_division gd
       LEFT JOIN "public"."team_members" tm ON tm.user_id = u.id AND tm.team_id = gr.team_id
+      LEFT JOIN (
+        SELECT player_id, team_id, COUNT(*)::int AS assists FROM (
+          SELECT assist1_id AS player_id, team_id FROM "public"."game_events"
+          WHERE game_id = $1 AND event_type = 'goal' AND assist1_id IS NOT NULL
+          UNION ALL
+          SELECT assist2_id AS player_id, team_id FROM "public"."game_events"
+          WHERE game_id = $1 AND event_type = 'goal' AND assist2_id IS NOT NULL
+        ) sub GROUP BY player_id, team_id
+      ) a ON a.player_id = gr.player_id AND a.team_id = gr.team_id
+      LEFT JOIN (
+        SELECT penalty_player_id, team_id, SUM(penalty_minutes)::int AS penalty_minutes
+        FROM "public"."game_events"
+        WHERE game_id = $1 AND event_type = 'penalty'
+        GROUP BY penalty_player_id, team_id
+      ) pen ON pen.penalty_player_id = gr.player_id AND pen.team_id = gr.team_id
       LEFT JOIN "public"."tournament_teams" trt ON trt.team_id = gr.team_id AND trt.division_id = gd.division_id
       LEFT JOIN "public"."tournament_rosters" tr ON tr.tournament_team_id = trt.id AND tr.player_id = gr.player_id
       LEFT JOIN (
@@ -857,7 +878,7 @@ export const getMatchStats = async (req, res) => {
       skatersResult.rows.forEach(row => { row.plus_minus = null; });
     }
     if (!trackShots) {
-      goaliesResult.rows.forEach(row => { row.saves = null; row.save_percent = null; });
+      goaliesResult.rows.forEach(row => { row.saves = null; row.save_percent = null; row.shots_against = null; });
     }
     // КН (коэффициент надёжности) вне лиги не считаем: товарищеские матчи в надёжность
     // вратаря не идут. ОБ/%ОБ при этом остаются — их команда ведёт для себя.

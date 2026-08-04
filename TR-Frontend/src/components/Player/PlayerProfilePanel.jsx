@@ -43,13 +43,22 @@ const StatTile = ({ label, value, compact, hideLabel, blurred, unofficial }) => 
   <div className={clsx("flex flex-col items-center justify-center bg-surface-level2 rounded-xl", compact ? "py-1.5" : "py-1.5")}>
     <span
       className={clsx("font-bold tabular-nums leading-tight", compact ? "text-[10px]" : "text-[16px]", blurred && "blur-sm select-none", unofficial ? "text-amber-500" : "text-content-main")}
-      title={unofficial ? 'Включает данные, введённые командой самостоятельно (лига эту статистику не ведёт)' : undefined}
     >
       {value ?? '—'}
     </span>
     {!hideLabel && (
       <span className="text-[10px] font-mibold uppercase tracking-wider text-content-subtle mt-1.5 leading-none">{label}</span>
     )}
+  </div>
+);
+
+// Текст подсказки на неофициальном показателе. Раньше это была нативная title-подсказка
+// на самом числе — в PWA с тач-экрана она не открывается вовсе, поэтому объяснение
+// переехало в HintPopover, который работает и по тапу, и по клику.
+const UnofficialHint = ({ label }) => (
+  <div className="text-[12px] font-semibold text-content-main leading-snug text-center whitespace-normal break-words">
+    Показатель «{label}» организаторы турнира не ведут — эти цифры команда внесла
+    самостоятельно. Данные неофициальные и видны только партнёрам по команде.
   </div>
 );
 
@@ -73,14 +82,23 @@ const SeasonRow = ({ row, isGoalie, isLast }) => {
   // а у игрока в этом дивизионе не отмечена оплата взноса. Количество игр не скрываем.
   const shouldBlur = !!row.hide_stats_unpaid && !row.is_fee_paid;
 
+  // Броски/Об/%Об показываем всегда, но при выключенном учёте бросков в дивизионе
+  // (tracks_shots) отдаём null — StatTile нарисует прочерк. Ноль здесь читался бы
+  // как результат вратаря, а не как «лига эту статистику не ведёт».
+  const shotsTile = (value) => (row.tracks_shots ? value : null);
+
   const tiles = isGoalie
     ? [
         { label: 'Игры', value: row.gp },
-        { label: 'Штраф', value: row.pim, blurred: shouldBlur },
+        { label: 'И"0"', value: row.sho, blurred: shouldBlur },
+        { label: 'Передачи', value: row.a, blurred: shouldBlur },
         { label: 'ПШ', value: row.ga, blurred: shouldBlur },
-        { label: 'Броски', value: row.sa, blurred: shouldBlur, unofficial: row.shots_is_unofficial },
-        { label: 'Об', value: row.sv, blurred: shouldBlur, unofficial: row.shots_is_unofficial },
-        { label: '%Об', value: row.svp != null ? `${row.svp}%` : null, blurred: shouldBlur, unofficial: row.shots_is_unofficial },
+        { label: 'Штраф', value: row.pim, blurred: shouldBlur },
+        { label: 'Броски', value: shotsTile(row.sa), blurred: shouldBlur, unofficial: row.shots_is_unofficial },
+        { label: 'Об', value: shotsTile(row.sv), blurred: shouldBlur, unofficial: row.shots_is_unofficial },
+        // Тайлов у вратаря восемь, сетка — три колонки: последний растягиваем на две,
+        // чтобы третий ряд не обрывался дыркой справа (3 + 3 + [1 + 2]).
+        { label: '%Об', value: shotsTile(row.svp != null ? `${row.svp}%` : null), blurred: shouldBlur, unofficial: row.shots_is_unofficial, span: 2 },
       ]
     : [
         { label: 'Игры', value: row.gp },
@@ -135,15 +153,23 @@ const SeasonRow = ({ row, isGoalie, isLast }) => {
         </div>
       </div>
 
-      {/* Максимум 3 тайла в ряд — при 5 параметрах у вратаря (grid-cols-5) всё
-          сжималось в кашу на узкой панели, поэтому всегда grid-cols-3 (вратарь
-          переносится 3+2). */}
+      {/* Максимум 3 тайла в ряд — при большем числе параметров всё сжималось в кашу
+          на узкой панели, поэтому всегда grid-cols-3 (полевой 3+3, вратарь 3+3+2).
+          Неофициальные показатели оборачиваем в подсказку: display/width задаём
+          инлайн-стилем, иначе inline-block самого HintPopover ломает ячейку сетки. */}
       <div className="grid grid-cols-3 gap-1.5 mt-1">
-        {tiles.map(t => (
-          <div key={t.label} className={t.span === 2 ? 'col-span-2' : undefined}>
-            <StatTile label={t.label} value={t.value} blurred={t.blurred} unofficial={t.unofficial} />
-          </div>
-        ))}
+        {tiles.map(t => {
+          const tile = <StatTile label={t.label} value={t.value} blurred={t.blurred} unofficial={t.unofficial} />;
+          return (
+            <div key={t.label} className={t.span === 2 ? 'col-span-2' : undefined}>
+              {t.unofficial ? (
+                <HintPopover style={{ display: 'block', width: '100%' }} customContent={<UnofficialHint label={t.label} />}>
+                  {tile}
+                </HintPopover>
+              ) : tile}
+            </div>
+          );
+        })}
       </div>
     </div>
   );
