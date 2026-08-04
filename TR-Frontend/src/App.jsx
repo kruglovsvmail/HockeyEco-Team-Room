@@ -21,6 +21,10 @@ export const networkState = { serverReachable: navigator.onLine };
 // мобильный интернет, таймаут пинга), пользователь всё равно войдёт, а не упрётся в стену.
 const OFFLINE_BYPASS_PATTERN = '/api/auth/';
 
+const API_BASE = import.meta.env.VITE_API_URL || '';
+// Пинг здоровья — служебный запрос, обновлением данных на экране он не является
+const HEALTH_PATH = '/api/health';
+
 if (typeof window !== 'undefined' && !window.__fetch_mutation_patched__) {
   window.__fetch_mutation_patched__ = true;
   const originalFetch = window.fetch;
@@ -31,9 +35,16 @@ if (typeof window !== 'undefined' && !window.__fetch_mutation_patched__) {
     // resource приходит строкой, объектом URL или Request — приводим к строке любой из вариантов
     const url = typeof resource === 'string' ? resource : String(resource?.url ?? resource ?? '');
     const isBypassed = url.includes(OFFLINE_BYPASS_PATTERN);
+    const isMutation = ['POST', 'PUT', 'DELETE', 'PATCH'].includes(method);
+
+    // Следим только за обращениями к нашему API: судить о связи по реальным запросам
+    // честнее, чем по одному пингу, — именно они наполняют экран данными.
+    const isTracked = Boolean(API_BASE) && url.startsWith(API_BASE) && !url.includes(HEALTH_PATH);
+    // Чтение данных — то, из-за чего на экране может оказаться устаревшая информация
+    const isDataRead = isTracked && !isMutation;
 
     // Если сервер недоступен и совершается попытка изменить БД (мутация)
-    if (!networkState.serverReachable && !isBypassed && ['POST', 'PUT', 'DELETE', 'PATCH'].includes(method)) {
+    if (!networkState.serverReachable && !isBypassed && isMutation) {
       // Генерируем глобальное событие для вызова Тоста о блокировке записи
       window.dispatchEvent(
         new CustomEvent('show-offline-mutation-toast', {
@@ -54,8 +65,26 @@ if (typeof window !== 'undefined' && !window.__fetch_mutation_patched__) {
       );
     }
 
-    // Если сервер доступен или это обычный GET-запрос чтения — пропускаем дальше в штатном режиме
-    return originalFetch.apply(this, args);
+    // Пока чтение данных в полёте — на экране может висеть старое: сообщаем об этом UI,
+    // чтобы пользователь не принял ещё не обновлённую картинку за актуальную.
+    if (isDataRead) window.dispatchEvent(new Event('net-read-start'));
+
+    try {
+      // Если сервер доступен или это обычный GET-запрос чтения — пропускаем дальше в штатном режиме
+      const res = await originalFetch.apply(this, args);
+      // Сервер ответил — связь есть, даже если код ответа сам по себе с ошибкой
+      if (isTracked) window.dispatchEvent(new CustomEvent('net-result', { detail: { reachable: true } }));
+      return res;
+    } catch (err) {
+      // AbortError — это отмена запроса самим приложением (поиск, размонтирование),
+      // а не потеря связи: за офлайн такое принимать нельзя.
+      if (isTracked && err?.name !== 'AbortError') {
+        window.dispatchEvent(new CustomEvent('net-result', { detail: { reachable: false } }));
+      }
+      throw err;
+    } finally {
+      if (isDataRead) window.dispatchEvent(new Event('net-read-end'));
+    }
   };
 }
 
@@ -98,6 +127,9 @@ const PING_OK = 'ok';
 const PING_TIMEOUT = 'timeout';
 const PING_FAILED = 'failed';
 
+const REFRESH_BANNER_DELAY_MS = 300;  // короткие обновления плашку не показывают — иначе она мигает
+const REFRESH_STALL_MS = 10000;       // дольше этого — это уже не «обновляем», а «связи нет»
+
 const pingServer = async () => {
   // AbortController вместо AbortSignal.timeout: последний появился только в Safari 16,
   // а на iOS 15 бросает TypeError прямо здесь — приложение навсегда уходило в офлайн.
@@ -126,6 +158,11 @@ export default function App() {
   // Единый глобальный статус подключения к серверу для плавающего баннера.
   // Определяется активным пингом /api/health, а не navigator.onLine.
   const [isOnline, setIsOnline] = useState(() => navigator.onLine);
+
+  // Идёт ли прямо сейчас чтение данных с сервера. Нужно, чтобы у баннера не было
+  // «немого» состояния: пока данные не подтверждены, пользователь видит плашку обновления,
+  // а пустой экран без плашки означает ровно одно — на экране свежие данные.
+  const [isRefreshing, setIsRefreshing] = useState(false);
 
   // Состояние отображения глобального тоста блокировки мутаций в офлайне
   const [mutationToast, setMutationToast] = useState({ isOpen: false, message: '' });
@@ -197,6 +234,48 @@ export default function App() {
     };
   }, []);
 
+  // Статус по фактическим запросам данных, а не только по пингу. Это закрывает разрыв,
+  // из-за которого пользователь успевал увидеть неактуальный экран до того, как загорался
+  // баннер: при блокировке провайдером запрос отбивается сразу, и плашка честно краснеет.
+  useEffect(() => {
+    let inflight = 0;
+    let showTimerId;
+    let stallTimerId;
+
+    const handleReadStart = () => {
+      inflight += 1;
+      if (inflight > 1) return;
+
+      showTimerId = setTimeout(() => setIsRefreshing(true), REFRESH_BANNER_DELAY_MS);
+      // Обновление, которое не завершилось за REFRESH_STALL_MS, перестаём выдавать за
+      // «сейчас догрузим»: для пользователя это уже отсутствие связи.
+      stallTimerId = setTimeout(() => applyReachability(false), REFRESH_STALL_MS);
+    };
+
+    const handleReadEnd = () => {
+      inflight = Math.max(0, inflight - 1);
+      if (inflight > 0) return;
+
+      clearTimeout(showTimerId);
+      clearTimeout(stallTimerId);
+      setIsRefreshing(false);
+    };
+
+    const handleResult = (e) => applyReachability(Boolean(e.detail?.reachable));
+
+    window.addEventListener('net-read-start', handleReadStart);
+    window.addEventListener('net-read-end', handleReadEnd);
+    window.addEventListener('net-result', handleResult);
+
+    return () => {
+      window.removeEventListener('net-read-start', handleReadStart);
+      window.removeEventListener('net-read-end', handleReadEnd);
+      window.removeEventListener('net-result', handleResult);
+      clearTimeout(showTimerId);
+      clearTimeout(stallTimerId);
+    };
+  }, []);
+
   // Контроль подписки на событие системного шинного перехвата fetch-интерцептора
   useEffect(() => {
     const handleShowOfflineToast = (e) => {
@@ -242,6 +321,24 @@ export default function App() {
       }
     },
   });
+
+  // Три состояния одной плашки. Скрыта она только тогда, когда данные на экране
+  // подтверждены сервером — «пусто» больше не может означать «не знаем».
+  const connectionBanner = !isOnline
+    ? {
+        text: 'Нет подключения',
+        shell: 'bg-[#1a080a]/90 border-red-500/20',
+        dot: 'bg-red-500',
+        label: 'text-red-400',
+      }
+    : isRefreshing
+      ? {
+          text: 'Обновляем данные',
+          shell: 'bg-[#0d1017]/90 border-white/15',
+          dot: 'bg-slate-300',
+          label: 'text-slate-300',
+        }
+      : null;
 
   // Фон полей вокруг приложения (видны только на ПК, где оболочка сужена до 800px).
   // Задан инлайном, а не классом bg-surface-canvas: класс требует, чтобы Tailwind
@@ -330,8 +427,8 @@ export default function App() {
         </div>
       </div>
 
-      {/* ФИКСИРОВАННЫЙ ТОП-ЦЕНТР БАННЕР ОФФЛАЙНА НАД ВСЕМИ СЛОЯМИ */}
-      {!isOnline && createPortal(
+      {/* ФИКСИРОВАННЫЙ ТОП-ЦЕНТР БАННЕР СОСТОЯНИЯ СВЯЗИ НАД ВСЕМИ СЛОЯМИ */}
+      {connectionBanner && createPortal(
         <div
           className="absolute left-0 right-0 mx-auto w-max z-[999999] pointer-events-none"
           style={{
@@ -356,10 +453,10 @@ export default function App() {
             `}
           </style>
 
-          <div className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-[#1a080a]/90 backdrop-blur-md border border-red-500/20 shadow-xl shadow-black/50">
-            <span className="w-1.5 h-1.5 rounded-full bg-red-500 animate-pulse shrink-0" />
-            <span className="text-[10px] font-black text-red-400 uppercase tracking-widest select-none whitespace-nowrap">
-              Нет подключения
+          <div className={`flex items-center gap-2 px-3 py-1.5 rounded-full backdrop-blur-md border shadow-xl shadow-black/50 ${connectionBanner.shell}`}>
+            <span className={`w-1.5 h-1.5 rounded-full animate-pulse shrink-0 ${connectionBanner.dot}`} />
+            <span className={`text-[10px] font-black uppercase tracking-widest select-none whitespace-nowrap ${connectionBanner.label}`}>
+              {connectionBanner.text}
             </span>
           </div>
         </div>,

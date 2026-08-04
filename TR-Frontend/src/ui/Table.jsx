@@ -3,7 +3,9 @@ import clsx from 'clsx';
 
 // Сортировка — опциональна per-колонка (col.sortable + необязательный col.sortValue(row)).
 // Колонки без sortable ведут себя как раньше, ничего не ломает существующие таблицы.
-export function Table({ columns, data, rowKey = 'id', onRowClick, className }) {
+// rowProps(row) — необязательные доп. пропсы строки (например хендлеры долгого нажатия);
+// className из них домешивается к базовому, остальные пропсы перекрывают базовые.
+export function Table({ columns, data, rowKey = 'id', onRowClick, rowProps, className }) {
   const [sort, setSort] = useState({ key: null, order: 'asc' });
 
   const handleSort = (col) => {
@@ -65,14 +67,18 @@ export function Table({ columns, data, rowKey = 'id', onRowClick, className }) {
           </tr>
         </thead>
         <tbody>
-          {sortedData.map((row, rIdx) => (
-            <tr 
-              key={row[rowKey] || rIdx} 
+          {sortedData.map((row, rIdx) => {
+            const { className: rowClassName, ...rowRest } = (rowProps ? rowProps(row) : null) || {};
+            return (
+            <tr
+              key={row[rowKey] || rIdx}
               onClick={() => onRowClick && onRowClick(row)}
               className={clsx(
                 "border-b border-surface-border last:border-b-0 transition-colors",
-                onRowClick && "cursor-pointer active:bg-surface-level2/10"
+                onRowClick && "cursor-pointer active:bg-surface-level2/10",
+                rowClassName
               )}
+              {...rowRest}
             >
               {columns.map((col, cIdx) => (
                 <td
@@ -87,7 +93,8 @@ export function Table({ columns, data, rowKey = 'id', onRowClick, className }) {
                 </td>
               ))}
             </tr>
-          ))}
+            );
+          })}
         </tbody>
       </table>
     </div>

@@ -1,24 +1,28 @@
 import React, { useMemo, useRef } from 'react';
 import { ContainerContent } from '../../ui/ContainerContent';
 import { PersonGridCard } from './PersonGridCard';
+import { PersonTableView } from './PersonTableView';
 import { Icon } from '../../ui/Icon';
 import { HintPopover } from '../../ui/HintPopover';
+import { ViewModeToggle } from '../../ui/ViewModeToggle';
 import clsx from 'clsx';
 
 // Импортируем наш новый унифицированный компонент производительности
 import { FadeIn } from '../../ui/FadeIn';
 
-export const TeamRosterPlayers = ({ 
-  roster = [], 
-  onPersonClick, 
-  isEditMode, 
-  setIsEditMode, 
-  hasManageAccess, 
+export const TeamRosterPlayers = ({
+  roster = [],
+  onPersonClick,
+  isEditMode,
+  setIsEditMode,
+  hasManageAccess,
   isManager, // Новый флаг административного статуса
-  onExcludeClick, 
+  onExcludeClick,
   animatingOutId,
   onAddClick,
-  activeBrandColor
+  activeBrandColor,
+  viewMode = 'grid',        // 'grid' — плитка (по умолчанию), 'table' — таблица
+  onViewModeChange
 }) => {
   const pressTimer = useRef(null);
   const pressStartPos = useRef(null);
@@ -50,6 +54,15 @@ export const TeamRosterPlayers = ({
     pressStartPos.current = null;
   };
 
+  // Тот же набор хендлеров долгого нажатия, что висит на плитке — для строк таблицы
+  const pressHandlers = {
+    onPointerDown: handlePointerDown,
+    onPointerUp: cancelPress,
+    onPointerLeave: cancelPress,
+    onPointerCancel: cancelPress,
+    onPointerMove: handlePointerMove
+  };
+
   const groupedPlayers = useMemo(() => {
     return {
       goalie: roster.filter(p => p.position === 'goalie'),
@@ -63,6 +76,12 @@ export const TeamRosterPlayers = ({
     { id: 'defense', label: 'Защитники' },
     { id: 'forward', label: 'Нападающие' }
   ];
+
+  // Переключатель плитка/таблица в шапке блока (состояние живёт в MyTeamPage и
+  // сохраняется в localStorage устройства)
+  const viewToggle = onViewModeChange ? (
+    <ViewModeToggle value={viewMode} onChange={onViewModeChange} activeBrandColor={activeBrandColor} />
+  ) : null;
 
   return (
     <div className="flex flex-col gap-6">
@@ -101,8 +120,24 @@ export const TeamRosterPlayers = ({
         }
 
         return (
-          <ContainerContent key={group.id} title={group.label} count={players.length} action={addButton}>
+          <ContainerContent key={group.id} title={group.label} count={players.length} titleAction={viewToggle} action={addButton}>
             {players.length > 0 ? (
+              viewMode === 'table' ? (
+                <div className="mt-1">
+                  <PersonTableView
+                    people={players}
+                    onPersonClick={isEditMode ? undefined : onPersonClick}
+                    showBadges={true}
+                    activeBrandColor={activeBrandColor}
+                    pressHandlers={pressHandlers}
+                    isEditMode={isEditMode}
+                    canExclude={isEditMode && isManager}
+                    hasManageAccess={hasManageAccess}
+                    onExcludeClick={onExcludeClick}
+                    animatingOutId={animatingOutId}
+                  />
+                </div>
+              ) : (
               <div className="grid grid-cols-[repeat(auto-fill,minmax(94px,1fr))] gap-y-5 gap-x-2 justify-items-center mt-2">
                 {players.map((p, index) => {
                   const isRemoving = p.member_id === animatingOutId;
@@ -171,6 +206,7 @@ export const TeamRosterPlayers = ({
                   );
                 })}
               </div>
+              )
             ) : (
               // Высокопроизводительная пустая заглушка вместо скрытия контейнера
               <div className="text-center py-6 text-[10px] font-bold uppercase tracking-widest text-content-subtle opacity-50 select-none">

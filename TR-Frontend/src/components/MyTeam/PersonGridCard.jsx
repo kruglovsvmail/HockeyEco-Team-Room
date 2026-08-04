@@ -11,8 +11,8 @@ export const PersonGridCard = React.memo(({ person, onClick, showBadges = false,
   const badgeTextColorClass = getContrastTextColor(activeBrandColor);
 
   return (
-    <div 
-      onClick={() => onClick(person)}
+    <div
+      onClick={() => onClick?.(person)}
       className="flex flex-col items-center gap-1.5 select-none w-full cursor-pointer active:scale-[0.98] transition-transform"
     >
       <div className="relative">

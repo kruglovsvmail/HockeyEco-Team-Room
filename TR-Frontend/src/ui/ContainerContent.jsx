@@ -11,6 +11,7 @@ export function ContainerContent({
   children,
   className,
   action,
+  titleAction, // Контрол сразу после названия блока (например переключатель плитка/таблица)
   collapsible = false,
   defaultExpanded = true,
   activeBrandColor, 
@@ -63,11 +64,14 @@ export function ContainerContent({
           )}
           onClick={() => collapsible && setIsExpanded(!isExpanded)}
         >
-          <h4 className="text-[14px] font-bold text-content-muted uppercase tracking-wider">
-            {title}
-            {hasCount && ` (${count})`}
-          </h4>
-          
+          <div className="flex items-center gap-2.5 min-w-0">
+            <h4 className="text-[14px] font-bold text-content-muted uppercase tracking-wider truncate">
+              {title}
+              {hasCount && ` (${count})`}
+            </h4>
+            {titleAction && <div onClick={(e) => e.stopPropagation()}>{titleAction}</div>}
+          </div>
+
           <div className="flex items-center gap-2 shrink-0">
             {action && <div onClick={(e) => e.stopPropagation()}>{action}</div>}
             

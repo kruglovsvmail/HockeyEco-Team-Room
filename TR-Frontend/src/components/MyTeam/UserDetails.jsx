@@ -46,6 +46,22 @@ const InfoRow = ({ label, value, highlight = false, activeBrandColor }) => (
   </div>
 );
 
+// Квадратная плитка перехода в статистику: иконка сверху, подпись в две строки.
+// Две таких плитки стоят в одном ряду сразу под шапкой участника команды.
+const StatsTile = ({ icon, line1, line2, brandColor, onClick }) => (
+  <button
+    type="button"
+    onClick={onClick}
+    className="flex flex-col items-center justify-center gap-2 p-4 bg-surface-level1 border border-surface-border rounded-2xl shadow-sm cursor-pointer active:scale-[0.98] transition-transform outline-none"
+  >
+    <Icon name={icon} className="w-5 h-5" style={{ color: brandColor }} />
+    <div className="flex flex-col items-center gap-0.5">
+      <span className="text-[10px] font-black uppercase tracking-widest text-content-muted leading-none">{line1}</span>
+      <span className="text-[10px] font-black uppercase tracking-widest text-content-main leading-none">{line2}</span>
+    </div>
+  </button>
+);
+
 // Кастомный матовый блок карточки с адаптивным брендированием и сквозной Portal-проверкой подписок
 const CustomBlock = ({ title, icon, isEditing, isManager, hasAccess = true, popoverStatus = "no_subscription", onAction, activeBrandColor, isSaving, children }) => {
   const accentColor = activeBrandColor || 'var(--color-brand)';
@@ -169,8 +185,13 @@ export const UserDetails = ({ data, openRightPanel, pushRightPanel }) => {
   // Проверка: находится ли просматриваемый игрок в ростере турнира
   const isUserInRoster = useMemo(() => !!profile?.roster_id, [profile?.roster_id]);
 
+  // Участник уже покинул команду (team_members.left_at заполнен) — карточка
+  // открывается только для чтения: без карандашей, без ролей и игрового профиля.
+  // left_at берём из ответа сервера, а до загрузки — из строки, по которой кликнули.
+  const isArchivedMember = !!(profile?.left_at || data?.left_at);
+
   // Рассчитываем гранулярные права на редактирование разделов по подписке
-  const hasHeaderBlockAccess = checkAccess('EDIT_USER_BLOCK_BASE', teamId);
+  const hasHeaderBlockAccess = checkAccess('EDIT_USER_BLOCK_BASE', teamId) && !isArchivedMember;
   const hasRolesBlockAccess = checkAccess('EDIT_USER_BLOCK_ROLES', teamId);
   const hasHockeyBlockAccess = checkAccess('EDIT_USER_BLOCK_HOCKEY', teamId);
 
@@ -405,7 +426,7 @@ export const UserDetails = ({ data, openRightPanel, pushRightPanel }) => {
       activeBrandColor,
       hasTeamColor: !!activeBrandColor,
       hideBioTiles: true
-    }, 'Турниры и лиги');
+    }, 'Статистика в турнирах');
   };
 
   // Переход в статистику игрока внутри этой команды (посещаемость тренировок и т.п.)
@@ -503,13 +524,21 @@ export const UserDetails = ({ data, openRightPanel, pushRightPanel }) => {
             </div>
 
             <div className="flex flex-col text-left flex-1 min-w-0">
-              <span 
-                className="text-[10px] font-black uppercase tracking-widest mb-1 block"
-                style={{ color: profile.roster_id ? 'var(--color-success)' : 'var(--color-content-subtle)' }}
-              >
-                {profile.roster_id ? 'В ростере' : 'Не в ростере'}
-              </span>
-              
+              {/* Для ушедшего участника статус ростера уже не имеет смысла — вместо
+                  него показываем дату выхода из состава команды. */}
+              {isArchivedMember ? (
+                <span className="text-[10px] font-black uppercase tracking-widest mb-1 block text-content-subtle">
+                  Ушёл {dayjs(profile.left_at || data?.left_at).format('DD.MM.YYYY')}
+                </span>
+              ) : (
+                <span
+                  className="text-[10px] font-black uppercase tracking-widest mb-1 block"
+                  style={{ color: profile.roster_id ? 'var(--color-success)' : 'var(--color-content-subtle)' }}
+                >
+                  {profile.roster_id ? 'В ростере' : 'Не в ростере'}
+                </span>
+              )}
+
               <h2 className="font-bold text-content-main uppercase whitespace-nowrap leading-tight" style={{ fontSize: uiFixed(16) }}>{profile.last_name}</h2>
               <h3 className="text-[12px] font-bold text-content-muted mt-0.5 capitalize">{profile.first_name}</h3>
               {profile.middle_name && <h4 className="text-[12px] font-medium text-content-muted truncate opacity-60">{profile.middle_name}</h4>}
@@ -550,24 +579,32 @@ export const UserDetails = ({ data, openRightPanel, pushRightPanel }) => {
           )}
         </div>
 
-        {/* КНОПКА ПЕРЕХОДА В СТАТИСТИКУ ИГРОКА ВНУТРИ КОМАНДЫ (посещаемость тренировок и т.п.) */}
+        {/* ДВЕ ПЛИТКИ ПЕРЕХОДА В СТАТИСТИКУ: внутри команды (посещаемость и т.п.)
+            и по турнирам/лигам. Стоят рядом сразу под шапкой участника. */}
         {pushRightPanel && (
-          <button
-            type="button"
-            onClick={handleOpenTeamStats}
-            className="flex items-center justify-between gap-2 p-3.5 mb-3 bg-surface-level1 border border-surface-border rounded-2xl shadow-sm cursor-pointer active:scale-[0.98] transition-transform outline-none"
-          >
-            <div className="flex items-center gap-2.5">
-              <Icon name="metrics" className="w-4 h-4" style={{ color: brandColor }} />
-              <span className="text-[10px] font-black uppercase text-content-main tracking-widest whitespace-nowrap">Статистика в команде</span>
-            </div>
-            <Icon name="chevron_right" className="w-4 h-4 text-content-subtle" />
-          </button>
+          <div className="grid grid-cols-2 gap-3 mb-3">
+            <StatsTile
+              icon="metrics"
+              line1="Статистика"
+              line2="в команде"
+              brandColor={brandColor}
+              onClick={handleOpenTeamStats}
+            />
+            <StatsTile
+              icon="standings"
+              line1="Статистика"
+              line2="в турнирах"
+              brandColor={brandColor}
+              onClick={handleOpenStats}
+            />
+          </div>
         )}
 
-        {/* БЛОК 1: АДМИНИСТРАТИВНЫЙ СТАТУС РОЛЕЙ (Карандаш строго привязан к canSeeRolesEditBlock) */}
-        <CustomBlock 
-          title="Роли в команде" 
+        {/* БЛОК 1: АДМИНИСТРАТИВНЫЙ СТАТУС РОЛЕЙ (Карандаш строго привязан к canSeeRolesEditBlock).
+            Ушедшему участнику роли и игровой профиль не показываем вовсе. */}
+        {!isArchivedMember && (
+        <CustomBlock
+          title="Роли в команде"
           icon="gear"
           isEditing={isEditRoles}
           isManager={showAdminControls && canSeeRolesEditBlock}
@@ -613,10 +650,12 @@ export const UserDetails = ({ data, openRightPanel, pushRightPanel }) => {
             </div>
           )}
         </CustomBlock>
+        )}
 
         {/* БЛОК 2: ИГРОВОЙ ПРОФИЛЬ (Блокируется регламентным HintPopover, если игрок вне ростера турнира) */}
-        <CustomBlock 
-          title="Игровой профиль" 
+        {!isArchivedMember && (
+        <CustomBlock
+          title="Игровой профиль"
           icon="jersey"
           isEditing={isEditGame}
           isManager={hasHockeyBlockAccess}
@@ -666,20 +705,6 @@ export const UserDetails = ({ data, openRightPanel, pushRightPanel }) => {
             </div>
           )}
         </CustomBlock>
-
-        {/* КНОПКА ПЕРЕХОДА В ПРОФИЛЬ ИГРОКА (сезоны/турниры/статистика) */}
-        {pushRightPanel && (
-          <button
-            type="button"
-            onClick={handleOpenStats}
-            className="flex items-center justify-between gap-2 p-3.5 mb-3 bg-surface-level1 border border-surface-border rounded-2xl shadow-sm cursor-pointer active:scale-[0.98] transition-transform outline-none"
-          >
-            <div className="flex items-center gap-2.5">
-              <Icon name="standings" className="w-4 h-4" style={{ color: brandColor }} />
-              <span className="text-[10px] font-black uppercase text-content-main tracking-widest">Турниры и лиги</span>
-            </div>
-            <Icon name="chevron_right" className="w-4 h-4 text-content-subtle" />
-          </button>
         )}
 
         {/* БЛОК 3: ФИЗИЧЕСКИЕ ДАННЫЕ */}
@@ -697,7 +722,7 @@ export const UserDetails = ({ data, openRightPanel, pushRightPanel }) => {
         </CustomBlock>
 
         {/* ЗЕЛЕНЫЙ БЛОК ВИРТУАЛЬНОГО ПРОФИЛЯ РУКОВОДИТЕЛЯ */}
-        {profile.virtual_code && (
+        {profile.virtual_code && !isArchivedMember && (
           <div className="p-4 bg-surface-level1 border-2 rounded-2xl shadow-sm animate-fade-in mt-1"
           style={{ borderColor: activeBrandColor || 'var(--color-success)' }}>
             <div className="flex items-center justify-between">

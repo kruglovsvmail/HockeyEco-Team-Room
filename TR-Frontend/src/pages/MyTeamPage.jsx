@@ -26,6 +26,12 @@ const TEAM_OPTIONS = [
   { value: 'staff', label: 'Штаб' }
 ];
 
+// Ключи localStorage для переключателя «плитка / таблица» (отдельно на вкладку)
+const VIEW_MODE_KEYS = {
+  all: 'tr_myteam_view_all',
+  roster: 'tr_myteam_view_roster'
+};
+
 export const MyTeamPage = () => {
   const { openRightPanel, selectedTeam, user, onTeamUpdated, registerHeaderEdit } = useOutletContext();
   const selectedTeamId = selectedTeam?.id;
@@ -60,6 +66,21 @@ export const MyTeamPage = () => {
   const activeBrandColor = hasTeamColor ? teamColorSource : 'var(--color-brand)';
 
   const [activeTab, setActiveTab] = useState('all');
+
+  // Режим отображения списков людей: 'grid' (плитка, по умолчанию) или 'table'.
+  // Своё значение для каждой вкладки, живёт в localStorage конкретного устройства.
+  const [viewModeAll, setViewModeAll] = useState(
+    () => localStorage.getItem(VIEW_MODE_KEYS.all) === 'table' ? 'table' : 'grid'
+  );
+  const [viewModeRoster, setViewModeRoster] = useState(
+    () => localStorage.getItem(VIEW_MODE_KEYS.roster) === 'table' ? 'table' : 'grid'
+  );
+
+  const handleViewModeChange = useCallback((tab, mode) => {
+    localStorage.setItem(VIEW_MODE_KEYS[tab], mode);
+    if (tab === 'all') setViewModeAll(mode);
+    else setViewModeRoster(mode);
+  }, []);
 
   const [isLoading, setIsLoading] = useState(() => {
     if (selectedTeamId) {
@@ -414,10 +435,12 @@ export const MyTeamPage = () => {
               <div className="w-1/3 shrink-0 transition-opacity duration-500" style={{ opacity: activeTab === 'all' ? 1 : 0.3 }}>
                 <Suspense fallback={<PageLoader />}>
                   {activeTab === 'all' && (
-                    <TeamAllMembers 
+                    <TeamAllMembers
                       members={teamData.members || []} onPersonClick={handlePersonClick} isEditMode={isEditMode}
                       setIsEditMode={setIsEditMode} hasManageAccess={hasAllTabManageAccess} isManager={hasAllTabManageAccess} onExcludeClick={handleExcludeClick} animatingOutId={animatingOutId}
                       activeBrandColor={hasTeamColor ? activeBrandColor : null}
+                      viewMode={viewModeAll}
+                      onViewModeChange={(mode) => handleViewModeChange('all', mode)}
                       onAddClick={() => {
                         setSearchPhone('');
                         setSearchResult(null);
@@ -431,10 +454,12 @@ export const MyTeamPage = () => {
               <div className="w-1/3 shrink-0 transition-opacity duration-500" style={{ opacity: activeTab === 'roster' ? 1 : 0.3 }}>
                 <Suspense fallback={<PageLoader />}>
                   {activeTab === 'roster' && (
-                    <TeamRosterPlayers 
+                    <TeamRosterPlayers
                       roster={teamData.roster || []} onPersonClick={handlePersonClick} isEditMode={isEditMode}
                       setIsEditMode={setIsEditMode} hasManageAccess={hasRosterTabManageAccess} isManager={hasRosterTabManageAccess} onExcludeClick={handleExcludeClick} animatingOutId={animatingOutId}
                       activeBrandColor={hasTeamColor ? activeBrandColor : null}
+                      viewMode={viewModeRoster}
+                      onViewModeChange={(mode) => handleViewModeChange('roster', mode)}
                       onAddClick={handleOpenRosterSheet}
                     />
                   )}

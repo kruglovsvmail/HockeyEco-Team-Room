@@ -158,25 +158,28 @@ export const getTeamDetails = async (req, res) => {
     try {
         const teamId = req.params.id;
         
-        // 1. Р—Р°РїСЂРѕСЃ РїРѕР»РЅРѕРіРѕ СЃРїРёСЃРєР° С‡Р»РµРЅРѕРІ РєРѕРјР°РЅРґС‹ (Р°РєС‚РёРІРЅС‹Рµ СѓС‡Р°СЃС‚РЅРёРєРё СЃРѕСЃС‚Р°РІР°)
+        // 1. Запрос полного списка членов команды: отдаём и действующих, и ушедших
+        // (tm.left_at IS NOT NULL) — фронт делит их по left_at на «Общий состав»
+        // и «Ушедшие из команды».
         const membersQuery = `
-            SELECT 
-                tm.id as member_id, u.id as user_id, 
-                u.first_name, u.last_name, u.birth_date, u.height, u.weight,
+            SELECT
+                tm.id as member_id, u.id as user_id,
+                u.first_name, u.last_name, u.middle_name, u.birth_date, u.height, u.weight,
                 COALESCE(tm.photo_url, u.avatar_url) as avatar_url,
+                tm.left_at,
                 tr.position, tr.jersey_number, tr.is_captain, tr.is_assistant
             FROM team_members tm
             JOIN users u ON u.id = tm.user_id
             LEFT JOIN team_rosters tr ON tm.id = tr.member_id AND tr.left_at IS NULL
-            WHERE tm.team_id = $1 AND tm.left_at IS NULL
+            WHERE tm.team_id = $1
             ORDER BY u.last_name, u.first_name
         `;
 
         // 2. Р—Р°РїСЂРѕСЃ Р°РєС‚РёРІРЅРѕРіРѕ РёРіСЂРѕРІРѕРіРѕ СЂРѕСЃС‚РµСЂР° РЅР° С‚СѓСЂРЅРёСЂС‹
         const rosterQuery = `
-            SELECT 
-                tm.id as member_id, u.id as user_id, 
-                u.first_name, u.last_name, u.birth_date, u.height, u.weight,
+            SELECT
+                tm.id as member_id, u.id as user_id,
+                u.first_name, u.last_name, u.middle_name, u.birth_date, u.height, u.weight,
                 COALESCE(tm.photo_url, u.avatar_url) as avatar_url,
                 tr.position, tr.jersey_number, tr.is_captain, tr.is_assistant
             FROM team_rosters tr
@@ -234,22 +237,26 @@ export const getTeamMemberDetails = async (req, res) => {
     const canEditHeader = await checkPermissionInternal(reqUserId, teamId, 'EDIT_USER_BLOCK_BASE');
     const canViewVirtualCode = await checkPermissionInternal(reqUserId, teamId, 'VIEW_VIRTUAL_CODE');
 
+    // Фильтра по tm.left_at здесь намеренно нет: карточка открывается и для ушедших
+    // участников (блок «Ушедшие из команды»). Признак ухода отдаём полем left_at —
+    // фронт по нему показывает карточку только для чтения.
     const query = `
-      SELECT 
-        u.id as user_id, tm.id as member_id, u.first_name, u.last_name, u.middle_name, 
+      SELECT
+        u.id as user_id, tm.id as member_id, u.first_name, u.last_name, u.middle_name,
         u.phone, u.birth_date, u.height, u.weight, u.grip, u.virtual_code,
         tm.photo_url as team_photo_url,
         COALESCE(tm.photo_url, u.avatar_url) as avatar_url,
+        tm.left_at,
         tr.id as roster_id, tr.position, tr.jersey_number, tr.is_captain, tr.is_assistant,
         (
-          SELECT string_agg(trole.role, ', ') 
-          FROM team_roles trole 
+          SELECT string_agg(trole.role, ', ')
+          FROM team_roles trole
           WHERE trole.member_id = tm.id AND trole.left_at IS NULL
         ) as roles
       FROM team_members tm
       JOIN users u ON u.id = tm.user_id
       LEFT JOIN team_rosters tr ON tm.id = tr.member_id AND tr.left_at IS NULL
-      WHERE tm.team_id = $1 AND u.id = $2 AND tm.left_at IS NULL
+      WHERE tm.team_id = $1 AND u.id = $2
     `;
 
     const { rows } = await pool.query(query, [teamId, userId]);

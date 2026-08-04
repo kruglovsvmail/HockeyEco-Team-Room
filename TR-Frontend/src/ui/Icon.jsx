@@ -28,6 +28,9 @@ export function Icon({ name, className = "w-6 h-6", style, strokeWidth }) {
     chevron: <svg {...baseProps}><polyline points="6 9 12 15 18 9"></polyline></svg>,
     standings: <svg {...baseProps}><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><path d="M3 9h18"/><path d="M3 15h18"/><path d="M9 3v18"/></svg>,
     metrics: <svg {...baseProps}><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg>,
+    // Переключатель отображения списков: плитка (сетка карточек) / таблица (строки)
+    view_grid: <svg {...baseProps}><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></svg>,
+    view_table: <svg {...baseProps}><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M3 9h18"/><path d="M3 14.5h18"/><path d="M9 9v11"/></svg>,
     transfers: <svg {...baseProps}><path d="M7 21V3"/><path d="m3 7 4-4 4 4"/><path d="M17 3v18"/><path d="m21 17-4 4-4-4"/></svg>,
     handbook: <svg {...baseProps}><path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"/><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"/></svg>,
     divisions: <svg {...baseProps}><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><path d="M12 2v20"/></svg>,

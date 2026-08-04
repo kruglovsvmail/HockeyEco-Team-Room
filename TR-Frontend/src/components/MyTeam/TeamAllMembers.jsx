@@ -1,22 +1,26 @@
 import React, { useRef, useMemo } from 'react';
 import { ContainerContent } from '../../ui/ContainerContent';
 import { PersonGridCard } from './PersonGridCard';
+import { PersonTableView } from './PersonTableView';
 import { Icon } from '../../ui/Icon';
 import { HintPopover } from '../../ui/HintPopover';
+import { ViewModeToggle } from '../../ui/ViewModeToggle';
 import clsx from 'clsx';
 import { FadeIn } from '../../ui/FadeIn';
 
-export const TeamAllMembers = ({ 
-  members = [], 
-  onPersonClick, 
-  isEditMode, 
-  setIsEditMode, 
-  hasManageAccess, 
+export const TeamAllMembers = ({
+  members = [],
+  onPersonClick,
+  isEditMode,
+  setIsEditMode,
+  hasManageAccess,
   isManager, // Новый флаг административного статуса
-  onExcludeClick, 
+  onExcludeClick,
   animatingOutId,
   onAddClick,
-  activeBrandColor
+  activeBrandColor,
+  viewMode = 'grid',        // 'grid' — плитка (по умолчанию), 'table' — таблица
+  onViewModeChange
 }) => {
   const pressTimer = useRef(null);
   const pressStartPos = useRef(null);
@@ -47,13 +51,31 @@ export const TeamAllMembers = ({
     pressStartPos.current = null;
   };
 
-  // Разделяем состав на активных участников и архивных (у которых left_at не NULL)
+  // Тот же набор хендлеров долгого нажатия, что висит на плитке — для строк таблицы
+  const pressHandlers = {
+    onPointerDown: handlePointerDown,
+    onPointerUp: cancelPress,
+    onPointerLeave: cancelPress,
+    onPointerCancel: cancelPress,
+    onPointerMove: handlePointerMove
+  };
+
+  // Разделяем состав на действующих участников и ушедших (у которых left_at не NULL).
+  // Ушедшие сортируются по дате ухода — самые свежие сверху.
   const { activeMembers, archivedMembers } = useMemo(() => {
     return {
       activeMembers: members.filter(m => !m.left_at),
-      archivedMembers: members.filter(m => !!m.left_at)
+      archivedMembers: members
+        .filter(m => !!m.left_at)
+        .sort((a, b) => String(b.left_at).localeCompare(String(a.left_at)))
     };
   }, [members]);
+
+  // Переключатель плитка/таблица в шапке блока (состояние живёт в MyTeamPage и
+  // сохраняется в localStorage устройства)
+  const viewToggle = onViewModeChange ? (
+    <ViewModeToggle value={viewMode} onChange={onViewModeChange} activeBrandColor={activeBrandColor} />
+  ) : null;
 
   // Контекстная кнопка добавления хоккеиста в правый угол шапки общего состава
   let addButton = null;
@@ -86,6 +108,25 @@ export const TeamAllMembers = ({
     }
   }
 
+  // Табличное отображение — тот же список, но строками (сортировка по алфавиту ФИО).
+  // Ушедших не трогаем: ни долгого нажатия, ни крестика исключения.
+  const renderTable = (itemsList, isArchiveGroup = false) => (
+    <div className={clsx("mt-1", isArchiveGroup && "opacity-60")}>
+      <PersonTableView
+        people={itemsList}
+        onPersonClick={isEditMode && !isArchiveGroup ? undefined : onPersonClick}
+        showBadges={false}
+        activeBrandColor={isArchiveGroup ? 'var(--color-content-subtle)' : activeBrandColor}
+        pressHandlers={isArchiveGroup ? null : pressHandlers}
+        isEditMode={isEditMode && !isArchiveGroup}
+        canExclude={isEditMode && isManager && !isArchiveGroup}
+        hasManageAccess={hasManageAccess}
+        onExcludeClick={onExcludeClick}
+        animatingOutId={animatingOutId}
+      />
+    </div>
+  );
+
   const renderGrid = (itemsList, isArchiveGroup = false) => (
     <div className="grid grid-cols-[repeat(auto-fill,minmax(94px,1fr))] gap-y-5 gap-x-2 justify-items-center mt-2">
       {itemsList.map((m, index) => {
@@ -117,9 +158,10 @@ export const TeamAllMembers = ({
                 isRemoving && "animate-slot-exit"
               )}
             >
-              <PersonGridCard 
-                person={m} 
-                onClick={isEditMode ? undefined : onPersonClick} 
+              <PersonGridCard
+                person={m}
+                /* Ушедших исключать уже нечем — их карточка открывается и в режиме правки */
+                onClick={isEditMode && !isArchiveGroup ? undefined : onPersonClick}
                 showBadges={false}
                 activeBrandColor={isArchiveGroup ? 'var(--color-content-subtle)' : activeBrandColor}
               />
@@ -156,12 +198,16 @@ export const TeamAllMembers = ({
     </div>
   );
 
+  const renderList = (itemsList, isArchiveGroup = false) => (
+    viewMode === 'table' ? renderTable(itemsList, isArchiveGroup) : renderGrid(itemsList, isArchiveGroup)
+  );
+
   return (
     <div className="flex flex-col gap-3">
-      {/* Секция активного состава */}
-      <ContainerContent title="Общий состав" count={activeMembers.length} action={addButton}>
+      {/* Секция действующего состава */}
+      <ContainerContent title="Общий состав" count={activeMembers.length} titleAction={viewToggle} action={addButton}>
         {activeMembers.length > 0 ? (
-          renderGrid(activeMembers, false)
+          renderList(activeMembers, false)
         ) : (
           <div className="text-center py-6 text-[10px] font-bold uppercase tracking-widest text-content-subtle opacity-50 select-none">
             Активные участники отсутствуют
@@ -169,10 +215,11 @@ export const TeamAllMembers = ({
         )}
       </ContainerContent>
 
-      {/* Секция архивных участников (скрыта, если пуста) */}
+      {/* Секция ушедших участников — team_members.left_at заполнен (скрыта, если пуста).
+          Карточка такого участника открывается только для чтения (UserDetails). */}
       {archivedMembers.length > 0 && (
-        <ContainerContent title="Архив состава" count={archivedMembers.length}>
-          {renderGrid(archivedMembers, true)}
+        <ContainerContent title="Ушедшие из команды" count={archivedMembers.length} titleAction={viewToggle}>
+          {renderList(archivedMembers, true)}
         </ContainerContent>
       )}
     </div>

@@ -1205,10 +1205,12 @@ export const MatchProtocol = ({ event, user, selectedTeam, openRightPanel }) => 
 
   return (
     <FadeIn>
-      {canFillResults && <FillResultsPanel />}
+      {/* Кнопки «Настройки» / «Ввод результатов» показываем только когда ход матча
+          уже загружен — иначе они висят над лоадером и дёргают лейаут. */}
+      {!loading && canFillResults && <FillResultsPanel />}
 
       {/* Стартовые вратари — над лентой, только в режиме ввода результатов */}
-      {canFillResults && isEditMode && <StartingGoaliesLine />}
+      {!loading && canFillResults && isEditMode && <StartingGoaliesLine />}
 
       {loading ? (
         <PageLoader />
