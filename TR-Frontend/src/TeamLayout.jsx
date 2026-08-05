@@ -52,6 +52,14 @@ dayjs.extend(utc);
 dayjs.extend(timezone);
 dayjs.locale('ru');
 
+// event_type из календаря (match / team_training / club_meeting / …) → тип в адресе
+// /event/:eventType/:eventId. Та же свёртка, что и при переходе из карточки календаря.
+const routeTypeOfEvent = (eventType = '') => {
+  if (eventType.includes('training')) return 'training';
+  if (eventType.includes('meeting')) return 'meeting';
+  return 'match';
+};
+
 export function TeamLayout() {
   return <TeamLayoutContent />;
 }
@@ -208,10 +216,58 @@ function TeamLayoutContent() {
     }
   }, [eventMatch, eventFromState]);
 
+  // Холодное открытие ссылки на событие (шеринг, закладка, перезапуск PWA): в history.state
+  // и sessionStorage карточки нет, поэтому дотягиваем её из календаря по id. Календарь отдаёт
+  // только события команд и клубов пользователя — чужое событие просто не найдётся, и мы,
+  // как и раньше, уводим на «/».
+  const [isHydratingEvent, setIsHydratingEvent] = useState(false);
+
   useEffect(() => {
-    if (eventMatch && !eventForOverlay) {
+    if (!eventMatch || eventForOverlay) return;
+
+    const { eventType, eventId } = eventMatch.params;
+
+    // Без токена адрес не трогаем: fetchMe ниже сам уведёт на /login, а «/» в истории
+    // только затёр бы ссылку, по которой пользователь пришёл.
+    if (!getToken()) return;
+
+    if (!navigator.onLine) {
       navigate('/', { replace: true });
+      return;
     }
+
+    let cancelled = false;
+    setIsHydratingEvent(true);
+
+    (async () => {
+      try {
+        const res = await fetch(
+          `${import.meta.env.VITE_API_URL}/api/calendar?eventId=${encodeURIComponent(eventId)}&eventType=${encodeURIComponent(eventType)}`,
+          { headers: getAuthHeaders() }
+        );
+        const data = await res.json();
+        const card = (data?.cards || []).find(
+          c => String(c.event_id) === String(eventId) && routeTypeOfEvent(c.event_type) === eventType
+        );
+        if (cancelled) return;
+
+        if (!card) {
+          navigate('/', { replace: true });
+          return;
+        }
+
+        sessionStorage.setItem(`tr_event_${eventType}_${eventId}`, JSON.stringify(card));
+        // history.state тоже должен знать о событии — иначе следующий рефреш снова придёт пустым
+        navigate(`/event/${eventType}/${eventId}`, { replace: true, state: { event: card } });
+      } catch (err) {
+        console.error('Не удалось открыть событие по ссылке:', err);
+        if (!cancelled) navigate('/', { replace: true });
+      } finally {
+        if (!cancelled) setIsHydratingEvent(false);
+      }
+    })();
+
+    return () => { cancelled = true; };
   }, [eventMatch, eventForOverlay, navigate]);
 
   const handleCloseEvent = useCallback(() => {
@@ -588,6 +644,14 @@ function TeamLayoutContent() {
           )}
         </div>
       </div>
+
+      {/* Заглушка на время подтягивания события по ссылке — иначе под ней на секунду
+          мелькает календарь, с которого пользователь на самом деле не приходил. */}
+      {eventMatch && !eventForOverlay && isHydratingEvent && (
+        <div className="absolute inset-0 z-[100] bg-surface-base">
+          <PageLoader />
+        </div>
+      )}
 
       {/* Overlay деталей события. Сдвигается влево при открытой панели редактирования или профиля игрока. */}
       <AnimatePresence>

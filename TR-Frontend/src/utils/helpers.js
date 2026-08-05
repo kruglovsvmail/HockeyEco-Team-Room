@@ -9,6 +9,43 @@ export const getPortalRoot = () => {
 // итоговый видимый размер оставался равен исходному px независимо от выбранного масштаба.
 export const uiFixed = (px) => `calc(${px}px / var(--ui-scale, 1))`;
 
+// Сенсорное ли устройство. Проверяем именно способ ввода, а не размер окна и не userAgent:
+// на телефоне уместно системное окно «Поделиться», на ПК с мышью — копирование в буфер
+// (Chrome под Windows тоже умеет navigator.share, но открывает громоздкую панель Windows).
+export const isTouchDevice = () =>
+  typeof window !== 'undefined' && window.matchMedia('(pointer: coarse)').matches;
+
+// Копирование в буфер обмена. navigator.clipboard браузер отдаёт только на https и localhost,
+// а при заходе по локальному IP (http://192.168.x.x:5173) его просто нет — там откатываемся
+// на устаревший execCommand через временное поле ввода. Возвращает, получилось ли скопировать.
+export const copyToClipboard = async (text) => {
+  if (window.isSecureContext && navigator.clipboard) {
+    try {
+      await navigator.clipboard.writeText(text);
+      return true;
+    } catch { /* браузер отказал — пробуем запасной путь ниже */ }
+  }
+
+  try {
+    const textarea = document.createElement('textarea');
+    textarea.value = text;
+    // Поле обязано быть в документе и видимым для браузера: из display:none
+    // или visibility:hidden копирование не работает, поэтому просто уводим его за экран
+    textarea.setAttribute('readonly', '');
+    textarea.style.position = 'fixed';
+    textarea.style.top = '-1000px';
+    textarea.style.opacity = '0';
+    document.body.appendChild(textarea);
+    textarea.select();
+    textarea.setSelectionRange(0, text.length);
+    const copied = document.execCommand('copy');
+    document.body.removeChild(textarea);
+    return copied;
+  } catch {
+    return false;
+  }
+};
+
 export const getToken = () => localStorage.getItem('teampwa_token') || sessionStorage.getItem('teampwa_token');
 
 export const removeToken = () => {

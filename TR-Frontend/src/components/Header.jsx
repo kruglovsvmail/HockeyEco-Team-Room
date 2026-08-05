@@ -9,8 +9,10 @@ export function Header({
   hideActions = false, title, section,
   // Режим вложенного экрана (детали события и т.п.):
   // onBack — если задан, левая кнопка становится «назад» вместо тоггла сайдбара;
+  // showShareButton/onShareClick — кнопка «поделиться ссылкой» слева от карандаша;
   // showEditButton/onEditClick — правая кнопка-карандаш редактирования.
   onBack, showEditButton = false, onEditClick,
+  showShareButton = false, onShareClick,
 }) {
   const location = useLocation();
 
@@ -153,18 +155,33 @@ export function Header({
           {getSectionTitle()}
         </div>
 
-        {/* Правая кнопка: редактирование (если включено), иначе пустой плейсхолдер для центрирования заголовка */}
-        {showEditButton ? (
-          <button
-            onClick={onEditClick}
-            className="p-2.5 bg-white/10 rounded-xl text-content-main hover:text-brand transition-colors outline-none z-10 cursor-pointer active:scale-95 flex items-center justify-center"
-            aria-label="Редактировать"
-          >
-            <Icon name="edit" className="w-4 h-4" />
-          </button>
-        ) : (
-          <div className="w-9 h-9 opacity-0 pointer-events-none" />
-        )}
+        {/* Правая группа: «поделиться ссылкой» + «редактировать».
+            Когда обе кнопки скрыты — пустой плейсхолдер, чтобы шапка не «съезжала». */}
+        <div className="flex items-center gap-2 z-10">
+          {showShareButton && (
+            <button
+              onClick={onShareClick}
+              className="p-2.5 bg-white/10 rounded-xl text-content-main hover:text-brand transition-colors outline-none cursor-pointer active:scale-95 flex items-center justify-center"
+              aria-label="Поделиться ссылкой"
+            >
+              <Icon name="share" className="w-4 h-4" />
+            </button>
+          )}
+
+          {showEditButton && (
+            <button
+              onClick={onEditClick}
+              className="p-2.5 bg-white/10 rounded-xl text-content-main hover:text-brand transition-colors outline-none cursor-pointer active:scale-95 flex items-center justify-center"
+              aria-label="Редактировать"
+            >
+              <Icon name="edit" className="w-4 h-4" />
+            </button>
+          )}
+
+          {!showShareButton && !showEditButton && (
+            <div className="w-9 h-9 opacity-0 pointer-events-none" />
+          )}
+        </div>
       </div>
     </header>
   );

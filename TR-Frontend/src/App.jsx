@@ -136,17 +136,20 @@ const BANNER_EXIT_MS = 260;
 
 // Три состояния одной плашки. Скрыта она только тогда, когда данные на экране
 // подтверждены сервером — «пусто» больше не может означать «не знаем».
+// indicator: 'dot' — статус-состояние, мигающая точка; 'spinner' — идёт запрос,
+// и вращение честно показывает, что процесс живой, а не просто «что-то не так».
 const BANNER_VARIANTS = {
   offline: {
     text: 'Нет подключения',
+    indicator: 'dot',
     shell: 'bg-[#1a080a]/90 border-red-500/20',
     dot: 'bg-red-500',
     label: 'text-red-400',
   },
   refreshing: {
     text: 'Обновляем данные',
+    indicator: 'spinner',
     shell: 'bg-[#0d1017]/90 border-white/15',
-    dot: 'bg-slate-300',
     label: 'text-slate-300',
   },
 };
@@ -504,7 +507,17 @@ export default function App() {
           {/* transition-colors: переход «обновляем» → «нет подключения» происходит без
               ухода плашки, поэтому смену цвета сглаживаем, чтобы она не щёлкала */}
           <div className={`flex items-center gap-2 px-3 py-1.5 rounded-full backdrop-blur-md border shadow-xl shadow-black/50 transition-colors duration-300 ${connectionBanner.shell}`}>
-            <span className={`w-1.5 h-1.5 rounded-full animate-pulse shrink-0 ${connectionBanner.dot}`} />
+            {connectionBanner.indicator === 'spinner' ? (
+              // Кольцо с прозрачным сектором: цвет берётся из label через border-current,
+              // поэтому отдельный цвет для спиннера в варианте не нужен
+              <span
+                className={`w-3 h-3 rounded-full border-2 border-current border-r-transparent animate-spin shrink-0 ${connectionBanner.label}`}
+                role="status"
+                aria-label="Идёт обновление"
+              />
+            ) : (
+              <span className={`w-1.5 h-1.5 rounded-full animate-pulse shrink-0 ${connectionBanner.dot}`} />
+            )}
             <span className={`text-[10px] font-black uppercase tracking-widest select-none whitespace-nowrap ${connectionBanner.label}`}>
               {connectionBanner.text}
             </span>

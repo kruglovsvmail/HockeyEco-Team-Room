@@ -4,7 +4,7 @@ import { promoteExpiredMatchesToNoResult } from '../utils/matchStatus.js';
 export const getEvents = async (req, res) => {
   try {
     const userId = req.user.id;
-    const { startDate, endDate } = req.query;
+    const { startDate, endDate, eventId, eventType } = req.query;
 
     // =========================================================================
     // АВТОМАТИЧЕСКОЕ ОБСЛУЖИВАНИЕ FRIENDLY_PWA-МАТЧЕЙ (БЕЗ ВНЕШНИХ ПЛАНИРОВЩИКОВ)
@@ -32,9 +32,34 @@ export const getEvents = async (req, res) => {
     // не вносились — переводим в finished_no_result (ленивая смена статуса).
     await promoteExpiredMatchesToNoResult();
 
-    const dateFilter = startDate && endDate 
-      ? `AND event_date BETWEEN $2 AND $3` 
-      : ``;
+    // Фильтры финальной выборки. Номера плейсхолдеров берутся из длины queryParams,
+    // поэтому порядок push в queryParams и в eventFilters обязан совпадать.
+    const queryParams = [userId];
+    const eventFilters = [];
+
+    if (startDate && endDate) {
+      queryParams.push(startDate, endDate);
+      eventFilters.push(`AND event_date BETWEEN $${queryParams.length - 1} AND $${queryParams.length}`);
+    }
+
+    // Точечный запрос одной карточки — открытие события по прямой ссылке /event/:eventType/:eventId.
+    // eventType приходит в «маршрутном» виде (match/training/meeting), разворачиваем его
+    // в реальные значения event_type из UNION ALL ниже.
+    const ROUTE_EVENT_TYPES = {
+      match:    ['match'],
+      training: ['team_training', 'club_training'],
+      meeting:  ['team_meeting', 'club_meeting'],
+    };
+
+    const numericEventId = Number(eventId);
+    if (Number.isInteger(numericEventId)) {
+      queryParams.push(numericEventId);
+      eventFilters.push(`AND event_id = $${queryParams.length}`);
+    }
+    if (ROUTE_EVENT_TYPES[eventType]) {
+      queryParams.push(ROUTE_EVENT_TYPES[eventType]);
+      eventFilters.push(`AND event_type = ANY($${queryParams.length}::text[])`);
+    }
 
     const query = `
       WITH user_context AS (
@@ -538,14 +563,9 @@ export const getEvents = async (req, res) => {
         UNION ALL
         SELECT * FROM club_meetings_cte
       ) AS all_events
-      WHERE 1=1 ${startDate && endDate ? dateFilter : ''}
+      WHERE 1=1 ${eventFilters.join('\n      ')}
       ORDER BY event_date ASC;
     `;
-
-    const queryParams = [userId];
-    if (startDate && endDate) {
-      queryParams.push(startDate, endDate);
-    }
 
     const result = await pool.query(query, queryParams);
     res.json({ success: true, cards: result.rows });
