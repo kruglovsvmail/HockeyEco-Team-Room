@@ -60,6 +60,15 @@ const routeTypeOfEvent = (eventType = '') => {
   return 'match';
 };
 
+// Есть ли внутри приложения куда возвращаться. React Router нумерует свои записи истории
+// в window.history.state.idx, и 0 — это первая запись вкладки: человек пришёл прямо по
+// ссылке, шаг назад увёл бы его из приложения (обратно в мессенджер), а не в календарь.
+// Если idx нет (историю двигали вручную, как в openPanel100) — ведём себя как раньше.
+const canGoBackInApp = () => {
+  const idx = window.history.state?.idx;
+  return typeof idx === 'number' ? idx > 0 : true;
+};
+
 export function TeamLayout() {
   return <TeamLayoutContent />;
 }
@@ -270,13 +279,20 @@ function TeamLayoutContent() {
     return () => { cancelled = true; };
   }, [eventMatch, eventForOverlay, navigate]);
 
-  const handleCloseEvent = useCallback(() => {
-    navigate(-1);
+  // Кнопка «назад» во вложенных экранах: обычно шаг по истории, но при заходе
+  // по прямой ссылке истории нет — тогда уводим на страницу, откуда экран обычно
+  // открывают, иначе кнопка просто не работает.
+  const goBackOrTo = useCallback((fallbackPath) => {
+    if (canGoBackInApp()) {
+      navigate(-1);
+      return;
+    }
+    navigate(fallbackPath, { replace: true });
   }, [navigate]);
 
-  const handleCloseApplication = useCallback(() => {
-    navigate(-1);
-  }, [navigate]);
+  const handleCloseEvent = useCallback(() => goBackOrTo('/'), [goBackOrTo]);
+
+  const handleCloseApplication = useCallback(() => goBackOrTo('/manager/season-rosters'), [goBackOrTo]);
 
   // Патч события из EditEventPanel.
   // ВАЖНО: history.state.event сохраняется браузером между рефрешами, поэтому
