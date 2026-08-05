@@ -338,49 +338,56 @@ class TournamentController {
               ga.game_id, ga.scoring_team_id, ga.home_team_id,
               ga.from_shot,
               CASE WHEN ga.scoring_team_id = ga.home_team_id THEN gl.away_goalie_id
-                   ELSE gl.home_goalie_id END AS conceding_goalie_id
+                   ELSE gl.home_goalie_id END AS conceding_goalie_id,
+              -- Пропустившая команда: без неё вратарь, сыгравший в дивизионе за две
+              -- команды, получал бы сумму по обеим в каждую свою заявку
+              CASE WHEN ga.scoring_team_id = ga.home_team_id THEN ga.away_team_id
+                   ELSE ga.home_team_id END AS conceding_team_id
             FROM GoalsAbsTime ga
             JOIN game_goalie_log gl ON gl.game_id = ga.game_id AND gl.time_seconds <= ga.abs_time
             ORDER BY ga.event_id, gl.time_seconds DESC
           ),
           GoaliesGA AS (
             -- Все пропущенные шайбы (для GA и КН)
-            SELECT conceding_goalie_id AS player_id, COUNT(*) AS ga
+            SELECT conceding_goalie_id AS player_id, conceding_team_id AS team_id, COUNT(*) AS ga
             FROM GoalToGoalie WHERE conceding_goalie_id IS NOT NULL
-            GROUP BY conceding_goalie_id
+            GROUP BY conceding_goalie_id, conceding_team_id
           ),
           GoaliesGAFromShot AS (
             -- Только пропущенные С БРОСКА — для знаменателя % отражённых
-            SELECT conceding_goalie_id AS player_id, COUNT(*) AS ga_fs
+            SELECT conceding_goalie_id AS player_id, conceding_team_id AS team_id, COUNT(*) AS ga_fs
             FROM GoalToGoalie
             WHERE conceding_goalie_id IS NOT NULL AND from_shot = true
-            GROUP BY conceding_goalie_id
+            GROUP BY conceding_goalie_id, conceding_team_id
           ),
           GoaliesShotsAgainst AS (
             -- В game_shots_by_goalie.shots_count хранятся ВСЕ броски в створ вратарю
             -- (включая ставшие голами с броска). Отражённые вычисляются ниже.
-            SELECT gsb.goalie_id AS player_id, SUM(gsb.shots_count) AS sa
+            -- gsb.team_id — команда вратаря, не бросавшей стороны.
+            SELECT gsb.goalie_id AS player_id, gsb.team_id, SUM(gsb.shots_count) AS sa
             FROM game_shots_by_goalie gsb
             JOIN ValidGames vg ON gsb.game_id = vg.id
             WHERE gsb.goalie_id IS NOT NULL
-            GROUP BY gsb.goalie_id
+            GROUP BY gsb.goalie_id, gsb.team_id
           ),
           GoalieIntervals AS (
+            -- Команду вратаря журнал не хранит, она определяется стороной (home/away)
             SELECT gl.game_id, gl.home_goalie_id, gl.away_goalie_id,
+                   vg.home_team_id, vg.away_team_id,
                    gl.time_seconds AS interval_start,
                    COALESCE(LEAD(gl.time_seconds) OVER (PARTITION BY gl.game_id ORDER BY gl.time_seconds), vg.total_seconds) AS interval_end
             FROM game_goalie_log gl
             JOIN ValidGames vg ON gl.game_id = vg.id
           ),
           GoalieMinutes AS (
-            SELECT home_goalie_id AS player_id, SUM(GREATEST(interval_end - interval_start, 0)) AS secs
-            FROM GoalieIntervals WHERE home_goalie_id IS NOT NULL GROUP BY home_goalie_id
+            SELECT home_goalie_id AS player_id, home_team_id AS team_id, SUM(GREATEST(interval_end - interval_start, 0)) AS secs
+            FROM GoalieIntervals WHERE home_goalie_id IS NOT NULL GROUP BY home_goalie_id, home_team_id
             UNION ALL
-            SELECT away_goalie_id AS player_id, SUM(GREATEST(interval_end - interval_start, 0)) AS secs
-            FROM GoalieIntervals WHERE away_goalie_id IS NOT NULL GROUP BY away_goalie_id
+            SELECT away_goalie_id AS player_id, away_team_id AS team_id, SUM(GREATEST(interval_end - interval_start, 0)) AS secs
+            FROM GoalieIntervals WHERE away_goalie_id IS NOT NULL GROUP BY away_goalie_id, away_team_id
           ),
           GoalieMinutesAgg AS (
-            SELECT player_id, SUM(secs) AS total_secs FROM GoalieMinutes GROUP BY player_id
+            SELECT player_id, team_id, SUM(secs) AS total_secs FROM GoalieMinutes GROUP BY player_id, team_id
           ),
           GoalieCountPerSide AS (
             SELECT game_id,
@@ -389,20 +396,20 @@ class TournamentController {
             FROM game_goalie_log GROUP BY game_id
           ),
           Shutouts AS (
-            SELECT gl.home_goalie_id AS player_id, COUNT(DISTINCT gl.game_id) AS sho
+            SELECT gl.home_goalie_id AS player_id, vg.home_team_id AS team_id, COUNT(DISTINCT gl.game_id) AS sho
             FROM game_goalie_log gl JOIN ValidGames vg ON gl.game_id = vg.id
             JOIN GoalieCountPerSide gc ON gc.game_id = gl.game_id
             WHERE gl.home_goalie_id IS NOT NULL AND gc.home_cnt = 1 AND vg.away_score = 0
-            GROUP BY gl.home_goalie_id
+            GROUP BY gl.home_goalie_id, vg.home_team_id
             UNION ALL
-            SELECT gl.away_goalie_id AS player_id, COUNT(DISTINCT gl.game_id) AS sho
+            SELECT gl.away_goalie_id AS player_id, vg.away_team_id AS team_id, COUNT(DISTINCT gl.game_id) AS sho
             FROM game_goalie_log gl JOIN ValidGames vg ON gl.game_id = vg.id
             JOIN GoalieCountPerSide gc ON gc.game_id = gl.game_id
             WHERE gl.away_goalie_id IS NOT NULL AND gc.away_cnt = 1 AND vg.home_score = 0
-            GROUP BY gl.away_goalie_id
+            GROUP BY gl.away_goalie_id, vg.away_team_id
           ),
           ShutoutsAgg AS (
-            SELECT player_id, SUM(sho) AS total_sho FROM Shutouts GROUP BY player_id
+            SELECT player_id, team_id, SUM(sho) AS total_sho FROM Shutouts GROUP BY player_id, team_id
           ),
           -- Передачи и штрафные минуты вратаря считаются ровно так же, как у полевых:
           -- в протоколе его можно поставить ассистентом и удалить наравне со всеми
@@ -464,11 +471,13 @@ class TournamentController {
           LEFT JOIN team_members tm  ON tm.user_id = u.id AND tm.team_id = t.id
           CROSS JOIN DivisionReg dr
           LEFT JOIN GoalieGamesPlayed    ggp ON ggp.player_id = tr.player_id AND ggp.team_id = tt.team_id
-          LEFT JOIN GoaliesGA            gga ON gga.player_id = tr.player_id
-          LEFT JOIN GoaliesGAFromShot    gfs ON gfs.player_id = tr.player_id
-          LEFT JOIN GoaliesShotsAgainst  gsa ON gsa.player_id = tr.player_id
-          LEFT JOIN GoalieMinutesAgg     gm  ON gm.player_id  = tr.player_id
-          LEFT JOIN ShutoutsAgg          sho ON sho.player_id = tr.player_id
+          -- По паре «игрок + команда», как и остальные показатели рядом: у вратаря,
+          -- сыгравшего в дивизионе за две команды, каждая заявка получает только своё
+          LEFT JOIN GoaliesGA            gga ON gga.player_id = tr.player_id AND gga.team_id = tt.team_id
+          LEFT JOIN GoaliesGAFromShot    gfs ON gfs.player_id = tr.player_id AND gfs.team_id = tt.team_id
+          LEFT JOIN GoaliesShotsAgainst  gsa ON gsa.player_id = tr.player_id AND gsa.team_id = tt.team_id
+          LEFT JOIN GoalieMinutesAgg     gm  ON gm.player_id  = tr.player_id AND gm.team_id  = tt.team_id
+          LEFT JOIN ShutoutsAgg          sho ON sho.player_id = tr.player_id AND sho.team_id = tt.team_id
           LEFT JOIN GoalieAssists        gass ON gass.player_id = tr.player_id AND gass.team_id = tt.team_id
           LEFT JOIN GoaliePenalties      gpen ON gpen.player_id = tr.player_id AND gpen.team_id = tt.team_id
           WHERE tt.division_id = $1

@@ -195,13 +195,17 @@ export const getPlayerProfile = async (req, res) => {
           "GoalToGoalie" AS (
             SELECT DISTINCT ON (ga.event_id)
               ga.game_id, ga.from_shot,
-              CASE WHEN ga.scoring_team_id = ga.home_team_id THEN gl.away_goalie_id ELSE gl.home_goalie_id END AS conceding_goalie_id
+              CASE WHEN ga.scoring_team_id = ga.home_team_id THEN gl.away_goalie_id ELSE gl.home_goalie_id END AS conceding_goalie_id,
+              -- Пропустившая команда: вратарь мог отыграть сезон в дивизионе за две команды,
+              -- и каждая строка сезона должна показывать только свою часть
+              CASE WHEN ga.scoring_team_id = ga.home_team_id THEN ga.away_team_id ELSE ga.home_team_id END AS conceding_team_id
             FROM "GoalsAbsTime" ga
             JOIN "public"."game_goalie_log" gl ON gl.game_id = ga.game_id AND gl.time_seconds <= ga.abs_time
             ORDER BY ga.event_id, gl.time_seconds DESC
           ),
           "GoalieIntervals" AS (
-            SELECT gl.game_id, gl.home_goalie_id, gl.away_goalie_id, gl.time_seconds AS interval_start,
+            SELECT gl.game_id, gl.home_goalie_id, gl.away_goalie_id,
+                   vg.home_team_id, vg.away_team_id, gl.time_seconds AS interval_start,
                    COALESCE(LEAD(gl.time_seconds) OVER (PARTITION BY gl.game_id ORDER BY gl.time_seconds), vg.total_seconds) AS interval_end
             FROM "public"."game_goalie_log" gl JOIN "ValidGames" vg ON gl.game_id = vg.id
           ),
@@ -222,20 +226,22 @@ export const getPlayerProfile = async (req, res) => {
                 UNION ALL
                 SELECT ge.id FROM "public"."game_events" ge JOIN "ValidGames" vg ON ge.game_id = vg.id WHERE ge.event_type = 'goal' AND ge.assist2_id = $1 AND ge.team_id = b.team_id
               ) sub) AS a,
-            COALESCE((SELECT COUNT(*) FROM "GoalToGoalie" WHERE conceding_goalie_id = $1), 0) AS ga,
+            COALESCE((SELECT COUNT(*) FROM "GoalToGoalie" WHERE conceding_goalie_id = $1 AND conceding_team_id = b.team_id), 0) AS ga,
             GREATEST(
-              COALESCE((SELECT SUM(gsb.shots_count) FROM "public"."game_shots_by_goalie" gsb JOIN "ValidGames" vg ON gsb.game_id = vg.id WHERE gsb.goalie_id = $1), 0)
-              - COALESCE((SELECT COUNT(*) FROM "GoalToGoalie" WHERE conceding_goalie_id = $1 AND from_shot = true), 0),
+              COALESCE((SELECT SUM(gsb.shots_count) FROM "public"."game_shots_by_goalie" gsb JOIN "ValidGames" vg ON gsb.game_id = vg.id WHERE gsb.goalie_id = $1 AND gsb.team_id = b.team_id), 0)
+              - COALESCE((SELECT COUNT(*) FROM "GoalToGoalie" WHERE conceding_goalie_id = $1 AND conceding_team_id = b.team_id AND from_shot = true), 0),
               0
             ) AS sv,
-            COALESCE((SELECT SUM(gsb.shots_count) FROM "public"."game_shots_by_goalie" gsb JOIN "ValidGames" vg ON gsb.game_id = vg.id WHERE gsb.goalie_id = $1), 0) AS sa,
+            COALESCE((SELECT SUM(gsb.shots_count) FROM "public"."game_shots_by_goalie" gsb JOIN "ValidGames" vg ON gsb.game_id = vg.id WHERE gsb.goalie_id = $1 AND gsb.team_id = b.team_id), 0) AS sa,
             COALESCE((
               SELECT COUNT(DISTINCT gl.game_id) FROM "public"."game_goalie_log" gl JOIN "ValidGames" vg ON gl.game_id = vg.id
               JOIN "GoalieCountPerSide" gc ON gc.game_id = gl.game_id
-              WHERE (gl.home_goalie_id = $1 AND gc.home_cnt = 1 AND vg.away_score = 0)
-                 OR (gl.away_goalie_id = $1 AND gc.away_cnt = 1 AND vg.home_score = 0)
+              WHERE (gl.home_goalie_id = $1 AND vg.home_team_id = b.team_id AND gc.home_cnt = 1 AND vg.away_score = 0)
+                 OR (gl.away_goalie_id = $1 AND vg.away_team_id = b.team_id AND gc.away_cnt = 1 AND vg.home_score = 0)
             ), 0) AS sho,
-            COALESCE((SELECT SUM(GREATEST(interval_end - interval_start, 0)) FROM "GoalieIntervals" WHERE home_goalie_id = $1 OR away_goalie_id = $1), 0) AS toi
+            COALESCE((SELECT SUM(GREATEST(interval_end - interval_start, 0)) FROM "GoalieIntervals"
+                       WHERE (home_goalie_id = $1 AND home_team_id = b.team_id)
+                          OR (away_goalie_id = $1 AND away_team_id = b.team_id)), 0) AS toi
         ) goalie_reg ON b.position = 'goalie'
         LEFT JOIN LATERAL (
           WITH "ValidGames" AS (
@@ -260,13 +266,17 @@ export const getPlayerProfile = async (req, res) => {
           "GoalToGoalie" AS (
             SELECT DISTINCT ON (ga.event_id)
               ga.game_id, ga.from_shot,
-              CASE WHEN ga.scoring_team_id = ga.home_team_id THEN gl.away_goalie_id ELSE gl.home_goalie_id END AS conceding_goalie_id
+              CASE WHEN ga.scoring_team_id = ga.home_team_id THEN gl.away_goalie_id ELSE gl.home_goalie_id END AS conceding_goalie_id,
+              -- Пропустившая команда: вратарь мог отыграть сезон в дивизионе за две команды,
+              -- и каждая строка сезона должна показывать только свою часть
+              CASE WHEN ga.scoring_team_id = ga.home_team_id THEN ga.away_team_id ELSE ga.home_team_id END AS conceding_team_id
             FROM "GoalsAbsTime" ga
             JOIN "public"."game_goalie_log" gl ON gl.game_id = ga.game_id AND gl.time_seconds <= ga.abs_time
             ORDER BY ga.event_id, gl.time_seconds DESC
           ),
           "GoalieIntervals" AS (
-            SELECT gl.game_id, gl.home_goalie_id, gl.away_goalie_id, gl.time_seconds AS interval_start,
+            SELECT gl.game_id, gl.home_goalie_id, gl.away_goalie_id,
+                   vg.home_team_id, vg.away_team_id, gl.time_seconds AS interval_start,
                    COALESCE(LEAD(gl.time_seconds) OVER (PARTITION BY gl.game_id ORDER BY gl.time_seconds), vg.total_seconds) AS interval_end
             FROM "public"."game_goalie_log" gl JOIN "ValidGames" vg ON gl.game_id = vg.id
           ),
@@ -287,20 +297,22 @@ export const getPlayerProfile = async (req, res) => {
                 UNION ALL
                 SELECT ge.id FROM "public"."game_events" ge JOIN "ValidGames" vg ON ge.game_id = vg.id WHERE ge.event_type = 'goal' AND ge.assist2_id = $1 AND ge.team_id = b.team_id
               ) sub) AS a,
-            COALESCE((SELECT COUNT(*) FROM "GoalToGoalie" WHERE conceding_goalie_id = $1), 0) AS ga,
+            COALESCE((SELECT COUNT(*) FROM "GoalToGoalie" WHERE conceding_goalie_id = $1 AND conceding_team_id = b.team_id), 0) AS ga,
             GREATEST(
-              COALESCE((SELECT SUM(gsb.shots_count) FROM "public"."game_shots_by_goalie" gsb JOIN "ValidGames" vg ON gsb.game_id = vg.id WHERE gsb.goalie_id = $1), 0)
-              - COALESCE((SELECT COUNT(*) FROM "GoalToGoalie" WHERE conceding_goalie_id = $1 AND from_shot = true), 0),
+              COALESCE((SELECT SUM(gsb.shots_count) FROM "public"."game_shots_by_goalie" gsb JOIN "ValidGames" vg ON gsb.game_id = vg.id WHERE gsb.goalie_id = $1 AND gsb.team_id = b.team_id), 0)
+              - COALESCE((SELECT COUNT(*) FROM "GoalToGoalie" WHERE conceding_goalie_id = $1 AND conceding_team_id = b.team_id AND from_shot = true), 0),
               0
             ) AS sv,
-            COALESCE((SELECT SUM(gsb.shots_count) FROM "public"."game_shots_by_goalie" gsb JOIN "ValidGames" vg ON gsb.game_id = vg.id WHERE gsb.goalie_id = $1), 0) AS sa,
+            COALESCE((SELECT SUM(gsb.shots_count) FROM "public"."game_shots_by_goalie" gsb JOIN "ValidGames" vg ON gsb.game_id = vg.id WHERE gsb.goalie_id = $1 AND gsb.team_id = b.team_id), 0) AS sa,
             COALESCE((
               SELECT COUNT(DISTINCT gl.game_id) FROM "public"."game_goalie_log" gl JOIN "ValidGames" vg ON gl.game_id = vg.id
               JOIN "GoalieCountPerSide" gc ON gc.game_id = gl.game_id
-              WHERE (gl.home_goalie_id = $1 AND gc.home_cnt = 1 AND vg.away_score = 0)
-                 OR (gl.away_goalie_id = $1 AND gc.away_cnt = 1 AND vg.home_score = 0)
+              WHERE (gl.home_goalie_id = $1 AND vg.home_team_id = b.team_id AND gc.home_cnt = 1 AND vg.away_score = 0)
+                 OR (gl.away_goalie_id = $1 AND vg.away_team_id = b.team_id AND gc.away_cnt = 1 AND vg.home_score = 0)
             ), 0) AS sho,
-            COALESCE((SELECT SUM(GREATEST(interval_end - interval_start, 0)) FROM "GoalieIntervals" WHERE home_goalie_id = $1 OR away_goalie_id = $1), 0) AS toi
+            COALESCE((SELECT SUM(GREATEST(interval_end - interval_start, 0)) FROM "GoalieIntervals"
+                       WHERE (home_goalie_id = $1 AND home_team_id = b.team_id)
+                          OR (away_goalie_id = $1 AND away_team_id = b.team_id)), 0) AS toi
         ) goalie_po ON b.position = 'goalie'
       )
       SELECT
