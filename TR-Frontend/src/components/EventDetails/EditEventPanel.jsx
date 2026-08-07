@@ -96,7 +96,7 @@ const LockedField = ({ hint, children }) => (
 // Главный компонент панели редактирования
 // =========================================================================
 export const EditEventPanel = ({ data, onClose }) => {
-  const { event: initialEvent, user, selectedTeam, onEventUpdate, onEventDeleted } = data || {};
+  const { event: initialEvent, user, selectedTeam, selectedClub, onEventUpdate, onEventDeleted } = data || {};
   const [event, setEvent] = useState(initialEvent);
 
   useEffect(() => { setEvent(initialEvent); }, [initialEvent?.event_id]);
@@ -105,10 +105,10 @@ export const EditEventPanel = ({ data, onClose }) => {
   const hasTeamColor = isColorsEnabled && !!event?.team_color;
   const activeBrandColor = hasTeamColor ? event.team_color : 'var(--color-brand)';
 
-  const { checkAccess } = useAccess(user, selectedTeam);
+  const { checkAccess, checkClubAccess } = useAccess(user, selectedTeam, selectedClub);
   const { blocks } = useMemo(
-    () => computeEventEditAccess(event, user, selectedTeam, checkAccess),
-    [event, user, selectedTeam, checkAccess]
+    () => computeEventEditAccess(event, user, selectedTeam, checkAccess, checkClubAccess),
+    [event, user, selectedTeam, checkAccess, checkClubAccess]
   );
 
   const eventType = event?.event_type;
@@ -119,6 +119,9 @@ export const EditEventPanel = ({ data, onClose }) => {
   const apiBase = isMatch ? '/api/matches' : isTraining ? '/api/trainings' : '/api/meetings';
   const eventId = event?.event_id || event?.id;
   const teamId = event?.my_team_id;
+  // Клубное событие правится в контексте клуба: команды у него нет,
+  // и сервер ждёт clubId вместо teamId.
+  const clubId = event?.my_club_id || null;
   const arenaTz = event?.arena_timezone || 'UTC';
   const targetDate = event?.event_date || event?.game_date;
 
@@ -223,7 +226,7 @@ export const EditEventPanel = ({ data, onClose }) => {
             location_url: locationUrl,
           }
         : {
-            teamId, eventType,
+            teamId, clubId, eventType,
             date: gameDate, time: gameTime,
             arena_id: selectedArenaId || null,
             location: useManualLocation ? (selectedArenaName || '') : null,
@@ -274,7 +277,7 @@ export const EditEventPanel = ({ data, onClose }) => {
             teamId,
           }
         : {
-            teamId, eventType,
+            teamId, clubId, eventType,
             player_fee: playerFee === '' ? null : Number(playerFee),
           };
 
@@ -332,9 +335,10 @@ export const EditEventPanel = ({ data, onClose }) => {
   const deleteEvent = async () => {
     setSavingBlock('delete');
     try {
+      const scopeQuery = clubId ? `clubId=${clubId}` : `teamId=${teamId}`;
       const url = isMatch
         ? `${import.meta.env.VITE_API_URL}${apiBase}/${eventId}?teamId=${teamId}`
-        : `${import.meta.env.VITE_API_URL}${apiBase}/${eventId}?teamId=${teamId}&eventType=${eventType}`;
+        : `${import.meta.env.VITE_API_URL}${apiBase}/${eventId}?${scopeQuery}&eventType=${eventType}`;
       const res = await fetch(url, { method: 'DELETE', headers: getAuthHeaders() });
       if (!res.ok) {
         const errData = await res.json().catch(() => ({}));
@@ -401,7 +405,8 @@ export const EditEventPanel = ({ data, onClose }) => {
         </div>
         <div className="flex-1 min-h-0 overflow-hidden">
           <ArenaSelector data={{
-            teamId,
+            teamId: clubId ? null : teamId,
+            clubId,
             currentTeamColor: activeBrandColor,
             selectedArenaId,
             selectedArenaName,

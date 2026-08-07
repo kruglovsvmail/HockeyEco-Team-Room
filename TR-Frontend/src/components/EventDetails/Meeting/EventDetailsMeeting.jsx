@@ -23,6 +23,8 @@ const MEETING_TABS = [
 
 // Высота контейнера 1 (text-[30px]=30) = 30px
 const HEADER_1_HEIGHT = 50;
+// Высота строки бейджа «Клубное» над типом события: на неё растёт К1 у клубных событий
+const CLUB_BADGE_ROW_HEIGHT = 22;
 
 export const EventDetailsMeeting = ({ event, openRightPanel }) => {
   const [activeTab, setActiveTab] = useState('attendance');
@@ -30,7 +32,14 @@ export const EventDetailsMeeting = ({ event, openRightPanel }) => {
 
   useEffect(() => { setLocalEvent(event); }, [event?.event_id]);
 
-  const cacheKey = `tr_cached_meeting_${localEvent?.event_id}_team_${localEvent?.my_team_id || 'no_team'}`;
+  // Клубное собрание не принадлежит команде: его контекст — клуб (my_club_id)
+  const eventClubId = localEvent?.my_club_id || null;
+  const isClubEvent = !!eventClubId;
+  const scopeQuery = isClubEvent ? `clubId=${eventClubId}` : `teamId=${localEvent?.my_team_id}`;
+
+  const cacheKey = isClubEvent
+    ? `tr_cached_meeting_${localEvent?.event_id}_club_${eventClubId}`
+    : `tr_cached_meeting_${localEvent?.event_id}_team_${localEvent?.my_team_id || 'no_team'}`;
 
   const [meetingData, setMeetingData] = useState({
     attendees:    [],
@@ -61,7 +70,7 @@ export const EventDetailsMeeting = ({ event, openRightPanel }) => {
 
   // ── Загрузка данных ───────────────────────────────────────────────────────
   const fetchAllMeetingData = useCallback(async () => {
-    if (!localEvent?.event_id || !localEvent?.my_team_id) return;
+    if (!localEvent?.event_id || (!localEvent?.my_team_id && !eventClubId)) return;
     if (!navigator.onLine) { setLoading(false); return; }
 
     try {
@@ -70,11 +79,11 @@ export const EventDetailsMeeting = ({ event, openRightPanel }) => {
 
       const [attRes, rosterRes] = await Promise.all([
         fetch(
-          `${apiUrl}/api/meetings/${localEvent.event_id}/attendance?eventType=${localEvent.event_type}&teamId=${localEvent.my_team_id}`,
+          `${apiUrl}/api/meetings/${localEvent.event_id}/attendance?eventType=${localEvent.event_type}&${scopeQuery}`,
           { headers }
         ),
         fetch(
-          `${apiUrl}/api/meetings/${localEvent.event_id}/roster?teamId=${localEvent.my_team_id}&eventType=${localEvent.event_type}`,
+          `${apiUrl}/api/meetings/${localEvent.event_id}/roster?${scopeQuery}&eventType=${localEvent.event_type}`,
           { headers }
         ),
       ]);
@@ -95,7 +104,7 @@ export const EventDetailsMeeting = ({ event, openRightPanel }) => {
     } finally {
       setLoading(false);
     }
-  }, [localEvent?.event_id, localEvent?.event_type, localEvent?.my_team_id, cacheKey]);
+  }, [localEvent?.event_id, localEvent?.event_type, localEvent?.my_team_id, eventClubId, scopeQuery, cacheKey]);
 
   useEffect(() => { fetchAllMeetingData(); }, [fetchAllMeetingData]);
   useFocusRevalidate(fetchAllMeetingData);
@@ -115,6 +124,8 @@ export const EventDetailsMeeting = ({ event, openRightPanel }) => {
   if (!localEvent) return null;
 
   const isClub = localEvent?.event_type === 'club_meeting';
+  // У клубного события над типом стоит бейдж «Клубное» — шапка выше на его строку
+  const headerHeight = HEADER_1_HEIGHT + (isClub ? CLUB_BADGE_ROW_HEIGHT : 0);
   const arenaTz = localEvent?.arena_timezone || 'UTC';
   const targetDate = localEvent?.event_date;
 
@@ -135,11 +146,27 @@ export const EventDetailsMeeting = ({ event, openRightPanel }) => {
       style={{ overflowAnchor: 'none' }}
     >
 
-      {/* ── К1: СОБРАНИЕ + ВРЕМЯ — sticky, всегда виден ──
-          Высота жёстко зафиксирована uiFixed(HEADER_1_HEIGHT) — иначе при масштабе
-          шапка растёт (или бейдж «Клубное» переносится второй строкой), а sticky-табы
-          снизу залипают на старом отступе top:50px, образуя видимую дыру между К1 и табами. */}
-      <div className="sticky top-0 z-30 bg-surface-base select-none flex items-center" style={{ height: uiFixed(HEADER_1_HEIGHT) }}>
+      {/* ── К1: БЕЙДЖ «КЛУБНОЕ» + СОБРАНИЕ + ВРЕМЯ — sticky, всегда виден ──
+          Высота задана явно и растёт на высоту строки бейджа у клубного события:
+          sticky-табы ниже прилипают ровно на headerHeight, поэтому обе величины
+          обязаны считаться из одного места — иначе между К1 и табами будет дыра. */}
+      <div className="sticky top-0 z-30 bg-surface-base select-none flex flex-col justify-center" style={{ height: uiFixed(headerHeight) }}>
+        {isClub && (
+          <div className="flex w-full px-5" style={{ marginBottom: uiFixed(2) }}>
+            <span
+              className="font-black uppercase tracking-widest rounded-full border shrink-0 whitespace-nowrap"
+              style={{
+                color:            activeBrandColor,
+                borderColor:      `${activeBrandColor}40`,
+                backgroundColor:  `${activeBrandColor}12`,
+                fontSize: uiFixed(10),
+                paddingLeft: uiFixed(8), paddingRight: uiFixed(8), paddingTop: uiFixed(2), paddingBottom: uiFixed(2)
+              }}
+            >
+              Клубное
+            </span>
+          </div>
+        )}
         <div className="flex items-center w-full px-5">
           <div className="w-[70%] pr-2 flex items-center gap-2 flex-nowrap min-w-0">
             <span
@@ -148,20 +175,6 @@ export const EventDetailsMeeting = ({ event, openRightPanel }) => {
             >
               Собрание
             </span>
-            {isClub && (
-              <span
-                className="font-black uppercase tracking-widest rounded-full border shrink-0 whitespace-nowrap"
-                style={{
-                  color:            activeBrandColor,
-                  borderColor:      `${activeBrandColor}40`,
-                  backgroundColor:  `${activeBrandColor}12`,
-                  fontSize: uiFixed(10),
-                  paddingLeft: uiFixed(8), paddingRight: uiFixed(8), paddingTop: uiFixed(2), paddingBottom: uiFixed(2)
-                }}
-              >
-                Клубное
-              </span>
-            )}
           </div>
           <div className="w-[30%] flex justify-end items-center gap-2">
             <span className="font-black text-content-main leading-none" style={{ fontSize: uiFixed(30) }}>
@@ -262,7 +275,7 @@ export const EventDetailsMeeting = ({ event, openRightPanel }) => {
       {/* ── ТАБЫ — sticky, прилипают ровно под К1 ── */}
       <div
         className="sticky z-20 bg-surface-base shadow-lg pb-1"
-        style={{ top: uiFixed(HEADER_1_HEIGHT) }}
+        style={{ top: uiFixed(headerHeight) }}
       >
         <ChipTabs
           tabs={MEETING_TABS}

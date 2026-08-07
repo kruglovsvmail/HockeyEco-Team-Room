@@ -2,6 +2,8 @@ import pool from '../config/db.js';
 import transporter from '../config/mail.js';
 import bcrypt from 'bcrypt';
 import jwt from 'jsonwebtoken';
+import { ROLES } from '../utils/permissions.js';
+import { toClubRoleName } from '../utils/checkPermission.js';
 
 /**
  * Middleware для проверки JWT токена
@@ -52,10 +54,10 @@ const fetchPwaUserProfile = async (userId) => {
   // Ниже в WHERE обращение к tournament_team_roles остаётся: заявленный на турнир человек
   // должен видеть команду в списке, просто с пустым набором ролей.
   const teamsResult = await pool.query(`
-    SELECT t.id, t.name, t.short_name, t.logo_url, t.owner_id,
+    SELECT t.id, t.name, t.short_name, t.logo_url, t.owner_id, t.club_id,
       (
         SELECT string_agg(DISTINCT role, ',') FROM (
-          SELECT cr.role FROM club_roles cr 
+          SELECT (CASE WHEN cr.role = 'coach' THEN 'club_coach' ELSE cr.role END) AS role FROM club_roles cr 
           JOIN club_members cm ON cm.club_id = cr.club_id AND cm.user_id = cr.user_id
           WHERE cr.club_id = t.club_id AND cr.user_id = $1 AND cr.left_at IS NULL AND cm.left_at IS NULL
           
@@ -73,6 +75,12 @@ const fetchPwaUserProfile = async (userId) => {
           UNION
 
           SELECT 'owner' as role FROM teams WHERE id = t.id AND owner_id = $1
+
+          UNION
+
+          -- Владелец клуба стоит над владельцем команды: получает свою роль
+          -- во всех командах клуба, членства в клубе для этого не требуется
+          SELECT 'club_owner' as role FROM clubs c WHERE c.id = t.club_id AND c.owner_id = $1
         ) AS roles
       ) as user_role
     FROM teams t
@@ -81,9 +89,12 @@ const fetchPwaUserProfile = async (userId) => {
       SELECT 1 FROM team_members tm WHERE tm.team_id = t.id AND tm.user_id = $1 AND tm.left_at IS NULL
     )
     OR EXISTS (
-      SELECT 1 FROM club_roles cr 
+      SELECT 1 FROM club_roles cr
       JOIN club_members cm ON cm.club_id = cr.club_id AND cm.user_id = cr.user_id
       WHERE cr.club_id = t.club_id AND cr.user_id = $1 AND cr.left_at IS NULL AND cm.left_at IS NULL
+    )
+    OR EXISTS (
+      SELECT 1 FROM clubs c WHERE c.id = t.club_id AND c.owner_id = $1
     )
     OR EXISTS (
       SELECT 1 FROM tournament_team_roles ttr 
@@ -92,12 +103,42 @@ const fetchPwaUserProfile = async (userId) => {
     )
   `, [user.id]);
 
+  // Клубы пользователя: он либо владелец клуба, либо состоит в его общей базе (club_members).
+  // Роли здесь клубные (top_manager, club_admin, coach) плюс player за само членство —
+  // ровно тот же набор, что проверяет getClubRoles на бэкенде, иначе фронт нарисует
+  // кнопки, которые сервер потом отклонит.
+  const clubsResult = await pool.query(`
+    SELECT c.id, c.name, c.logo_url, c.city, c.description, c.color_1, c.color_2, c.owner_id,
+      (
+        SELECT string_agg(DISTINCT role, ',') FROM (
+          SELECT cr.role FROM club_roles cr
+          JOIN club_members cm ON cm.club_id = cr.club_id AND cm.user_id = cr.user_id
+          WHERE cr.club_id = c.id AND cr.user_id = $1 AND cr.left_at IS NULL AND cm.left_at IS NULL
+
+          UNION
+
+          SELECT 'player' AS role FROM club_members cm
+          WHERE cm.club_id = c.id AND cm.user_id = $1 AND cm.left_at IS NULL
+
+          UNION
+
+          SELECT 'owner' AS role FROM clubs WHERE id = c.id AND owner_id = $1
+        ) AS roles
+      ) AS user_role
+    FROM clubs c
+    WHERE c.owner_id = $1
+    OR EXISTS (
+      SELECT 1 FROM club_members cm WHERE cm.club_id = c.id AND cm.user_id = $1 AND cm.left_at IS NULL
+    )
+    ORDER BY c.name
+  `, [user.id]);
+
   // Сборка оперативной In-Memory матрицы доступов для фронтенда
   const accessMatrix = {};
   teamsResult.rows.forEach(row => {
     const roles = row.user_role ? row.user_role.split(',') : [];
     const isOwner = row.owner_id === user.id;
-    
+
     if (isOwner && !roles.includes('owner')) {
       roles.push('owner');
     }
@@ -106,6 +147,33 @@ const fetchPwaUserProfile = async (userId) => {
       is_owner: isOwner,
       has_subscription: hasSubscription,
       roles: roles
+    };
+  });
+
+  // Клубная матрица держится отдельно от командной: идентификаторы у команд и клубов
+  // свои собственные, и склеивать их в один объект нельзя — id совпадут и права потекут.
+  const clubAccessMatrix = {};
+  const clubs = clubsResult.rows.map(row => {
+    // Имена ролей приводим к клубным (coach → club_coach, владелец → club_owner):
+    // фронт сверяет их с теми же ключами permissions.js, что и бэкенд.
+    const roles = row.user_role ? row.user_role.split(',').map(toClubRoleName) : [];
+    const isOwner = row.owner_id === user.id;
+
+    if (isOwner && !roles.includes(ROLES.CLUB_OWNER)) {
+      roles.push(ROLES.CLUB_OWNER);
+    }
+
+    clubAccessMatrix[row.id] = {
+      is_owner: isOwner,
+      has_subscription: hasSubscription,
+      roles: roles
+    };
+
+    return {
+      ...row,
+      user_roles: roles,
+      is_owner: isOwner,
+      has_subscription: hasSubscription,
     };
   });
 
@@ -122,7 +190,9 @@ const fetchPwaUserProfile = async (userId) => {
     subscriptionExpiresAt: user.subscription_expires_at,
     hasSubscription: hasSubscription,
     teams: teamsResult.rows,
-    accessMatrix: accessMatrix
+    clubs: clubs,
+    accessMatrix: accessMatrix,
+    clubAccessMatrix: clubAccessMatrix
   };
 };
 

@@ -1,21 +1,42 @@
 import pool from '../config/db.js';
-import { checkPermissionInternal } from '../utils/checkPermission.js';
-import { sendPushToTeamExcept, getTrainingInfo } from '../services/pushService.js';
+import { checkPermissionInternal, checkClubPermissionInternal } from '../utils/checkPermission.js';
+import { sendPushToEventScopeExcept, getTrainingInfo } from '../services/pushService.js';
 
 export const getTrainingLines = async (req, res) => {
   try {
     const { eventId } = req.params;
-    const { teamId, eventType } = req.query;
+    const { teamId, clubId, eventType } = req.query;
 
-    if (!teamId) {
-      return res.status(400).json({ success: false, error: 'teamId обязателен' });
+    if (!teamId && !clubId) {
+      return res.status(400).json({ success: false, error: 'teamId или clubId обязателен' });
     }
 
-    const table = eventType === 'club_training' ? 'club_training' : 'team_training';
+    const isClub = eventType === 'club_training';
+    const table = isClub ? 'club_training' : 'team_training';
 
     const check = await pool.query(`SELECT id FROM "${table}" WHERE id = $1`, [eventId]);
     if (check.rowCount === 0) {
       return res.status(404).json({ success: false, error: 'Тренировка не найдена' });
+    }
+
+    // Клубная расстановка живёт в своей таблице: у неё нет команды, а фото человека
+    // берётся из личного профиля — на общий лёд приходят игроки разных составов.
+    if (isClub) {
+      const result = await pool.query(`
+        SELECT
+          cft.player_id,
+          cft.line_number,
+          cft.position_in_line,
+          cft.jersey_color,
+          u.first_name,
+          u.last_name,
+          u.avatar_url
+        FROM club_formation_training cft
+        JOIN users u ON u.id = cft.player_id
+        WHERE cft.club_training_id = $1 AND cft.club_id = $2
+      `, [eventId, clubId]);
+
+      return res.json({ success: true, lines: result.rows });
     }
 
     const result = await pool.query(`
@@ -45,18 +66,24 @@ export const saveTrainingLines = async (req, res) => {
   try {
     const initiatorId = req.user.id;
     const { eventId } = req.params;
-    const { teamId, eventType, lines } = req.body;
+    const { teamId, clubId, eventType, lines } = req.body;
 
-    if (!teamId || !Array.isArray(lines)) {
+    if ((!teamId && !clubId) || !Array.isArray(lines)) {
       return res.status(400).json({ success: false, error: 'Некорректные данные' });
     }
 
-    const hasAccess = await checkPermissionInternal(initiatorId, teamId, 'TRAINING_LINES_MANAGE', client);
+    const isClub = eventType === 'club_training';
+
+    // Расстановку на клубной тренировке ставит только тренер клуба
+    const hasAccess = isClub
+      ? await checkClubPermissionInternal(initiatorId, clubId, 'CLUB_TRAINING_LINES_MANAGE', client)
+      : await checkPermissionInternal(initiatorId, teamId, 'TRAINING_LINES_MANAGE', client);
+
     if (!hasAccess) {
       return res.status(403).json({ success: false, error: 'У вас нет прав для сохранения расстановки' });
     }
 
-    const table = eventType === 'club_training' ? 'club_training' : 'team_training';
+    const table = isClub ? 'club_training' : 'team_training';
     const check = await client.query(`SELECT id FROM "${table}" WHERE id = $1`, [eventId]);
     if (check.rowCount === 0) {
       return res.status(404).json({ success: false, error: 'Тренировка не найдена' });
@@ -64,22 +91,36 @@ export const saveTrainingLines = async (req, res) => {
 
     await client.query('BEGIN');
 
-    await client.query(
-      `DELETE FROM team_formation_training WHERE team_training_id = $1 AND team_id = $2`,
-      [eventId, teamId]
-    );
+    if (isClub) {
+      await client.query(
+        `DELETE FROM club_formation_training WHERE club_training_id = $1 AND club_id = $2`,
+        [eventId, clubId]
+      );
 
-    for (const player of lines) {
-      await client.query(`
-        INSERT INTO team_formation_training (team_training_id, team_id, player_id, line_number, position_in_line, jersey_color)
-        VALUES ($1, $2, $3, $4, $5, $6)
-      `, [eventId, teamId, player.player_id, player.line_number, player.position_in_line, player.jersey_color || null]);
+      for (const player of lines) {
+        await client.query(`
+          INSERT INTO club_formation_training (club_training_id, club_id, player_id, line_number, position_in_line, jersey_color)
+          VALUES ($1, $2, $3, $4, $5, $6)
+        `, [eventId, clubId, player.player_id, player.line_number, player.position_in_line, player.jersey_color || null]);
+      }
+    } else {
+      await client.query(
+        `DELETE FROM team_formation_training WHERE team_training_id = $1 AND team_id = $2`,
+        [eventId, teamId]
+      );
+
+      for (const player of lines) {
+        await client.query(`
+          INSERT INTO team_formation_training (team_training_id, team_id, player_id, line_number, position_in_line, jersey_color)
+          VALUES ($1, $2, $3, $4, $5, $6)
+        `, [eventId, teamId, player.player_id, player.line_number, player.position_in_line, player.jersey_color || null]);
+      }
     }
 
     await client.query('COMMIT');
 
     getTrainingInfo(eventId, eventType).then(info => {
-      sendPushToTeamExcept(teamId, req.user.id, 'lines', {
+      sendPushToEventScopeExcept({ teamId, clubId }, req.user.id, 'lines', {
         title: 'Состав на тренировку обновлён',
         body: info.text,
         url: `/event/${eventType}/${eventId}`,

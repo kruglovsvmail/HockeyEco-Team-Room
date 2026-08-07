@@ -11,7 +11,11 @@ export const TeamStaffMembers = ({ staff = [], onPersonClick, activeBrandColor }
     'team_manager': 'Руководитель',
     'team_admin': 'Администратор',
     'coach': 'Тренер',
-    'head_coach': 'Главный тренер'
+    'head_coach': 'Главный тренер',
+    // Клубные роли: слово «клуб» не дублируем — таблица и так клубная,
+    // а строки top_manager/club_admin в командном штабе не встречаются
+    'top_manager': 'Руководитель',
+    'club_admin': 'Администратор'
   };
 
   const staffColumns = useMemo(() => [

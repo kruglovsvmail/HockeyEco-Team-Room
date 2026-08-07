@@ -1,7 +1,8 @@
 import React, { useState, useEffect, useCallback } from 'react';
+import { useOutletContext } from 'react-router-dom';
 import { useFocusRevalidate } from '../hooks/useFocusRevalidate';
 import { usePushSubscription } from '../hooks/usePushSubscription';
-import { getAuthHeaders, getImageUrl } from '../utils/helpers';
+import { getAuthHeaders, getImageUrl, hasTeamInClub } from '../utils/helpers';
 import { SegmentedControl } from '../ui/SegmentedControl';
 import { FadeIn, StaggerContainer } from '../ui/FadeIn';
 import { Icon } from '../ui/Icon';
@@ -27,6 +28,12 @@ const SettingsBlock = ({ title, icon, children }) => {
 };
 
 export function SettingsPage() {
+  const { user, teams } = useOutletContext() || {};
+
+  // Настройка «Все команды клуба» осмысленна только тому, кто состоит хотя бы
+  // в одной команде, привязанной к клубу: остальным прятать в меню нечего.
+  const showClubTeamsSetting = hasTeamInClub(teams || [], user?.id);
+
   // Навигационное состояние верхнего сегментного переключателя
   const [activeSubTab, setActiveSubTab] = useState('appearance');
 
@@ -48,6 +55,12 @@ export function SettingsPage() {
     return localStorage.getItem('tr_ui_scale') || '1';
   });
 
+  // Показывать ли в сайдбаре команды клуба, в которых человек не состоит.
+  // По умолчанию показываем — выключение это осознанный выбор игрока большого клуба.
+  const [showAllClubTeams, setShowAllClubTeams] = useState(() => {
+    return localStorage.getItem('tr_sidebar_all_club_teams') !== 'false';
+  });
+
   const handleChangeScale = (value) => {
     setUiScale(value);
     localStorage.setItem('tr_ui_scale', value);
@@ -59,6 +72,13 @@ export function SettingsPage() {
   const handleToggleColors = (checked) => {
     setUseTeamColors(checked);
     localStorage.setItem('tr_use_team_colors', checked ? 'true' : 'false');
+  };
+
+  const handleToggleClubTeams = (checked) => {
+    setShowAllClubTeams(checked);
+    localStorage.setItem('tr_sidebar_all_club_teams', checked ? 'true' : 'false');
+    // Сайдбар живёт в TeamLayout и о правке localStorage сам не узнает
+    window.dispatchEvent(new Event('tr_sidebar_club_teams_changed'));
   };
 
   const handleToggleTheme = (checked) => {
@@ -127,7 +147,24 @@ export function SettingsPage() {
                 </div>
               </SettingsBlock>
 
-              {/* БЛОК 3: НАСТРОЙКА МАСШТАБА ИНТЕРФЕЙСА (РАЗМЕР ШРИФТА) */}
+              {/* БЛОК 3: СОСТАВ БОКОВОГО МЕНЮ (КОМАНДЫ КЛУБА).
+                  Показываем только тем, у кого есть команда в клубе — остальным
+                  этот тумблер ничего бы не менял. */}
+              {showClubTeamsSetting && (
+              <SettingsBlock title="Боковое меню" icon="users">
+                <div className="flex items-center justify-between">
+                  <div className="flex flex-col flex-1 min-w-0">
+                    <span className="text-[18px] font-bold text-content-main">Все команды клуба</span>
+                    <span className="text-[12px] text-content-muted pr-4 mt-0.5">
+                      Выключите, чтобы в меню остались только ваши команды
+                    </span>
+                  </div>
+                  <Toggle checked={showAllClubTeams} onChange={handleToggleClubTeams} />
+                </div>
+              </SettingsBlock>
+              )}
+
+              {/* БЛОК 4: НАСТРОЙКА МАСШТАБА ИНТЕРФЕЙСА (РАЗМЕР ШРИФТА) */}
               <SettingsBlock title="Размер шрифта" icon="text_size">
                 <div className="flex flex-col">
                   <span className="text-[18px] font-bold text-content-main">Масштаб интерфейса</span>

@@ -86,6 +86,28 @@ export const getImageUrl = (path) => {
 };
 
 /**
+ * Роли, которые означают «я действительно в этой команде»: они есть только у того,
+ * кто числится в team_members, или у владельца команды. Клубные роли (top_manager,
+ * club_admin, club_coach, club_owner) сюда не входят — они приходят через клуб и
+ * дают доступ к чужим составам, а не участие в них.
+ */
+export const TEAM_OWN_ROLES = ['player', 'owner', 'team_manager', 'team_admin', 'head_coach', 'coach'];
+
+export const isOwnTeam = (team, userId) => {
+  if (team?.owner_id && String(team.owner_id) === String(userId)) return true;
+  const roles = (team?.user_role || '').split(',').map(r => r.trim().toLowerCase());
+  return roles.some(r => TEAM_OWN_ROLES.includes(r));
+};
+
+/**
+ * Состоит ли человек хотя бы в одной команде, привязанной к клубу.
+ * По этому признаку показывается настройка «Все команды клуба»: тем, у кого
+ * клубных команд нет, прятать в меню нечего.
+ */
+export const hasTeamInClub = (teams = [], userId) =>
+  teams.some(t => !!t?.club_id && isOwnTeam(t, userId));
+
+/**
  * Математический расчет контраста YIQ (W3C Стандарт).
  * Определяет, какой текст лучше читать на переданном HEX-фоне — белый или темный.
  */

@@ -9,7 +9,8 @@ import { getAuthHeaders } from '../../utils/helpers';
 
 export function ArenaSelector({ data }) {
   // Извлекаем переданные ID и имя текущей арены для предзаполнения
-  const { onSelect, currentTeamColor, teamId, selectedArenaId, selectedArenaName } = data || {};
+  // clubId приходит вместо teamId, когда арену выбирают для клубного события
+  const { onSelect, currentTeamColor, teamId, clubId, selectedArenaId, selectedArenaName } = data || {};
 
   const [arenaTab, setArenaTab] = useState('directory'); 
   const [arenaSearch, setArenaSearch] = useState('');
@@ -33,12 +34,13 @@ export function ArenaSelector({ data }) {
   }, [selectedArenaId, selectedArenaName]);
 
   useEffect(() => {
-    if (arenaTab !== 'directory' || !teamId) return;
+    if (arenaTab !== 'directory' || (!teamId && !clubId)) return;
 
     const fetchArenas = async () => {
       setIsLoading(true);
       try {
-        const url = `${import.meta.env.VITE_API_URL}/api/manager/handbooks/arenas?teamId=${teamId}&search=${encodeURIComponent(arenaSearch)}`;
+        const scopeQuery = clubId ? `clubId=${clubId}` : `teamId=${teamId}`;
+        const url = `${import.meta.env.VITE_API_URL}/api/manager/handbooks/arenas?${scopeQuery}&search=${encodeURIComponent(arenaSearch)}`;
         const res = await fetch(url, { headers: getAuthHeaders() });
         if (res.ok) {
           const json = await res.json();
@@ -58,7 +60,7 @@ export function ArenaSelector({ data }) {
     }, 300);
 
     return () => clearTimeout(delayDebounce);
-  }, [arenaSearch, arenaTab, teamId]);
+  }, [arenaSearch, arenaTab, teamId, clubId]);
 
   return (
     <div 

@@ -33,6 +33,8 @@ const TRAINING_TABS = [
 
 // Высота контейнера 1 (text-[30px]=30) = 30px
 const HEADER_1_HEIGHT = 50;
+// Высота строки бейджа «Клубная» над типом события: на неё растёт К1 у клубных событий
+const CLUB_BADGE_ROW_HEIGHT = 22;
 
 export const EventDetailsTraining = ({ event, openRightPanel }) => {
   const [activeTab, setActiveTab] = useState('attendance');
@@ -40,7 +42,15 @@ export const EventDetailsTraining = ({ event, openRightPanel }) => {
 
   useEffect(() => { setLocalEvent(event); }, [event?.event_id]);
 
-  const cacheKey = `tr_cached_training_${localEvent?.event_id}_team_${localEvent?.my_team_id || 'no_team'}`;
+  // Клубная тренировка не принадлежит команде: её контекст — клуб (my_club_id).
+  // Дальше по файлу владельца события описывают эти три значения.
+  const eventClubId = localEvent?.my_club_id || null;
+  const isClubEvent = !!eventClubId;
+  const scopeQuery = isClubEvent ? `clubId=${eventClubId}` : `teamId=${localEvent?.my_team_id}`;
+
+  const cacheKey = isClubEvent
+    ? `tr_cached_training_${localEvent?.event_id}_club_${eventClubId}`
+    : `tr_cached_training_${localEvent?.event_id}_team_${localEvent?.my_team_id || 'no_team'}`;
 
   const [trainingData, setTrainingData] = useState({
     attendees:    [],
@@ -76,7 +86,14 @@ export const EventDetailsTraining = ({ event, openRightPanel }) => {
     } catch { return null; }
   }, [localUser, localEvent?.my_team_id]);
 
-  const { user, checkAccess } = useAccess(localUser, localTeam);
+  const localClub = React.useMemo(() => {
+    try {
+      if (!localUser || !eventClubId) return null;
+      return localUser.clubs?.find(c => String(c.id) === String(eventClubId));
+    } catch { return null; }
+  }, [localUser, eventClubId]);
+
+  const { user, checkAccess, checkClubAccess } = useAccess(localUser, localTeam, localClub);
 
   // ── Права на редактирование ───────────────────────────────────────────────
   const userRoles = React.useMemo(() => {
@@ -84,20 +101,35 @@ export const EventDetailsTraining = ({ event, openRightPanel }) => {
     const globalRole = String(user?.global_role || user?.globalRole || '').toLowerCase();
     if (globalRole === 'admin') roles.push('admin');
 
-    if (localTeam?.user_role) {
-      localTeam.user_role.split(',').forEach(r => roles.push(r.trim().toLowerCase()));
-    }
+    if (isClubEvent) {
+      // Клубное событие: роли берём из клубной матрицы, командные сюда не относятся
+      if (Array.isArray(localClub?.user_roles)) {
+        localClub.user_roles.forEach(r => roles.push(String(r).toLowerCase()));
+      } else if (localClub?.user_role) {
+        localClub.user_role.split(',').forEach(r => roles.push(r.trim().toLowerCase()));
+      }
 
-    const targetTeamId = localEvent?.my_team_id;
-    const matrix = user?.accessMatrix || user?.access_matrix || {};
-    const teamAccess = matrix[targetTeamId];
-    if (teamAccess?.roles) {
-      teamAccess.roles.forEach(r => roles.push(String(r).toLowerCase()));
+      const clubMatrix = user?.clubAccessMatrix || user?.club_access_matrix || {};
+      const clubAccess = clubMatrix[eventClubId];
+      if (clubAccess?.roles) {
+        clubAccess.roles.forEach(r => roles.push(String(r).toLowerCase()));
+      }
+    } else {
+      if (localTeam?.user_role) {
+        localTeam.user_role.split(',').forEach(r => roles.push(r.trim().toLowerCase()));
+      }
+
+      const targetTeamId = localEvent?.my_team_id;
+      const matrix = user?.accessMatrix || user?.access_matrix || {};
+      const teamAccess = matrix[targetTeamId];
+      if (teamAccess?.roles) {
+        teamAccess.roles.forEach(r => roles.push(String(r).toLowerCase()));
+      }
     }
 
     if (roles.length === 0) roles.push('player');
     return [...new Set(roles)];
-  }, [user, localTeam, localEvent?.my_team_id]);
+  }, [user, localTeam, localClub, isClubEvent, eventClubId, localEvent?.my_team_id]);
 
   const hasRoleForAction = (action) => {
     if (userRoles.includes('admin')) return true;
@@ -106,12 +138,20 @@ export const EventDetailsTraining = ({ event, openRightPanel }) => {
     return userRoles.some(r => perm.allowedRoles.map(ar => ar.toLowerCase()).includes(r));
   };
 
-  const showScheduleButton = hasRoleForAction('TRAINING_EDIT_SCHEDULE');
-  const showFinancesButton  = hasRoleForAction('TRAINING_EDIT_FINANCES');
+  // У клубного события расписание и взнос закрыты одним ключом CLUB_MANAGE_EVENTS
+  const scheduleKey = isClubEvent ? 'CLUB_MANAGE_EVENTS' : 'TRAINING_EDIT_SCHEDULE';
+  const financesKey = isClubEvent ? 'CLUB_MANAGE_EVENTS' : 'TRAINING_EDIT_FINANCES';
+
+  const showScheduleButton = hasRoleForAction(scheduleKey);
+  const showFinancesButton  = hasRoleForAction(financesKey);
   const showEditButton      = showScheduleButton || showFinancesButton;
 
-  const hasScheduleSubscription = checkAccess('TRAINING_EDIT_SCHEDULE', localEvent?.my_team_id);
-  const hasFinancesSubscription  = checkAccess('TRAINING_EDIT_FINANCES',  localEvent?.my_team_id);
+  const hasScheduleSubscription = isClubEvent
+    ? checkClubAccess(scheduleKey, eventClubId)
+    : checkAccess(scheduleKey, localEvent?.my_team_id);
+  const hasFinancesSubscription = isClubEvent
+    ? checkClubAccess(financesKey, eventClubId)
+    : checkAccess(financesKey, localEvent?.my_team_id);
   const hasEditSubscription      = hasScheduleSubscription || hasFinancesSubscription;
 
   // ── Состояние шторки редактирования (поднято сюда, как в EventDetailsMatch) ──
@@ -166,7 +206,7 @@ export const EventDetailsTraining = ({ event, openRightPanel }) => {
 
   // ── Загрузка данных ───────────────────────────────────────────────────────
   const fetchAllTrainingData = useCallback(async () => {
-    if (!localEvent?.event_id || !localEvent?.my_team_id) return;
+    if (!localEvent?.event_id || (!localEvent?.my_team_id && !eventClubId)) return;
     if (!navigator.onLine) { setLoading(false); return; }
 
     try {
@@ -175,11 +215,11 @@ export const EventDetailsTraining = ({ event, openRightPanel }) => {
 
       const [attRes, rosterRes] = await Promise.all([
         fetch(
-          `${apiUrl}/api/trainings/${localEvent.event_id}/attendance?eventType=${localEvent.event_type}&teamId=${localEvent.my_team_id}`,
+          `${apiUrl}/api/trainings/${localEvent.event_id}/attendance?eventType=${localEvent.event_type}&${scopeQuery}`,
           { headers }
         ),
         fetch(
-          `${apiUrl}/api/trainings/${localEvent.event_id}/roster?teamId=${localEvent.my_team_id}&eventType=${localEvent.event_type}`,
+          `${apiUrl}/api/trainings/${localEvent.event_id}/roster?${scopeQuery}&eventType=${localEvent.event_type}`,
           { headers }
         ),
       ]);
@@ -200,7 +240,7 @@ export const EventDetailsTraining = ({ event, openRightPanel }) => {
     } finally {
       setLoading(false);
     }
-  }, [localEvent?.event_id, localEvent?.event_type, localEvent?.my_team_id, cacheKey]);
+  }, [localEvent?.event_id, localEvent?.event_type, localEvent?.my_team_id, eventClubId, scopeQuery, cacheKey]);
 
   useEffect(() => { fetchAllTrainingData(); }, [fetchAllTrainingData]);
   useFocusRevalidate(fetchAllTrainingData);
@@ -208,8 +248,9 @@ export const EventDetailsTraining = ({ event, openRightPanel }) => {
   // Предзагрузка картинки расстановки из S3 заранее (на уровне страницы деталей, а не вкладки «Расстановка»).
   const [formationFile, setFormationFile] = useState(null);
   useEffect(() => {
-    if (!localEvent?.my_team_id || !localEvent?.event_id) { setFormationFile(null); return; }
-    const url = getImageUrl(`/roster-formation/team-${localEvent.my_team_id}-formation_training-${localEvent.event_id}.png`);
+    if ((!localEvent?.my_team_id && !eventClubId) || !localEvent?.event_id) { setFormationFile(null); return; }
+    const owner = isClubEvent ? `club-${eventClubId}` : `team-${localEvent.my_team_id}`;
+    const url = getImageUrl(`/roster-formation/${owner}-formation_training-${localEvent.event_id}.png`);
     let cancelled = false;
     (async () => {
       try {
@@ -221,7 +262,7 @@ export const EventDetailsTraining = ({ event, openRightPanel }) => {
       } catch { if (!cancelled) setFormationFile(null); }
     })();
     return () => { cancelled = true; };
-  }, [localEvent?.my_team_id, localEvent?.event_id, trainingData]);
+  }, [localEvent?.my_team_id, eventClubId, isClubEvent, localEvent?.event_id, trainingData]);
 
   // ── Сохранение из шторки — расписание и взнос одним общим запросом ────────
   const handleSave = async () => {
@@ -241,7 +282,8 @@ export const EventDetailsTraining = ({ event, openRightPanel }) => {
             method: 'PUT',
             headers,
             body: JSON.stringify({
-              teamId:          localEvent.my_team_id,
+              teamId:          isClubEvent ? null : localEvent.my_team_id,
+              clubId:          eventClubId,
               eventType:       localEvent.event_type,
               date:            gameDate,
               time:            gameTime,
@@ -261,7 +303,8 @@ export const EventDetailsTraining = ({ event, openRightPanel }) => {
             method: 'PUT',
             headers,
             body: JSON.stringify({
-              teamId:     localEvent.my_team_id,
+              teamId:     isClubEvent ? null : localEvent.my_team_id,
+              clubId:     eventClubId,
               eventType:  localEvent.event_type,
               player_fee: playerFee === '' ? null : Number(playerFee),
             }),
@@ -306,6 +349,8 @@ export const EventDetailsTraining = ({ event, openRightPanel }) => {
   if (!localEvent) return null;
 
   const isClub = localEvent?.event_type === 'club_training';
+  // У клубного события над типом стоит бейдж «Клубная» — шапка выше на его строку
+  const headerHeight = HEADER_1_HEIGHT + (isClub ? CLUB_BADGE_ROW_HEIGHT : 0);
   const arenaTz = localEvent?.arena_timezone || 'UTC';
 
   const eventDateObj = targetDate ? dayjs.utc(targetDate).tz(arenaTz) : null;
@@ -328,11 +373,27 @@ export const EventDetailsTraining = ({ event, openRightPanel }) => {
       style={{ overflowAnchor: 'none' }}
     >
 
-      {/* ── К1: ТРЕНИРОВКА + ВРЕМЯ + КАРАНДАШИК — sticky, всегда виден ──
-          Высота жёстко зафиксирована uiFixed(HEADER_1_HEIGHT) — иначе при масштабе
-          шапка растёт (или бейдж «Клубная» переносится второй строкой), а sticky-табы
-          снизу залипают на старом отступе top:50px, образуя видимую дыру между К1 и табами. */}
-      <div className="sticky top-0 z-30 bg-surface-base select-none flex items-center" style={{ height: uiFixed(HEADER_1_HEIGHT) }}>
+      {/* ── К1: БЕЙДЖ «КЛУБНАЯ» + ТРЕНИРОВКА + ВРЕМЯ — sticky, всегда виден ──
+          Высота задана явно и растёт на высоту строки бейджа у клубного события:
+          sticky-табы ниже прилипают ровно на headerHeight, поэтому обе величины
+          обязаны считаться из одного места — иначе между К1 и табами будет дыра. */}
+      <div className="sticky top-0 z-30 bg-surface-base select-none flex flex-col justify-center" style={{ height: uiFixed(headerHeight) }}>
+        {isClub && (
+          <div className="flex w-full px-5" style={{ marginBottom: uiFixed(2) }}>
+            <span
+              className="font-black uppercase tracking-widest rounded-full border shrink-0 whitespace-nowrap"
+              style={{
+                color:            activeBrandColor,
+                borderColor:      `${activeBrandColor}40`,
+                backgroundColor:  `${activeBrandColor}12`,
+                fontSize: uiFixed(10),
+                paddingLeft: uiFixed(8), paddingRight: uiFixed(8), paddingTop: uiFixed(2), paddingBottom: uiFixed(2)
+              }}
+            >
+              Клубная
+            </span>
+          </div>
+        )}
         <div className="flex items-center w-full px-5">
           <div className="w-[70%] pr-2 flex items-center gap-2 flex-nowrap min-w-0">
             <span
@@ -341,20 +402,6 @@ export const EventDetailsTraining = ({ event, openRightPanel }) => {
             >
               Тренировка
             </span>
-            {isClub && (
-              <span
-                className="font-black uppercase tracking-widest rounded-full border shrink-0 whitespace-nowrap"
-                style={{
-                  color:            activeBrandColor,
-                  borderColor:      `${activeBrandColor}40`,
-                  backgroundColor:  `${activeBrandColor}12`,
-                  fontSize: uiFixed(10),
-                  paddingLeft: uiFixed(8), paddingRight: uiFixed(8), paddingTop: uiFixed(2), paddingBottom: uiFixed(2)
-                }}
-              >
-                Клубная
-              </span>
-            )}
           </div>
           <div className="w-[30%] flex justify-end items-center gap-2">
             <span className="font-black text-content-main leading-none" style={{ fontSize: uiFixed(30) }}>
@@ -455,7 +502,7 @@ export const EventDetailsTraining = ({ event, openRightPanel }) => {
       {/* ── ТАБЫ — sticky, прилипают ровно под К1 ── */}
       <div
         className="sticky z-20 bg-surface-base shadow-lg pb-1"
-        style={{ top: uiFixed(HEADER_1_HEIGHT) }}
+        style={{ top: uiFixed(headerHeight) }}
       >
         <ChipTabs
           tabs={TRAINING_TABS}

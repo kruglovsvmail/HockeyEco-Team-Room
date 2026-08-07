@@ -146,17 +146,23 @@ export const UserDetails = ({ data, openRightPanel, pushRightPanel }) => {
   });
 
   const teamId = data?.team_id;
+  const clubId = data?.club_id;
   const userId = data?.user_id;
   const currentRoster = data?.currentRoster || [];
   const activeBrandColor = data?.activeBrandColor;
 
-  // Извлекаем переданные из MyTeamPage объекты авторизации (так как панель живет вне Outlet дерева)
+  // Клубный контекст: карточку открыли со страницы клуба, а не команды.
+  // У клуба нет игрового профиля и ростера — есть люди, роли и команды клуба.
+  const isClubContext = !!clubId && !teamId;
+
+  // Извлекаем переданные из MyTeamPage/ClubPage объекты авторизации (панель живёт вне Outlet дерева)
   const currentUser = data?.user;
   const currentTeam = data?.selectedTeam;
+  const currentClub = data?.selectedClub;
 
   // Подключаем наш хук доступов к операционной In-Memory матрицы прав
-  const { checkAccess } = useAccess(currentUser, currentTeam);
-  
+  const { checkAccess, checkClubAccess } = useAccess(currentUser, currentTeam, currentClub);
+
   // КЛИЕНТСКИЙ ГАРАНТ: Рассчитываем полный статус руководителя на клиенте для защиты от багов роли в БД
   const frontendIsManager = useMemo(() => {
     if (!currentUser || !currentTeam) return false;
@@ -176,11 +182,27 @@ export const UserDetails = ({ data, openRightPanel, pushRightPanel }) => {
     return String(currentTeam.owner_id) === String(currentUser.id);
   }, [currentUser, currentTeam]);
 
-  // Объединяем оба источника: если хоть один подтверждает, что юзер админ — выкатываем карандаши
-  const showAdminControls = isManager || frontendIsManager;
+  // Клубный аналог: руководитель клуба (или его владелец) правит клубные роли
+  const frontendIsClubManager = useMemo(() => {
+    if (!currentUser || !currentClub) return false;
+    if (String(currentClub.owner_id) === String(currentUser.id)) return true;
+    const clubRoles = Array.isArray(currentClub.user_roles)
+      ? currentClub.user_roles
+      : (currentClub.user_role?.split(',').map(r => r.trim()) || []);
+    return clubRoles.includes('top_manager');
+  }, [currentUser, currentClub]);
 
-  // ЖЕСТКИЙ РОЛЕВОЙ ЗАСЛОН: Карандаш роли видят ТОЛЬКО Owner и Team Manager. Остальные не видят вообще
-  const canSeeRolesEditBlock = isTeamOwner || currentTeamRoles.includes('team_manager') || currentUser?.global_role === 'admin' || currentUser?.globalRole === 'admin';
+  const isGlobalAdmin = currentUser?.global_role === 'admin' || currentUser?.globalRole === 'admin';
+
+  // Объединяем оба источника: если хоть один подтверждает, что юзер админ — выкатываем карандаши
+  const showAdminControls = isClubContext
+    ? (isManager || frontendIsClubManager)
+    : (isManager || frontendIsManager);
+
+  // ЖЕСТКИЙ РОЛЕВОЙ ЗАСЛОН: Карандаш роли видят ТОЛЬКО Owner и Team Manager (в клубе — руководитель клуба)
+  const canSeeRolesEditBlock = isClubContext
+    ? (frontendIsClubManager || isGlobalAdmin)
+    : (isTeamOwner || currentTeamRoles.includes('team_manager') || isGlobalAdmin);
 
   // Проверка: находится ли просматриваемый игрок в ростере турнира
   const isUserInRoster = useMemo(() => !!profile?.roster_id, [profile?.roster_id]);
@@ -190,10 +212,13 @@ export const UserDetails = ({ data, openRightPanel, pushRightPanel }) => {
   // left_at берём из ответа сервера, а до загрузки — из строки, по которой кликнули.
   const isArchivedMember = !!(profile?.left_at || data?.left_at);
 
-  // Рассчитываем гранулярные права на редактирование разделов по подписке
-  const hasHeaderBlockAccess = checkAccess('EDIT_USER_BLOCK_BASE', teamId) && !isArchivedMember;
-  const hasRolesBlockAccess = checkAccess('EDIT_USER_BLOCK_ROLES', teamId);
-  const hasHockeyBlockAccess = checkAccess('EDIT_USER_BLOCK_HOCKEY', teamId);
+  // Рассчитываем гранулярные права на редактирование разделов по подписке.
+  // В клубном контексте редактируемый блок ровно один — роли в клубе.
+  const hasHeaderBlockAccess = !isClubContext && checkAccess('EDIT_USER_BLOCK_BASE', teamId) && !isArchivedMember;
+  const hasRolesBlockAccess = isClubContext
+    ? checkClubAccess('CLUB_MANAGE_ROLES', clubId)
+    : checkAccess('EDIT_USER_BLOCK_ROLES', teamId);
+  const hasHockeyBlockAccess = !isClubContext && checkAccess('EDIT_USER_BLOCK_HOCKEY', teamId);
 
   // Финальный допуск игрового профиля: право по EDIT_USER_BLOCK_HOCKEY + игрок физически в ростере.
   // Намеренно не используем отдельный TEAM_MANAGE_TAB_ROSTER — у него другой набор ролей,
@@ -201,12 +226,18 @@ export const UserDetails = ({ data, openRightPanel, pushRightPanel }) => {
   const hasGameBlockAccessFinal = isUserInRoster && hasHockeyBlockAccess;
   const gameBlockPopoverStatus = isUserInRoster ? "no_subscription" : "not_in_roster";
 
-  const AVAILABLE_ROLES = [
-    { id: 'team_manager', label: 'Руководитель' },
-    { id: 'team_admin', label: 'Администратор' },
-    { id: 'head_coach', label: 'Главный тренер' },
-    { id: 'coach', label: 'Тренер' }
-  ];
+  const AVAILABLE_ROLES = isClubContext
+    ? [
+        { id: 'top_manager', label: 'Руководитель клуба' },
+        { id: 'club_admin', label: 'Администратор клуба' },
+        { id: 'coach', label: 'Тренер клуба' }
+      ]
+    : [
+        { id: 'team_manager', label: 'Руководитель' },
+        { id: 'team_admin', label: 'Администратор' },
+        { id: 'head_coach', label: 'Главный тренер' },
+        { id: 'coach', label: 'Тренер' }
+      ];
 
   const AVAILABLE_POSITIONS = [
     { id: 'goalie', label: 'Вратарь' },
@@ -217,7 +248,14 @@ export const UserDetails = ({ data, openRightPanel, pushRightPanel }) => {
   // Кэш последней загруженной карточки участника (тот же приём, что и в
   // EventDetailsTraining.jsx) — при возврате «назад» из профиля игрока панель
   // отрисовывается мгновенно из кэша, а свежие данные подтягиваются в фоне.
-  const cacheKey = teamId && userId ? `tr_cached_member_${teamId}_${userId}` : null;
+  const cacheKey = userId
+    ? (isClubContext ? `tr_cached_club_member_${clubId}_${userId}` : (teamId ? `tr_cached_member_${teamId}_${userId}` : null))
+    : null;
+
+  // Адрес карточки различается только контекстом — форма ответа одинаковая
+  const detailsUrl = isClubContext
+    ? `${import.meta.env.VITE_API_URL}/api/clubs/${clubId}/members/${userId}`
+    : `${import.meta.env.VITE_API_URL}/api/teams/${teamId}/members/${userId}`;
 
   const applyProfileData = (resData) => {
     setProfile(resData.member);
@@ -234,7 +272,7 @@ export const UserDetails = ({ data, openRightPanel, pushRightPanel }) => {
 
   const fetchDetails = (silent = false) => {
     if (!silent) setIsLoading(true);
-    fetch(`${import.meta.env.VITE_API_URL}/api/teams/${teamId}/members/${userId}`, {
+    fetch(detailsUrl, {
       headers: getAuthHeaders()
     })
       .then(res => res.json())
@@ -250,7 +288,7 @@ export const UserDetails = ({ data, openRightPanel, pushRightPanel }) => {
   };
 
   useEffect(() => {
-    if (!teamId || !userId) return;
+    if ((!teamId && !clubId) || !userId) return;
     setError(null);
 
     const cached = cacheKey ? localStorage.getItem(cacheKey) : null;
@@ -267,7 +305,7 @@ export const UserDetails = ({ data, openRightPanel, pushRightPanel }) => {
     }
 
     fetchDetails(false);
-  }, [teamId, userId]);
+  }, [teamId, clubId, userId]);
 
   const jerseyError = useMemo(() => {
     if (!formData.jersey_number) return '';
@@ -285,16 +323,25 @@ export const UserDetails = ({ data, openRightPanel, pushRightPanel }) => {
     if (blockKey) setSavingBlock(blockKey);
 
     try {
-      const res = await fetch(`${import.meta.env.VITE_API_URL}/api/teams/${teamId}/members/${profile.member_id}/details`, {
+      // В клубе редактируется только один блок — роли, и у него своя ручка
+      const saveUrl = isClubContext
+        ? `${import.meta.env.VITE_API_URL}/api/clubs/${clubId}/members/${userId}/roles`
+        : `${import.meta.env.VITE_API_URL}/api/teams/${teamId}/members/${profile.member_id}/details`;
+
+      const saveBody = isClubContext
+        ? { roles: updatedFields.roles }
+        : {
+            roles: updatedFields.roles !== undefined ? updatedFields.roles : undefined,
+            jerseyNumber: safeJerseyNumber,
+            position: updatedFields.position !== undefined ? updatedFields.position : undefined,
+            isCaptain: updatedFields.isCaptain !== undefined ? updatedFields.isCaptain : undefined,
+            isAssistant: updatedFields.isAssistant !== undefined ? updatedFields.isAssistant : undefined,
+          };
+
+      const res = await fetch(saveUrl, {
         method: 'PUT',
         headers: { ...getAuthHeaders(), 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          roles: updatedFields.roles !== undefined ? updatedFields.roles : undefined,
-          jerseyNumber: safeJerseyNumber,
-          position: updatedFields.position !== undefined ? updatedFields.position : undefined,
-          isCaptain: updatedFields.isCaptain !== undefined ? updatedFields.isCaptain : undefined,
-          isAssistant: updatedFields.isAssistant !== undefined ? updatedFields.isAssistant : undefined,
-        })
+        body: JSON.stringify(saveBody)
       });
 
       if (!res.ok) {
@@ -310,7 +357,7 @@ export const UserDetails = ({ data, openRightPanel, pushRightPanel }) => {
       setAssistantError('');
       triggerToast('Данные успешно сохранены', 'success');
 
-      fetch(`${import.meta.env.VITE_API_URL}/api/teams/${teamId}/members/${userId}`, {
+      fetch(detailsUrl, {
         headers: getAuthHeaders()
       })
         .then(r => r.json())
@@ -402,7 +449,8 @@ export const UserDetails = ({ data, openRightPanel, pushRightPanel }) => {
   };
 
   const handleToggleRoleCheckbox = (roleId) => {
-    if (roleId === 'team_manager' && isOwnProfile) return;
+    // Руководителя нельзя снять с себя — ни в команде, ни в клубе
+    if ((roleId === 'team_manager' || roleId === 'top_manager') && isOwnProfile) return;
 
     let currentRolesArray = formData.roles ? formData.roles.split(',').map(r => r.trim()).filter(Boolean) : [];
     if (currentRolesArray.includes(roleId)) {
@@ -440,6 +488,17 @@ export const UserDetails = ({ data, openRightPanel, pushRightPanel }) => {
     }, 'Статистика в команде');
   };
 
+  // Клубный аналог: посещаемость клубных тренировок и собраний, матчей у клуба нет
+  const handleOpenClubStats = () => {
+    if (!pushRightPanel) return;
+    pushRightPanel('clubStats', {
+      clubId,
+      userId,
+      activeBrandColor,
+      hasClubColor: !!activeBrandColor
+    }, 'Статистика в клубе');
+  };
+
   // ── Сохранение по блокам (по аналогии с EditEventPanel) ─────────────────
   const saveHeaderBlock = async () => {
     await saveFieldToDB({
@@ -471,8 +530,11 @@ export const UserDetails = ({ data, openRightPanel, pushRightPanel }) => {
   const roleDict = {
     'team_manager': 'Руководитель',
     'team_admin': 'Администратор',
-    'coach': 'Тренер',
-    'head_coach': 'Главный тренер'
+    'coach': isClubContext ? 'Тренер клуба' : 'Тренер',
+    'head_coach': 'Главный тренер',
+    // Клубные роли
+    'top_manager': 'Руководитель клуба',
+    'club_admin': 'Администратор клуба'
   };
 
   const brandColor = activeBrandColor || 'var(--color-brand)';
@@ -530,6 +592,11 @@ export const UserDetails = ({ data, openRightPanel, pushRightPanel }) => {
                 <span className="text-[10px] font-black uppercase tracking-widest mb-1 block text-content-subtle">
                   Ушёл {dayjs(profile.left_at || data?.left_at).format('DD.MM.YYYY')}
                 </span>
+              ) : isClubContext ? (
+                /* У клуба ростера нет — вместо статуса заявки показываем дату вступления */
+                <span className="text-[10px] font-black uppercase tracking-widest mb-1 block text-content-subtle">
+                  В клубе с {profile.joined_at ? dayjs(profile.joined_at).format('DD.MM.YYYY') : '—'}
+                </span>
               ) : (
                 <span
                   className="text-[10px] font-black uppercase tracking-widest mb-1 block"
@@ -586,9 +653,9 @@ export const UserDetails = ({ data, openRightPanel, pushRightPanel }) => {
             <StatsTile
               icon="metrics"
               line1="Статистика"
-              line2="в команде"
+              line2={isClubContext ? "в клубе" : "в команде"}
               brandColor={brandColor}
-              onClick={handleOpenTeamStats}
+              onClick={isClubContext ? handleOpenClubStats : handleOpenTeamStats}
             />
             <StatsTile
               icon="standings"
@@ -604,7 +671,7 @@ export const UserDetails = ({ data, openRightPanel, pushRightPanel }) => {
             Ушедшему участнику роли и игровой профиль не показываем вовсе. */}
         {!isArchivedMember && (
         <CustomBlock
-          title="Роли в команде"
+          title={isClubContext ? "Роли в клубе" : "Роли в команде"}
           icon="gear"
           isEditing={isEditRoles}
           isManager={showAdminControls && canSeeRolesEditBlock}
@@ -618,7 +685,7 @@ export const UserDetails = ({ data, openRightPanel, pushRightPanel }) => {
             <div className="flex flex-col gap-2.5 pt-1">
               {AVAILABLE_ROLES.map(role => {
                 const isChecked = formData.roles.split(',').map(r => r.trim()).includes(role.id);
-                const isSelfManagerLock = role.id === 'team_manager' && isOwnProfile;
+                const isSelfManagerLock = (role.id === 'team_manager' || role.id === 'top_manager') && isOwnProfile;
                 return (
                   <CheckboxLP
                     key={role.id}
@@ -652,8 +719,9 @@ export const UserDetails = ({ data, openRightPanel, pushRightPanel }) => {
         </CustomBlock>
         )}
 
-        {/* БЛОК 2: ИГРОВОЙ ПРОФИЛЬ (Блокируется регламентным HintPopover, если игрок вне ростера турнира) */}
-        {!isArchivedMember && (
+        {/* БЛОК 2: ИГРОВОЙ ПРОФИЛЬ (Блокируется регламентным HintPopover, если игрок вне ростера турнира).
+            В клубном контексте блока нет вовсе: номер и амплуа — атрибуты команды, клуб не играет. */}
+        {!isArchivedMember && !isClubContext && (
         <CustomBlock
           title="Игровой профиль"
           icon="jersey"
@@ -705,6 +773,27 @@ export const UserDetails = ({ data, openRightPanel, pushRightPanel }) => {
             </div>
           )}
         </CustomBlock>
+        )}
+
+        {/* БЛОК 2К: КОМАНДЫ КЛУБА (только в клубном контексте).
+            Ровно то, ради чего клуб и заведён: видно, где человек играет, а кто пока в резерве. */}
+        {isClubContext && (
+          <CustomBlock title="Команды в клубе" icon="users" isEditing={false} isManager={false} onAction={null} activeBrandColor={activeBrandColor}>
+            <div className="flex flex-wrap gap-1.5 pt-1">
+              {(profile.teams || []).length > 0 ? (
+                profile.teams.map(team => (
+                  <span
+                    key={team.id}
+                    className="text-[10px] font-bold text-content-main bg-surface-level2 px-2.5 py-1 rounded-lg border border-surface-border shadow-sm"
+                  >
+                    {team.name}
+                  </span>
+                ))
+              ) : (
+                <span className="text-[14px] text-content-subtle italic">Пока не заявлен ни в одну команду клуба</span>
+              )}
+            </div>
+          </CustomBlock>
         )}
 
         {/* БЛОК 3: ФИЗИЧЕСКИЕ ДАННЫЕ */}

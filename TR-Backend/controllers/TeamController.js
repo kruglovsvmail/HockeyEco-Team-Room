@@ -4,6 +4,7 @@ import path from 'path';
 import { PERMISSIONS } from '../utils/permissions.js';
 import { processAvatar } from '../utils/imageProcessor.js';
 import { sendPushToTeamExcept } from '../services/pushService.js';
+import { syncClubMembershipOnTeamJoin, canOfferClubExclusion, removeFromClubOnly, CLUB_EXCLUSION_OFFER_PREDICATE } from '../utils/clubMembership.js';
 
 /**
  * Р’РЅСѓС‚СЂРµРЅРЅСЏСЏ С„СѓРЅРєС†РёСЏ РґР»СЏ РїСЂРѕРІРµСЂРєРё РіСЂР°РЅСѓР»СЏСЂРЅС‹С… РїСЂР°РІ РґРѕСЃС‚СѓРїР° Рё РїРѕРґРїРёСЃРєРё
@@ -40,10 +41,14 @@ async function checkPermissionInternal(userId, teamId, permissionKey, client = p
     userRoles.push(...trRes.rows.map(r => r.role));
 
     const crRes = await client.query(`
-      SELECT cr.role FROM club_roles cr
+      SELECT (CASE WHEN cr.role = 'coach' THEN 'club_coach' ELSE cr.role END) AS role FROM club_roles cr
       JOIN teams t ON t.club_id = cr.club_id
       JOIN club_members cm ON cm.club_id = cr.club_id AND cm.user_id = cr.user_id
       WHERE cr.user_id = $1 AND t.id = $2 AND cr.left_at IS NULL AND cm.left_at IS NULL
+      UNION
+      SELECT 'club_owner' AS role FROM clubs c
+      JOIN teams t2 ON t2.club_id = c.id
+      WHERE c.owner_id = $1 AND t2.id = $2
     `, [userId, teamId]);
     userRoles.push(...crRes.rows.map(r => r.role));
 
@@ -84,7 +89,8 @@ export const getMyTeams = async (req, res) => {
             FROM teams t
             LEFT JOIN team_members tm ON tm.team_id = t.id AND tm.left_at IS NULL
             LEFT JOIN club_members cm ON cm.club_id = t.club_id AND cm.left_at IS NULL
-            WHERE (tm.user_id = $1 OR cm.user_id = $1 OR t.owner_id = $1)
+            LEFT JOIN clubs c ON c.id = t.club_id
+            WHERE (tm.user_id = $1 OR cm.user_id = $1 OR t.owner_id = $1 OR c.owner_id = $1)
             ORDER BY t.name
         `;
         const { rows: teams } = await pool.query(teamsQuery, [userId]);
@@ -105,11 +111,15 @@ export const getMyTeams = async (req, res) => {
 
         // 3. Р РѕР»Рё РїРѕР»СЊР·РѕРІР°С‚РµР»СЏ С‡РµСЂРµР· РєР»СѓР± (club_roles в†’ РєРѕРјР°РЅРґС‹ РєР»СѓР±Р°)
         const clubRolesRes = await pool.query(`
-            SELECT t.id AS team_id, cr.role
+            SELECT t.id AS team_id, (CASE WHEN cr.role = 'coach' THEN 'club_coach' ELSE cr.role END) AS role
             FROM club_roles cr
             JOIN teams t ON t.club_id = cr.club_id
             JOIN club_members cm ON cm.club_id = cr.club_id AND cm.user_id = cr.user_id
             WHERE cr.user_id = $1 AND t.id = ANY($2) AND cr.left_at IS NULL AND cm.left_at IS NULL
+            UNION
+            SELECT t2.id AS team_id, 'club_owner' AS role FROM clubs c
+            JOIN teams t2 ON t2.club_id = c.id
+            WHERE c.owner_id = $1 AND t2.id = ANY($2)
         `, [userId, teamIds]);
 
         // 4. РЎС‚Р°С‚СѓСЃ РїРѕРґРїРёСЃРєРё РїРѕР»СЊР·РѕРІР°С‚РµР»СЏ
@@ -167,9 +177,13 @@ export const getTeamDetails = async (req, res) => {
                 u.first_name, u.last_name, u.middle_name, u.birth_date, u.height, u.weight,
                 COALESCE(tm.photo_url, u.avatar_url) as avatar_url,
                 tm.left_at,
-                tr.position, tr.jersey_number, tr.is_captain, tr.is_assistant
+                tr.position, tr.jersey_number, tr.is_captain, tr.is_assistant,
+                -- Предлагать ли при исключении убрать человека ещё и из базы клуба.
+                -- Условие зеркалит canOfferClubExclusion (utils/clubMembership.js).
+                (${CLUB_EXCLUSION_OFFER_PREDICATE.replaceAll('%USER%', 'u.id')}) AS offer_club_exclusion
             FROM team_members tm
             JOIN users u ON u.id = tm.user_id
+            JOIN teams t ON t.id = tm.team_id
             LEFT JOIN team_rosters tr ON tm.id = tr.member_id AND tr.left_at IS NULL
             WHERE tm.team_id = $1
             ORDER BY u.last_name, u.first_name
@@ -798,7 +812,18 @@ export const excludeFromRoster = async (req, res) => {
 // РџРѕР»РЅРѕРµ РёСЃРєР»СЋС‡РµРЅРёРµ РёР· С‡Р»РµРЅСЃС‚РІР° РєРѕРјР°РЅРґС‹ (СЃРѕСЃС‚Р°РІ + СЂРѕСЃС‚РµСЂ)
 export const excludeFromMembership = async (req, res) => {
   const { teamId, memberId } = req.params;
+  const alsoRemoveFromClub = req.body?.alsoRemoveFromClub === true;
+  let removedFromClub = false;
+
   try {
+    // Пользователя запоминаем до закрытия членства: связь по member_id останется,
+    // но так удобнее и для клубной части, и для текста push-уведомления.
+    const { rows: memberRows } = await pool.query(
+      'SELECT user_id FROM team_members WHERE id = $1 AND team_id = $2',
+      [memberId, teamId]
+    );
+    const excludedUserId = memberRows[0]?.user_id || null;
+
     await pool.query('BEGIN');
 
     const updateMemberQuery = `
@@ -809,11 +834,31 @@ export const excludeFromMembership = async (req, res) => {
     await pool.query(updateMemberQuery, [memberId, teamId]);
 
     const updateRosterQuery = `
-      UPDATE team_rosters 
-      SET left_at = CURRENT_DATE 
+      UPDATE team_rosters
+      SET left_at = CURRENT_DATE
       WHERE member_id = $1 AND team_id = $2 AND left_at IS NULL
     `;
     await pool.query(updateRosterQuery, [memberId, teamId]);
+
+    // Полномочия в команде закрываем вместе с членством — иначе при возвращении
+    // человека в состав старая роль тренера или админа воскресла бы молча.
+    await pool.query(
+      `UPDATE team_roles SET left_at = CURRENT_DATE WHERE member_id = $1 AND left_at IS NULL`,
+      [memberId]
+    );
+
+    // Галочка «убрать и из клуба» — только если команда была единственной ниточкой
+    // человека к клубу. Условие перепроверяем здесь: клиент мог прислать флаг зря.
+    if (alsoRemoveFromClub && excludedUserId) {
+      const canOffer = await canOfferClubExclusion(teamId, excludedUserId);
+      if (canOffer) {
+        const { rows: clubRows } = await pool.query('SELECT club_id FROM teams WHERE id = $1', [teamId]);
+        if (clubRows[0]?.club_id) {
+          await removeFromClubOnly(clubRows[0].club_id, excludedUserId);
+          removedFromClub = true;
+        }
+      }
+    }
 
     await pool.query('COMMIT');
 
@@ -828,7 +873,9 @@ export const excludeFromMembership = async (req, res) => {
       url: '/my-team', tag: `member-leave-${memberId}`,
     }).catch(() => {});
 
-    res.json({ success: true, message: 'РџРѕР»СЊР·РѕРІР°С‚РµР»СЊ РїРѕР»РЅРѕСЃС‚СЊСЋ СѓРґР°Р»РµРЅ РёР· СЃРѕСЃС‚Р°РІР° Рё СЂРѕСЃС‚РµСЂРѕРІ РєРѕРјР°РЅРґС‹' });
+    res.json({ success: true, removedFromClub, message: removedFromClub
+      ? 'Пользователь удалён из состава команды и из базы клуба'
+      : 'Пользователь полностью удален из состава и ростеров команды' });
   } catch (error) {
     await pool.query('ROLLBACK');
     console.error('[Exclude From Membership Error]:', error);
@@ -891,6 +938,9 @@ export const addOrRestoreTeamMember = async (req, res) => {
         `UPDATE team_members SET left_at = NULL, joined_at = CURRENT_DATE WHERE id = $1`, 
         [existing.id]
       );
+
+      // Команда в клубе — человек обязан быть и в общей базе клуба
+      await syncClubMembershipOnTeamJoin(teamId, userId);
       // Push: СѓС‡Р°СЃС‚РЅРёРє РІРµСЂРЅСѓР»СЃСЏ
       const { rows: [restored] } = await pool.query('SELECT last_name, first_name FROM users WHERE id = $1', [userId]);
       const rName = restored ? `${restored.last_name} ${restored.first_name}` : 'РЈС‡Р°СЃС‚РЅРёРє';
@@ -906,6 +956,9 @@ export const addOrRestoreTeamMember = async (req, res) => {
       `INSERT INTO team_members (team_id, user_id, joined_at) VALUES ($1, $2, CURRENT_DATE)`,
       [teamId, userId]
     );
+
+    // Команда в клубе — человек обязан быть и в общей базе клуба
+    await syncClubMembershipOnTeamJoin(teamId, userId);
 
     // Push: РЅРѕРІС‹Р№ СѓС‡Р°СЃС‚РЅРёРє
     const { rows: [added] } = await pool.query('SELECT last_name, first_name FROM users WHERE id = $1', [userId]);

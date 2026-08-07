@@ -44,6 +44,7 @@ export const ConfirmSheet = ({
   variant = 'danger',
   activeColor,
   icon,
+  extraContent = null,
 }) => {
   const isDanger = variant === 'danger';
   const accentColor = isDanger ? '#ef4444' : (activeColor || 'var(--color-brand)');
@@ -71,6 +72,9 @@ export const ConfirmSheet = ({
             {description}
           </div>
         )}
+
+        {/* Дополнительный блок между пояснением и кнопками — например, уточняющая галочка */}
+        {extraContent && <div className="w-full text-left">{extraContent}</div>}
 
         <div className="flex gap-3 w-full">
           <ButtonLP

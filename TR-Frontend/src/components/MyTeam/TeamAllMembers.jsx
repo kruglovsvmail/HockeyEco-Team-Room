@@ -20,7 +20,11 @@ export const TeamAllMembers = ({
   onAddClick,
   activeBrandColor,
   viewMode = 'grid',        // 'grid' — плитка (по умолчанию), 'table' — таблица
-  onViewModeChange
+  onViewModeChange,
+  // Заголовки секций вынесены в пропсы: тот же список обслуживает и состав клуба
+  title = 'Общий состав',
+  archivedTitle = 'Ушедшие из команды',
+  emptyLabel = 'Активные участники отсутствуют'
 }) => {
   const pressTimer = useRef(null);
   const pressStartPos = useRef(null);
@@ -205,20 +209,20 @@ export const TeamAllMembers = ({
   return (
     <div className="flex flex-col gap-3">
       {/* Секция действующего состава */}
-      <ContainerContent title="Общий состав" count={activeMembers.length} titleAction={viewToggle} action={addButton}>
+      <ContainerContent title={title} count={activeMembers.length} titleAction={viewToggle} action={addButton}>
         {activeMembers.length > 0 ? (
           renderList(activeMembers, false)
         ) : (
           <div className="text-center py-6 text-[10px] font-bold uppercase tracking-widest text-content-subtle opacity-50 select-none">
-            Активные участники отсутствуют
+            {emptyLabel}
           </div>
         )}
       </ContainerContent>
 
-      {/* Секция ушедших участников — team_members.left_at заполнен (скрыта, если пуста).
+      {/* Секция ушедших участников — left_at заполнен (скрыта, если пуста).
           Карточка такого участника открывается только для чтения (UserDetails). */}
       {archivedMembers.length > 0 && (
-        <ContainerContent title="Ушедшие из команды" count={archivedMembers.length} titleAction={viewToggle}>
+        <ContainerContent title={archivedTitle} count={archivedMembers.length} titleAction={viewToggle}>
           {renderList(archivedMembers, true)}
         </ContainerContent>
       )}

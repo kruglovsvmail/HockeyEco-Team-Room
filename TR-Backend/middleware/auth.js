@@ -1,6 +1,7 @@
 import jwt from 'jsonwebtoken';
 import pool from '../config/db.js';
 import { ROLES, PERMISSIONS } from '../utils/permissions.js';
+import { checkClubPermissionInternal, isClubEventType } from '../utils/checkPermission.js';
 
 // Троттлинг в памяти процесса: last_seen_at обновляется не чаще раза в LAST_SEEN_THROTTLE_MS
 // на пользователя, чтобы не писать в БД на каждый авторизованный запрос подряд.
@@ -57,15 +58,20 @@ const getTeamIdFromContext = async (req) => {
     }
   }
 
-  if (req.params?.eventId || req.body?.eventId) {
-    const eventId = req.params?.eventId || req.body?.eventId;
-    const res = await pool.query(
-      'SELECT my_team_id FROM events WHERE event_id = $1', 
-      [eventId]
-    );
-    if (res.rows.length > 0) {
-      return res.rows[0].my_team_id;
-    }
+  // Таблицы events в схеме нет — календарь собирается UNION-ом на лету. Контекст команды
+  // сюда обязаны передавать явно (teamId в params/body/query), иначе доступ не проверить.
+  return null;
+};
+
+// Клубный контекст: клубные события и экраны клуба присылают clubId вместо teamId
+const getClubIdFromContext = (req) => {
+  if (req.params?.clubId) return req.params.clubId;
+  if (req.body?.clubId) return req.body.clubId;
+  if (req.query?.clubId) return req.query.clubId;
+
+  const isClubRoute = req.baseUrl?.includes('/api/clubs') || req.originalUrl?.includes('/api/clubs');
+  if (req.params?.id && isClubRoute) {
+    return req.params.id;
   }
 
   return null;
@@ -139,10 +145,14 @@ export const requireTeamPermission = (permissionKey) => async (req, res, next) =
 
       // 3. Роли внутри клуба (активное членство и активная роль)
       const crRes = await pool.query(`
-        SELECT cr.role FROM club_roles cr
+        SELECT (CASE WHEN cr.role = 'coach' THEN 'club_coach' ELSE cr.role END) AS role FROM club_roles cr
         JOIN teams t ON t.club_id = cr.club_id
         JOIN club_members cm ON cm.club_id = cr.club_id AND cm.user_id = cr.user_id
         WHERE cr.user_id = $1 AND t.id = $2 AND cr.left_at IS NULL AND cm.left_at IS NULL
+        UNION
+        SELECT 'club_owner' AS role FROM clubs c
+        JOIN teams t2 ON t2.club_id = c.id
+        WHERE c.owner_id = $1 AND t2.id = $2
       `, [userId, tId]);
       userRoles.push(...crRes.rows.map(r => r.role));
 
@@ -190,4 +200,63 @@ export const requireTeamPermission = (permissionKey) => async (req, res, next) =
     console.error('[RBAC Team Error]:', err);
     res.status(500).json({ message: 'Ошибка проверки прав' });
   }
+};
+
+/**
+ * Клубный аналог requireTeamPermission.
+ * Контекст — клуб (clubId), роли берутся из club_roles + активного членства в club_members,
+ * владелец клуба (clubs.owner_id) приравнивается к owner, любой активный член — к player.
+ */
+export const requireClubPermission = (permissionKey) => async (req, res, next) => {
+  try {
+    const userId = req.user?.id;
+    if (!userId) {
+      return res.status(401).json({ message: 'Пользователь не идентифицирован' });
+    }
+
+    const permissionKeys = Array.isArray(permissionKey) ? permissionKey : [permissionKey];
+    if (permissionKeys.some(k => !PERMISSIONS[k])) {
+      return res.status(403).json({ message: 'Доступ закрыт (Неизвестное правило прав)' });
+    }
+
+    const clubId = getClubIdFromContext(req);
+    if (!clubId) {
+      return res.status(400).json({ message: 'Невозможно определить контекст клуба для проверки прав' });
+    }
+
+    // Доступ открыт, если ХОТЯ БЫ ОДНО из переданных правил подтверждает право пользователя
+    const checks = await Promise.all(
+      permissionKeys.map(key => checkClubPermissionInternal(userId, Number(clubId), key))
+    );
+
+    if (!checks.some(Boolean)) {
+      return res.status(403).json({ message: 'Недостаточно прав доступа или требуется продление подписки' });
+    }
+
+    next();
+  } catch (err) {
+    console.error('[RBAC Club Error]:', err);
+    res.status(500).json({ message: 'Ошибка проверки прав' });
+  }
+};
+
+/**
+ * Единый вход для маршрутов событий: одна и та же ручка обслуживает и командные,
+ * и клубные тренировки/собрания. В клубную проверку уходим в двух случаях:
+ *   1) тип события начинается с club_ (карточка существующего события);
+ *   2) в запросе есть clubId и нет teamId (создание нового клубного события,
+ *      где тип ещё «training» / «meeting» без приставки).
+ *
+ * @param {string|string[]} teamPermissionKey - правило для командного контекста
+ * @param {string|string[]} clubPermissionKey - правило для клубного контекста
+ */
+export const requireEventPermission = (teamPermissionKey, clubPermissionKey) => (req, res, next) => {
+  const eventType = req.body?.eventType || req.query?.eventType;
+  const clubId = req.body?.clubId || req.query?.clubId || req.params?.clubId;
+  const teamId = req.body?.teamId || req.query?.teamId || req.params?.teamId;
+
+  if (isClubEventType(eventType) || (clubId && !teamId)) {
+    return requireClubPermission(clubPermissionKey)(req, res, next);
+  }
+  return requireTeamPermission(teamPermissionKey)(req, res, next);
 };

@@ -2,8 +2,50 @@ import { PERMISSIONS } from '../../utils/permissions';
 
 // Вычисляет доступы к редактированию полей события (расписание/финансы/медиа/удаление)
 // для текущего пользователя в контексте команды события.
-export function computeEventEditAccess(event, user, selectedTeam, checkAccess) {
+export function computeEventEditAccess(event, user, selectedTeam, checkAccess, checkClubAccess = null) {
   if (!event) return { canSee: false, blocks: {} };
+
+  // Клубное событие живёт в контексте клуба: команды у него нет, а расписание,
+  // взнос и удаление закрыты одним ключом CLUB_MANAGE_EVENTS.
+  const eventClubId = event.my_club_id || null;
+  if (eventClubId) {
+    const clubRoles = (() => {
+      const roles = [];
+      const globalRole = String(user?.global_role || user?.globalRole || '').toLowerCase();
+      if (globalRole === 'admin') roles.push('admin');
+
+      const clubFromUser = (user?.clubs || []).find(c => String(c.id) === String(eventClubId));
+      if (clubFromUser) {
+        if (clubFromUser.is_owner) roles.push('club_owner');
+        if (Array.isArray(clubFromUser.user_roles)) {
+          clubFromUser.user_roles.forEach(r => roles.push(String(r).toLowerCase()));
+        } else if (clubFromUser.user_role) {
+          clubFromUser.user_role.split(',').forEach(r => roles.push(r.trim().toLowerCase()));
+        }
+      }
+
+      const matrix = user?.clubAccessMatrix || user?.club_access_matrix || {};
+      const clubAccess = matrix[eventClubId] || matrix[Number(eventClubId)];
+      if (clubAccess?.roles) {
+        clubAccess.roles.forEach(r => roles.push(String(r).toLowerCase()));
+      }
+
+      return [...new Set(roles)];
+    })();
+
+    const perm = PERMISSIONS.CLUB_MANAGE_EVENTS;
+    const hasClubRole = clubRoles.includes('admin')
+      || clubRoles.some(r => perm.allowedRoles.map(ar => ar.toLowerCase()).includes(r));
+    const hasSub = checkClubAccess ? checkClubAccess('CLUB_MANAGE_EVENTS', eventClubId) : false;
+
+    const clubBlocks = {
+      schedule: { hasRole: hasClubRole, hasSubscription: hasSub },
+      finances: { hasRole: hasClubRole, hasSubscription: hasSub },
+      delete:   { hasRole: hasClubRole, hasSubscription: hasSub },
+    };
+
+    return { canSee: hasClubRole, blocks: clubBlocks };
+  }
 
   // ВАЖНО: роли пользователя считаем только в контексте КОМАНДЫ СОБЫТИЯ.
   // Если selectedTeam — это другая команда (например, владельца),

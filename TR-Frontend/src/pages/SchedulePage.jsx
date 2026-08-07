@@ -197,10 +197,12 @@ export function SchedulePage() {
     }
   }, [currentDate]);
 
-  const handleToggleAttendance = async (eventId, eventType, newValue, teamId) => {
-    const updatedEvents = events.map(event => 
-      (event.event_id === eventId && event.event_type === eventType && event.my_team_id === teamId) 
-        ? { ...event, is_attending: newValue } 
+  // clubId приходит вместе с teamId: у клубного события команды нет, и контекст
+  // проверки прав на сервере определяется именно клубом.
+  const handleToggleAttendance = async (eventId, eventType, newValue, teamId, clubId = null) => {
+    const updatedEvents = events.map(event =>
+      (event.event_id === eventId && event.event_type === eventType && event.my_team_id === teamId)
+        ? { ...event, is_attending: newValue }
         : event
     );
     
@@ -219,7 +221,7 @@ export function SchedulePage() {
           'Content-Type': 'application/json',
           ...getAuthHeaders()
         },
-        body: JSON.stringify({ isAttending: newValue, eventType, teamId })
+        body: JSON.stringify({ isAttending: newValue, eventType, teamId, clubId })
       });
 
       const data = await response.json();

@@ -2,7 +2,7 @@ import { useOutletContext } from 'react-router-dom';
 import { PERMISSIONS, ROLES } from '../utils/permissions';
 import { useCallback } from 'react';
 
-export function useAccess(customUser = null, customTeam = null) {
+export function useAccess(customUser = null, customTeam = null, customClub = null) {
   let context = {};
   try {
     context = useOutletContext() || {};
@@ -10,6 +10,7 @@ export function useAccess(customUser = null, customTeam = null) {
 
   const user = customUser || context.user || null;
   const selectedTeam = customTeam || context.selectedTeam || null;
+  const selectedClub = customClub || context.selectedClub || null;
 
   /**
    * Гранулярная проверка прав доступа по конкретному действию и ID команды
@@ -95,5 +96,79 @@ export function useAccess(customUser = null, customTeam = null) {
     });
   }, [user, selectedTeam]);
 
-  return { user, selectedTeam, checkAccess };
+  /**
+   * Гранулярная проверка прав в КЛУБНОМ контексте.
+   *
+   * Живёт отдельной функцией, а не флагом внутри checkAccess: идентификаторы команд
+   * и клубов независимы, и одна общая матрица неминуемо начала бы путать команду №5
+   * с клубом №5. Набор ролей здесь клубный (top_manager, club_admin, coach, player).
+   *
+   * @param {string} action - Ключ правила из permissions.js
+   * @param {number|string|null} clubId - ID клуба. Если не передан, берётся текущий выбранный
+   */
+  const checkClubAccess = useCallback((action, clubId = null) => {
+    if (!user) return false;
+
+    if (user.globalRole === ROLES.GLOBAL_ADMIN || user.global_role === ROLES.GLOBAL_ADMIN) {
+      return true;
+    }
+
+    const permission = PERMISSIONS[action];
+    if (!permission) return false;
+
+    const targetClubId = String(clubId || selectedClub?.id || '');
+    if (!targetClubId) return false;
+
+    let currentUserRoles = [];
+    let hasSubscription = false;
+
+    // --- Источник 1: clubAccessMatrix из user (заполняется при логине) ---
+    const matrix = user.clubAccessMatrix || user.club_access_matrix || {};
+    const clubAccess = matrix[targetClubId] || matrix[Number(targetClubId)];
+
+    if (clubAccess) {
+      currentUserRoles = clubAccess.roles || [];
+      hasSubscription = clubAccess.has_subscription || clubAccess.hasSubscription || false;
+    } else {
+      // --- Источник 2: клуб из списка user.clubs / текущий выбранный клуб ---
+      const clubFromUser = (user.clubs || []).find(c => String(c.id) === targetClubId);
+      const source = clubFromUser || (String(selectedClub?.id) === targetClubId ? selectedClub : null);
+
+      if (source) {
+        if (Array.isArray(source.user_roles) && source.user_roles.length > 0) {
+          currentUserRoles = source.user_roles;
+        } else if (source.user_role) {
+          currentUserRoles = source.user_role.split(',').map(r => r.trim()).filter(Boolean);
+        }
+        if (source.is_owner && !currentUserRoles.includes(ROLES.CLUB_OWNER)) {
+          currentUserRoles = [ROLES.CLUB_OWNER, ...currentUserRoles];
+        }
+
+        hasSubscription = source.has_subscription || false;
+        if (!hasSubscription) {
+          const subExpires = user.subscriptionExpiresAt || user.subscription_expires_at;
+          hasSubscription = subExpires ? new Date(subExpires) > new Date() : false;
+        }
+      }
+    }
+
+    if (currentUserRoles.length === 0) return false;
+
+    return currentUserRoles.some(role => {
+      if (!permission.allowedRoles.includes(role)) return false;
+
+      let roleRequiresSub = false;
+      if (permission.requiresSubscription === true) {
+        roleRequiresSub = true;
+      } else if (Array.isArray(permission.requiresSubscription)) {
+        roleRequiresSub = permission.requiresSubscription.includes(role);
+      }
+
+      if (roleRequiresSub && !hasSubscription) return false;
+
+      return true;
+    });
+  }, [user, selectedClub]);
+
+  return { user, selectedTeam, selectedClub, checkAccess, checkClubAccess };
 }

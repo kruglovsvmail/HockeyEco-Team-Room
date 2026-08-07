@@ -92,6 +92,7 @@ if (typeof window !== 'undefined' && !window.__fetch_mutation_patched__) {
 const LoginPage = lazy(() => import('./pages/LoginPage'));
 const SchedulePage = lazy(() => import('./pages/SchedulePage').then(module => ({ default: module.SchedulePage })));
 const MyTeamPage = lazy(() => import('./pages/MyTeamPage').then(module => ({ default: module.MyTeamPage })));
+const ClubPage = lazy(() => import('./pages/ClubPage').then(module => ({ default: module.ClubPage })));
 const TournamentsPage = lazy(() => import('./pages/TournamentsPage').then(module => ({ default: module.TournamentsPage })));
 const ProfilePage = lazy(() => import('./pages/ProfilePage').then(module => ({ default: module.ProfilePage })));
 const SettingsPage = lazy(() => import('./pages/SettingsPage').then(module => ({ default: module.SettingsPage })));
@@ -444,6 +445,7 @@ export default function App() {
                   <Route path="/" element={<SchedulePage />} />
                   <Route path="/event/:eventType/:eventId" element={<SchedulePage />} />
                   <Route path="/my-team" element={<MyTeamPage />} />
+                  <Route path="/club" element={<ClubPage />} />
                   <Route path="/tournaments" element={<TournamentsPage />} />
                   <Route path="/profile" element={<ProfilePage />} />
                   <Route path="/settings" element={<SettingsPage />} />

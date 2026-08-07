@@ -32,6 +32,9 @@ export function Header({
     if (path.includes('my-team')) {
       return 'Состав команды';
     }
+    if (path === '/club') {
+      return 'Клуб';
+    }
     if (path.includes('handbook')) {
       return 'Соперники и турниры';
     }
@@ -82,6 +85,10 @@ export function Header({
 
     // Состав команды
     if (path.includes('my-team'))
+      return 'bg-surface-base';
+
+    // Клуб
+    if (path === '/club')
       return 'bg-surface-base';
 
     // Турниры / Лиги

@@ -1,5 +1,5 @@
 import express from 'express';
-import { verifyToken, requireTeamPermission } from '../../middleware/auth.js';
+import { verifyToken, requireTeamPermission, requireEventPermission } from '../../middleware/auth.js';
 import { 
   getArenas, 
   getPwaTeams, 
@@ -23,13 +23,14 @@ const router = express.Router();
 // ==========================================
 // 🎯 Контур планирования событий (MGR_CREATE_EVENT)
 // ==========================================
-// Список арен доступен и при создании события, и при редактировании расписания любого события
-router.get('/arenas', verifyToken, requireTeamPermission([
+// Список арен доступен и при создании события, и при редактировании расписания любого
+// события — включая клубные: там контекст приходит как clubId, и проверка уходит в клуб.
+router.get('/arenas', verifyToken, requireEventPermission([
   'MGR_CREATE_EVENT',
   'MATCH_EDIT_SCHEDULE',
   'TRAINING_EDIT_SCHEDULE',
   'MEETING_EDIT_SCHEDULE',
-]), getArenas);
+], 'CLUB_MANAGE_EVENTS'), getArenas);
 router.get('/pwa-teams', verifyToken, requireTeamPermission('MGR_CREATE_EVENT'), getPwaTeams);
 
 router.get('/external-opponents', verifyToken, requireTeamPermission('MGR_CREATE_EVENT'), getExternalOpponents);

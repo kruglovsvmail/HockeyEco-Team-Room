@@ -8,6 +8,7 @@ import { BottomSheet } from '../ui/BottomSheet';
 import { ConfirmSheet } from '../ui/ConfirmSheet';
 import { ButtonLP } from '../ui/Button-LP';
 import { PhoneInputLP, TextInputLP } from '../ui/Input-LP';
+import { CheckboxLP } from '../ui/Checkbox-LP';
 import { Avatar } from '../ui/Avatar';
 import { Icon } from '../ui/Icon';
 import { useFocusRevalidate } from '../hooks/useFocusRevalidate';
@@ -91,6 +92,9 @@ export const MyTeamPage = () => {
   
   const [isEditMode, setIsEditMode] = useState(false);
   const [memberToRemove, setMemberToRemove] = useState(null);
+  // Галочка «убрать и из клуба»: показывается, только если эта команда —
+  // единственная связь человека с клубом (флаг offer_club_exclusion считает бэкенд)
+  const [alsoRemoveFromClub, setAlsoRemoveFromClub] = useState(false);
   const [animatingOutId, setAnimatingOutId] = useState(null);
 
   const [isMemberSheetOpen, setIsMemberSheetOpen] = useState(false);
@@ -231,7 +235,10 @@ export const MyTeamPage = () => {
 
         const res = await fetch(`${import.meta.env.VITE_API_URL}/${endpointPath}`, {
           method: 'POST',
-          headers: getAuthHeaders()
+          headers: { ...getAuthHeaders(), 'Content-Type': 'application/json' },
+          // Флаг имеет смысл только на вкладке «Состав»: из ростера человек уходит,
+          // оставаясь в команде, и клуба это не касается вовсе.
+          body: JSON.stringify({ alsoRemoveFromClub: activeTab === 'all' && alsoRemoveFromClub })
         });
 
         if (res.ok) {
@@ -375,7 +382,10 @@ export const MyTeamPage = () => {
     return () => registerHeaderEdit(null);
   }, [canEditTeamProfile, registerHeaderEdit]);
 
-  const handleExcludeClick = useCallback((member) => setMemberToRemove(member), []);
+  const handleExcludeClick = useCallback((member) => {
+    setAlsoRemoveFromClub(false);
+    setMemberToRemove(member);
+  }, []);
   const handleContainerClick = () => { if (isEditMode) setIsEditMode(false); };
 
   const tabIndex = TEAM_OPTIONS.findIndex(t => t.value === activeTab);
@@ -559,6 +569,22 @@ export const MyTeamPage = () => {
             : `Вы уверены, что хотите полностью исключить игрока ${memberToRemove?.last_name || memberToRemove?.lastName || ''} ${memberToRemove?.first_name || memberToRemove?.firstName || ''} из состава?`}
           confirmLabel="Да, исключить"
           variant="danger"
+          /* Фон блока — surface-base: сам квадратик чекбокса залит surface-level2,
+             и на одноимённой подложке невыбранный чекбокс сливался с ней */
+          extraContent={activeTab === 'all' && memberToRemove?.offer_club_exclusion ? (
+            <div className="p-3 rounded-xl bg-surface-base border border-surface-border">
+              <CheckboxLP
+                checked={alsoRemoveFromClub}
+                onChange={setAlsoRemoveFromClub}
+                label="Убрать и из состава клуба"
+                activeColor={hasTeamColor ? activeBrandColor : null}
+              />
+              <span className="block text-[10px] text-content-subtle leading-snug mt-2 ml-8">
+                Эта команда — единственная в клубе, где он состоит, и клубных ролей у него нет.
+                Без галочки останется в базе клуба как резерв.
+              </span>
+            </div>
+          ) : null}
         />
       </div>
     </FadeIn>

@@ -166,6 +166,58 @@ export async function sendPushToTeamExcept(teamId, excludeUserId, groupKey, payl
   });
 }
 
+// ── Отправка push всем членам клуба (клубные тренировки и собрания) ──────
+// Настройки уведомлений в notification_settings хранятся на пару «пользователь × команда»,
+// у клуба своей строки нет. Поэтому смотрим настройки человека по всем командам этого
+// клуба: выключил группу везде — не шлём, хотя бы где-то оставил включённой — шлём.
+// Нет ни одной строки настроек = уведомления включены по умолчанию.
+export async function sendPushToClub(clubId, groupKey, { title, body, url, tag, icon }, filterFn) {
+  const { rows: members } = await pool.query(
+    `SELECT cm.user_id
+     FROM club_members cm
+     WHERE cm.club_id = $1 AND cm.left_at IS NULL`,
+    [clubId]
+  );
+
+  const userIds = members.map(m => m.user_id);
+  if (userIds.length === 0) return;
+
+  const { rows: settings } = await pool.query(
+    `SELECT ns.user_id, bool_or(ns.enabled AND ns.${groupKey}) AS allowed
+     FROM notification_settings ns
+     JOIN teams t ON t.id = ns.team_id
+     WHERE t.club_id = $1 AND ns.user_id = ANY($2)
+     GROUP BY ns.user_id`,
+    [clubId, userIds]
+  );
+
+  const allowedMap = {};
+  settings.forEach(s => { allowedMap[s.user_id] = s.allowed; });
+
+  for (const uid of userIds) {
+    if (filterFn && !filterFn(uid)) continue;
+    if (allowedMap[uid] === false) continue;
+
+    await sendPushToUser(uid, { title, body, url, tag, icon });
+  }
+}
+
+// ── Отправка push по клубу всем, кроме инициатора ───────────────────────
+export async function sendPushToClubExcept(clubId, excludeUserId, groupKey, payload, filterFn) {
+  await sendPushToClub(clubId, groupKey, payload, (uid) => {
+    if (uid === excludeUserId) return false;
+    return filterFn ? filterFn(uid) : true;
+  });
+}
+
+// ── Единая точка оповещения по событию: команда или клуб ─────────────────
+// Контроллеры событий обслуживают оба типа, поэтому вместо ветвлений на каждом
+// вызове передаём сюда контекст целиком.
+export async function sendPushToEventScopeExcept({ teamId, clubId }, excludeUserId, groupKey, payload) {
+  if (clubId) return sendPushToClubExcept(clubId, excludeUserId, groupKey, payload);
+  if (teamId) return sendPushToTeamExcept(teamId, excludeUserId, groupKey, payload);
+}
+
 // ── Батчинг явок: откладываем на 3 минуты, агрегируем при отправке ──────
 export async function batchAttendanceNotification(teamId, eventId, eventType, eventLabel) {
   const type = 'attendance_batch';

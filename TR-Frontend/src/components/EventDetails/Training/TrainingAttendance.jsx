@@ -69,7 +69,18 @@ export const TrainingAttendance = ({
     } catch { return null; }
   }, [localUser, event?.my_team_id]);
 
-  const { user, checkAccess, selectedTeam } = useAccess(localUser, localTeam);
+  // Клубное событие: контекст — клуб, а не команда
+  const eventClubId = event?.my_club_id || null;
+  const isClubEvent = !!eventClubId;
+
+  const localClub = useMemo(() => {
+    try {
+      if (!localUser || !eventClubId) return null;
+      return localUser.clubs?.find(c => String(c.id) === String(eventClubId));
+    } catch { return null; }
+  }, [localUser, eventClubId]);
+
+  const { user, checkAccess, checkClubAccess, selectedTeam, selectedClub } = useAccess(localUser, localTeam, localClub);
   const tokenUser    = getSafeUserFromToken();
   const activeUserId = user?.id || tokenUser?.id || tokenUser?.userId;
 
@@ -79,7 +90,11 @@ export const TrainingAttendance = ({
   const activeBrandColor = hasTeamColor ? event.team_color : 'var(--color-brand)';
 
   // ── Подписка на управление явками ────────────────────────────────────────
-  const hasAttendanceSubscription = checkAccess('TRAINING_ATTENDANCE_MANAGE', event?.my_team_id);
+  // На клубном событии отметками распоряжается руководитель клуба
+  const attendanceKey = isClubEvent ? 'CLUB_EVENT_ATTENDANCE_MANAGE' : 'TRAINING_ATTENDANCE_MANAGE';
+  const hasAttendanceSubscription = isClubEvent
+    ? checkClubAccess(attendanceKey, eventClubId)
+    : checkAccess(attendanceKey, event?.my_team_id);
 
   // ── Синхронизация пропсов → стейт ────────────────────────────────────────
   useEffect(() => { setAttendees(initialAttendees); },   [initialAttendees]);
@@ -93,12 +108,18 @@ export const TrainingAttendance = ({
     ).toLowerCase();
     if (globalRole === 'admin') return true;
 
-    const allowedLow = (PERMISSIONS.TRAINING_ATTENDANCE_MANAGE?.allowedRoles || [])
+    const allowedLow = (PERMISSIONS[attendanceKey]?.allowedRoles || [])
       .map(r => String(r).toLowerCase());
 
-    if (selectedTeam?.user_role) {
-      const teamRoles = selectedTeam.user_role.split(',').map(r => r.trim().toLowerCase());
-      if (teamRoles.some(r => allowedLow.includes(r))) return true;
+    const contextRoles = isClubEvent
+      ? (Array.isArray(localClub?.user_roles)
+          ? localClub.user_roles
+          : (localClub?.user_role?.split(',') || []))
+      : (selectedTeam?.user_role?.split(',') || []);
+
+    if (contextRoles.length > 0) {
+      const normalized = contextRoles.map(r => String(r).trim().toLowerCase());
+      if (normalized.some(r => allowedLow.includes(r))) return true;
     }
 
     if (initialStaffMembers && activeUserId) {
@@ -109,7 +130,7 @@ export const TrainingAttendance = ({
       }
     }
     return false;
-  }, [user, tokenUser, selectedTeam, initialStaffMembers, activeUserId]);
+  }, [user, tokenUser, selectedTeam, localClub, isClubEvent, attendanceKey, initialStaffMembers, activeUserId]);
 
   useEffect(() => { setHasManageAccess(isAttendanceManagerRole); }, [isAttendanceManagerRole]);
 
@@ -136,7 +157,8 @@ export const TrainingAttendance = ({
         body:    JSON.stringify({
           isAttending:  true,
           eventType:    event.event_type,
-          teamId:       event.my_team_id,
+          teamId:       isClubEvent ? null : event.my_team_id,
+          clubId:       eventClubId,
           targetUserId: playerObj.user_id,
         }),
       });
@@ -184,7 +206,8 @@ export const TrainingAttendance = ({
         headers: { ...getAuthHeaders(), 'Content-Type': 'application/json' },
         body:    JSON.stringify({
           eventType:    event.event_type,
-          teamId:       event.my_team_id,
+          teamId:       isClubEvent ? null : event.my_team_id,
+          clubId:       eventClubId,
           targetUserId: attendeeUser.id,
           hasPayTag:    targetNewState,
         }),
@@ -223,7 +246,8 @@ export const TrainingAttendance = ({
           body:    JSON.stringify({
             isAttending:  false,
             eventType:    event.event_type,
-            teamId:       event.my_team_id,
+            teamId:       isClubEvent ? null : event.my_team_id,
+            clubId:       eventClubId,
             targetUserId: targetUserId,
           }),
         });
@@ -274,13 +298,15 @@ export const TrainingAttendance = ({
     if (!openRightPanel) return;
     openRightPanel('userDetails', {
       user_id: attendeeUser.id,
-      team_id: event?.my_team_id,
+      team_id: isClubEvent ? null : event?.my_team_id,
+      club_id: eventClubId,
       currentRoster: teamRoster,
       onRefresh: refreshData,
       activeBrandColor: hasTeamColor ? activeBrandColor : null,
       user,
-      selectedTeam
-    }, 'Участник команды');
+      selectedTeam,
+      selectedClub
+    }, isClubEvent ? 'Участник клуба' : 'Участник команды');
   };
 
   // ── Рендер карточки игрока ────────────────────────────────────────────────

@@ -57,6 +57,10 @@ const EventCard = ({
   else if (event.event_type.includes('training')) eventTitle = 'ТРЕНИРОВКА';
   else if (event.event_type.includes('meeting')) eventTitle = 'СОБРАНИЕ';
 
+  // Клубное событие помечаем прямо в карточке — род подписи по типу события
+  const isClubEvent = String(event.event_type || '').startsWith('club_');
+  const clubBadgeLabel = event.event_type === 'club_training' ? 'Клубная' : 'Клубное';
+
   const isColorsEnabled = localStorage.getItem('tr_use_team_colors') !== 'false';
   const hasTeamColor = isColorsEnabled && !!event.team_color;
 
@@ -357,6 +361,25 @@ const EventCard = ({
                     </span>
                   </div>
                 )}
+
+                {/* Клубное событие: рядом с логотипом клуба — бейдж, чтобы карточка
+                    читалась без захода внутрь. Цвет — тот же акцент, что и у карточки:
+                    цвет клуба при включённом кодировании, иначе фирменный. */}
+                {isClubEvent && (
+                  <span
+                    className="self-center font-black uppercase tracking-widest rounded-full border shrink-0 whitespace-nowrap"
+                    style={{
+                      color:           activeBrandColor,
+                      borderColor:     `${activeBrandColor}40`,
+                      backgroundColor: `${activeBrandColor}12`,
+                      fontSize: uiFixed(10),
+                      paddingLeft: uiFixed(10), paddingRight: uiFixed(10),
+                      paddingTop: uiFixed(4), paddingBottom: uiFixed(4),
+                    }}
+                  >
+                    {clubBadgeLabel}
+                  </span>
+                )}
               </div>
             </>
           ) : (
@@ -439,7 +462,7 @@ const EventCard = ({
                     checked={event.is_attending}
                     disabled={isFinished || gameDatePassed}
                     activeColor={activeBrandColor}
-                    onChange={(val) => onToggleAttendance(event.event_id, event.event_type, val, event.my_team_id)}
+                    onChange={(val) => onToggleAttendance(event.event_id, event.event_type, val, event.my_team_id, event.my_club_id)}
                   />
                 ) : (
                   <HintPopover status={event.toggle_status} />

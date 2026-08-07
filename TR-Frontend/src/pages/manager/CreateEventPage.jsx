@@ -1,5 +1,5 @@
-import React, { useState, useMemo } from 'react';
-import { useOutletContext, useNavigate } from 'react-router-dom';
+import React, { useState, useMemo, useEffect } from 'react';
+import { useOutletContext, useNavigate, useSearchParams } from 'react-router-dom';
 import clsx from 'clsx';
 import { useAccess } from '../../hooks/useAccess';
 import { SubscriptionStub } from '../../ui/SubscriptionStub';
@@ -14,9 +14,14 @@ import { getImageUrl, getAuthHeaders } from '../../utils/helpers';
 import { TeamPageHeader, TeamPageHeaderSpacer } from '../../components/TeamPageHeader';
 
 export function CreateEventPage() {
-  const { selectedTeam, user, openRightPanel } = useOutletContext();
-  const { checkAccess } = useAccess(user, selectedTeam);
+  const { selectedTeam, selectedClub, user, openRightPanel } = useOutletContext();
+  const { checkAccess, checkClubAccess } = useAccess(user, selectedTeam, selectedClub);
   const navigate = useNavigate();
+
+  // Клубный режим включается адресом (?scope=club) — так он переживает перезагрузку
+  // страницы и возврат назад, в отличие от флага в состоянии навигации.
+  const [searchParams] = useSearchParams();
+  const isClubScope = searchParams.get('scope') === 'club' && !!selectedClub?.id;
 
   const [eventType, setEventType] = useState('training');
   const [matchType, setMatchType] = useState('friendly');
@@ -46,16 +51,30 @@ export function CreateEventPage() {
   const [regularRound, setRegularRound] = useState(''); 
   const [seriesNumber, setSeriesNumber] = useState(''); 
 
-  const hasAccess = checkAccess('MGR_CREATE_EVENT');
+  // Переключились на клуб, а в форме был выбран матч — возвращаемся к тренировке:
+  // матч у клуба невозможен, и блоки соперника ему не нужны.
+  useEffect(() => {
+    if (isClubScope && eventType === 'match') setEventType('training');
+  }, [isClubScope, eventType]);
+
+  const hasAccess = isClubScope
+    ? checkClubAccess('CLUB_MANAGE_EVENTS', selectedClub?.id)
+    : checkAccess('MGR_CREATE_EVENT');
 
   const isColorsEnabled = localStorage.getItem('tr_use_team_colors') !== 'false';
   const teamCacheKey = selectedTeam?.id ? `tr_cached_team_${selectedTeam.id}` : null;
   const cachedTeamData = teamCacheKey ? localStorage.getItem(teamCacheKey) : null;
   const cachedDetails = cachedTeamData ? JSON.parse(cachedTeamData)?.fullDetails : null;
 
-  const teamColorSource = cachedDetails?.color_home_1 || selectedTeam?.color_home_1;
+  const teamColorSource = isClubScope
+    ? selectedClub?.color_1
+    : (cachedDetails?.color_home_1 || selectedTeam?.color_home_1);
   const hasTeamColor = isColorsEnabled && !!teamColorSource;
   const activeBrandColor = hasTeamColor ? teamColorSource : 'var(--color-brand)';
+
+  // В шапке страницы — владелец события: клуб либо команда
+  const headerEntity = isClubScope ? selectedClub : selectedTeam;
+  const headerDetails = isClubScope ? selectedClub : cachedDetails;
 
   const isFormValid = useMemo(() => {
     if (!eventDate || !eventTime || !selectedArena) return false;
@@ -77,11 +96,18 @@ export function CreateEventPage() {
     );
   }
 
-  const eventTypeOptions = [
-    { value: 'training', label: 'Тренировка' },
-    { value: 'match', label: 'Матч' },
-    { value: 'meeting', label: 'Собрание' }
-  ];
+  // У клуба матчей не бывает: играет всегда конкретный состав, а клуб ставит
+  // общий лёд и общие собрания.
+  const eventTypeOptions = isClubScope
+    ? [
+        { value: 'training', label: 'Тренировка' },
+        { value: 'meeting', label: 'Собрание' }
+      ]
+    : [
+        { value: 'training', label: 'Тренировка' },
+        { value: 'match', label: 'Матч' },
+        { value: 'meeting', label: 'Собрание' }
+      ];
 
   const matchTypeOptions = [
     { value: 'friendly', label: 'Товарищеский' },
@@ -114,7 +140,8 @@ export function CreateEventPage() {
 
   const handleSelectArenaClick = () => {
     openRightPanel('arenaSelector', {
-      teamId: selectedTeam?.id,
+      teamId: isClubScope ? null : selectedTeam?.id,
+      clubId: isClubScope ? selectedClub?.id : null,
       onSelect: (arena) => setSelectedArena(arena),
       currentTeamColor: hasTeamColor ? activeBrandColor : null
     }, 'Выбор локации');
@@ -151,7 +178,8 @@ export function CreateEventPage() {
 
   const handleSubmitForm = async (e) => {
     e.preventDefault();
-    if (!isFormValid || !selectedTeam?.id) return; 
+    if (!isFormValid) return;
+    if (isClubScope ? !selectedClub?.id : !selectedTeam?.id) return;
 
     setIsLoading(true);
     try {
@@ -159,7 +187,9 @@ export function CreateEventPage() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
         body: JSON.stringify({
-          teamId: selectedTeam.id, eventType, matchType, eventDate, eventTime,
+          teamId: isClubScope ? null : selectedTeam.id,
+          clubId: isClubScope ? selectedClub.id : null,
+          eventType, matchType, eventDate, eventTime,
           selectedArena, feeAmount, isFree, eventTitle, videoYtUrl, videoVkUrl,
           myJerseyType, selectedOpponent, deadlineDate, deadlineTime,
           selectedExtTournament, selectedExtOpponent, stageType, seriesNumber,
@@ -169,9 +199,13 @@ export function CreateEventPage() {
       if (res.ok) {
         const json = await res.json();
         if (json.success) {
-          // Инвалидируем кэш всех календарных запросов команды — чтобы свежая тренировка/матч появились сразу
+          // Инвалидируем кэш календаря, чтобы свежее событие появилось сразу.
+          // Клубное событие видно во всех командных календарях клуба — поэтому
+          // для него чистим кэш целиком, а не по одной команде.
           try {
-            const prefix = `tr_cached_events_team_${selectedTeam.id}_month_`;
+            const prefix = isClubScope
+              ? 'tr_cached_events_'
+              : `tr_cached_events_team_${selectedTeam.id}_month_`;
             const keysToRemove = [];
             for (let i = 0; i < localStorage.length; i++) {
               const k = localStorage.key(i);
@@ -206,9 +240,9 @@ export function CreateEventPage() {
         touchAction: 'pan-y' 
       }}
     >
-      <TeamPageHeader 
-        selectedTeam={selectedTeam}
-        activeTeamDetails={cachedDetails}
+      <TeamPageHeader
+        selectedTeam={headerEntity}
+        activeTeamDetails={headerDetails}
         activeBrandColor={activeBrandColor}
       />
 
@@ -223,7 +257,7 @@ export function CreateEventPage() {
             <SegmentedControl options={eventTypeOptions} value={eventType} onChange={setEventType} activeColor={hasTeamColor ? activeBrandColor : null} />
           </div>
 
-          {eventType === 'match' && (
+          {eventType === 'match' && !isClubScope && (
             /* ИСПРАВЛЕНО: Добавлен flex-col для выравнивания ширины селектора подтипа */
             <FadeIn duration={200} delay={50} className="w-full flex flex-col">
               <div className="transition-colors duration-300">

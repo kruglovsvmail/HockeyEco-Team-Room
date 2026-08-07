@@ -1,6 +1,6 @@
 import pool from '../config/db.js';
-import { checkPermissionInternal } from '../utils/checkPermission.js';
-import { sendPushToTeamExcept, getMeetingInfo, getUserName } from '../services/pushService.js';
+import { checkPermissionInternal, checkClubPermissionInternal } from '../utils/checkPermission.js';
+import { sendPushToEventScopeExcept, getMeetingInfo, getUserName } from '../services/pushService.js';
 
 // =============================================================================
 // ПЕРЕКЛЮЧЕНИЕ СТАТУСА ПРИСУТСТВИЯ НА СОБРАНИИ
@@ -9,7 +9,7 @@ export const toggleMeetingAttendance = async (req, res) => {
   try {
     const initiatorId = req.user.id;
     const { eventId } = req.params;
-    const { isAttending, eventType, teamId, targetUserId } = req.body;
+    const { isAttending, eventType, teamId, clubId, targetUserId } = req.body;
 
     if (!eventType) {
       return res.status(400).json({ success: false, error: 'eventType обязателен' });
@@ -17,16 +17,27 @@ export const toggleMeetingAttendance = async (req, res) => {
 
     const targetId = targetUserId || initiatorId;
 
-    // Проверка прав: самоотметка или управление менеджером
+    // Проверка прав: самоотметка или управление руководителем.
+    // Клубное собрание живёт в контексте клуба, командное — в контексте команды.
     if (targetId === initiatorId) {
-      if (teamId) {
+      if (clubId) {
+        const hasAccess = await checkClubPermissionInternal(initiatorId, clubId, 'EVENT_SELF_ATTENDANCE');
+        if (!hasAccess) {
+          return res.status(403).json({ success: false, error: 'Доступ ограничен. Для самостоятельной отметки явки требуется продлить подписку' });
+        }
+      } else if (teamId) {
         const hasAccess = await checkPermissionInternal(initiatorId, teamId, 'EVENT_SELF_ATTENDANCE');
         if (!hasAccess) {
           return res.status(403).json({ success: false, error: 'Доступ ограничен. Для самостоятельной отметки явки требуется продлить подписку' });
         }
       }
     } else {
-      if (teamId) {
+      if (clubId) {
+        const hasAccess = await checkClubPermissionInternal(initiatorId, clubId, 'CLUB_EVENT_ATTENDANCE_MANAGE');
+        if (!hasAccess) {
+          return res.status(403).json({ success: false, error: 'Недостаточно прав доступа или требуется продление подписки руководителя' });
+        }
+      } else if (teamId) {
         const hasAccess = await checkPermissionInternal(initiatorId, teamId, 'MEETING_ATTENDANCE_MANAGE');
         if (!hasAccess) {
           return res.status(403).json({ success: false, error: 'Недостаточно прав доступа или требуется продление подписки руководителя' });
@@ -57,7 +68,7 @@ export const toggleMeetingAttendance = async (req, res) => {
 
     (async () => {
       const [name, info] = await Promise.all([getUserName(targetId), getMeetingInfo(eventId, eventType)]);
-      sendPushToTeamExcept(teamId, targetId, 'attendance', {
+      sendPushToEventScopeExcept({ teamId, clubId }, targetId, 'attendance', {
         title: isAttending ? 'Новая отметка' : 'Снятие отметки',
         body: isAttending
           ? `${name} отметился на собрание: ${info.text}`
@@ -146,13 +157,18 @@ export const toggleMeetingAttendanceTag = async (req, res) => {
   try {
     const initiatorId = req.user.id;
     const { eventId } = req.params;
-    const { eventType, teamId, targetUserId, hasPayTag } = req.body;
+    const { eventType, teamId, clubId, targetUserId, hasPayTag } = req.body;
 
     if (!eventType || !targetUserId) {
       return res.status(400).json({ success: false, error: 'eventType и targetUserId обязательны' });
     }
 
-    if (teamId) {
+    if (clubId) {
+      const hasAccess = await checkClubPermissionInternal(initiatorId, clubId, 'CLUB_EVENT_ATTENDANCE_MANAGE');
+      if (!hasAccess) {
+        return res.status(403).json({ success: false, error: 'Недостаточно прав доступа или требуется продление подписки руководителя для выставления пометок' });
+      }
+    } else if (teamId) {
       const hasAccess = await checkPermissionInternal(initiatorId, teamId, 'MEETING_ATTENDANCE_MANAGE');
       if (!hasAccess) {
         return res.status(403).json({ success: false, error: 'Недостаточно прав доступа или требуется продление подписки руководителя для выставления пометок' });
@@ -181,22 +197,72 @@ export const toggleMeetingAttendanceTag = async (req, res) => {
 // ДОСТУПНЫЙ СОСТАВ НА СОБРАНИЕ (для шторки добавления участников)
 //
 // team_meeting → состав только своей команды
-// club_meeting → состав всех команд клуба (без дублей по user_id)
+// club_meeting → общая база клуба (club_members), включая людей вне команд
 //
-// Также возвращает staff (роли участников команды) для проверки права управления.
+// Также возвращает staff (роли участников: командные либо клубные).
 // =============================================================================
 export const getMeetingRoster = async (req, res) => {
   try {
-    const { teamId, eventType } = req.query;
+    const { teamId, clubId, eventType } = req.query;
+
+    if (!eventType) {
+      return res.status(400).json({ success: false, error: 'eventType обязателен' });
+    }
+    if (!teamId && !clubId) {
+      return res.status(400).json({ success: false, error: 'teamId или clubId обязателен' });
+    }
+
+    let rosterRows = [];
+
+    // ── Клубное собрание: состав клуба целиком ──────────────────────────────
+    if (eventType === 'club_meeting' && clubId) {
+      const rosterResult = await pool.query(
+        `
+        SELECT DISTINCT ON (u.id)
+          u.id          AS user_id,
+          u.first_name,
+          u.last_name,
+          u.avatar_url,
+          u.avatar_url  AS team_photo,
+          tr.position,
+          tr.jersey_number,
+          t.name        AS team_name
+        FROM club_members cm
+        JOIN users u          ON u.id = cm.user_id
+        LEFT JOIN team_members tm ON tm.user_id = u.id AND tm.left_at IS NULL
+        LEFT JOIN teams t         ON t.id = tm.team_id AND t.club_id = cm.club_id
+        LEFT JOIN team_rosters tr ON tr.member_id = tm.id AND tr.left_at IS NULL
+        WHERE cm.club_id = $1 AND cm.left_at IS NULL
+        ORDER BY u.id, t.name NULLS LAST, u.last_name ASC, u.first_name ASC
+        `,
+        [clubId]
+      );
+
+      const staffResult = await pool.query(
+        `
+        SELECT
+          cm.id AS member_id,
+          u.id  AS user_id,
+          string_agg(CASE WHEN cr.role = 'coach' THEN 'club_coach' ELSE cr.role END, ', ') AS roles
+        FROM club_roles cr
+        JOIN club_members cm ON cm.club_id = cr.club_id AND cm.user_id = cr.user_id
+        JOIN users u          ON u.id = cr.user_id
+        WHERE cr.club_id = $1 AND cr.left_at IS NULL AND cm.left_at IS NULL
+        GROUP BY cm.id, u.id
+        `,
+        [clubId]
+      );
+
+      return res.json({
+        success: true,
+        roster: rosterResult.rows,
+        staff:  staffResult.rows,
+      });
+    }
 
     if (!teamId) {
       return res.status(400).json({ success: false, error: 'teamId обязателен' });
     }
-    if (!eventType) {
-      return res.status(400).json({ success: false, error: 'eventType обязателен' });
-    }
-
-    let rosterRows = [];
 
     if (eventType === 'team_meeting') {
       const result = await pool.query(

@@ -4,22 +4,25 @@ import s3 from '../config/s3.js';
 const BUCKET = process.env.S3_BUCKET || 'hockeyeco-uploads';
 
 // Загрузка/перезапись картинки состава в S3 по детерминированному ключу.
-// kind = 'game' (матч) | 'training' (тренировка). Имя файла строится из teamId + eventId,
-// поэтому URL вычисляется на клиенте без хранения в БД.
+// kind = 'game' (матч) | 'training' (тренировка). Имя файла строится из владельца
+// расстановки (команда или клуб) + eventId, поэтому URL вычисляется на клиенте
+// без хранения в БД.
 const uploadFormation = async (req, res, kind) => {
   try {
     const { eventId } = req.params;
-    // teamId приходит в query (нужен проверке прав ДО multer); body — фолбэк
+    // Контекст приходит в query (нужен проверке прав ДО multer); body — фолбэк
     const teamId = req.query.teamId || req.body.teamId;
+    const clubId = req.query.clubId || req.body.clubId;
 
     if (!req.file) {
       return res.status(400).json({ success: false, error: 'Файл изображения не предоставлен' });
     }
-    if (!teamId) {
-      return res.status(400).json({ success: false, error: 'Не указан teamId' });
+    if (!teamId && !clubId) {
+      return res.status(400).json({ success: false, error: 'Не указан teamId или clubId' });
     }
 
-    const key = `roster-formation/team-${teamId}-formation_${kind}-${eventId}.png`;
+    const owner = clubId ? `club-${clubId}` : `team-${teamId}`;
+    const key = `roster-formation/${owner}-formation_${kind}-${eventId}.png`;
 
     await s3.send(new PutObjectCommand({
       Bucket: BUCKET,

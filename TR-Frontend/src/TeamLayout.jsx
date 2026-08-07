@@ -36,6 +36,7 @@ import { TournamentHandbookPanel } from './components/Manager/TournamentHandbook
 
 
 import { EditTeamProfilePanel } from './components/MyTeam/EditTeamProfilePanel';
+import { EditClubProfilePanel } from './components/Club/EditClubProfilePanel';
 
 import { TournamentListPanel } from './components/Tournaments/TournamentListPanel';
 
@@ -47,6 +48,7 @@ import { SeasonRostersDetailsPage } from './pages/SeasonRostersDetailsPage';
 
 import { PlayerProfilePanel } from './components/Player/PlayerProfilePanel';
 import { TeamStatsPanel } from './components/Player/TeamStatsPanel';
+import { ClubStatsPanel } from './components/Player/ClubStatsPanel';
 
 dayjs.extend(utc);
 dayjs.extend(timezone);
@@ -77,6 +79,10 @@ function TeamLayoutContent() {
   const [user, setUser] = useState(null);
   const [teams, setTeams] = useState([]);
   const [selectedTeam, setSelectedTeam] = useState(null);
+  // Клубы пользователя живут рядом с командами, а не вместо них: страница клуба
+  // и создание клубных событий работают в своём контексте, всё остальное — в командном.
+  const [clubs, setClubs] = useState([]);
+  const [selectedClub, setSelectedClub] = useState(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
 
@@ -142,6 +148,15 @@ function TeamLayoutContent() {
           setSelectedTeam(prev => {
             if (!prev) return freshUser.teams[0] || null;
             const updated = freshUser.teams.find(t => String(t.id) === String(prev.id));
+            return updated ? { ...prev, ...updated } : prev;
+          });
+        }
+
+        if (freshUser.clubs) {
+          setClubs(freshUser.clubs);
+          setSelectedClub(prev => {
+            if (!prev) return null;
+            const updated = freshUser.clubs.find(c => String(c.id) === String(prev.id));
             return updated ? { ...prev, ...updated } : prev;
           });
         }
@@ -312,12 +327,22 @@ function TeamLayoutContent() {
     navigate(location.pathname, { replace: true, state: { event: updated } });
   }, [eventMatch, location.pathname, location.state, navigate]);
 
-  // Доступ к редактированию текущего события — для отображения карандашика в шапке
-  const { checkAccess: checkAccessForHeader } = useAccess(user, selectedTeam);
+  // Доступ к редактированию текущего события — для отображения карандашика в шапке.
+  // Клуб события берём из самого события (my_club_id), а не из выбранного в сайдбаре:
+  // человек мог зайти в клубное событие, стоя в контексте команды.
+  const eventClub = useMemo(() => {
+    const id = eventForOverlay?.my_club_id;
+    if (!id) return null;
+    return clubs.find(c => String(c.id) === String(id)) || null;
+  }, [eventForOverlay?.my_club_id, clubs]);
+
+  const { checkAccess: checkAccessForHeader, checkClubAccess: checkClubAccessForHeader } =
+    useAccess(user, selectedTeam, eventClub);
+
   const headerEventAccess = useMemo(() => {
     if (!eventForOverlay) return { canSee: false };
-    return computeEventEditAccess(eventForOverlay, user, selectedTeam, checkAccessForHeader);
-  }, [eventForOverlay, user, selectedTeam, checkAccessForHeader]);
+    return computeEventEditAccess(eventForOverlay, user, selectedTeam, checkAccessForHeader, checkClubAccessForHeader);
+  }, [eventForOverlay, user, selectedTeam, checkAccessForHeader, checkClubAccessForHeader]);
 
   const openEventEditPanel = useCallback(() => {
     if (!eventForOverlay) return;
@@ -325,12 +350,13 @@ function TeamLayoutContent() {
       event: eventForOverlay,
       user,
       selectedTeam,
+      selectedClub: eventClub,
       onEventUpdate: handleEventUpdate,
       // После удаления — возвращаем пользователя из overlay-события в календарь
       onEventDeleted: handleCloseEvent,
     }, 'Редактирование');
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [eventForOverlay, user, selectedTeam, handleEventUpdate, handleCloseEvent]);
+  }, [eventForOverlay, user, selectedTeam, eventClub, handleEventUpdate, handleCloseEvent]);
 
   useEffect(() => {
     const fetchMe = async () => {
@@ -351,6 +377,12 @@ function TeamLayoutContent() {
         const savedTeamId = localStorage.getItem('teampwa_selected_team');
         let currentTeam = userTeams.find(t => t.id == savedTeamId) || userTeams[0];
         setSelectedTeam(currentTeam);
+
+        const userClubs = parsedUser.clubs || [];
+        setClubs(userClubs);
+        const savedClubId = localStorage.getItem('teampwa_selected_club');
+        setSelectedClub(userClubs.find(c => c.id == savedClubId) || userClubs[0] || null);
+
         setIsLoading(false);
       }
 
@@ -396,6 +428,11 @@ function TeamLayoutContent() {
         }
 
         setSelectedTeam(currentTeam);
+
+        const userClubs = data.user.clubs || [];
+        setClubs(userClubs);
+        const savedClubId = localStorage.getItem('teampwa_selected_club');
+        setSelectedClub(userClubs.find(c => c.id == savedClubId) || userClubs[0] || null);
       } catch (err) {
         clearTimeout(timeoutId);
         if (!localStorage.getItem('teampwa_cached_user') && !localStorage.getItem('teampwa_user')) {
@@ -426,6 +463,18 @@ function TeamLayoutContent() {
     setSelectedTeam(team);
     localStorage.setItem('teampwa_selected_team', team.id.toString());
   };
+
+  const handleClubChange = (club) => {
+    setSelectedClub(club);
+    localStorage.setItem('teampwa_selected_club', club.id.toString());
+  };
+
+  // Профиль клуба обновился (карандашик в шапке страницы клуба) — синхронизируем
+  // и выбранный клуб, и список, иначе сайдбар останется со старым логотипом.
+  const handleClubUpdated = useCallback((updatedClub) => {
+    setSelectedClub(prev => (prev ? { ...prev, ...updatedClub } : prev));
+    setClubs(prev => prev.map(c => (c.id === updatedClub.id ? { ...c, ...updatedClub } : c)));
+  }, []);
 
   const openRightPanel = (type, data, title = 'Детали') => {
     const extendedData = {
@@ -501,6 +550,11 @@ function TeamLayoutContent() {
   const isColorsEnabled = localStorage.getItem('tr_use_team_colors') !== 'false';
   const hasTeamColor = isColorsEnabled && !!selectedTeam?.color_home_1;
 
+  // Цвет клуба здесь намеренно НЕ подмешиваем: этот переопределитель накрывает и
+  // сайдбар, а он общий для всех команд и клубов — красить его в цвет одного клуба
+  // некорректно. Клубный цвет живёт локально на странице клуба (ClubPage) и в её
+  // панелях, которые красят себя сами.
+
   return (
     <div
       className="flex flex-col w-full h-full overflow-hidden relative"
@@ -519,8 +573,11 @@ function TeamLayoutContent() {
         <Sidebar
           user={user}
           teams={teams}
+          clubs={clubs}
           selectedTeam={selectedTeam}
+          selectedClub={selectedClub}
           onTeamChange={handleTeamChange}
+          onClubChange={handleClubChange}
           onClose={() => setIsSidebarOpen(false)}
         />
       </aside>
@@ -563,10 +620,16 @@ function TeamLayoutContent() {
           className="flex-1 overflow-y-auto overflow-x-hidden scrollbar-hide relative overscroll-none"
           style={{ paddingTop: '60px' }}
         >
-          <Outlet context={{ user, teams, selectedTeam, handleTeamChange, openRightPanel, openPanel100, registerHeaderEdit, onTeamUpdated: (updatedTeam) => {
-            setSelectedTeam(prev => ({ ...prev, ...updatedTeam }));
-            setTeams(prev => prev.map(t => t.id === updatedTeam.id ? { ...t, ...updatedTeam } : t));
-          }}} />
+          <Outlet context={{
+            user, teams, selectedTeam, handleTeamChange,
+            clubs, selectedClub, handleClubChange,
+            openRightPanel, pushRightPanel, openPanel100, registerHeaderEdit,
+            onTeamUpdated: (updatedTeam) => {
+              setSelectedTeam(prev => ({ ...prev, ...updatedTeam }));
+              setTeams(prev => prev.map(t => t.id === updatedTeam.id ? { ...t, ...updatedTeam } : t));
+            },
+            onClubUpdated: handleClubUpdated,
+          }} />
         </main>
       </div>
 
@@ -576,7 +639,7 @@ function TeamLayoutContent() {
         className={clsx(
           "absolute top-0 right-0 h-full bg-surface-level2 border-l border-white/10 shadow-[-15px_0_30px_rgba(0,0,0,0.1)] flex flex-col overflow-hidden flex-shrink-0",
           "transition-transform duration-300 ease-[cubic-bezier(0.32,0.72,0,1)]",
-          (rightPanel.type === 'eventEdit' || rightPanel.type === 'playerDocs' || rightPanel.type === 'playerProfile' || rightPanel.type === 'userDetails' || rightPanel.type === 'teamStats') ? "z-[110]" : "z-[40]",
+          (rightPanel.type === 'eventEdit' || rightPanel.type === 'playerDocs' || rightPanel.type === 'playerProfile' || rightPanel.type === 'userDetails' || rightPanel.type === 'teamStats' || rightPanel.type === 'clubStats') ? "z-[110]" : "z-[40]",
           rightPanel.isOpen ? "translate-x-0" : "translate-x-full"
         )}
         style={{ width: `${panelPct}%` }}
@@ -646,6 +709,12 @@ function TeamLayoutContent() {
                     )}
                     {rightPanel.type === 'teamStats' && (
                       <TeamStatsPanel data={rightPanel.data} />
+                    )}
+                    {rightPanel.type === 'clubStats' && (
+                      <ClubStatsPanel data={rightPanel.data} />
+                    )}
+                    {rightPanel.type === 'editClubProfile' && (
+                      <EditClubProfilePanel {...rightPanel.data} onClose={closeRightPanel} />
                     )}
                     {rightPanel.type === 'eventEdit' && (
                       <Suspense fallback={<PageLoader />}>

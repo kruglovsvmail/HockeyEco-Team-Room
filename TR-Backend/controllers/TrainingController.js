@@ -1,6 +1,6 @@
 import pool from '../config/db.js';
-import { getTeamIdFromRequest } from '../utils/checkPermission.js';
-import { sendPushToTeamExcept, cancelScheduledNotifications, getTrainingInfo, formatFeeChange } from '../services/pushService.js';
+import { getTeamIdFromRequest, getClubIdFromRequest } from '../utils/checkPermission.js';
+import { sendPushToEventScopeExcept, cancelScheduledNotifications, getTrainingInfo, formatFeeChange } from '../services/pushService.js';
 
 // =============================================================================
 // ОБНОВЛЕНИЕ РАСПИСАНИЯ ТРЕНИРОВКИ (дата, время, локация)
@@ -18,9 +18,10 @@ export const updateTrainingSchedule = async (req, res) => {
     const { eventId } = req.params;
     const { eventType, date, time, arena_id, location, location_url, custom_timezone } = req.body;
     const teamId = getTeamIdFromRequest(req);
+    const clubId = getClubIdFromRequest(req);
 
-    if (!teamId) {
-      return res.status(400).json({ success: false, error: 'Параметр teamId обязателен' });
+    if (!teamId && !clubId) {
+      return res.status(400).json({ success: false, error: 'Параметр teamId или clubId обязателен' });
     }
     if (!eventType) {
       return res.status(400).json({ success: false, error: 'Параметр eventType обязателен' });
@@ -94,7 +95,7 @@ export const updateTrainingSchedule = async (req, res) => {
     );
 
     getTrainingInfo(eventId, eventType).then(info => {
-      sendPushToTeamExcept(teamId, req.user.id, 'schedule', {
+      sendPushToEventScopeExcept({ teamId, clubId }, req.user.id, 'schedule', {
         title: 'Тренировка изменена',
         body: `Новое расписание: ${info.text}`,
         url: `/event/${eventType}/${eventId}`, tag: `event-update-${eventId}`,
@@ -117,9 +118,10 @@ export const updateTrainingFinances = async (req, res) => {
     const { eventId } = req.params;
     const { eventType, player_fee } = req.body;
     const teamId = getTeamIdFromRequest(req);
+    const clubId = getClubIdFromRequest(req);
 
-    if (!teamId) {
-      return res.status(400).json({ success: false, error: 'Параметр teamId обязателен' });
+    if (!teamId && !clubId) {
+      return res.status(400).json({ success: false, error: 'Параметр teamId или clubId обязателен' });
     }
     if (!eventType) {
       return res.status(400).json({ success: false, error: 'Параметр eventType обязателен' });
@@ -147,7 +149,7 @@ export const updateTrainingFinances = async (req, res) => {
 
     if (oldFee !== fee) {
       getTrainingInfo(eventId, eventType).then(info => {
-        sendPushToTeamExcept(teamId, req.user.id, 'schedule', {
+        sendPushToEventScopeExcept({ teamId, clubId }, req.user.id, 'schedule', {
           title: 'Изменение стоимости',
           body: formatFeeChange(oldFee, fee, `тренировки ${info.text}`),
           url: `/event/${eventType}/${eventId}`,
@@ -173,9 +175,10 @@ export const deleteTraining = async (req, res) => {
     // eventType может прийти как в query (DELETE без body), так и в body
     const eventType = req.query.eventType || req.body?.eventType;
     const teamId = getTeamIdFromRequest(req);
+    const clubId = getClubIdFromRequest(req);
 
-    if (!teamId) {
-      return res.status(400).json({ success: false, error: 'Параметр teamId обязателен' });
+    if (!teamId && !clubId) {
+      return res.status(400).json({ success: false, error: 'Параметр teamId или clubId обязателен' });
     }
     if (!eventType) {
       return res.status(400).json({ success: false, error: 'Параметр eventType обязателен' });
@@ -228,7 +231,7 @@ export const deleteTraining = async (req, res) => {
     }
 
     cancelScheduledNotifications(numericId).catch(() => {});
-    sendPushToTeamExcept(teamId, req.user.id, 'schedule', {
+    sendPushToEventScopeExcept({ teamId, clubId }, req.user.id, 'schedule', {
       title: 'Тренировка отменена',
       body: eventInfo.text || 'Тренировка удалена из расписания',
       url: '/', tag: `event-cancel-${numericId}`,

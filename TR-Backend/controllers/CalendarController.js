@@ -65,7 +65,11 @@ export const getEvents = async (req, res) => {
       WITH user_context AS (
         SELECT 
           (SELECT count(*) FROM team_members WHERE user_id = $1 AND left_at IS NULL) as active_teams,
-          (SELECT count(*) FROM club_members WHERE user_id = $1 AND left_at IS NULL) as active_clubs,
+          (SELECT count(*) FROM (
+             SELECT club_id FROM club_members WHERE user_id = $1 AND left_at IS NULL
+             UNION
+             SELECT id FROM clubs WHERE owner_id = $1
+           ) AS uc) as active_clubs,
           (SELECT (subscription_expires_at IS NOT NULL AND subscription_expires_at > NOW()) FROM users WHERE id = $1) as has_subscription
       ),
       user_teams AS (
@@ -79,9 +83,27 @@ export const getEvents = async (req, res) => {
         -- Владелец команды (teams.owner_id) видит события своей команды,
         -- даже если он не состоит в team_members и не привязан к клубу команды.
         SELECT t.id FROM teams t WHERE t.owner_id = $1
+        UNION
+        -- Владелец клуба видит события всех команд клуба, даже не будучи в его базе
+        SELECT t.id FROM clubs c JOIN teams t ON t.club_id = c.id WHERE c.owner_id = $1
       ),
       user_clubs AS (
         SELECT club_id FROM club_members WHERE user_id = $1 AND left_at IS NULL
+        UNION
+        -- Владелец клуба видит его тренировки и собрания, даже не числясь в общей базе
+        SELECT id FROM clubs WHERE owner_id = $1
+      ),
+      -- Клубные роли пользователя: нужны, чтобы карточка клубного события знала,
+      -- кто её открыл. Раньше здесь всем жёстко проставлялся 'player', и руководитель
+      -- клуба не видел на своём же событии ни отметок, ни редактирования.
+      -- Имена ролей здесь клубные (club_owner / club_coach), как их ждёт permissions.js:
+      -- в БД тренер клуба записан тем же 'coach', что и тренер команды.
+      user_club_roles AS (
+        SELECT c.id as club_id, 'club_owner'::varchar as role FROM clubs c WHERE c.owner_id = $1
+        UNION
+        SELECT cr.club_id, (CASE WHEN cr.role = 'coach' THEN 'club_coach' ELSE cr.role END)::varchar FROM club_roles cr
+        JOIN club_members cm ON cm.club_id = cr.club_id AND cm.user_id = cr.user_id
+        WHERE cr.user_id = $1 AND cr.left_at IS NULL AND cm.left_at IS NULL
       ),
       user_team_roles AS (
         SELECT t.id as team_id, 'owner'::varchar as role FROM teams t WHERE t.owner_id = $1
@@ -90,10 +112,16 @@ export const getEvents = async (req, res) => {
         JOIN team_members tm ON tr.member_id = tm.id 
         WHERE tm.user_id = $1 AND tr.left_at IS NULL AND tm.left_at IS NULL
         UNION
-        SELECT t.id as team_id, cr.role::varchar FROM club_roles cr
+        SELECT t.id as team_id, (CASE WHEN cr.role = 'coach' THEN 'club_coach' ELSE cr.role END)::varchar FROM club_roles cr
         JOIN teams t ON t.club_id = cr.club_id
         JOIN club_members cm ON cm.club_id = cr.club_id AND cm.user_id = cr.user_id
         WHERE cr.user_id = $1 AND cr.left_at IS NULL AND cm.left_at IS NULL
+        UNION
+        -- Владелец клуба стоит над владельцем команды и получает свою роль
+        -- во всех командах клуба, членства в клубе для этого не требуется
+        SELECT t.id as team_id, 'club_owner'::varchar as role FROM clubs c
+        JOIN teams t ON t.club_id = c.id
+        WHERE c.owner_id = $1
       ),
 
       -- ==========================================
@@ -117,6 +145,7 @@ export const getEvents = async (req, res) => {
           g.location_url::varchar AS location_url,
           
           ut.team_id::int AS my_team_id,
+          NULL::int AS my_club_id,
           g.home_team_id::int AS home_team_id,
           
           my_team.name::varchar AS my_team_name,
@@ -253,6 +282,7 @@ export const getEvents = async (req, res) => {
           tt.location_url::varchar AS location_url,
           
           ut.team_id::int AS my_team_id,
+          NULL::int AS my_club_id,
           NULL::int AS home_team_id,
           
           my_team.name::varchar AS my_team_name,
@@ -342,6 +372,7 @@ export const getEvents = async (req, res) => {
           tm.location_url::varchar AS location_url,
           
           ut.team_id::int AS my_team_id,
+          NULL::int AS my_club_id,
           NULL::int AS home_team_id,
           
           my_team.name::varchar AS my_team_name,
@@ -386,7 +417,19 @@ export const getEvents = async (req, res) => {
 
           (CASE WHEN (SELECT active_clubs FROM user_context) = 0 AND (SELECT active_teams FROM user_context) = 1 THEN false ELSE true END)::boolean AS show_team_context,
           (EXISTS (SELECT 1 FROM team_meeting_attendance tma WHERE tma.team_meeting_id = tm.id AND tma.user_id = $1))::boolean AS is_attending,
-          (CASE WHEN NOT (SELECT has_subscription FROM user_context) THEN 'no_subscription' ELSE 'allowed' END)::varchar AS toggle_status,
+          (CASE
+             -- На собрание ходит вся команда, а не только заявленные, поэтому ростер
+             -- здесь не проверяем. Но членство в команде нужно: самоотметку сервер
+             -- пропускает только по роли player, а она даётся за team_members.
+             -- Собрания команд клуба видят все члены клуба — без этой проверки у них
+             -- тумблер выглядел рабочим и молча откатывался.
+             WHEN NOT EXISTS (
+               SELECT 1 FROM team_members tmem
+               WHERE tmem.team_id = ut.team_id AND tmem.user_id = $1 AND tmem.left_at IS NULL
+             ) THEN 'not_team_member'
+             WHEN NOT (SELECT has_subscription FROM user_context) THEN 'no_subscription'
+             ELSE 'allowed'
+           END)::varchar AS toggle_status,
           COALESCE(
             (SELECT role FROM user_team_roles WHERE team_id = ut.team_id AND role IN ('owner', 'team_manager', 'team_admin') LIMIT 1),
             'player'
@@ -418,14 +461,15 @@ export const getEvents = async (req, res) => {
           a.address::varchar AS arena_address,
           ct.location::varchar AS location,
           ct.location_url::varchar AS location_url,
-          
+
           NULL::int AS my_team_id,
+          uc.club_id::int AS my_club_id,
           NULL::int AS home_team_id,
-          
+
           c.name::varchar AS my_team_name,
           c.logo_url::varchar AS my_team_logo_url,
-          
-          NULL::varchar AS team_color,
+
+          c.color_1::varchar AS team_color,
           
           NULL::int AS opponent_team_id, 
           NULL::varchar AS opponent_name,
@@ -462,10 +506,24 @@ export const getEvents = async (req, res) => {
           '/default/jersey_dark.webp'::varchar AS opponent_jersey_dark_url,
           '/default/jersey_light.webp'::varchar AS opponent_jersey_light_url,
 
-          false::boolean AS show_team_context,
+          -- У клубного события своего «соперника» нет, но шапку с логотипом и названием
+          -- клуба показываем всегда: человек должен видеть, чей это лёд.
+          true::boolean AS show_team_context,
           (EXISTS (SELECT 1 FROM club_training_attendance cta WHERE cta.club_training_id = ct.id AND cta.user_id = $1))::boolean AS is_attending,
-          (CASE WHEN NOT (SELECT has_subscription FROM user_context) THEN 'no_subscription' ELSE 'allowed' END)::varchar AS toggle_status,
-          'player'::varchar AS user_role,
+          (CASE
+                       -- Отмечаться может только тот, кто состоит в общей базе клуба.
+                       -- Владелец клуба им быть не обязан: тогда тумблер закрыт, а не падает с ошибкой.
+                       WHEN NOT EXISTS (
+                         SELECT 1 FROM club_members cmem
+                         WHERE cmem.club_id = uc.club_id AND cmem.user_id = $1 AND cmem.left_at IS NULL
+                       ) THEN 'not_in_club'
+                       WHEN NOT (SELECT has_subscription FROM user_context) THEN 'no_subscription'
+                       ELSE 'allowed'
+                     END)::varchar AS toggle_status,
+          COALESCE(
+            (SELECT role FROM user_club_roles WHERE club_id = uc.club_id AND role IN ('club_owner', 'top_manager', 'club_admin', 'club_coach') LIMIT 1),
+            'player'
+          )::varchar AS user_role,
           (SELECT has_subscription FROM user_context)::boolean AS has_subscription
 
         FROM user_clubs uc
@@ -493,14 +551,15 @@ export const getEvents = async (req, res) => {
           a.address::varchar AS arena_address,
           cm.location::varchar AS location,
           cm.location_url::varchar AS location_url,
-          
+
           NULL::int AS my_team_id,
+          uc.club_id::int AS my_club_id,
           NULL::int AS home_team_id,
-          
+
           c.name::varchar AS my_team_name,
           c.logo_url::varchar AS my_team_logo_url,
-          
-          NULL::varchar AS team_color,
+
+          c.color_1::varchar AS team_color,
           
           NULL::int AS opponent_team_id, 
           NULL::varchar AS opponent_name,
@@ -537,10 +596,22 @@ export const getEvents = async (req, res) => {
           '/default/jersey_dark.webp'::varchar AS opponent_jersey_dark_url,
           '/default/jersey_light.webp'::varchar AS opponent_jersey_light_url,
 
-          false::boolean AS show_team_context,
+          true::boolean AS show_team_context,
           (EXISTS (SELECT 1 FROM club_meeting_attendance cma WHERE cma.club_meeting_id = cm.id AND cma.user_id = $1))::boolean AS is_attending,
-          (CASE WHEN NOT (SELECT has_subscription FROM user_context) THEN 'no_subscription' ELSE 'allowed' END)::varchar AS toggle_status,
-          'player'::varchar AS user_role,
+          (CASE
+                       -- Отмечаться может только тот, кто состоит в общей базе клуба.
+                       -- Владелец клуба им быть не обязан: тогда тумблер закрыт, а не падает с ошибкой.
+                       WHEN NOT EXISTS (
+                         SELECT 1 FROM club_members cmem
+                         WHERE cmem.club_id = uc.club_id AND cmem.user_id = $1 AND cmem.left_at IS NULL
+                       ) THEN 'not_in_club'
+                       WHEN NOT (SELECT has_subscription FROM user_context) THEN 'no_subscription'
+                       ELSE 'allowed'
+                     END)::varchar AS toggle_status,
+          COALESCE(
+            (SELECT role FROM user_club_roles WHERE club_id = uc.club_id AND role IN ('club_owner', 'top_manager', 'club_admin', 'club_coach') LIMIT 1),
+            'player'
+          )::varchar AS user_role,
           (SELECT has_subscription FROM user_context)::boolean AS has_subscription
 
         FROM user_clubs uc

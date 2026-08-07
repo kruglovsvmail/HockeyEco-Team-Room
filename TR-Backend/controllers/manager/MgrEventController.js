@@ -1,6 +1,7 @@
 import pool from '../../config/db.js';
 import { PERMISSIONS } from '../../utils/permissions.js';
-import { sendPushToTeamExcept, scheduleNotification, scheduleMatchDeadlines, getTrainingInfo, getMeetingInfo, getMatchInfo } from '../../services/pushService.js';
+import { checkClubPermissionInternal } from '../../utils/checkPermission.js';
+import { sendPushToTeamExcept, sendPushToClubExcept, scheduleNotification, scheduleMatchDeadlines, getTrainingInfo, getMeetingInfo, getMatchInfo } from '../../services/pushService.js';
 
 /**
  * Внутренняя изолированная функция для проверки гранулярных прав доступа руководителя и подписки
@@ -42,10 +43,14 @@ async function checkPermissionInternal(userId, teamId, permissionKey, client = p
 
     // Клубные роли (top_manager, club_admin) — необходимы для проверки MGR_CREATE_EVENT
     const crRes = await client.query(`
-      SELECT cr.role FROM club_roles cr
+      SELECT (CASE WHEN cr.role = 'coach' THEN 'club_coach' ELSE cr.role END) AS role FROM club_roles cr
       JOIN teams t ON t.club_id = cr.club_id
       JOIN club_members cm ON cm.club_id = cr.club_id AND cm.user_id = cr.user_id
       WHERE cr.user_id = $1 AND t.id = $2 AND cr.left_at IS NULL AND cm.left_at IS NULL
+      UNION
+      SELECT 'club_owner' AS role FROM clubs c
+      JOIN teams t2 ON t2.club_id = c.id
+      WHERE c.owner_id = $1 AND t2.id = $2
     `, [userId, teamId]);
 
     crRes.rows.forEach(r => userRoles.push(r.role));
@@ -93,6 +98,7 @@ export const createEvent = async (req, res) => {
   const userId = req.user.id;
   const {
     teamId,
+    clubId,
     eventType,
     matchType,
     eventDate,
@@ -116,16 +122,32 @@ export const createEvent = async (req, res) => {
     customStageLabel
   } = req.body;
 
-  // Жесткий заслон валидации на бэкенде
-  if (!teamId || !eventType || !eventDate || !eventTime || !selectedArena) {
+  // Жесткий заслон валидации на бэкенде. Контекст — либо команда, либо клуб:
+  // клубное событие (общий лёд) команде не принадлежит.
+  if ((!teamId && !clubId) || !eventType || !eventDate || !eventTime || !selectedArena) {
     return res.status(400).json({ success: false, error: 'Не все обязательные поля заполнены' });
   }
 
+  const isClubEvent = !teamId && !!clubId;
+
+  // Матч всегда играет конкретный состав — у клуба матчей не бывает
+  if (isClubEvent && eventType !== 'training' && eventType !== 'meeting') {
+    return res.status(400).json({ success: false, error: 'Клуб может создавать только тренировки и собрания' });
+  }
+
   try {
-    // Аппаратная проверка прав менеджера по ролевой матрице экосистемы
-    const hasAccess = await checkPermissionInternal(userId, teamId, 'MGR_CREATE_EVENT');
+    // Аппаратная проверка прав по ролевой матрице экосистемы
+    const hasAccess = isClubEvent
+      ? await checkClubPermissionInternal(userId, clubId, 'CLUB_MANAGE_EVENTS')
+      : await checkPermissionInternal(userId, teamId, 'MGR_CREATE_EVENT');
+
     if (!hasAccess) {
-      return res.status(403).json({ success: false, error: 'Недостаточно прав для планирования событий данной команды' });
+      return res.status(403).json({
+        success: false,
+        error: isClubEvent
+          ? 'Недостаточно прав для планирования клубных событий'
+          : 'Недостаточно прав для планирования событий данной команды',
+      });
     }
 
     const eventTimestamp = parseDateTime(eventDate, eventTime);
@@ -152,6 +174,56 @@ export const createEvent = async (req, res) => {
     const arenaId = isManualArena ? null : selectedArena.id;
     const locationName = isManualArena ? selectedArena.name : null;
     const locationUrl = isManualArena ? (selectedArena.location_url || '') : null;
+
+    // ==========================================
+    // СЦЕНАРИЙ 0: КЛУБНОЕ СОБЫТИЕ (общий лёд / общее собрание)
+    //
+    // Отдельная ветка, а не флаг внутри командной: у клубного события своя таблица,
+    // свои отметки явки и своя рассылка — по всей общей базе клуба, а не по составу.
+    // Напоминание за 24 часа здесь пока не ставим: очередь отложенных уведомлений
+    // умеет адресовать только команду (scheduled_notifications.team_id NOT NULL).
+    // ==========================================
+    if (isClubEvent) {
+      if (eventType === 'training') {
+        const result = await pool.query(`
+          INSERT INTO "public"."club_training" (club_id, training_date, arena_id, location, location_url, title, cost, custom_timezone)
+          VALUES ($1, $2::timestamp AT TIME ZONE $3, $4, $5, $6, $7, $8, $9)
+          RETURNING id;
+        `, [clubId, eventTimestamp, arenaTz, arenaId, locationName, locationUrl, eventTitle || 'Клубная тренировка', cost, customTz]);
+
+        const newEventId = result.rows[0].id;
+
+        getTrainingInfo(newEventId, 'club_training').then(info => {
+          sendPushToClubExcept(clubId, req.user.id, 'schedule', {
+            title: 'Новая клубная тренировка',
+            body: info.text,
+            url: `/event/club_training/${newEventId}`,
+            tag: `new-event-${newEventId}`,
+          });
+        }).catch(() => {});
+
+        return res.json({ success: true, message: 'Клубная тренировка успешно добавлена в календарь', eventId: newEventId });
+      }
+
+      const result = await pool.query(`
+        INSERT INTO "public"."club_meeting" (club_id, meeting_date, arena_id, location, location_url, title, cost, custom_timezone)
+        VALUES ($1, $2::timestamp AT TIME ZONE $3, $4, $5, $6, $7, $8, $9)
+        RETURNING id;
+      `, [clubId, eventTimestamp, arenaTz, arenaId, locationName, locationUrl, eventTitle || 'Клубное собрание', cost, customTz]);
+
+      const newMeetingId = result.rows[0].id;
+
+      getMeetingInfo(newMeetingId, 'club_meeting').then(info => {
+        sendPushToClubExcept(clubId, req.user.id, 'schedule', {
+          title: 'Новое клубное собрание',
+          body: info.text,
+          url: `/event/club_meeting/${newMeetingId}`,
+          tag: `new-event-${newMeetingId}`,
+        });
+      }).catch(() => {});
+
+      return res.json({ success: true, message: 'Клубное собрание успешно запланировано', eventId: newMeetingId });
+    }
 
     // ==========================================
     // СЦЕНАРИЙ 1: СОЗДАНИЕ ТРЕНИРОВКИ

@@ -184,9 +184,29 @@ export const TrainingLines = ({ event, initialAttendees = [], initialStaffMember
     } catch { return null; }
   }, [localUser, event?.my_team_id]);
 
-  const { user, checkAccess, selectedTeam } = useAccess(localUser, localTeam);
-  const hasLinesManageAccess = checkAccess('TRAINING_LINES_MANAGE', event?.my_team_id);
-  const hasShareAccess = checkAccess('TRAINING_LINES_SHARE', event?.my_team_id);
+  // Клубная тренировка: расстановка принадлежит клубу, а ставит её тренер клуба
+  const eventClubId = event?.my_club_id || null;
+  const isClubEvent = !!eventClubId;
+  const scopeQuery = isClubEvent ? `clubId=${eventClubId}` : `teamId=${event?.my_team_id}`;
+
+  const localClub = useMemo(() => {
+    try {
+      if (!localUser || !eventClubId) return null;
+      return localUser.clubs?.find(c => String(c.id) === String(eventClubId));
+    } catch { return null; }
+  }, [localUser, eventClubId]);
+
+  const { user, checkAccess, checkClubAccess, selectedTeam } = useAccess(localUser, localTeam, localClub);
+
+  const linesKey = isClubEvent ? 'CLUB_TRAINING_LINES_MANAGE' : 'TRAINING_LINES_MANAGE';
+  const hasLinesManageAccess = isClubEvent
+    ? checkClubAccess(linesKey, eventClubId)
+    : checkAccess(linesKey, event?.my_team_id);
+  // Шеринг расстановки клубу отдельным ключом не разводили — им распоряжается
+  // тот же, кто может её ставить.
+  const hasShareAccess = isClubEvent
+    ? hasLinesManageAccess
+    : checkAccess('TRAINING_LINES_SHARE', event?.my_team_id);
 
   const carouselRef = useRef(null);
   const shareCardRef = useRef(null);
@@ -214,35 +234,44 @@ export const TrainingLines = ({ event, initialAttendees = [], initialStaffMember
   const userRoles = useMemo(() => {
     const rolesSet = new Set();
     if (activeGlobalRole) rolesSet.add(activeGlobalRole);
-    if (selectedTeam?.user_role) selectedTeam.user_role.split(',').forEach(r => rolesSet.add(r.trim().toLowerCase()));
+
+    // Контекст события: клубное берёт роли из клуба, командное — из команды
+    const contextRoles = isClubEvent
+      ? (Array.isArray(localClub?.user_roles)
+          ? localClub.user_roles
+          : (localClub?.user_role?.split(',') || []))
+      : (selectedTeam?.user_role?.split(',') || []);
+    contextRoles.forEach(r => rolesSet.add(String(r).trim().toLowerCase()));
+
     if (staffMembers.length > 0 && activeUserId) {
       const myStaff = staffMembers.find(s => String(s.user_id) === String(activeUserId));
       if (myStaff?.roles) myStaff.roles.split(',').forEach(r => rolesSet.add(r.trim().toLowerCase()));
     }
     return Array.from(rolesSet);
-  }, [activeGlobalRole, selectedTeam?.user_role, staffMembers, activeUserId]);
+  }, [activeGlobalRole, selectedTeam?.user_role, localClub, isClubEvent, staffMembers, activeUserId]);
 
   const hasCoachAccess = useMemo(() => {
     if (userRoles.includes('admin')) return true;
-    const allowed = (PERMISSIONS.TRAINING_LINES_MANAGE?.allowedRoles || []).map(r => String(r).toLowerCase());
+    const allowed = (PERMISSIONS[linesKey]?.allowedRoles || []).map(r => String(r).toLowerCase());
     return userRoles.some(role => allowed.includes(role));
-  }, [userRoles]);
+  }, [userRoles, linesKey]);
 
   const hasShareRoleAccess = useMemo(() => {
     if (userRoles.includes('admin')) return true;
+    if (isClubEvent) return hasCoachAccess;
     const allowed = (PERMISSIONS.TRAINING_LINES_SHARE?.allowedRoles || []).map(r => String(r).toLowerCase());
     return userRoles.some(role => allowed.includes(role));
-  }, [userRoles]);
+  }, [userRoles, isClubEvent, hasCoachAccess]);
 
   // ── Загрузка данных ────────────────────────────────────────────────────
   useEffect(() => {
-    if (!event?.event_id || !event?.my_team_id) { setLoading(false); return; }
+    if (!event?.event_id || (!event?.my_team_id && !eventClubId)) { setLoading(false); return; }
     const load = async () => {
       try {
         const apiUrl = import.meta.env.VITE_API_URL || '';
         const headers = getAuthHeaders();
         const res = await fetch(
-          `${apiUrl}/api/trainings/${event.event_id}/lines?teamId=${event.my_team_id}&eventType=${event.event_type}`,
+          `${apiUrl}/api/trainings/${event.event_id}/lines?${scopeQuery}&eventType=${event.event_type}`,
           { headers }
         );
         const data = await res.json();
@@ -283,7 +312,7 @@ export const TrainingLines = ({ event, initialAttendees = [], initialStaffMember
       }
     };
     load();
-  }, [event?.event_id, event?.my_team_id, event?.event_type]);
+  }, [event?.event_id, event?.my_team_id, eventClubId, scopeQuery, event?.event_type]);
 
   // ── Авто-расширение слотов группы ──────────────────────────────────────
   useEffect(() => {
@@ -387,7 +416,8 @@ export const TrainingLines = ({ event, initialAttendees = [], initialStaffMember
         method: 'POST',
         headers: { ...headers, 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          teamId: event.my_team_id,
+          teamId: isClubEvent ? null : event.my_team_id,
+          clubId: eventClubId,
           eventType: event.event_type,
           lines: draftLines.map(l => ({
             player_id: l.player_id || l.id,
@@ -496,9 +526,11 @@ export const TrainingLines = ({ event, initialAttendees = [], initialStaffMember
       if (!result) return;
       const apiUrl = import.meta.env.VITE_API_URL || '';
       const fd = new FormData();
-      fd.append('teamId', event.my_team_id);
+      if (isClubEvent) fd.append('clubId', eventClubId);
+      else fd.append('teamId', event.my_team_id);
       fd.append('image', result.file, result.file.name);
-      const resp = await fetch(`${apiUrl}/api/trainings/${event.event_id}/lines/formation-image?teamId=${event.my_team_id}`, {
+      // eventType в query обязателен: проверка прав срабатывает до multer, тела ещё нет
+      const resp = await fetch(`${apiUrl}/api/trainings/${event.event_id}/lines/formation-image?${scopeQuery}&eventType=${event.event_type}`, {
         method: 'POST',
         headers: getAuthHeaders(), // без Content-Type — boundary проставит FormData
         body: fd,
@@ -512,7 +544,7 @@ export const TrainingLines = ({ event, initialAttendees = [], initialStaffMember
     } finally {
       setIsGeneratingFormation(false);
     }
-  }, [buildShareFile, event?.my_team_id, event?.event_id]);
+  }, [buildShareFile, event?.my_team_id, eventClubId, isClubEvent, scopeQuery, event?.event_type, event?.event_id]);
 
   // Клик «Поделиться»
   const handleShareLines = async () => {
