@@ -488,6 +488,10 @@ export function TournamentStat({
                     <div onClick={() => handleSkaterSortClick('points')} className="w-11 shrink-0 cursor-pointer active:opacity-60 text-brand" style={hasTeamColor ? { color: activeBrandColor } : {}}>О{renderSortIndicator(skaterSort, 'points')}</div>
                     <div onClick={() => handleSkaterSortClick('plus_minus')} className="w-11 shrink-0 cursor-pointer active:opacity-60">+/-{renderSortIndicator(skaterSort, 'plus_minus')}</div>
                     <div onClick={() => handleSkaterSortClick('penalty_minutes')} className="w-12 shrink-0 cursor-pointer active:opacity-60">Штр{renderSortIndicator(skaterSort, 'penalty_minutes')}</div>
+                    {/* ПБ — победная шайба: та, после которой отрыв уже не был отыгран,
+                        а не последняя шайба матча. В матчах, решённых серией буллитов,
+                        не присуждается никому. */}
+                    <div onClick={() => handleSkaterSortClick('goals_gw')} className="w-11 shrink-0 cursor-pointer active:opacity-60">ПБ{renderSortIndicator(skaterSort, 'goals_gw')}</div>
                   </div>
                   
                   {/* Строки цифр */}
@@ -508,6 +512,7 @@ export function TournamentStat({
                           {row.plus_minus == null ? '—' : (row.plus_minus || 0) > 0 ? `+${row.plus_minus}` : row.plus_minus || 0}
                         </div>
                         <div className={clsx("w-12 shrink-0", shouldBlur && "blur-sm select-none")}>{row.penalty_minutes}</div>
+                        <div className={clsx("w-11 shrink-0", shouldBlur && "blur-sm select-none")}>{row.goals_gw}</div>
                       </div>
                       );
                     })

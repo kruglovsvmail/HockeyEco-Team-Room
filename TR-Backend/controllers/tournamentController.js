@@ -231,6 +231,7 @@ class TournamentController {
             COALESCE(s.goals, 0)                                 AS goals,
             COALESCE(s.assists, 0)                               AS assists,
             COALESCE(s.points, 0)                                AS points,
+            COALESCE(s.goals_gw, 0)                              AS goals_gw,
             COALESCE(s.plus_minus, 0)                            AS plus_minus,
             COALESCE(s.penalty_minutes, 0)                       AS penalty_minutes,
             tr.is_fee_paid,
@@ -250,6 +251,9 @@ class TournamentController {
               COALESCE(SUM(pgs.goals), 0)::int              AS goals,
               COALESCE(SUM(pgs.assists), 0)::int            AS assists,
               COALESCE(SUM(pgs.points), 0)::int             AS points,
+              -- Победные шайбы: та шайба матча, после которой отрыв уже не был
+              -- отыгран (не последняя). В матчах по буллитам не присуждается никому.
+              COALESCE(SUM(pgs.goals_gw), 0)::int           AS goals_gw,
               COALESCE(SUM(pgs.plus_minus), 0)::int         AS plus_minus,
               COALESCE(SUM(pgs.penalty_minutes), 0)::int    AS penalty_minutes
             FROM player_game_statistics pgs
@@ -376,7 +380,7 @@ class TournamentController {
             if (!skaterMap.has(k)) {
               skaterMap.set(k, {
                 ...row,
-                games_played: 0, goals: 0, assists: 0, points: 0,
+                games_played: 0, goals: 0, assists: 0, points: 0, goals_gw: 0,
                 penalty_minutes: 0, plus_minus: null,
               });
             }
@@ -385,6 +389,7 @@ class TournamentController {
             acc.goals += n(row.goals);
             acc.assists += n(row.assists);
             acc.points += n(row.points);
+            acc.goals_gw += n(row.goals_gw);
             acc.penalty_minutes += n(row.penalty_minutes);
             if (row.plus_minus != null) {
               acc.plus_minus = n(acc.plus_minus) + n(row.plus_minus);
