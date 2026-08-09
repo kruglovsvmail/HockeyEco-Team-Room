@@ -27,12 +27,12 @@ export const getPlayerProfile = async (req, res) => {
       WHERE u.id = $1
     `;
 
-    // Статистика игрока считается ЖИВЬЁМ (не из кэша player_statistics — тот остаётся общей суммой
-    // для других потребителей, TR tournamentController.getDivisionStats при stageType='all'), ОДНА
-    // строка на дивизион — сумма regular+playoff (в отличие от LMS-профиля, где стадии показываются
-    // раздельно; здесь по прямому решению пользователя — сводная цифра). Основа — та же проверенная
-    // в проде логика tournamentController.js:279-521, посчитанная дважды (regular/playoff, каждая —
-    // отдельная пара LATERAL) и сложенная.
+    // Статистика игрока — агрегат боксскора player_game_statistics. ОДНА строка на дивизион:
+    // сумма regular+playoff (по прямому решению пользователя — сводная цифра). Стадии всё
+    // равно считаются отдельными парами LATERAL — не ради вывода, а ради маскирования:
+    // флаги лиги у регулярки и плей-офф свои.
+    //
+    // Коэффициент надёжности (КН) не считается: показатель убран из системы целиком.
     //
     // Маскирование: если у дивизиона на конкретной стадии выключен track_plus_minus/track_shots,
     // вклад ЭТОЙ стадии в сумму = 0 ("—" не показываем нигде, ноль и есть ноль).
@@ -64,7 +64,6 @@ export const getPlayerProfile = async (req, res) => {
           d.hide_stats_unpaid,
           d.reg_track_plus_minus, d.playoff_track_plus_minus,
           d.reg_track_shots, d.playoff_track_shots,
-          COALESCE(d.reg_periods_count, 3) * COALESCE(d.reg_period_length, 20) * 60 AS norm_seconds,
           s.name AS season_name,
           s.is_active AS is_current,
           s.start_date,
@@ -126,193 +125,69 @@ export const getPlayerProfile = async (req, res) => {
           COALESCE(goalie_reg.sho, 0) + COALESCE(goalie_po.sho, 0) AS sho,
           COALESCE(goalie_reg.toi, 0) + COALESCE(goalie_po.toi, 0) AS toi
         FROM base b
+        -- Четыре выборки из боксскора player_game_statistics: полевые и вратарские
+        -- показатели, каждая — по своей стадии. Раньше на их месте были четыре
+        -- LATERAL-блока с CTE по game_events, game_plus_minus, game_goalie_log и
+        -- game_shots_by_goalie — около 190 строк SQL, которые крутились при каждом
+        -- открытии профиля. Теперь всё посчитано при завершении матча.
+        --
+        -- Область — заявка игрока на турнир (b.tournament_roster_id): пара
+        -- «игрок + команда» в конкретном дивизионе, как и в прежнем расчёте.
         LEFT JOIN LATERAL (
-          WITH "ValidGames" AS (
-            SELECT g.id, g.home_team_id, g.away_team_id
-            FROM "public"."games" g
-            WHERE g.division_id = b.division_id AND g.status = 'finished' AND g.is_technical IS NULL
-              AND (CASE WHEN g.stage_type = 'playoff' THEN 'playoff' ELSE 'regular' END) = 'regular'
-          )
+          -- Полевые показатели: регулярка (и групповые этапы)
           SELECT
-            (SELECT COUNT(DISTINCT gr.game_id) FROM "public"."game_rosters" gr JOIN "ValidGames" vg ON gr.game_id = vg.id
-              WHERE gr.player_id = $1 AND gr.team_id = b.team_id AND gr.is_in_lineup = true AND gr.position_in_line != 'G') AS gp,
-            (SELECT COUNT(*) FROM "public"."game_events" ge JOIN "ValidGames" vg ON ge.game_id = vg.id
-              WHERE ge.event_type = 'goal' AND ge.scorer_id = $1 AND ge.team_id = b.team_id) AS g,
-            (SELECT COUNT(*) FROM (
-                SELECT ge.id FROM "public"."game_events" ge JOIN "ValidGames" vg ON ge.game_id = vg.id WHERE ge.event_type = 'goal' AND ge.assist1_id = $1 AND ge.team_id = b.team_id
-                UNION ALL
-                SELECT ge.id FROM "public"."game_events" ge JOIN "ValidGames" vg ON ge.game_id = vg.id WHERE ge.event_type = 'goal' AND ge.assist2_id = $1 AND ge.team_id = b.team_id
-              ) sub) AS a,
-            (SELECT COALESCE(SUM(ge.penalty_minutes), 0) FROM "public"."game_events" ge JOIN "ValidGames" vg ON ge.game_id = vg.id
-              WHERE ge.event_type = 'penalty' AND ge.penalty_player_id = $1 AND ge.team_id = b.team_id) AS pim,
-            (SELECT SUM(CASE WHEN gpm.team_id = ge.team_id THEN 1 ELSE -1 END) FROM "public"."game_plus_minus" gpm
-              JOIN "public"."game_events" ge ON gpm.event_id = ge.id JOIN "ValidGames" vg ON ge.game_id = vg.id
-              WHERE gpm.player_id = $1 AND gpm.team_id = b.team_id) AS pm
+            COUNT(*) FILTER (WHERE NOT pgs.is_goalie)::int AS gp,
+            COALESCE(SUM(pgs.goals), 0)::int               AS g,
+            COALESCE(SUM(pgs.assists), 0)::int             AS a,
+            COALESCE(SUM(pgs.penalty_minutes), 0)::int     AS pim,
+            COALESCE(SUM(pgs.plus_minus), 0)::int          AS pm
+          FROM "public"."player_game_statistics" pgs
+          WHERE pgs.tournament_roster_id = b.tournament_roster_id
+            AND pgs.stage_type <> 'playoff'
         ) skater_reg ON b.position != 'goalie'
         LEFT JOIN LATERAL (
-          WITH "ValidGames" AS (
-            SELECT g.id, g.home_team_id, g.away_team_id
-            FROM "public"."games" g
-            WHERE g.division_id = b.division_id AND g.status = 'finished' AND g.is_technical IS NULL
-              AND g.stage_type = 'playoff'
-          )
+          -- Полевые показатели: плей-офф
           SELECT
-            (SELECT COUNT(DISTINCT gr.game_id) FROM "public"."game_rosters" gr JOIN "ValidGames" vg ON gr.game_id = vg.id
-              WHERE gr.player_id = $1 AND gr.team_id = b.team_id AND gr.is_in_lineup = true AND gr.position_in_line != 'G') AS gp,
-            (SELECT COUNT(*) FROM "public"."game_events" ge JOIN "ValidGames" vg ON ge.game_id = vg.id
-              WHERE ge.event_type = 'goal' AND ge.scorer_id = $1 AND ge.team_id = b.team_id) AS g,
-            (SELECT COUNT(*) FROM (
-                SELECT ge.id FROM "public"."game_events" ge JOIN "ValidGames" vg ON ge.game_id = vg.id WHERE ge.event_type = 'goal' AND ge.assist1_id = $1 AND ge.team_id = b.team_id
-                UNION ALL
-                SELECT ge.id FROM "public"."game_events" ge JOIN "ValidGames" vg ON ge.game_id = vg.id WHERE ge.event_type = 'goal' AND ge.assist2_id = $1 AND ge.team_id = b.team_id
-              ) sub) AS a,
-            (SELECT COALESCE(SUM(ge.penalty_minutes), 0) FROM "public"."game_events" ge JOIN "ValidGames" vg ON ge.game_id = vg.id
-              WHERE ge.event_type = 'penalty' AND ge.penalty_player_id = $1 AND ge.team_id = b.team_id) AS pim,
-            (SELECT SUM(CASE WHEN gpm.team_id = ge.team_id THEN 1 ELSE -1 END) FROM "public"."game_plus_minus" gpm
-              JOIN "public"."game_events" ge ON gpm.event_id = ge.id JOIN "ValidGames" vg ON ge.game_id = vg.id
-              WHERE gpm.player_id = $1 AND gpm.team_id = b.team_id) AS pm
+            COUNT(*) FILTER (WHERE NOT pgs.is_goalie)::int AS gp,
+            COALESCE(SUM(pgs.goals), 0)::int               AS g,
+            COALESCE(SUM(pgs.assists), 0)::int             AS a,
+            COALESCE(SUM(pgs.penalty_minutes), 0)::int     AS pim,
+            COALESCE(SUM(pgs.plus_minus), 0)::int          AS pm
+          FROM "public"."player_game_statistics" pgs
+          WHERE pgs.tournament_roster_id = b.tournament_roster_id
+            AND pgs.stage_type = 'playoff'
         ) skater_po ON b.position != 'goalie'
         LEFT JOIN LATERAL (
-          WITH "ValidGames" AS (
-            SELECT g.id, g.home_team_id, g.away_team_id, g.home_score, g.away_score,
-                   COALESCE(gt.period_length, 20) AS period_length,
-                   COALESCE(gt.ot_length, 5) AS ot_length,
-                   COALESCE(gt.periods_count, 3) AS periods_count,
-                   (COALESCE(gt.period_length, 20) * COALESCE(gt.periods_count, 3) * 60
-                     + CASE WHEN g.end_type IN ('ot', 'so') THEN COALESCE(gt.ot_length, 5) * 60 ELSE 0 END) AS total_seconds
-            FROM "public"."games" g
-            LEFT JOIN "public"."game_timers" gt ON g.id = gt.game_id
-            WHERE g.division_id = b.division_id AND g.status = 'finished' AND g.is_technical IS NULL
-              AND (CASE WHEN g.stage_type = 'playoff' THEN 'playoff' ELSE 'regular' END) = 'regular'
-          ),
-          "GoalsAbsTime" AS (
-            SELECT ge.id AS event_id, ge.game_id, ge.team_id AS scoring_team_id,
-                   vg.home_team_id, vg.away_team_id, ge.time_seconds AS abs_time,
-                   COALESCE(ge.from_shot, true) AS from_shot
-            FROM "public"."game_events" ge JOIN "ValidGames" vg ON ge.game_id = vg.id
-            WHERE ge.event_type = 'goal' AND ge.goal_strength <> 'ps'
-          ),
-          "GoalToGoalie" AS (
-            SELECT DISTINCT ON (ga.event_id)
-              ga.game_id, ga.from_shot,
-              CASE WHEN ga.scoring_team_id = ga.home_team_id THEN gl.away_goalie_id ELSE gl.home_goalie_id END AS conceding_goalie_id,
-              -- Пропустившая команда: вратарь мог отыграть сезон в дивизионе за две команды,
-              -- и каждая строка сезона должна показывать только свою часть
-              CASE WHEN ga.scoring_team_id = ga.home_team_id THEN ga.away_team_id ELSE ga.home_team_id END AS conceding_team_id
-            FROM "GoalsAbsTime" ga
-            JOIN "public"."game_goalie_log" gl ON gl.game_id = ga.game_id AND gl.time_seconds <= ga.abs_time
-            ORDER BY ga.event_id, gl.time_seconds DESC
-          ),
-          "GoalieIntervals" AS (
-            SELECT gl.game_id, gl.home_goalie_id, gl.away_goalie_id,
-                   vg.home_team_id, vg.away_team_id, gl.time_seconds AS interval_start,
-                   COALESCE(LEAD(gl.time_seconds) OVER (PARTITION BY gl.game_id ORDER BY gl.time_seconds), vg.total_seconds) AS interval_end
-            FROM "public"."game_goalie_log" gl JOIN "ValidGames" vg ON gl.game_id = vg.id
-          ),
-          "GoalieCountPerSide" AS (
-            SELECT gl.game_id,
-                   COUNT(DISTINCT gl.home_goalie_id) FILTER (WHERE gl.home_goalie_id IS NOT NULL) AS home_cnt,
-                   COUNT(DISTINCT gl.away_goalie_id) FILTER (WHERE gl.away_goalie_id IS NOT NULL) AS away_cnt
-            FROM "public"."game_goalie_log" gl JOIN "ValidGames" vg ON vg.id = gl.game_id
-            GROUP BY gl.game_id
-          )
+          -- Вратарские показатели: регулярка (и групповые этапы)
           SELECT
-            (SELECT COUNT(DISTINCT gr.game_id) FROM "public"."game_rosters" gr JOIN "ValidGames" vg ON gr.game_id = vg.id
-              WHERE gr.player_id = $1 AND gr.team_id = b.team_id AND gr.is_in_lineup = true AND gr.position_in_line = 'G') AS gp,
-            (SELECT COALESCE(SUM(ge.penalty_minutes), 0) FROM "public"."game_events" ge JOIN "ValidGames" vg ON ge.game_id = vg.id
-              WHERE ge.event_type = 'penalty' AND ge.penalty_player_id = $1 AND ge.team_id = b.team_id) AS pim,
-            (SELECT COUNT(*) FROM (
-                SELECT ge.id FROM "public"."game_events" ge JOIN "ValidGames" vg ON ge.game_id = vg.id WHERE ge.event_type = 'goal' AND ge.assist1_id = $1 AND ge.team_id = b.team_id
-                UNION ALL
-                SELECT ge.id FROM "public"."game_events" ge JOIN "ValidGames" vg ON ge.game_id = vg.id WHERE ge.event_type = 'goal' AND ge.assist2_id = $1 AND ge.team_id = b.team_id
-              ) sub) AS a,
-            COALESCE((SELECT COUNT(*) FROM "GoalToGoalie" WHERE conceding_goalie_id = $1 AND conceding_team_id = b.team_id), 0) AS ga,
-            GREATEST(
-              COALESCE((SELECT SUM(gsb.shots_count) FROM "public"."game_shots_by_goalie" gsb JOIN "ValidGames" vg ON gsb.game_id = vg.id WHERE gsb.goalie_id = $1 AND gsb.team_id = b.team_id), 0)
-              - COALESCE((SELECT COUNT(*) FROM "GoalToGoalie" WHERE conceding_goalie_id = $1 AND conceding_team_id = b.team_id AND from_shot = true), 0),
-              0
-            ) AS sv,
-            COALESCE((SELECT SUM(gsb.shots_count) FROM "public"."game_shots_by_goalie" gsb JOIN "ValidGames" vg ON gsb.game_id = vg.id WHERE gsb.goalie_id = $1 AND gsb.team_id = b.team_id), 0) AS sa,
-            COALESCE((
-              SELECT COUNT(DISTINCT gl.game_id) FROM "public"."game_goalie_log" gl JOIN "ValidGames" vg ON gl.game_id = vg.id
-              JOIN "GoalieCountPerSide" gc ON gc.game_id = gl.game_id
-              WHERE (gl.home_goalie_id = $1 AND vg.home_team_id = b.team_id AND gc.home_cnt = 1 AND vg.away_score = 0)
-                 OR (gl.away_goalie_id = $1 AND vg.away_team_id = b.team_id AND gc.away_cnt = 1 AND vg.home_score = 0)
-            ), 0) AS sho,
-            COALESCE((SELECT SUM(GREATEST(interval_end - interval_start, 0)) FROM "GoalieIntervals"
-                       WHERE (home_goalie_id = $1 AND home_team_id = b.team_id)
-                          OR (away_goalie_id = $1 AND away_team_id = b.team_id)), 0) AS toi
+            -- Матчи вратаря — только те, где он реально стоял в воротах
+            COUNT(*) FILTER (WHERE pgs.is_goalie)::int          AS gp,
+            COALESCE(SUM(pgs.penalty_minutes), 0)::int          AS pim,
+            COALESCE(SUM(pgs.assists), 0)::int                  AS a,
+            COALESCE(SUM(pgs.goalie_goals_against), 0)::int     AS ga,
+            COALESCE(SUM(pgs.goalie_saves), 0)::int             AS sv,
+            COALESCE(SUM(pgs.goalie_shots_against), 0)::int     AS sa,
+            COUNT(*) FILTER (WHERE pgs.goalie_shutout)::int     AS sho,
+            COALESCE(SUM(pgs.goalie_seconds), 0)::int           AS toi
+          FROM "public"."player_game_statistics" pgs
+          WHERE pgs.tournament_roster_id = b.tournament_roster_id
+            AND pgs.stage_type <> 'playoff'
         ) goalie_reg ON b.position = 'goalie'
         LEFT JOIN LATERAL (
-          WITH "ValidGames" AS (
-            SELECT g.id, g.home_team_id, g.away_team_id, g.home_score, g.away_score,
-                   COALESCE(gt.period_length, 20) AS period_length,
-                   COALESCE(gt.ot_length, 5) AS ot_length,
-                   COALESCE(gt.periods_count, 3) AS periods_count,
-                   (COALESCE(gt.period_length, 20) * COALESCE(gt.periods_count, 3) * 60
-                     + CASE WHEN g.end_type IN ('ot', 'so') THEN COALESCE(gt.ot_length, 5) * 60 ELSE 0 END) AS total_seconds
-            FROM "public"."games" g
-            LEFT JOIN "public"."game_timers" gt ON g.id = gt.game_id
-            WHERE g.division_id = b.division_id AND g.status = 'finished' AND g.is_technical IS NULL
-              AND g.stage_type = 'playoff'
-          ),
-          "GoalsAbsTime" AS (
-            SELECT ge.id AS event_id, ge.game_id, ge.team_id AS scoring_team_id,
-                   vg.home_team_id, vg.away_team_id, ge.time_seconds AS abs_time,
-                   COALESCE(ge.from_shot, true) AS from_shot
-            FROM "public"."game_events" ge JOIN "ValidGames" vg ON ge.game_id = vg.id
-            WHERE ge.event_type = 'goal' AND ge.goal_strength <> 'ps'
-          ),
-          "GoalToGoalie" AS (
-            SELECT DISTINCT ON (ga.event_id)
-              ga.game_id, ga.from_shot,
-              CASE WHEN ga.scoring_team_id = ga.home_team_id THEN gl.away_goalie_id ELSE gl.home_goalie_id END AS conceding_goalie_id,
-              -- Пропустившая команда: вратарь мог отыграть сезон в дивизионе за две команды,
-              -- и каждая строка сезона должна показывать только свою часть
-              CASE WHEN ga.scoring_team_id = ga.home_team_id THEN ga.away_team_id ELSE ga.home_team_id END AS conceding_team_id
-            FROM "GoalsAbsTime" ga
-            JOIN "public"."game_goalie_log" gl ON gl.game_id = ga.game_id AND gl.time_seconds <= ga.abs_time
-            ORDER BY ga.event_id, gl.time_seconds DESC
-          ),
-          "GoalieIntervals" AS (
-            SELECT gl.game_id, gl.home_goalie_id, gl.away_goalie_id,
-                   vg.home_team_id, vg.away_team_id, gl.time_seconds AS interval_start,
-                   COALESCE(LEAD(gl.time_seconds) OVER (PARTITION BY gl.game_id ORDER BY gl.time_seconds), vg.total_seconds) AS interval_end
-            FROM "public"."game_goalie_log" gl JOIN "ValidGames" vg ON gl.game_id = vg.id
-          ),
-          "GoalieCountPerSide" AS (
-            SELECT gl.game_id,
-                   COUNT(DISTINCT gl.home_goalie_id) FILTER (WHERE gl.home_goalie_id IS NOT NULL) AS home_cnt,
-                   COUNT(DISTINCT gl.away_goalie_id) FILTER (WHERE gl.away_goalie_id IS NOT NULL) AS away_cnt
-            FROM "public"."game_goalie_log" gl JOIN "ValidGames" vg ON vg.id = gl.game_id
-            GROUP BY gl.game_id
-          )
+          -- Вратарские показатели: плей-офф
           SELECT
-            (SELECT COUNT(DISTINCT gr.game_id) FROM "public"."game_rosters" gr JOIN "ValidGames" vg ON gr.game_id = vg.id
-              WHERE gr.player_id = $1 AND gr.team_id = b.team_id AND gr.is_in_lineup = true AND gr.position_in_line = 'G') AS gp,
-            (SELECT COALESCE(SUM(ge.penalty_minutes), 0) FROM "public"."game_events" ge JOIN "ValidGames" vg ON ge.game_id = vg.id
-              WHERE ge.event_type = 'penalty' AND ge.penalty_player_id = $1 AND ge.team_id = b.team_id) AS pim,
-            (SELECT COUNT(*) FROM (
-                SELECT ge.id FROM "public"."game_events" ge JOIN "ValidGames" vg ON ge.game_id = vg.id WHERE ge.event_type = 'goal' AND ge.assist1_id = $1 AND ge.team_id = b.team_id
-                UNION ALL
-                SELECT ge.id FROM "public"."game_events" ge JOIN "ValidGames" vg ON ge.game_id = vg.id WHERE ge.event_type = 'goal' AND ge.assist2_id = $1 AND ge.team_id = b.team_id
-              ) sub) AS a,
-            COALESCE((SELECT COUNT(*) FROM "GoalToGoalie" WHERE conceding_goalie_id = $1 AND conceding_team_id = b.team_id), 0) AS ga,
-            GREATEST(
-              COALESCE((SELECT SUM(gsb.shots_count) FROM "public"."game_shots_by_goalie" gsb JOIN "ValidGames" vg ON gsb.game_id = vg.id WHERE gsb.goalie_id = $1 AND gsb.team_id = b.team_id), 0)
-              - COALESCE((SELECT COUNT(*) FROM "GoalToGoalie" WHERE conceding_goalie_id = $1 AND conceding_team_id = b.team_id AND from_shot = true), 0),
-              0
-            ) AS sv,
-            COALESCE((SELECT SUM(gsb.shots_count) FROM "public"."game_shots_by_goalie" gsb JOIN "ValidGames" vg ON gsb.game_id = vg.id WHERE gsb.goalie_id = $1 AND gsb.team_id = b.team_id), 0) AS sa,
-            COALESCE((
-              SELECT COUNT(DISTINCT gl.game_id) FROM "public"."game_goalie_log" gl JOIN "ValidGames" vg ON gl.game_id = vg.id
-              JOIN "GoalieCountPerSide" gc ON gc.game_id = gl.game_id
-              WHERE (gl.home_goalie_id = $1 AND vg.home_team_id = b.team_id AND gc.home_cnt = 1 AND vg.away_score = 0)
-                 OR (gl.away_goalie_id = $1 AND vg.away_team_id = b.team_id AND gc.away_cnt = 1 AND vg.home_score = 0)
-            ), 0) AS sho,
-            COALESCE((SELECT SUM(GREATEST(interval_end - interval_start, 0)) FROM "GoalieIntervals"
-                       WHERE (home_goalie_id = $1 AND home_team_id = b.team_id)
-                          OR (away_goalie_id = $1 AND away_team_id = b.team_id)), 0) AS toi
+            -- Матчи вратаря — только те, где он реально стоял в воротах
+            COUNT(*) FILTER (WHERE pgs.is_goalie)::int          AS gp,
+            COALESCE(SUM(pgs.penalty_minutes), 0)::int          AS pim,
+            COALESCE(SUM(pgs.assists), 0)::int                  AS a,
+            COALESCE(SUM(pgs.goalie_goals_against), 0)::int     AS ga,
+            COALESCE(SUM(pgs.goalie_saves), 0)::int             AS sv,
+            COALESCE(SUM(pgs.goalie_shots_against), 0)::int     AS sa,
+            COUNT(*) FILTER (WHERE pgs.goalie_shutout)::int     AS sho,
+            COALESCE(SUM(pgs.goalie_seconds), 0)::int           AS toi
+          FROM "public"."player_game_statistics" pgs
+          WHERE pgs.tournament_roster_id = b.tournament_roster_id
+            AND pgs.stage_type = 'playoff'
         ) goalie_po ON b.position = 'goalie'
       )
       SELECT
@@ -328,8 +203,7 @@ export const getPlayerProfile = async (req, res) => {
         -- Ведёт ли дивизион броски хотя бы на одной стадии (для своей команды считаются
         -- и неофициальные): по нему фронт решает, показать цифру или прочерк в БР/ОБ/%ОБ
         (COALESCE(reg_track_shots, false) OR COALESCE(playoff_track_shots, false) OR is_own_team) AS tracks_shots,
-        CASE WHEN sa > 0 THEN ROUND(sv::numeric / sa * 100, 2) ELSE 0.00 END AS svp,
-        CASE WHEN toi > 0 THEN ROUND(ga::numeric / toi * norm_seconds, 2) ELSE 0.00 END AS gaa
+        CASE WHEN sa > 0 THEN ROUND(sv::numeric / sa * 100, 2) ELSE 0.00 END AS svp
       FROM agg
       WHERE gp > 0
       ORDER BY start_date DESC NULLS LAST

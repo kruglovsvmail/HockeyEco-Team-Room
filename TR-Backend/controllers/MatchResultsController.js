@@ -1,7 +1,24 @@
 import pool from '../config/db.js';
 import { sendPushToTeamExcept, getMatchInfo } from '../services/pushService.js';
+import { recalculatePlayerGameStats } from '../utils/playerGameStatsCalculator.js';
 
 const EDIT_WINDOW_HOURS = 72;
+
+// Пересчёт боксскора матча (player_game_statistics) после правки протокола.
+// До появления этой таблицы Team Room не пересчитывал статистику вообще: матч
+// доигрывался, статус менялся на finished — и на этом всё, личная статистика
+// товарищеских матчей не считалась нигде.
+//
+// Вызывается ВСЕГДА после COMMIT, своей транзакцией. Ошибка пересчёта не должна
+// откатывать то, что пользователь уже сохранил: боксскор — производная таблица,
+// его всегда можно пересобрать заново из событий.
+const refreshBoxscore = async (gameId) => {
+  try {
+    await recalculatePlayerGameStats(gameId);
+  } catch (err) {
+    console.error(`[Match Results] боксскор матча ${gameId} не пересчитан:`, err);
+  }
+};
 
 // Гард на запись: матч существует, неофициальный, инициатор — текущая команда,
 // время матча уже наступило и не прошло больше EDIT_WINDOW_HOURS часов с начала
@@ -273,6 +290,7 @@ export const addMatchEvent = async (req, res) => {
     }
 
     await client.query('COMMIT');
+    await refreshBoxscore(gameId);
     res.json({ success: true, eventRowId: newEventId });
   } catch (err) {
     await client.query('ROLLBACK').catch(() => {});
@@ -453,6 +471,7 @@ export const updateMatchEvent = async (req, res) => {
     }
 
     await client.query('COMMIT');
+    await refreshBoxscore(gameId);
     res.json({ success: true });
   } catch (err) {
     await client.query('ROLLBACK').catch(() => {});
@@ -488,6 +507,7 @@ export const deleteMatchEvent = async (req, res) => {
     if (del.rowCount === 0) {
       return res.status(404).json({ success: false, error: 'Событие не найдено' });
     }
+    await refreshBoxscore(gameId);
     res.json({ success: true });
   } catch (err) {
     console.error('[Match Results: deleteEvent]', err);
@@ -572,6 +592,7 @@ export const saveGoalieLog = async (req, res) => {
     }
 
     await client.query('COMMIT');
+    await refreshBoxscore(gameId);
     res.json({ success: true });
   } catch (err) {
     await client.query('ROLLBACK').catch(() => {});
@@ -664,6 +685,7 @@ export const saveGoalieShots = async (req, res) => {
     }
 
     await client.query('COMMIT');
+    await refreshBoxscore(gameId);
     res.json({ success: true });
   } catch (err) {
     await client.query('ROLLBACK').catch(() => {});
@@ -773,6 +795,9 @@ export const saveRegulation = async (req, res) => {
     `, [gameId, period_length, ot_length, periods_count, opponent_can_edit]);
 
     await client.query('COMMIT');
+    // Регламент меняет длину периодов, а значит и полную длительность матча —
+    // от неё считается время вратаря в воротах
+    await refreshBoxscore(gameId);
     res.json({ success: true, regulation: { period_length, ot_length, periods_count, opponent_can_edit } });
   } catch (err) {
     await client.query('ROLLBACK').catch(() => {});
@@ -829,6 +854,10 @@ export const publishMatchResults = async (req, res) => {
     }
 
     const { home_score, away_score } = upd.rows[0];
+
+    // Именно здесь товарищеский матч впервые попадает в личную статистику:
+    // до этого статус был не finished и боксскор для него не собирался
+    await refreshBoxscore(gameId);
 
     res.json({
       success: true,

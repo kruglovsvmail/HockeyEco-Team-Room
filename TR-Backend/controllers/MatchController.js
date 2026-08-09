@@ -779,7 +779,6 @@ export const getMatchStats = async (req, res) => {
                )
           ELSE NULL
         END::float AS save_percent,
-        COALESCE(ga.goals_against, 0)::float AS goals_against_average,
         CASE WHEN COALESCE(ga.goals_against, 0) = 0 AND COALESCE(s.shots_against, 0) > 0 THEN 1 ELSE 0 END::int AS shutouts,
         -- Броски в створ по вратарю — то, что ввёл секретарь. Не заполняли → «—».
         s.shots_against::int AS shots_against,
@@ -880,12 +879,6 @@ export const getMatchStats = async (req, res) => {
     if (!trackShots) {
       goaliesResult.rows.forEach(row => { row.saves = null; row.save_percent = null; row.shots_against = null; });
     }
-    // КН (коэффициент надёжности) вне лиги не считаем: товарищеские матчи в надёжность
-    // вратаря не идут. ОБ/%ОБ при этом остаются — их команда ведёт для себя.
-    if (isLeagueless) {
-      goaliesResult.rows.forEach(row => { row.goals_against_average = null; });
-    }
-
     // Статистику отдаём всегда (даже до публикации) — фронт показывает составы
     // команд из заявок с пустой статистикой. Командные метрики у несыгранного
     // матча = 0 / «—» (см. флаги has* ниже).
