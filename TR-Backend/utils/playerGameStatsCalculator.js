@@ -12,10 +12,9 @@ import pool from '../config/db.js';
  * Если матч не подходит под условия (не finished, технический результат,
  * переоткрыт), остаётся только DELETE — старые строки убираются.
  *
- * Считается по тем же первичным данным, что и старый playerStatsCalculator.js:
- * game_rosters, game_events, game_plus_minus, game_goalie_log,
- * game_shots_by_goalie. Старая таблица player_statistics не затрагивается —
- * она продолжает жить параллельно, пока на проде не обновится код.
+ * Первичные данные: game_rosters, game_events, game_plus_minus,
+ * game_goalie_log, game_shots_by_goalie. Всё остальное в системе —
+ * таблицы лидеров, профили игроков, витрина THF — агрегирует эту таблицу.
  *
  * Коэффициент надёжности (КН/GAA) здесь сознательно не считается.
  */
@@ -621,9 +620,8 @@ export const recalculatePlayerGameStatsBulk = async (gameIds) => {
 
 /**
  * Пересчитывает боксскор всех завершённых матчей дивизиона.
- * Замена дивизионного пересчёта из playerStatsCalculator.js: там весь
- * дивизион переписывался после каждого матча, здесь это разовая операция
- * для восстановления данных.
+ * Разовая операция для восстановления данных: в обычной работе пересчёт
+ * идёт по одному матчу, целиком дивизион трогать незачем.
  */
 export const recalculateDivisionPlayerGameStats = async (divisionId) => {
     const { rows } = await pool.query(
