@@ -236,6 +236,8 @@ export const updateMatchSchedule = async (req, res) => {
       arenaTz = finalCustomTz;
     }
 
+    let updatedGameDate;
+
     if (game.game_type === 'friendly_pwa') {
       if (Number(game.initiator_team_id) !== teamId) {
         return res.status(400).json({ success: false, error: 'Изменение расписания доступно только команде-инициатору' });
@@ -248,17 +250,19 @@ export const updateMatchSchedule = async (req, res) => {
       }
 
       // Обновляем все поля локации
-      await pool.query(
-        `UPDATE "public"."games" 
+      const updateRes = await pool.query(
+        `UPDATE "public"."games"
          SET game_date = (((game_date AT TIME ZONE $1)::date + $2::time)::timestamp AT TIME ZONE $1),
              arena_id = $3,
              location = $4,
              location_url = $5,
              custom_timezone = $6,
-             updated_at = NOW() 
-         WHERE id = $7`,
+             updated_at = NOW()
+         WHERE id = $7
+         RETURNING game_date`,
         [arenaTz, `${time}:00`, finalArenaId, finalLocation, finalLocationUrl, finalCustomTz, eventId]
       );
+      updatedGameDate = updateRes.rows[0].game_date;
     } else if (game.game_type === 'friendly_ext' || game.game_type === 'tournament_ext') {
       if (!date || !time) {
         return res.status(400).json({ success: false, error: 'Для внешних матчей обязательны и дата, и время' });
@@ -266,28 +270,54 @@ export const updateMatchSchedule = async (req, res) => {
       const fullTimestamp = `${date} ${time}:00`;
 
       // Обновляем все поля локации
-      await pool.query(
-        `UPDATE "public"."games" 
+      const updateRes = await pool.query(
+        `UPDATE "public"."games"
          SET game_date = $1::timestamp AT TIME ZONE $2,
              arena_id = $3,
              location = $4,
              location_url = $5,
              custom_timezone = $6,
-             updated_at = NOW() 
-         WHERE id = $7`,
+             updated_at = NOW()
+         WHERE id = $7
+         RETURNING game_date`,
         [fullTimestamp, arenaTz, finalArenaId, finalLocation, finalLocationUrl, finalCustomTz, eventId]
       );
+      updatedGameDate = updateRes.rows[0].game_date;
     } else {
       return res.status(400).json({ success: false, error: 'Неподдерживаемый тип матча для изменения расписания' });
     }
 
-    getMatchInfo(eventId, teamId).then(info => {
+    const matchInfoPromise = getMatchInfo(eventId, teamId);
+
+    matchInfoPromise.then(info => {
       sendPushToTeamExcept(teamId, req.user.id, 'schedule', {
         title: 'Матч изменён',
         body: `Новое расписание: ${info.text}`,
         url: `/event/match/${eventId}`, tag: `event-update-${eventId}`,
       });
     }).catch(() => {});
+
+    // Матч перенесён — уже запланированные пуши «за 24ч»/«за 2ч» считались от старой
+    // даты и не пересчитывались (в отличие от официальных матчей LMS), из-за чего
+    // приходили не «за N часов до игры», а в случайный момент относительно нового времени.
+    const gameTime = updatedGameDate.getTime();
+    const reminder24 = new Date(gameTime - 24 * 60 * 60 * 1000);
+    const deadline2h = new Date(gameTime - 2 * 60 * 60 * 1000);
+
+    matchInfoPromise.then(info => {
+      pool.query(
+        `UPDATE scheduled_notifications SET send_at = $1,
+           payload = jsonb_set(payload, '{body}', to_jsonb($3::text))
+         WHERE event_id = $2 AND type = 'event_reminder_24h' AND sent = false`,
+        [reminder24, eventId, info.text]
+      ).catch(() => {});
+    }).catch(() => {});
+
+    pool.query(
+      `UPDATE scheduled_notifications SET send_at = $1
+       WHERE event_id = $2 AND type IN ('roster_deadline', 'lines_deadline') AND sent = false`,
+      [deadline2h, eventId]
+    ).catch(() => {});
 
     res.json({ success: true, message: 'Параметры расписания успешно сохранены' });
   } catch (err) {

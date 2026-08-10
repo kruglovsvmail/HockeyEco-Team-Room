@@ -1,9 +1,11 @@
 import React, { useState, useEffect } from 'react';
 import { Icon } from './Icon';
 import { getImageUrl } from '../utils/helpers';
+import { DOCUMENT_ACCEPT } from '../utils/uploadFormats';
 import clsx from 'clsx';
 
-// Аналог ImageUploaderLP, но для сканов/документов (PDF, изображения) — вместо превью показывает имя файла.
+// Аналог ImageUploaderLP, но для сканов/документов (см. DOCUMENT_ACCEPT: изображения,
+// PDF, Word, Excel) — вместо превью показывает имя файла.
 export const FileUploaderLP = ({ currentFileUrl, onChange, onDelete, showDelete = true, disabled = false, label }) => {
   const [fileName, setFileName] = useState(null);
 
@@ -40,7 +42,7 @@ export const FileUploaderLP = ({ currentFileUrl, onChange, onDelete, showDelete 
         {!disabled && (
           <input
             type="file"
-            accept="application/pdf,image/*"
+            accept={DOCUMENT_ACCEPT}
             onChange={handleFileChange}
             className="absolute inset-0 opacity-0 cursor-pointer z-10"
           />

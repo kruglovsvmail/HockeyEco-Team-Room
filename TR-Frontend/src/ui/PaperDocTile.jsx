@@ -2,6 +2,7 @@ import React from 'react';
 import clsx from 'clsx';
 import { Icon } from './Icon';
 import { getImageUrl } from '../utils/helpers';
+import { DOCUMENT_ACCEPT } from '../utils/uploadFormats';
 
 // Единая "плитка" одного файла-документа — используется и в заявке на сезон (скан заявки/решение лиги,
 // см. SeasonRosterDetails.jsx), и в панели документов игрока (мед.справка/страховка/согласие,
@@ -35,7 +36,7 @@ export function PaperDocTile({
       {canUpload && !uploading && (
         <input
           type="file"
-          accept="application/pdf,image/*"
+          accept={DOCUMENT_ACCEPT}
           onChange={(e) => { const file = e.target.files[0]; if (file) onUpload(file); }}
           className="absolute inset-0 opacity-0 cursor-pointer z-10"
         />

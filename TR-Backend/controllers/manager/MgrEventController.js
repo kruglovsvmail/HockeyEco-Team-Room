@@ -232,12 +232,16 @@ export const createEvent = async (req, res) => {
       const insertQuery = `
         INSERT INTO "public"."team_training" (team_id, training_date, arena_id, location, location_url, title, cost, custom_timezone)
         VALUES ($1, $2::timestamp AT TIME ZONE $3, $4, $5, $6, $7, $8, $9)
-        RETURNING id;
+        RETURNING id, training_date;
       `;
       const result = await pool.query(insertQuery, [
         teamId, eventTimestamp, arenaTz, arenaId, locationName, locationUrl, eventTitle || 'Командная тренировка', cost, customTz
       ]);
       const newEventId = result.rows[0].id;
+      // Берём дату обратно из БД: там она уже корректно переведена из времени арены в UTC.
+      // eventTimestamp — «наивная» строка без таймзоны, new Date(eventTimestamp) в JS
+      // интерпретирует её как локальное время сервера, а не арены — даёт неверный сдвиг.
+      const trainingDateUtc = result.rows[0].training_date;
 
       // Push: новое событие + напоминание за 24ч
       getTrainingInfo(newEventId, 'team_training').then(info => {
@@ -248,8 +252,8 @@ export const createEvent = async (req, res) => {
           tag: `new-event-${newEventId}`,
         });
       }).catch(() => {});
-      if (eventTimestamp) {
-        const sendAt = new Date(new Date(eventTimestamp).getTime() - 24 * 60 * 60 * 1000);
+      if (trainingDateUtc) {
+        const sendAt = new Date(trainingDateUtc.getTime() - 24 * 60 * 60 * 1000);
         if (sendAt > new Date()) {
           getTrainingInfo(newEventId, 'team_training').then(info => {
             scheduleNotification({ type: 'event_reminder_24h', teamId, eventId: newEventId, sendAt, payload: { title: 'Тренировка через 24 часа', body: info.text, url: `/event/team_training/${newEventId}`, tag: `reminder-${newEventId}` } });
@@ -267,12 +271,13 @@ export const createEvent = async (req, res) => {
       const insertQuery = `
         INSERT INTO "public"."team_meeting" (team_id, meeting_date, arena_id, location, location_url, title, cost, custom_timezone)
         VALUES ($1, $2::timestamp AT TIME ZONE $3, $4, $5, $6, $7, $8, $9)
-        RETURNING id;
+        RETURNING id, meeting_date;
       `;
       const result = await pool.query(insertQuery, [
         teamId, eventTimestamp, arenaTz, arenaId, locationName, locationUrl, eventTitle || 'Командное собрание', cost, customTz
       ]);
       const newMeetingId = result.rows[0].id;
+      const meetingDateUtc = result.rows[0].meeting_date;
 
       getMeetingInfo(newMeetingId, 'team_meeting').then(info => {
         sendPushToTeamExcept(teamId, req.user.id, 'schedule', {
@@ -282,8 +287,8 @@ export const createEvent = async (req, res) => {
           tag: `new-event-${newMeetingId}`,
         });
       }).catch(() => {});
-      if (eventTimestamp) {
-        const sendAt = new Date(new Date(eventTimestamp).getTime() - 24 * 60 * 60 * 1000);
+      if (meetingDateUtc) {
+        const sendAt = new Date(meetingDateUtc.getTime() - 24 * 60 * 60 * 1000);
         if (sendAt > new Date()) {
           getMeetingInfo(newMeetingId, 'team_meeting').then(info => {
             scheduleNotification({ type: 'event_reminder_24h', teamId, eventId: newMeetingId, sendAt, payload: { title: 'Собрание через 24 часа', body: info.text, url: `/event/team_meeting/${newMeetingId}`, tag: `reminder-${newMeetingId}` } });
@@ -350,7 +355,7 @@ export const createEvent = async (req, res) => {
           stage_type, stage_label, series_number, initiator_team_id,
           custom_timezone, location, location_url
         ) VALUES ($1, $2, $3, $4, $5, $6::timestamp AT TIME ZONE $19, $7, $8, $9::timestamp AT TIME ZONE $19, $10, $11, $12, $13, $14, $15, $16, $17, $18, $20, $21, $22)
-        RETURNING id;
+        RETURNING id, game_date, confirm_deadline;
       `;
 
       const complementaryJersey = myJerseyType === 'dark' ? 'light' : 'dark';
@@ -397,6 +402,10 @@ export const createEvent = async (req, res) => {
       }
 
       const newGameId = result.rows[0].id;
+      // Берём дату/дедлайн обратно из БД — там уже корректный UTC-момент с учётом
+      // таймзоны арены, в отличие от «наивной» строки eventTimestamp/confirmDeadline.
+      const gameDateUtc = result.rows[0].game_date;
+      const confirmDeadlineUtc = result.rows[0].confirm_deadline;
 
       // Push: новый матч (расписание) + напоминание за 24ч
       const matchPushTitle = gameType === 'friendly_pwa' ? 'Товарищеский матч' : 'Новый матч';
@@ -408,8 +417,8 @@ export const createEvent = async (req, res) => {
           tag: `new-event-${newGameId}`,
         });
       }).catch(() => {});
-      if (eventTimestamp) {
-        const sendAt = new Date(new Date(eventTimestamp).getTime() - 24 * 60 * 60 * 1000);
+      if (gameDateUtc) {
+        const sendAt = new Date(gameDateUtc.getTime() - 24 * 60 * 60 * 1000);
         if (sendAt > new Date()) {
           getMatchInfo(newGameId, teamId).then(info => {
             scheduleNotification({ type: 'event_reminder_24h', teamId, eventId: newGameId, sendAt, payload: { title: 'Матч через 24 часа', body: info.text, url: `/event/match/${newGameId}`, tag: `reminder-${newGameId}` } });
@@ -429,7 +438,7 @@ export const createEvent = async (req, res) => {
       }
 
       // Дедлайны администрирования: заявка (за 2ч), состав (за 2ч), подтверждение товарищеского (за 1ч)
-      scheduleMatchDeadlines(newGameId, teamId, eventTimestamp, confirmDeadline).catch(() => {});
+      scheduleMatchDeadlines(newGameId, teamId, gameDateUtc, confirmDeadlineUtc).catch(() => {});
 
       return res.json({
         success: true,
