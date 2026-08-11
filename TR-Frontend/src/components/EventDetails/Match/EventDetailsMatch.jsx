@@ -28,7 +28,7 @@ const MatchStats = lazy(() => import('./MatchStats').then(module => ({ default: 
 const MATCH_TABS = [
   { id: 'info',       label: 'О матче' },
   { id: 'attendance', label: 'Отметки' },
-  { id: 'lines',      label: 'Состав' },
+  { id: 'lines',      label: 'Формация' },
   { id: 'stats',      label: 'Статистика' },
   { id: 'events',     label: 'Ход матча' },
 ];

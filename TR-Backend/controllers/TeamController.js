@@ -353,6 +353,13 @@ export const getMemberTeamStats = async (req, res) => {
       WHERE tm.team_id = $1 AND tm.user_id = $2
     `;
 
+    // Тренировки отдаём СПИСКОМ с типом и отметкой посещения, а не готовой суммой:
+    // в панели у них теперь свой фильтр по типу, и считается он в браузере — тем же
+    // приёмом (variant Б), что и фильтр матчей ниже.
+    //
+    // Периоды и посещение подключены через EXISTS, а не JOIN: при JOIN участник с
+    // несколькими периодами в ростере (ушёл и вернулся) продублировал бы тренировку
+    // в списке. Раньше это гасил COUNT(DISTINCT ...), но со списком гасить нечем.
     const trainingQuery = `
       WITH member AS (
         SELECT id AS member_id FROM team_members WHERE team_id = $1 AND user_id = $2
@@ -367,12 +374,21 @@ export const getMemberTeamStats = async (req, res) => {
         WHERE tr.team_id = $1 AND tr.member_id = member.member_id AND tr.left_at IS NULL
       )
       SELECT
-        COUNT(DISTINCT tt.id) AS total,
-        COUNT(DISTINCT ta.team_training_id) AS attended
+        tt.id,
+        tt.training_date,
+        tt.training_type,
+        EXISTS (
+          SELECT 1 FROM team_training_attendance ta
+          WHERE ta.team_training_id = tt.id AND ta.user_id = $2
+        ) AS attended
       FROM team_training tt
-      JOIN periods p ON tt.training_date >= p.joined_at AND (p.left_at IS NULL OR tt.training_date < p.left_at)
-      LEFT JOIN team_training_attendance ta ON ta.team_training_id = tt.id AND ta.user_id = $2
-      WHERE tt.team_id = $1 AND tt.training_date < NOW()
+      WHERE tt.team_id = $1
+        AND tt.training_date < NOW()
+        AND EXISTS (
+          SELECT 1 FROM periods p
+          WHERE tt.training_date >= p.joined_at AND (p.left_at IS NULL OR tt.training_date < p.left_at)
+        )
+      ORDER BY tt.training_date DESC
     `;
 
     // Р•РґРёРЅС‹Р№ СЃРїРёСЃРѕРє Р’РЎР•РҐ РґРѕСЃС‚СѓРїРЅС‹С… РґР»СЏ РїРѕРґСЃС‡С‘С‚Р° РјР°С‚С‡РµР№ (РЅРµ С‚РѕР»СЊРєРѕ СЃС‹РіСЂР°РЅРЅС‹С…)
@@ -490,14 +506,12 @@ ${pgsFields}
       return res.status(404).json({ error: 'РЈС‡Р°СЃС‚РЅРёРє РєРѕРјР°РЅРґС‹ РЅРµ РЅР°Р№РґРµРЅ' });
     }
 
-    const toCounts = (total, attended) => {
-      const t = Number(total || 0);
-      const a = Number(attended || 0);
-      return { total: t, attended: a, percent: t > 0 ? Math.round((a / t) * 100) : null };
-    };
-
-    const trainingTotal = Number(trainingRes.rows[0]?.total || 0);
-    const trainingAttended = Number(trainingRes.rows[0]?.attended || 0);
+    const trainings = trainingRes.rows.map(row => ({
+      trainingId: row.id,
+      trainingDate: row.training_date,
+      trainingType: row.training_type,
+      attended: row.attended
+    }));
 
     // Счётчики боксскора приходят из pg как строки (bigint/numeric) — приводим здесь,
     // чтобы фронт складывал числа, а не склеивал строки.
@@ -543,7 +557,7 @@ ${pgsFields}
     res.json({
       success: true,
       info: infoRes.rows[0],
-      training: toCounts(trainingTotal, trainingAttended),
+      trainings,
       matches
     });
   } catch (error) {

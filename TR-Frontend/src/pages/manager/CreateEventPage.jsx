@@ -10,7 +10,8 @@ import { CheckboxLP } from '../../ui/Checkbox-LP';
 import { ButtonLP } from '../../ui/Button-LP';
 import { FadeIn } from '../../ui/FadeIn';
 import { Icon } from '../../ui/Icon';
-import { getImageUrl, getAuthHeaders } from '../../utils/helpers';
+import { ChipTabs } from '../../ui/ChipTabs';
+import { getImageUrl, getAuthHeaders, TRAINING_TYPES } from '../../utils/helpers';
 import { TeamPageHeader, TeamPageHeaderSpacer } from '../../components/TeamPageHeader';
 
 export function CreateEventPage() {
@@ -34,6 +35,9 @@ export function CreateEventPage() {
   const [isLoading, setIsLoading] = useState(false);
 
   const [eventTitle, setEventTitle] = useState('');
+  // Тип тренировки — выбор из закрытого списка, свободного ввода нет.
+  // 'general' («Общая») стоит по умолчанию, он же дефолт колонки в БД.
+  const [trainingType, setTrainingType] = useState('general');
   const [videoYtUrl, setVideoYtUrl] = useState('');
   const [videoVkUrl, setVideoVkUrl] = useState('');
   const [myJerseyType, setMyJerseyType] = useState('dark'); 
@@ -190,7 +194,7 @@ export function CreateEventPage() {
           teamId: isClubScope ? null : selectedTeam.id,
           clubId: isClubScope ? selectedClub.id : null,
           eventType, matchType, eventDate, eventTime,
-          selectedArena, feeAmount, isFree, eventTitle, videoYtUrl, videoVkUrl,
+          selectedArena, feeAmount, isFree, eventTitle, trainingType, videoYtUrl, videoVkUrl,
           myJerseyType, selectedOpponent, deadlineDate, deadlineTime,
           selectedExtTournament, selectedExtOpponent, stageType, seriesNumber,
           regularRound, selectedPlayoffOption, customStageLabel
@@ -409,12 +413,33 @@ export function CreateEventPage() {
             </>
           )}
 
-          {(eventType === 'training' || eventType === 'meeting') && (
+          {/* У тренировки вместо свободного описания — выбор типа из закрытого списка.
+              Блок раскрыт сразу: с дефолтом «Общая» и свёрнутой панелью тип никто бы
+              не менял, и вся статистика по типам состояла бы из одних «Общих». */}
+          {eventType === 'training' && (
+            <FadeIn key="training-type-panel" duration={250} delay={200} className="w-full flex flex-col">
+              <ContainerContent title="Тип тренировки" collapsible={true} defaultExpanded={true} activeBrandColor={hasTeamColor ? activeBrandColor : null}>
+                <div className="py-2 px-3 text-left">
+                  <ChipTabs
+                    wrap
+                    tabs={TRAINING_TYPES}
+                    activeTab={trainingType}
+                    onChange={setTrainingType}
+                    activeColor={hasTeamColor ? activeBrandColor : null}
+                  />
+                </div>
+              </ContainerContent>
+            </FadeIn>
+          )}
+
+          {/* У собрания описание остаётся свободным текстом: закрытым списком
+              «Разбор тактики» или «Итоги сезона» не опишешь. */}
+          {eventType === 'meeting' && (
             /* ИСПРАВЛЕНО: Добавлен flex-col */
-            <FadeIn key={`title-panel-${eventType}`} duration={250} delay={200} className="w-full flex flex-col">
+            <FadeIn key="title-panel-meeting" duration={250} delay={200} className="w-full flex flex-col">
               <ContainerContent title="Описание" collapsible={true} defaultExpanded={false} activeBrandColor={hasTeamColor ? activeBrandColor : null}>
                 <div className="py-1 px-3 text-left">
-                  <TextInputLP placeholder={eventType === 'training' ? 'Например: Бросковая...' : 'Например: Разбор тактики...'} value={eventTitle} onChange={setEventTitle} activeColor={hasTeamColor ? activeBrandColor : null} />
+                  <TextInputLP placeholder="Например: Разбор тактики..." value={eventTitle} onChange={setEventTitle} activeColor={hasTeamColor ? activeBrandColor : null} />
                 </div>
               </ContainerContent>
             </FadeIn>

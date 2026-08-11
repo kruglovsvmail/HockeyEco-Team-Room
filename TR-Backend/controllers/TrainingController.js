@@ -166,6 +166,56 @@ export const updateTrainingFinances = async (req, res) => {
 };
 
 // =============================================================================
+// ОБНОВЛЕНИЕ ТИПА ТРЕНИРОВКИ (Бросковая, ОФП, Катание...)
+// Поддерживает: team_training, club_training
+//
+// Тип — закрытый список, тот же, что в CHECK-ограничении колонки training_type.
+// Список продублирован здесь, а не импортируется из MgrEventController: там он
+// приватная деталь создания события, а тянуть контроллер ради константы — лишняя
+// связность. При добавлении девятого типа править оба места и CHECK в БД.
+//
+// Пуша не шлём: смена «Бросковой» на «Катание» не меняет ни времени, ни места,
+// ни денег — дёргать всю команду уведомлением не за что.
+// =============================================================================
+const TRAINING_TYPES = ['general', 'shooting', 'fitness', 'dribbling', 'tactics', 'skating', 'game', 'strength'];
+
+export const updateTrainingType = async (req, res) => {
+  try {
+    const { eventId } = req.params;
+    const { eventType, training_type } = req.body;
+    const teamId = getTeamIdFromRequest(req);
+    const clubId = getClubIdFromRequest(req);
+
+    if (!teamId && !clubId) {
+      return res.status(400).json({ success: false, error: 'Параметр teamId или clubId обязателен' });
+    }
+    if (!eventType) {
+      return res.status(400).json({ success: false, error: 'Параметр eventType обязателен' });
+    }
+    // Неизвестный тип отклоняем, а не подменяем на 'general': здесь это правка
+    // существующей тренировки, и молча записать не то, что просили, хуже ошибки.
+    if (!TRAINING_TYPES.includes(training_type)) {
+      return res.status(400).json({ success: false, error: 'Неизвестный тип тренировки' });
+    }
+
+    const table = eventType === 'team_training' ? 'team_training' : 'club_training';
+
+    const result = await pool.query(
+      `UPDATE "public"."${table}" SET training_type = $1 WHERE id = $2 RETURNING id`,
+      [training_type, eventId]
+    );
+    if (result.rowCount === 0) {
+      return res.status(404).json({ success: false, error: 'Тренировка не найдена' });
+    }
+
+    res.json({ success: true, message: 'Тип тренировки обновлён' });
+  } catch (err) {
+    console.error('Ошибка обновления типа тренировки:', err);
+    res.status(500).json({ success: false, error: 'Ошибка сервера' });
+  }
+};
+
+// =============================================================================
 // ПОЛНОЕ УДАЛЕНИЕ ТРЕНИРОВКИ ИЗ КАЛЕНДАРЯ
 // Каскадно удаляет отметки присутствия
 // =============================================================================

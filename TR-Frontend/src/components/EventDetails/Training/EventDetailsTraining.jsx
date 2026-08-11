@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, Suspense, lazy, useCallback } from 'react';
-import { getAuthHeaders, getImageUrl, uiFixed } from '../../../utils/helpers';
+import { getAuthHeaders, getImageUrl, uiFixed, getTrainingTypeIcon } from '../../../utils/helpers';
 import { Icon } from '../../../ui/Icon';
 import { ChipTabs } from '../../../ui/ChipTabs';
 import { useFocusRevalidate } from '../../../hooks/useFocusRevalidate';
@@ -28,7 +28,7 @@ const TrainingLines = lazy(() =>
 
 const TRAINING_TABS = [
   { id: 'attendance', label: 'Отметки' },
-  { id: 'lines',     label: 'Расстановка' },
+  { id: 'lines',     label: 'Формация' },
 ];
 
 // Высота контейнера 1 (text-[30px]=30) = 30px
@@ -486,10 +486,15 @@ export const EventDetailsTraining = ({ event, openRightPanel }) => {
             </div>
           </div>
 
-          {/* Правая часть: иконка тренировки (секундомер) вместо джерси */}
+          {/* Правая часть: иконка типа тренировки вместо джерси. Конкретный тип
+              (Бросковая, Катание, Тактическая...) читается из training_type; у
+              событий без типа падаем на «Общую» — см. getTrainingTypeIcon. */}
           <div className="shrink-0 w-[80px]">
             <div className="w-full aspect-square rounded-xl bg-surface-border flex flex-col items-center justify-center gap-0 overflow-hidden">
-              <Icon name="training_activity" className="w-12 h-12 text-content-muted" />
+              <Icon
+                name={getTrainingTypeIcon(localEvent?.training_type)}
+                className="w-12 h-12 text-content-muted"
+              />
               <span className="text-[10px] opacity-60 text-content-muted font-normal uppercase text-center px-1.5 w-full">
                 {localEvent?.my_team_name || ''}
               </span>

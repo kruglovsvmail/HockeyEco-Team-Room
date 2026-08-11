@@ -2,11 +2,19 @@ import React from 'react';
 import clsx from 'clsx';
 import { getContrastTextColor } from '../utils/helpers';
 
-export const ChipTabs = ({ tabs, activeTab, onChange, className = '', activeColor }) => {
+// wrap — чипы переносятся на несколько строк вместо горизонтальной прокрутки.
+// Нужен там, где список не «вкладки», а выбор из закрытого набора (тип тренировки):
+// в скролл-полосе видно два-три пункта из восьми, и про остальные просто не узнают.
+// В этом режиме компонент не задаёт собственных отступов — их ставит форма вокруг.
+export const ChipTabs = ({ tabs, activeTab, onChange, className = '', activeColor, wrap = false }) => {
   return (
-    <div 
-      className={clsx("flex items-center overflow-x-auto scrollbar-hide gap-2 p-4", className)}
-      style={{ WebkitOverflowScrolling: 'touch' }}
+    <div
+      className={clsx(
+        "flex items-center gap-2",
+        wrap ? "flex-wrap" : "overflow-x-auto scrollbar-hide p-4",
+        className
+      )}
+      style={wrap ? undefined : { WebkitOverflowScrolling: 'touch' }}
     >
       {tabs.map((tab) => {
         const isActive = activeTab === tab.id;
@@ -26,7 +34,8 @@ export const ChipTabs = ({ tabs, activeTab, onChange, className = '', activeColo
             onClick={() => onChange(tab.id)}
             style={dynamicStyle}
             className={clsx(
-              "relative overflow-hidden whitespace-nowrap px-4 py-2 shadow-md rounded-full text-[14px] font-bold uppercase tracking-widest outline-none shrink-0 transition-all duration-200 active:scale-[0.98]",
+              "relative overflow-hidden whitespace-nowrap px-4 py-2 shadow-md rounded-full text-[14px] font-bold uppercase tracking-widest outline-none transition-all duration-200 active:scale-[0.98]",
+              !wrap && "shrink-0",
               
               // Для дефолтного бренда добавляем глянец через before-элемент с твоими оффсетами
               isActive && !activeColor && "bg-brand text-surface-level1 before:absolute before:inset-0 before:bg-gradient-to-b before:from-white/25 before:to-transparent before:via-white/25 before:from-[40%] before:to-[70%]",

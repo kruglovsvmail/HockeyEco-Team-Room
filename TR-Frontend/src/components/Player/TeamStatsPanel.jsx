@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import clsx from 'clsx';
-import { getAuthHeaders, getImageUrl, uiFixed } from '../../utils/helpers';
+import { getAuthHeaders, getImageUrl, uiFixed, TRAINING_TYPES, TRAINING_TYPE_LABELS, getTrainingTypeIcon } from '../../utils/helpers';
 import { Avatar } from '../../ui/Avatar';
 import { PageLoader } from '../../ui/Loader';
 import { Icon } from '../../ui/Icon';
@@ -331,11 +331,11 @@ const FilterOptionRow = ({ icon, logo, line1, line2, checked, onToggle, activeBr
 // data: { teamId, userId, activeBrandColor?, hasTeamColor? } — передаётся через
 // pushRightPanel('teamStats', data, 'Статистика в команде') из UserDetails.jsx.
 //
-// Тренировки — отдельный блок. Матчи — второй блок (Посещение + Результаты),
-// с одним общим фильтром на оба (Все / Товарищеские / конкретная лига-сезон-
-// дивизион / конкретный внешний турнир). Бэкенд отдаёт ВСЕ матчи одним списком
-// с тегами лиги/турнира (variant Б) — переключение фильтра считается на лету
-// в браузере, без повторных запросов на сервер.
+// Тренировки — отдельный блок со своим фильтром по типу (Все / Бросковая / ОФП…).
+// Матчи — второй блок (Посещение + Результаты + боксскор), со своим фильтром
+// (Все / Товарищеские / конкретная лига-сезон-дивизион / конкретный внешний турнир).
+// Бэкенд отдаёт и тренировки, и матчи ПОЛНЫМИ списками с тегами (variant Б) —
+// переключение любого фильтра считается на лету в браузере, без запросов на сервер.
 export function TeamStatsPanel({ data }) {
   const { teamId, userId, activeBrandColor, hasTeamColor } = data || {};
 
@@ -346,6 +346,10 @@ export function TeamStatsPanel({ data }) {
   const [selectedKeys, setSelectedKeys] = useState(new Set());
   const [isFilterOpen, setIsFilterOpen] = useState(false);
   const [search, setSearch] = useState('');
+  // То же самое для тренировок, только ключи — коды типов из TRAINING_TYPES.
+  // Пустой набор = «Все тренировки».
+  const [selectedTrainingTypes, setSelectedTrainingTypes] = useState(new Set());
+  const [isTrainingFilterOpen, setIsTrainingFilterOpen] = useState(false);
 
   useEffect(() => {
     if (!teamId || !userId) return;
@@ -434,6 +438,46 @@ export function TeamStatsPanel({ data }) {
     return { total, attended, percent: total > 0 ? Math.round((attended / total) * 100) : null };
   }, [filteredMatches]);
 
+  // ── Фильтр тренировок по типу ────────────────────────────────────────────
+  // В шторку попадают только те типы, которые реально были у команды за время
+  // участия игрока. Показывать весь справочник из восьми пунктов, где семь дадут
+  // ноль, — то же самое, что в матчах не показывать лиги, где игрок не играл.
+  // Порядок берём из TRAINING_TYPES, а не из данных, чтобы список не прыгал.
+  const trainingOptions = useMemo(() => {
+    if (!stats) return [];
+    const present = new Set(stats.trainings.map(t => t.trainingType));
+    return TRAINING_TYPES.filter(t => present.has(t.id));
+  }, [stats]);
+
+  const currentTrainingFilterLabel = useMemo(() => {
+    if (selectedTrainingTypes.size === 0) return 'Все типы';
+    if (selectedTrainingTypes.size === 1) {
+      const id = [...selectedTrainingTypes][0];
+      return TRAINING_TYPE_LABELS[id] || 'Тренировки';
+    }
+    return `Выбрано: ${selectedTrainingTypes.size}`;
+  }, [selectedTrainingTypes]);
+
+  const filteredTrainings = useMemo(() => {
+    if (!stats) return [];
+    if (selectedTrainingTypes.size === 0) return stats.trainings;
+    return stats.trainings.filter(t => selectedTrainingTypes.has(t.trainingType));
+  }, [stats, selectedTrainingTypes]);
+
+  const toggleTrainingType = (id) => {
+    setSelectedTrainingTypes(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+  };
+
+  const training = useMemo(() => {
+    const total = filteredTrainings.length;
+    const attended = filteredTrainings.filter(t => t.attended).length;
+    return { total, attended, percent: total > 0 ? Math.round((attended / total) * 100) : null };
+  }, [filteredTrainings]);
+
   const matchResults = useMemo(() => {
     const attendedMatches = filteredMatches.filter(m => m.attended);
     let wins = 0, draws = 0, losses = 0;
@@ -502,8 +546,8 @@ export function TeamStatsPanel({ data }) {
     );
   }
 
-  const { info, training, matches } = stats;
-  const hasAnyData = training.total > 0 || matches.length > 0;
+  const { info, trainings, matches } = stats;
+  const hasAnyData = trainings.length > 0 || matches.length > 0;
 
   // Набор показателей выбирается по игровому амплуа участника в ЭТОЙ команде
   // (team_rosters.position), а не по фактическим строкам протокола: карточка
@@ -536,8 +580,25 @@ export function TeamStatsPanel({ data }) {
 
       {hasAnyData ? (
         <>
-          {/* БЛОК 1: ТРЕНИРОВКИ */}
-          <AttendanceCard title="Тренировки" total={training.total} attended={training.attended} percent={training.percent} />
+          {/* БЛОК 1: ТРЕНИРОВКИ — посещение со своим фильтром по типу тренировки.
+              Кнопка фильтра стоит всегда, когда тренировки вообще есть: даже при
+              единственном типе она показывает, ЧТО именно сейчас в выборке. */}
+          <AttendanceCard
+            title="Тренировки"
+            total={training.total}
+            attended={training.attended}
+            percent={training.percent}
+            action={trainingOptions.length > 0 && (
+              <button
+                type="button"
+                onClick={() => setIsTrainingFilterOpen(true)}
+                className="flex items-center gap-1 min-w-0 text-brand cursor-pointer active:opacity-70"
+              >
+                <span className="text-[12px] font-bold truncate max-w-[140px]">{currentTrainingFilterLabel}</span>
+                <Icon name="chevron" className="w-3 h-3 shrink-0" />
+              </button>
+            )}
+          />
 
           {/* БЛОК 2: МАТЧИ — посещение и результаты в одной карточке, один фильтр на оба */}
           <AttendanceCard
@@ -623,6 +684,38 @@ export function TeamStatsPanel({ data }) {
           Нет данных
         </div>
       )}
+
+      {/* ШТОРКА ВЫБОРА ТИПА ТРЕНИРОВКИ — та же раскладка, что и у фильтра матчей
+          ниже, только без поиска: типов максимум восемь, глазами быстрее. */}
+      <BottomSheet isOpen={isTrainingFilterOpen} onClose={() => setIsTrainingFilterOpen(false)}>
+        <div className="flex flex-col gap-4">
+          <h3 className="text-[16px] font-black tracking-widest text-content-main uppercase">Тип тренировки</h3>
+
+          <div className="flex flex-col gap-2 max-h-[50vh] overflow-y-auto scrollbar-hide">
+            <FilterOptionRow
+              icon="training_activity"
+              line1="Все типы"
+              checked={selectedTrainingTypes.size === 0}
+              onToggle={() => setSelectedTrainingTypes(new Set())}
+              activeBrandColor={activeBrandColor}
+            />
+            {trainingOptions.map(t => (
+              <FilterOptionRow
+                key={t.id}
+                icon={getTrainingTypeIcon(t.id)}
+                line1={t.label}
+                checked={selectedTrainingTypes.has(t.id)}
+                onToggle={() => toggleTrainingType(t.id)}
+                activeBrandColor={activeBrandColor}
+              />
+            ))}
+          </div>
+
+          <ButtonLP onClick={() => setIsTrainingFilterOpen(false)} activeColor={activeBrandColor}>
+            Готово
+          </ButtonLP>
+        </div>
+      </BottomSheet>
 
       {/* ШТОРКА ВЫБОРА ФИЛЬТРА МАТЧЕЙ — тот же стиль, что и выбор состава в
           CreateApplicationPanel.jsx (Турниры/лиги): поиск + плоский список

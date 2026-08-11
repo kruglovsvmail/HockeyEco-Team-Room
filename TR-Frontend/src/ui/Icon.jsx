@@ -78,7 +78,19 @@ export function Icon({ name, className = "w-6 h-6", style, strokeWidth }) {
     training_activity: <svg {...baseProps}><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg>,
     training_weights: <svg {...baseProps}><path d="M6 6v12"/><path d="M18 6v12"/><path d="M6 12h12"/><path d="M4 8v8"/><path d="M20 8v8"/></svg>,
     training_running: <svg viewBox="0 -960 960 960" fill="currentColor" className={className}><path d="m216-160-42-42 408-408H440v80h-60v-140h223q14 0 27 5t23 15l120 119q29 29 67 44t80 17v60q-52-2-100-19.5T736-484l-46-46-114 114 86 86-244 141-30-52 176-102-82-82-266 265Zm-96-280v-60h200v60H120ZM40-570v-60h200v60H40Zm750-80q-29 0-49.5-20.5T720-720q0-29 20.5-49.5T790-790q29 0 49.5 20.5T860-720q0 29-20.5 49.5T790-650Zm-670-50v-60h200v60H120Z"/></svg>,
-    
+
+    // Типы тренировок (training_type). Подключаются через TRAINING_TYPE_ICONS
+    // в utils/helpers.js — там же, где подписи типов, чтобы карта «тип → иконка»
+    // жила в одном месте, а не расползалась по компонентам.
+    // Тренировочный конус — Катание
+    training_cone: <svg {...baseProps}><path d="M10.9 3.5 H13.1 L16.6 17.5 H7.4 Z"/><path d="M9.3 11 H14.7"/><path d="M4.5 20 H19.5"/></svg>,
+    // Крестик, нолик и стрелка (разбор на макете) — Тактическая
+    training_tactics: <svg {...baseProps}><path d="M3.5 5 L10 11.5"/><path d="M10 5 L3.5 11.5"/><circle cx="17.25" cy="8.25" r="3"/><path d="M4 18 H17.5"/><path d="M14.5 15 L17.5 18 L14.5 21"/></svg>,
+    // Клюшка с шайбой — Дриблинг
+    training_stick_puck: <svg {...baseProps}><path d="M18 3 L10.5 14.5 L4 16.5"/><ellipse cx="16.5" cy="18.5" rx="4" ry="2.25"/></svg>,
+    // Две скрещённые клюшки с шайбой — Игровая
+    training_sticks: <svg {...baseProps}><path d="M16.5 2.5 L8 14 L3.5 14"/><path d="M7.5 2.5 L16 14 L20.5 14"/><ellipse cx="12" cy="19" rx="4" ry="2.25"/></svg>,
+
     // Новая иконка загрузки/аплоада файлов в PWA-профили
     upload: <svg {...baseProps}><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>,
 

@@ -243,7 +243,12 @@ export const getEvents = async (req, res) => {
             (SELECT role FROM user_team_roles WHERE team_id = ut.team_id AND role IN ('owner', 'team_manager', 'team_admin') LIMIT 1),
             'player'
           )::varchar AS user_role,
-          (SELECT has_subscription FROM user_context)::boolean AS has_subscription
+          (SELECT has_subscription FROM user_context)::boolean AS has_subscription,
+
+          -- Тип тренировки нужен панели редактирования события. У матчей и собраний
+          -- его нет, но колонка обязана быть во всех ветвях UNION ALL — иначе склейка
+          -- ниже (SELECT * FROM ..._cte) не сойдётся по числу колонок.
+          NULL::varchar AS training_type
 
         FROM user_teams ut
         JOIN games g ON (g.home_team_id = ut.team_id OR g.away_team_id = ut.team_id)
@@ -343,7 +348,12 @@ export const getEvents = async (req, res) => {
             (SELECT role FROM user_team_roles WHERE team_id = ut.team_id AND role IN ('owner', 'team_manager', 'team_admin') LIMIT 1),
             'player'
           )::varchar AS user_role,
-          (SELECT has_subscription FROM user_context)::boolean AS has_subscription
+          (SELECT has_subscription FROM user_context)::boolean AS has_subscription,
+
+          -- Тип тренировки нужен панели редактирования события. У матчей и собраний
+          -- его нет, но колонка обязана быть во всех ветвях UNION ALL — иначе склейка
+          -- ниже (SELECT * FROM ..._cte) не сойдётся по числу колонок.
+          tt.training_type::varchar AS training_type
 
         FROM user_teams ut
         JOIN team_training tt ON tt.team_id = ut.team_id
@@ -434,7 +444,12 @@ export const getEvents = async (req, res) => {
             (SELECT role FROM user_team_roles WHERE team_id = ut.team_id AND role IN ('owner', 'team_manager', 'team_admin') LIMIT 1),
             'player'
           )::varchar AS user_role,
-          (SELECT has_subscription FROM user_context)::boolean AS has_subscription
+          (SELECT has_subscription FROM user_context)::boolean AS has_subscription,
+
+          -- Тип тренировки нужен панели редактирования события. У матчей и собраний
+          -- его нет, но колонка обязана быть во всех ветвях UNION ALL — иначе склейка
+          -- ниже (SELECT * FROM ..._cte) не сойдётся по числу колонок.
+          NULL::varchar AS training_type
 
         FROM user_teams ut
         JOIN team_meeting tm ON tm.team_id = ut.team_id
@@ -524,7 +539,12 @@ export const getEvents = async (req, res) => {
             (SELECT role FROM user_club_roles WHERE club_id = uc.club_id AND role IN ('club_owner', 'top_manager', 'club_admin', 'club_coach') LIMIT 1),
             'player'
           )::varchar AS user_role,
-          (SELECT has_subscription FROM user_context)::boolean AS has_subscription
+          (SELECT has_subscription FROM user_context)::boolean AS has_subscription,
+
+          -- Тип тренировки нужен панели редактирования события. У матчей и собраний
+          -- его нет, но колонка обязана быть во всех ветвях UNION ALL — иначе склейка
+          -- ниже (SELECT * FROM ..._cte) не сойдётся по числу колонок.
+          ct.training_type::varchar AS training_type
 
         FROM user_clubs uc
         JOIN club_training ct ON ct.club_id = uc.club_id
@@ -612,7 +632,12 @@ export const getEvents = async (req, res) => {
             (SELECT role FROM user_club_roles WHERE club_id = uc.club_id AND role IN ('club_owner', 'top_manager', 'club_admin', 'club_coach') LIMIT 1),
             'player'
           )::varchar AS user_role,
-          (SELECT has_subscription FROM user_context)::boolean AS has_subscription
+          (SELECT has_subscription FROM user_context)::boolean AS has_subscription,
+
+          -- Тип тренировки нужен панели редактирования события. У матчей и собраний
+          -- его нет, но колонка обязана быть во всех ветвях UNION ALL — иначе склейка
+          -- ниже (SELECT * FROM ..._cte) не сойдётся по числу колонок.
+          NULL::varchar AS training_type
 
         FROM user_clubs uc
         JOIN club_meeting cm ON cm.club_id = uc.club_id

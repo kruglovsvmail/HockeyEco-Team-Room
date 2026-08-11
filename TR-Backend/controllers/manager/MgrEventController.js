@@ -4,6 +4,14 @@ import { checkClubPermissionInternal } from '../../utils/checkPermission.js';
 import { sendPushToTeamExcept, sendPushToClubExcept, scheduleNotification, scheduleMatchDeadlines, getTrainingInfo, getMeetingInfo, getMatchInfo } from '../../services/pushService.js';
 
 /**
+ * Допустимые типы тренировки. Должны совпадать с CHECK-ограничением колонок
+ * team_training.training_type / club_training.training_type и со списком подписей
+ * TRAINING_TYPES во фронте (TR-Frontend/src/utils/helpers.js).
+ * В БД хранится код, русская подпись живёт только во фронте.
+ */
+const TRAINING_TYPES = ['general', 'shooting', 'fitness', 'dribbling', 'tactics', 'skating', 'game', 'strength'];
+
+/**
  * Внутренняя изолированная функция для проверки гранулярных прав доступа руководителя и подписки
  */
 async function checkPermissionInternal(userId, teamId, permissionKey, client = pool) {
@@ -107,6 +115,7 @@ export const createEvent = async (req, res) => {
     feeAmount,
     isFree,
     eventTitle,
+    trainingType,
     videoYtUrl,
     videoVkUrl,
     myJerseyType,
@@ -127,6 +136,12 @@ export const createEvent = async (req, res) => {
   if ((!teamId && !clubId) || !eventType || !eventDate || !eventTime || !selectedArena) {
     return res.status(400).json({ success: false, error: 'Не все обязательные поля заполнены' });
   }
+
+  // Тип тренировки — закрытый список, тот же, что в CHECK-ограничении колонки
+  // training_type. Проверяем на сервере, а не полагаемся на чипы в форме: иначе
+  // произвольная строка из запроса уронит INSERT на CHECK. Неизвестное значение
+  // молча падает в 'general', как и пустое.
+  const safeTrainingType = TRAINING_TYPES.includes(trainingType) ? trainingType : 'general';
 
   const isClubEvent = !teamId && !!clubId;
 
@@ -186,10 +201,10 @@ export const createEvent = async (req, res) => {
     if (isClubEvent) {
       if (eventType === 'training') {
         const result = await pool.query(`
-          INSERT INTO "public"."club_training" (club_id, training_date, arena_id, location, location_url, title, cost, custom_timezone)
-          VALUES ($1, $2::timestamp AT TIME ZONE $3, $4, $5, $6, $7, $8, $9)
+          INSERT INTO "public"."club_training" (club_id, training_date, arena_id, location, location_url, title, cost, custom_timezone, training_type)
+          VALUES ($1, $2::timestamp AT TIME ZONE $3, $4, $5, $6, $7, $8, $9, $10)
           RETURNING id;
-        `, [clubId, eventTimestamp, arenaTz, arenaId, locationName, locationUrl, eventTitle || 'Клубная тренировка', cost, customTz]);
+        `, [clubId, eventTimestamp, arenaTz, arenaId, locationName, locationUrl, eventTitle || 'Клубная тренировка', cost, customTz, safeTrainingType]);
 
         const newEventId = result.rows[0].id;
 
@@ -230,12 +245,12 @@ export const createEvent = async (req, res) => {
     // ==========================================
     if (eventType === 'training') {
       const insertQuery = `
-        INSERT INTO "public"."team_training" (team_id, training_date, arena_id, location, location_url, title, cost, custom_timezone)
-        VALUES ($1, $2::timestamp AT TIME ZONE $3, $4, $5, $6, $7, $8, $9)
+        INSERT INTO "public"."team_training" (team_id, training_date, arena_id, location, location_url, title, cost, custom_timezone, training_type)
+        VALUES ($1, $2::timestamp AT TIME ZONE $3, $4, $5, $6, $7, $8, $9, $10)
         RETURNING id, training_date;
       `;
       const result = await pool.query(insertQuery, [
-        teamId, eventTimestamp, arenaTz, arenaId, locationName, locationUrl, eventTitle || 'Командная тренировка', cost, customTz
+        teamId, eventTimestamp, arenaTz, arenaId, locationName, locationUrl, eventTitle || 'Командная тренировка', cost, customTz, safeTrainingType
       ]);
       const newEventId = result.rows[0].id;
       // Берём дату обратно из БД: там она уже корректно переведена из времени арены в UTC.

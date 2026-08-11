@@ -4,7 +4,7 @@ import dayjs from 'dayjs';
 import utc from 'dayjs/plugin/utc';
 import timezone from 'dayjs/plugin/timezone';
 
-import { getAuthHeaders, getStreamPlatformLabel } from '../../utils/helpers';
+import { getAuthHeaders, getStreamPlatformLabel, TRAINING_TYPES, TRAINING_TYPE_LABELS } from '../../utils/helpers';
 import { useAccess } from '../../hooks/useAccess';
 import { computeEventEditAccess } from './computeEventEditAccess';
 
@@ -15,6 +15,7 @@ import { ButtonLP } from '../../ui/Button-LP';
 import { Toast } from '../../ui/Toast';
 import { ConfirmSheet } from '../../ui/ConfirmSheet';
 import { ArenaSelector } from '../Manager/ArenaSelector';
+import { ChipTabs } from '../../ui/ChipTabs';
 
 dayjs.extend(utc);
 dayjs.extend(timezone);
@@ -183,6 +184,9 @@ export const EditEventPanel = ({ data, onClose }) => {
   const [ytUrl, setYtUrl] = useState('');
   const [vkUrl, setVkUrl] = useState('');
 
+  // Тип тренировки (только у team_training/club_training)
+  const [trainingType, setTrainingType] = useState('general');
+
   // Подгружаем поля формы при открытии/смене блока редактирования
   useEffect(() => {
     if (!event) return;
@@ -200,6 +204,8 @@ export const EditEventPanel = ({ data, onClose }) => {
 
     setYtUrl(event.video_yt_url || '');
     setVkUrl(event.video_vk_url || '');
+
+    setTrainingType(event.training_type || 'general');
   }, [event, targetDate, arenaTz]);
 
   // Применяем патч к event локально и сообщаем наружу (в TeamLayout/sessionStorage)
@@ -257,6 +263,32 @@ export const EditEventPanel = ({ data, onClose }) => {
         location_url: locationUrl,
       });
       triggerToast('Расписание сохранено', 'success');
+      setEditingBlock(null);
+    } catch (err) {
+      console.error(err);
+      triggerToast('Ошибка соединения с сервером', 'danger');
+    } finally {
+      setSavingBlock(null);
+    }
+  };
+
+  const saveTrainingType = async () => {
+    setSavingBlock('trainingType');
+    try {
+      const res = await fetch(`${import.meta.env.VITE_API_URL}/api/trainings/${eventId}/type`, {
+        method: 'PUT',
+        headers: { ...getAuthHeaders(), 'Content-Type': 'application/json' },
+        body: JSON.stringify({ teamId, clubId, eventType, training_type: trainingType }),
+      });
+
+      if (!res.ok) {
+        const errData = await res.json().catch(() => ({}));
+        triggerToast(errData.error || 'Не удалось сохранить тип тренировки', 'danger');
+        return;
+      }
+
+      applyPatch({ training_type: trainingType });
+      triggerToast('Тип тренировки сохранён', 'success');
       setEditingBlock(null);
     } catch (err) {
       console.error(err);
@@ -503,6 +535,52 @@ export const EditEventPanel = ({ data, onClose }) => {
               <InfoRow label="Время" value={timeDisplay} />
               <InfoRow label="Локация" value={event.arena_name || '—'} />
             </div>
+          )}
+        </EventBlock>
+      )}
+
+      {/* ───────────── БЛОК: ТИП ТРЕНИРОВКИ (только team_training/club_training) ─────────────
+          Право берём то же, что у расписания: тип — такой же атрибут самой тренировки,
+          отдельного разрешения под него не заводили. В режиме просмотра показываем
+          подпись выбранного типа, в режиме правки — те же чипы, что и в форме создания. */}
+      {isTraining && blocks.schedule?.hasRole && (
+        <EventBlock
+          title="Тип тренировки"
+          icon="training_activity"
+          hasRole={blocks.schedule.hasRole}
+          hasSubscription={blocks.schedule.hasSubscription}
+          isEditing={editingBlock === 'trainingType'}
+          isSaving={savingBlock === 'trainingType'}
+          activeBrandColor={activeBrandColor}
+          onToggleEdit={() => setEditingBlock(prev => prev === 'trainingType' ? null : 'trainingType')}
+        >
+          {editingBlock === 'trainingType' ? (
+            <div className="flex flex-col gap-4 pt-1">
+              {/* activeColor=null при выключенных командных цветах — тогда ChipTabs
+                  рисует дефолтный bg-brand с глянцем. Прокидывать сюда строку
+                  'var(--color-brand)' нельзя: она уводит компонент в ветку
+                  инлайн-стиля и гасит глянец. Тот же приём, что в EventDetailsTraining. */}
+              <ChipTabs
+                wrap
+                tabs={TRAINING_TYPES}
+                activeTab={trainingType}
+                onChange={setTrainingType}
+                activeColor={hasTeamColor ? event.team_color : null}
+              />
+              <ButtonLP
+                variant="primary"
+                onClick={saveTrainingType}
+                disabled={savingBlock === 'trainingType'}
+                activeColor={activeBrandColor}
+                className="w-full flex items-center justify-center gap-2 py-2.5"
+              >
+                <span>Сохранить</span>
+              </ButtonLP>
+            </div>
+          ) : (
+            <span className="text-[14px] font-black text-content-main">
+              {TRAINING_TYPE_LABELS[event?.training_type] || 'Общая'}
+            </span>
           )}
         </EventBlock>
       )}

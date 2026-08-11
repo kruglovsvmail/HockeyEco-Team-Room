@@ -127,7 +127,7 @@ export function SettingsPage() {
                   <div className="flex flex-col flex-1 min-w-0">
                     <span className="text-[18px] font-bold text-content-main">Цветовое кодирование</span>
                     <span className="text-[12px] text-content-muted pr-4 mt-0.5">
-                      Элементы адаптируются под брендовыt цвета ваших команд
+                      Элементы адаптируются под брендовые цвета ваших команд
                     </span>
                   </div>
                   <Toggle checked={useTeamColors} onChange={handleToggleColors} />

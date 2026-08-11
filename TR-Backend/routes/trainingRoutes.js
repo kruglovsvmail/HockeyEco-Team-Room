@@ -8,6 +8,7 @@ import {
 import {
   updateTrainingSchedule,
   updateTrainingFinances,
+  updateTrainingType,
   deleteTraining,
 } from '../controllers/TrainingController.js';
 import { getTrainingLines, saveTrainingLines } from '../controllers/TrainingLinesController.js';
@@ -46,6 +47,10 @@ router.put('/:eventId/schedule', verifyToken, requireEventPermission('TRAINING_E
 
 // Обновить стоимость участия (взнос с игрока)
 router.put('/:eventId/finances', verifyToken, requireEventPermission('TRAINING_EDIT_FINANCES', 'CLUB_MANAGE_EVENTS'), updateTrainingFinances);
+
+// Обновить тип тренировки (Бросковая, ОФП, Катание...). Право то же, что у расписания:
+// тип — такой же атрибут самой тренировки, отдельного разрешения под него не заводим.
+router.put('/:eventId/type', verifyToken, requireEventPermission('TRAINING_EDIT_SCHEDULE', 'CLUB_MANAGE_EVENTS'), updateTrainingType);
 
 // Полное физическое удаление тренировки из календаря
 router.delete('/:eventId', verifyToken, requireEventPermission('TRAINING_DELETE', 'CLUB_MANAGE_EVENTS'), deleteTraining);

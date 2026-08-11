@@ -93,6 +93,52 @@ export const getImageUrl = (path) => {
  */
 export const TEAM_OWN_ROLES = ['player', 'owner', 'team_manager', 'team_admin', 'head_coach', 'coach'];
 
+/**
+ * Тип тренировки — закрытый список, свободного ввода нет. Раньше это было поле
+ * произвольного текста (team_training.title), и «ОФП», «офп» и «Офп » становились
+ * тремя разными типами, по которым невозможно ни сгруппировать, ни отфильтровать.
+ *
+ * В БД лежит код (training_type), подпись живёт здесь — переименование «Тактическая»
+ * в «Тактика» правится одной строкой, без UPDATE по всей базе. Тот же приём, что у
+ * амплуа игрока и ролей в команде.
+ *
+ * Порядок массива — порядок чипов в форме создания. 'general' стоит по умолчанию,
+ * он же дефолт колонки в БД.
+ */
+export const TRAINING_TYPES = [
+  { id: 'general',   label: 'Общая' },
+  { id: 'shooting',  label: 'Бросковая' },
+  { id: 'fitness',   label: 'ОФП' },
+  { id: 'dribbling', label: 'Дриблинг' },
+  { id: 'tactics',   label: 'Тактическая' },
+  { id: 'skating',   label: 'Катание' },
+  { id: 'game',      label: 'Игровая' },
+  { id: 'strength',  label: 'Силовая' },
+];
+
+export const TRAINING_TYPE_LABELS = Object.fromEntries(TRAINING_TYPES.map(t => [t.id, t.label]));
+
+/**
+ * Иконка типа тренировки (имена — из ui/Icon.jsx). Держим карту здесь, рядом с
+ * подписями: тип уже показывается в шторке фильтра статистики и в шапке деталей
+ * тренировки, и заводить свой набор иконок в каждом месте — верный способ
+ * однажды разойтись.
+ */
+export const TRAINING_TYPE_ICONS = {
+  general:   'training_activity',
+  shooting:  'puck',
+  fitness:   'training_running',
+  dribbling: 'training_stick_puck',
+  tactics:   'training_tactics',
+  skating:   'training_cone',
+  game:      'training_sticks',
+  strength:  'training_weights',
+};
+
+// Иконка по коду типа с падением на «Общую»: у старых событий training_type
+// может не прийти вовсе (кэш sessionStorage от прошлой версии календаря).
+export const getTrainingTypeIcon = (type) => TRAINING_TYPE_ICONS[type] || TRAINING_TYPE_ICONS.general;
+
 export const isOwnTeam = (team, userId) => {
   if (team?.owner_id && String(team.owner_id) === String(userId)) return true;
   const roles = (team?.user_role || '').split(',').map(r => r.trim().toLowerCase());
