@@ -8,6 +8,7 @@ import { BottomSheet } from '../../ui/BottomSheet';
 import { TextInputLP } from '../../ui/Input-LP';
 import { CheckboxLP } from '../../ui/Checkbox-LP';
 import { ButtonLP } from '../../ui/Button-LP';
+import { HintPopover } from '../../ui/HintPopover';
 
 // Кольцевая диаграмма процента посещений: серый фон-трек (пропущенные) +
 // дуга цветом бренда (посещённые). При включённом командном цвете дуга
@@ -88,6 +89,97 @@ const ResultStat = ({ label, value, percent }) => (
   </div>
 );
 
+// Одна цифра боксскора — тот же компактный тайл, что и в «Статистике в турнирах»
+// (PlayerProfilePanel.jsx). Короткой подписи под числом на узкой панели не хватает,
+// поэтому тап по тайлу открывает подсказку с полным названием и описанием показателя.
+// display/width задаём инлайн-стилем: inline-block самого HintPopover иначе ломает
+// ячейку сетки, а h-full внутри выравнивает тайлы одной строки по высоте.
+const StatTile = ({ label, value, title, hint }) => (
+  <HintPopover
+    style={{ display: 'block', width: '100%' }}
+    customContent={
+      <div className="flex flex-col gap-1.5 text-center">
+        <span className="text-[10px] font-black uppercase tracking-widest text-brand">{title}</span>
+        <span className="text-[12px] font-semibold text-content-main leading-snug whitespace-normal break-words">{hint}</span>
+      </div>
+    }
+  >
+    <div className="flex flex-col items-center justify-center h-full bg-surface-level2 rounded-xl py-1.5 px-1">
+      <span className="text-[16px] font-bold tabular-nums leading-tight text-content-main">{value ?? '—'}</span>
+      <span className="text-[10px] font-bold uppercase tracking-wider text-content-subtle mt-1.5 leading-tight text-center">{label}</span>
+    </div>
+  </HintPopover>
+);
+
+// Подпись раздела внутри карточки «Матчи» — тот же вид, что и у заголовка самой
+// карточки, но без разделительной линии над текстом (её рисует контейнер).
+const SectionLabel = ({ children }) => (
+  <span className="text-[10px] font-bold uppercase tracking-widest text-content-subtle">{children}</span>
+);
+
+// Послематчевые буллиты: два тайла слева, кольцевая диаграмма процента справа —
+// та же раскладка, что и у строки посещаемости в шапке карточки. Кольцо тоже
+// кликабельно и объясняет, что именно за процент показан.
+const ShootoutRow = ({ attempts, made, percent, percentTitle, percentHint }) => (
+  <div className="flex items-center justify-between gap-3">
+    <div className="grid grid-cols-2 gap-1.5 flex-1 min-w-0">
+      <StatTile label={attempts.label} value={attempts.value} title={attempts.title} hint={attempts.hint} />
+      <StatTile label={made.label} value={made.value} title={made.title} hint={made.hint} />
+    </div>
+    <HintPopover
+      className="shrink-0"
+      customContent={
+        <div className="flex flex-col gap-1.5 text-center">
+          <span className="text-[10px] font-black uppercase tracking-widest text-brand">{percentTitle}</span>
+          <span className="text-[12px] font-semibold text-content-main leading-snug whitespace-normal break-words">{percentHint}</span>
+        </div>
+      }
+    >
+      <AttendanceRing percent={percent} />
+    </HintPopover>
+  </div>
+);
+
+// Полный боксскор полевого игрока. Порядок тайлов — сетка 3×3, ровно как их
+// перечислил пользователь. Значения уже просуммированы по текущему фильтру матчей.
+const buildSkaterTiles = (s) => [
+  { label: 'Шайбы', value: s.goals, title: 'Заброшенные шайбы',
+    hint: 'Голы, заброшенные игроком в основное время и овертайме.' },
+  { label: 'Передачи', value: s.assists, title: 'Голевые передачи',
+    hint: 'Первые и вторые результативные передачи суммарно, без деления на первую и вторую.' },
+  { label: 'Очки', value: s.points, title: 'Очки (гол + пас)',
+    hint: 'Сумма заброшенных шайб и голевых передач.' },
+  { label: 'Плюс', value: s.plusCount, title: 'Показатель «плюс»',
+    hint: 'Сколько раз игрок был на льду в момент, когда шайбу забрасывала его команда.' },
+  { label: 'Минус', value: s.minusCount, title: 'Показатель «минус»',
+    hint: 'Сколько раз игрок был на льду в момент, когда шайбу забрасывал соперник.' },
+  { label: '+/-', value: s.plusMinus > 0 ? `+${s.plusMinus}` : s.plusMinus, title: 'Показатель полезности',
+    hint: 'Разница между показателями «плюс» и «минус». Чем выше, тем полезнее игрок был на льду.' },
+  { label: 'Поб. Ш', value: s.goalsGw, title: 'Победные шайбы',
+    hint: 'Количество победных заброшенных шайб игроком.' },
+  { label: 'Штраф', value: s.pim, title: 'Штрафные минуты',
+    hint: 'Суммарное штрафное время игрока в минутах за все матчи выборки.' },
+  { label: 'ППУ', value: s.gaOnPenalty, title: 'Пропущено при его удалении',
+    hint: 'Сколько шайб пропустила команда в большинстве соперника, пока игрок сидел на скамейке штрафников.' },
+];
+
+// Полный боксскор вратаря. Сетка 3×2 — броски/отражено/процент, затем
+// пропущено/сухие матчи/штраф.
+const buildGoalieTiles = (s) => [
+  { label: 'Броски', value: s.shotsAgainst, title: 'Броски в створ',
+    hint: 'Все броски в створ ворот, нанесённые по вратарю, включая те, что стали голами.' },
+  { label: 'ОБ', value: s.saves, title: 'Отражённые броски (сейвы)',
+    hint: 'Броски в створ, которые вратарь отразил.' },
+  { label: '%ОБ', value: s.savePercent != null ? `${s.savePercent}%` : null, title: 'Процент отражённых бросков',
+    hint: 'Доля отражённых бросков от всех бросков в створ ворот вратаря.' },
+  { label: 'ПШ', value: s.goalsAgainst, title: 'Пропущенные шайбы',
+    hint: 'Шайбы, заброшенные в ворота, пока вратарь стоял в них. Голы с назначенного по ходу матча буллита вратарю не записываются.' },
+  { label: 'И"0"', value: s.shutouts, title: 'Игры «на ноль» (сухие матчи)',
+    hint: 'Матчи, в которых вратарь единственным отстоял всю игру за свою команду, не пропустил ни одной шайбы и команда не проиграла.' },
+  { label: 'Штраф', value: s.pim, title: 'Штрафные минуты',
+    hint: 'Суммарное штрафное время вратаря в минутах за все матчи выборки.' },
+];
+
 // Плавная кривая через точки (симметричные кубические Безье вместо прямых
 // отрезков) — тот же приём, что дают графики "формы" в спортивных приложениях:
 // плато на высоте каждой точки, гладкий S-переход к следующей.
@@ -140,8 +232,12 @@ const MatchResultsChart = ({ games }) => {
     );
   }
 
+  // h-* на контейнере — единственная ручка высоты графика: SVG растягивается по нему
+  // (preserveAspectRatio="none"), а точки спозиционированы в % от той же области,
+  // поэтому координаты viewBox (height/topY/midY/botY) трогать не нужно — размах точек
+  // «победа/ничья/поражение» ужимается пропорционально сам.
   return (
-    <div className="relative -mx-6 h-24 mb-4">
+    <div className="relative -mx-6 h-16 mb-4">
       {/* Слой кривой/заливки — обрезается по скруглению карточки */}
       <div className="absolute inset-x-3 inset-y-0 rounded-xl overflow-hidden">
         <svg viewBox={`0 0 ${width} ${height}`} preserveAspectRatio="none" className="w-full h-full">
@@ -358,6 +454,44 @@ export function TeamStatsPanel({ data }) {
     };
   }, [filteredMatches]);
 
+  // Полный боксскор игрока — сумма построчной статистики (player_game_statistics)
+  // по ТЕМ ЖЕ матчам, что сейчас в фильтре: переключил фильтр — цифры пересчитались
+  // на месте, без похода на сервер. Матчи без строки боксскора (игрок не попал в
+  // протокол, технический результат) в сумму не идут вовсе.
+  const playerStats = useMemo(() => {
+    const rows = filteredMatches.map(m => m.stats).filter(Boolean);
+    const sum = (pick) => rows.reduce((acc, s) => acc + (pick(s) || 0), 0);
+    const pct = (part, whole) => whole > 0 ? Math.round((part / whole) * 100) : null;
+
+    const soAttempts = sum(s => s.soGoals + s.soMisses);
+    const soGoals = sum(s => s.soGoals);
+    const shotsAgainst = sum(s => s.goalieShotsAgainst);
+    const saves = sum(s => s.goalieSaves);
+    const goalieSoAgainst = sum(s => s.goalieSoAgainst);
+    const goalieSoSaves = sum(s => s.goalieSoSaves);
+
+    return {
+      hasRows: rows.length > 0,
+      // Полевые
+      goals: sum(s => s.goals),
+      assists: sum(s => s.assists),
+      points: sum(s => s.points),
+      plusCount: sum(s => s.plusCount),
+      minusCount: sum(s => s.minusCount),
+      plusMinus: sum(s => s.plusMinus),
+      goalsGw: sum(s => s.goalsGw),
+      gaOnPenalty: sum(s => s.gaOnPenalty),
+      soAttempts, soGoals, soPercent: pct(soGoals, soAttempts),
+      // Вратарские
+      shotsAgainst, saves, savePercent: pct(saves, shotsAgainst),
+      goalsAgainst: sum(s => s.goalieGoalsAgainst),
+      shutouts: rows.filter(s => s.goalieShutout).length,
+      goalieSoAgainst, goalieSoSaves, goalieSoPercent: pct(goalieSoSaves, goalieSoAgainst),
+      // Общие
+      pim: sum(s => s.pim),
+    };
+  }, [filteredMatches]);
+
   if (loading) return <PageLoader />;
 
   if (!stats) {
@@ -370,6 +504,12 @@ export function TeamStatsPanel({ data }) {
 
   const { info, training, matches } = stats;
   const hasAnyData = training.total > 0 || matches.length > 0;
+
+  // Набор показателей выбирается по игровому амплуа участника в ЭТОЙ команде
+  // (team_rosters.position), а не по фактическим строкам протокола: карточка
+  // командная, и человек здесь ровно в одной роли.
+  const isGoalie = info.position === 'goalie';
+  const statTiles = isGoalie ? buildGoalieTiles(playerStats) : buildSkaterTiles(playerStats);
   const searchLower = search.trim().toLowerCase();
   const matchesSearch = (label) => !searchLower || label.toLowerCase().includes(searchLower);
 
@@ -424,6 +564,58 @@ export function TeamStatsPanel({ data }) {
               </div>
               <MatchResultsChart games={matchResults.recentGames} />
             </div>
+
+            {/* ПОЛНЫЙ БОКССКОР ИГРОКА по матчам текущего фильтра. Мини-тайлы — как в
+                «Статистике в турнирах»; тап по любому открывает описание показателя.
+                Раздела нет вовсе, если ни по одному матчу выборки боксскора нет. */}
+            {playerStats.hasRows && (
+              <div className="flex flex-col gap-3 pt-3 border-t border-surface-border">
+                <SectionLabel>{isGoalie ? 'Статистика вратаря' : 'Статистика игрока'}</SectionLabel>
+
+                <div className="grid grid-cols-3 gap-1.5">
+                  {statTiles.map(t => (
+                    <StatTile key={t.label} label={t.label} value={t.value} title={t.title} hint={t.hint} />
+                  ))}
+                </div>
+
+                <div className="flex flex-col gap-3 pt-3 border-t border-surface-border">
+                  <SectionLabel>Послематчевые буллиты</SectionLabel>
+                  {isGoalie ? (
+                    <ShootoutRow
+                      attempts={{
+                        label: 'Буллиты', value: playerStats.goalieSoAgainst,
+                        title: 'Количество послематчевых буллитов',
+                        hint: 'Сколько буллитов послематчевой серии пробили по этому вратарю.'
+                      }}
+                      made={{
+                        label: 'Отражено', value: playerStats.goalieSoSaves,
+                        title: 'Отражённые послематчевые буллиты',
+                        hint: 'Сколько буллитов послематчевой серии вратарь отразил.'
+                      }}
+                      percent={playerStats.goalieSoPercent}
+                      percentTitle="Процент отражённых буллитов"
+                      percentHint="Доля отражённых послематчевых буллитов от всех, пробитых по вратарю."
+                    />
+                  ) : (
+                    <ShootoutRow
+                      attempts={{
+                        label: 'Попытки', value: playerStats.soAttempts,
+                        title: 'Попытки послематчевых буллитов',
+                        hint: 'Сколько буллитов послематчевой серии игрок пробил — реализованные и нереализованные вместе.'
+                      }}
+                      made={{
+                        label: 'Забито', value: playerStats.soGoals,
+                        title: 'Реализованные послематчевые буллиты',
+                        hint: 'Сколько буллитов послематчевой серии игрок реализовал. В заброшенные шайбы они не идут — по правилам это не гол игрока.'
+                      }}
+                      percent={playerStats.soPercent}
+                      percentTitle="Процент реализации буллитов"
+                      percentHint="Доля реализованных послематчевых буллитов от всех попыток игрока."
+                    />
+                  )}
+                </div>
+              </div>
+            )}
           </AttendanceCard>
         </>
       ) : (

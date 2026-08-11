@@ -332,12 +332,24 @@ export const getMemberTeamStats = async (req, res) => {
   const { teamId, userId } = req.params;
 
   try {
+    // position — игровое амплуа участника в ЭТОЙ команде (team_rosters.position).
+    // Именно по нему панель решает, какой набор показателей рисовать: полевой или
+    // вратарский. Берём активную строку ростера, а если участник уже отзаявлен —
+    // последнюю по времени, иначе у ушедшего вратаря амплуа потерялось бы.
     const infoQuery = `
       SELECT
         u.first_name, u.last_name, u.middle_name,
-        COALESCE(tm.photo_url, u.avatar_url) as avatar_url
+        COALESCE(tm.photo_url, u.avatar_url) as avatar_url,
+        r.position
       FROM team_members tm
       JOIN users u ON u.id = tm.user_id
+      LEFT JOIN LATERAL (
+        SELECT tr.position
+        FROM team_rosters tr
+        WHERE tr.member_id = tm.id AND tr.team_id = tm.team_id
+        ORDER BY tr.left_at DESC NULLS FIRST
+        LIMIT 1
+      ) r ON true
       WHERE tm.team_id = $1 AND tm.user_id = $2
     `;
 
@@ -372,6 +384,30 @@ export const getMemberTeamStats = async (req, res) => {
     // РЅРµРѕС„РёС†РёР°Р»СЊРЅС‹Рµ (friendly_pwa/friendly_ext/tournament_ext) вЂ” С‡РµСЂРµР·
     // roster_periods (С‚РѕС‚ Р¶Рµ РєСЂРёС‚РµСЂРёР№, С‡С‚Рѕ Рё Сѓ С‚СЂРµРЅРёСЂРѕРІРѕРє). "РџРѕСЃРµС‚РёР»" (attended)
     // РІ РѕР±РµРёС… РІРµС‚РєР°С… вЂ” РЅР°Р»РёС‡РёРµ СЃС‚СЂРѕРєРё РІ game_rosters, РєР°Рє РґРѕРіРѕРІРѕСЂРёР»РёСЃСЊ СЂР°РЅСЊС€Рµ.
+    // Боксскор игрока в конкретном матче — строка player_game_statistics. Отдаём
+    // СЫРЫЕ колонки по каждому матчу, а не готовую сумму: полная статистика в панели
+    // считается по текущему фильтру матчей, и суммирует её фронт при переключении
+    // фильтра — тем же приёмом (variant Б), что посещаемость и победы/поражения.
+    //
+    // Строки нет вовсе, если игрок не попал в протокол, матч технический или ещё не
+    // пересчитан — тогда has_stats = false и матч в суммы не идёт.
+    //
+    // Фрагменты вынесены в константы: оба рукава UNION ALL обязаны иметь один и тот же
+    // список колонок в одном порядке, а дублировать 18 строк дважды — верный способ
+    // однажды разойтись.
+    const pgsFields = `
+        (pgs.game_id IS NOT NULL) AS has_stats,
+        pgs.is_goalie,
+        pgs.goals, pgs.assists, pgs.points,
+        pgs.plus_count, pgs.minus_count, pgs.plus_minus,
+        pgs.goals_gw, pgs.penalty_minutes, pgs.goals_against_on_penalty,
+        pgs.so_goals, pgs.so_misses,
+        pgs.goalie_shots_against, pgs.goalie_saves, pgs.goalie_goals_against,
+        pgs.goalie_shutout, pgs.goalie_so_against, pgs.goalie_so_saves`;
+
+    const pgsJoin = `
+      LEFT JOIN player_game_statistics pgs ON pgs.game_id = g.id AND pgs.player_id = $2 AND pgs.team_id = $1`;
+
     const matchesQuery = `
       WITH member AS (
         SELECT id AS member_id FROM team_members WHERE team_id = $1 AND user_id = $2
@@ -401,12 +437,13 @@ export const getMemberTeamStats = async (req, res) => {
         END AS opponent_name,
         (gr.id IS NOT NULL) AS attended,
         d.id AS division_id, d.name AS division_name, d.logo_url AS division_logo, s.name AS season_name, l.short_name AS league_name,
-        NULL::int AS ext_tournament_id, NULL::text AS ext_tournament_name, NULL::text AS ext_tournament_logo
+        NULL::int AS ext_tournament_id, NULL::text AS ext_tournament_name, NULL::text AS ext_tournament_logo,
+${pgsFields}
       FROM games g
       JOIN division_periods dp ON dp.division_id = g.division_id
         AND (dp.period_start IS NULL OR g.game_date::date >= dp.period_start)
         AND (dp.period_end IS NULL OR g.game_date::date <= dp.period_end)
-      LEFT JOIN game_rosters gr ON gr.game_id = g.id AND gr.player_id = $2 AND gr.team_id = $1
+      LEFT JOIN game_rosters gr ON gr.game_id = g.id AND gr.player_id = $2 AND gr.team_id = $1${pgsJoin}
       LEFT JOIN divisions d ON g.division_id = d.id
       LEFT JOIN seasons s ON d.season_id = s.id
       LEFT JOIN leagues l ON s.league_id = l.id
@@ -427,10 +464,11 @@ export const getMemberTeamStats = async (req, res) => {
         END AS opponent_name,
         (gr.id IS NOT NULL) AS attended,
         NULL::int AS division_id, NULL::text AS division_name, NULL::text AS division_logo, NULL::text AS season_name, NULL::text AS league_name,
-        et.id AS ext_tournament_id, et.name AS ext_tournament_name, et.logo_url AS ext_tournament_logo
+        et.id AS ext_tournament_id, et.name AS ext_tournament_name, et.logo_url AS ext_tournament_logo,
+${pgsFields}
       FROM games g
       JOIN roster_periods p ON g.game_date >= p.joined_at AND (p.left_at IS NULL OR g.game_date < p.left_at)
-      LEFT JOIN game_rosters gr ON gr.game_id = g.id AND gr.player_id = $2 AND gr.team_id = $1
+      LEFT JOIN game_rosters gr ON gr.game_id = g.id AND gr.player_id = $2 AND gr.team_id = $1${pgsJoin}
       LEFT JOIN team_external_tournaments et ON g.external_tournament_id = et.id
       LEFT JOIN teams t_home ON g.home_team_id = t_home.id
       LEFT JOIN teams t_away ON g.away_team_id = t_away.id
@@ -461,6 +499,10 @@ export const getMemberTeamStats = async (req, res) => {
     const trainingTotal = Number(trainingRes.rows[0]?.total || 0);
     const trainingAttended = Number(trainingRes.rows[0]?.attended || 0);
 
+    // Счётчики боксскора приходят из pg как строки (bigint/numeric) — приводим здесь,
+    // чтобы фронт складывал числа, а не склеивал строки.
+    const num = (v) => Number(v || 0);
+
     const matches = matchesRes.rows.map(row => ({
       gameId: row.id,
       gameDate: row.game_date,
@@ -469,6 +511,27 @@ export const getMemberTeamStats = async (req, res) => {
       oppScore: Number(row.opp_score),
       opponentName: row.opponent_name,
       attended: row.attended,
+      // Личный боксскор игрока в этом матче; null — строки в player_game_statistics нет
+      stats: row.has_stats ? {
+        isGoalie: row.is_goalie,
+        goals: num(row.goals),
+        assists: num(row.assists),
+        points: num(row.points),
+        plusCount: num(row.plus_count),
+        minusCount: num(row.minus_count),
+        plusMinus: num(row.plus_minus),
+        goalsGw: num(row.goals_gw),
+        pim: num(row.penalty_minutes),
+        gaOnPenalty: num(row.goals_against_on_penalty),
+        soGoals: num(row.so_goals),
+        soMisses: num(row.so_misses),
+        goalieShotsAgainst: num(row.goalie_shots_against),
+        goalieSaves: num(row.goalie_saves),
+        goalieGoalsAgainst: num(row.goalie_goals_against),
+        goalieShutout: !!row.goalie_shutout,
+        goalieSoAgainst: num(row.goalie_so_against),
+        goalieSoSaves: num(row.goalie_so_saves)
+      } : null,
       division: row.division_id != null
         ? { id: row.division_id, name: row.division_name, logo: row.division_logo, seasonName: row.season_name, leagueName: row.league_name }
         : null,
