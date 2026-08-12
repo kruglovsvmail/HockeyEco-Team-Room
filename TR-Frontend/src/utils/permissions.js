@@ -240,6 +240,14 @@ export const PERMISSIONS = {
     requiresSubscription: false
   },
 
+  // Составление плана тренировки: добавление упражнений из личной библиотеки,
+  // порядок блоков и публикация плана игрокам. Право то же, что у расстановки —
+  // это работа тренера, подписка не требуется.
+  TRAINING_PLAN_MANAGE: {
+    allowedRoles: [ROLES.CLUB_OWNER, ROLES.OWNER, ROLES.HEAD_COACH, ROLES.COACH],
+    requiresSubscription: false
+  },
+
   // Шеринг расстановки тренировки через системное окно «Поделиться» (Web Share API)
   TRAINING_LINES_SHARE: {
     allowedRoles: [ROLES.CLUB_OWNER, ROLES.OWNER, ROLES.TEAM_MANAGER, ROLES.TEAM_ADMIN, ROLES.HEAD_COACH, ROLES.COACH],
@@ -328,6 +336,13 @@ export const PERMISSIONS = {
   // Расстановка игроков на клубной тренировке (club_formation_training).
   // Строго тренер клуба. Подписка не требуется — как и у тренеров команды.
   CLUB_TRAINING_LINES_MANAGE: {
+    allowedRoles: [ROLES.CLUB_OWNER, ROLES.CLUB_COACH],
+    requiresSubscription: false
+  },
+
+  // План клубной тренировки. Зеркало TRAINING_PLAN_MANAGE в клубном контексте:
+  // строго тренер клуба, подписка не требуется.
+  CLUB_TRAINING_PLAN_MANAGE: {
     allowedRoles: [ROLES.CLUB_OWNER, ROLES.CLUB_COACH],
     requiresSubscription: false
   },

@@ -50,6 +50,9 @@ export function Header({
     if (path.includes('settings')) {
       return 'Настройки';
     }
+    if (path.startsWith('/coach')) {
+      return 'Кабинет тренера';
+    }
     if (path.includes('profile')) {
       return 'Мой профиль';
     }
@@ -105,6 +108,10 @@ export function Header({
 
     // Настройки
     if (path.includes('settings'))
+      return 'bg-surface-base';
+
+    // Кабинет тренера
+    if (path.startsWith('/coach'))
       return 'bg-surface-base';
 
     // Создание события

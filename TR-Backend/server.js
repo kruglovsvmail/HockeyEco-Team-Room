@@ -19,6 +19,7 @@ import pushRoutes from './routes/pushRoutes.js';
 import analyticsRoutes from './routes/analyticsRoutes.js';
 import subscriptionRoutes from './routes/subscriptionRoutes.js';
 import policyRoutes from './routes/policyRoutes.js';
+import drillRoutes from './routes/drillRoutes.js';
 import { processScheduledNotifications, processBirthdays, pollLmsGames } from './services/pushService.js';
 
 // Импорт новых роутов управления командой
@@ -67,6 +68,8 @@ app.use('/api/push', pushRoutes);
 app.use('/api/analytics', analyticsRoutes);
 app.use('/api/subscription', subscriptionRoutes);
 app.use('/api/policy', policyRoutes);
+// Кабинет тренера — личная библиотека упражнений
+app.use('/api/drills', drillRoutes);
 app.use(profileRouter);
 
 // Новые эндпоинты раздела Руководства

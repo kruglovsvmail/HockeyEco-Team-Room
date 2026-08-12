@@ -75,6 +75,23 @@ export function Sidebar({
   // Проверка глобального администратора
   const isGlobalAdmin = user?.globalRole === 'admin' || user?.global_role === 'admin';
 
+  // Кабинет тренера — раздел вне команд и клубов, поэтому и признак доступа считается
+  // не по выбранной команде, а по всем сразу: тренер хотя бы где-то — значит, у него
+  // есть библиотека упражнений. Владельцы идут вместе с тренерами, как и во всей
+  // матрице прав. Бэкенд проверяет то же самое (isCoachAnywhere).
+  const isCoachAnywhere = useMemo(() => {
+    if (isGlobalAdmin) return true;
+
+    const hasTeamCoachRole = teams.some(team =>
+      getRolesForTeam(team).some(role => ['coach', 'head_coach', ROLES.OWNER].includes(role))
+    );
+    if (hasTeamCoachRole) return true;
+
+    return clubs.some(club =>
+      getRolesForClub(club).some(role => [ROLES.CLUB_COACH, ROLES.CLUB_OWNER].includes(role))
+    );
+  }, [teams, clubs, isGlobalAdmin, user?.id]);
+
   // Статус личной подписки пользователя для бейджа над профилем
   const subscriptionStatus = getSubscriptionStatus(user?.subscriptionExpiresAt || user?.subscription_expires_at);
 
@@ -527,6 +544,28 @@ export function Sidebar({
               </div>
             );
           })}
+
+          {/* Кабинет тренера — отделён линией и стоит ниже остальных пунктов.
+              Всё меню выше работает в контексте выбранной команды или клуба, а этот
+              раздел личный: библиотека упражнений одна на все команды тренера. */}
+          {isCoachAnywhere && (
+            <>
+              <div className="h-px bg-surface-border my-2 mx-2" />
+
+              <button
+                onClick={() => handleSafeNavigate('/coach')}
+                className={clsx(
+                  "flex items-center gap-4 px-4 py-3 rounded-xl transition-all outline-none text-left w-full font-bold",
+                  location.pathname === '/coach'
+                    ? 'bg-brand-opacity text-brand font-bold'
+                    : 'text-content-main hover:text-brand'
+                )}
+              >
+                <Icon name="training_tactics" className="w-5 h-5" />
+                <span className="text-[14px] tracking-wider">Кабинет тренера</span>
+              </button>
+            </>
+          )}
 
           {/* Пункт 3: Настройки приложения */}
           <button

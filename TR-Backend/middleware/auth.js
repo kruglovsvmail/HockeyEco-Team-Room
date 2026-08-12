@@ -1,7 +1,7 @@
 import jwt from 'jsonwebtoken';
 import pool from '../config/db.js';
 import { ROLES, PERMISSIONS } from '../utils/permissions.js';
-import { checkClubPermissionInternal, isClubEventType } from '../utils/checkPermission.js';
+import { checkClubPermissionInternal, isClubEventType, isCoachAnywhere } from '../utils/checkPermission.js';
 
 // Троттлинг в памяти процесса: last_seen_at обновляется не чаще раза в LAST_SEEN_THROTTLE_MS
 // на пользователя, чтобы не писать в БД на каждый авторизованный запрос подряд.
@@ -236,6 +236,30 @@ export const requireClubPermission = (permissionKey) => async (req, res, next) =
     next();
   } catch (err) {
     console.error('[RBAC Club Error]:', err);
+    res.status(500).json({ message: 'Ошибка проверки прав' });
+  }
+};
+
+/**
+ * Внеконтекстная проверка для Кабинета тренера: библиотека упражнений личная и не
+ * принадлежит ни команде, ни клубу, поэтому ни teamId, ни clubId в запросе нет и
+ * requireTeamPermission/requireClubPermission здесь неприменимы. Пропускаем всех,
+ * у кого есть тренерская роль хотя бы в одном месте системы.
+ */
+export const requireCoach = async (req, res, next) => {
+  try {
+    const userId = req.user?.id;
+    if (!userId) {
+      return res.status(401).json({ message: 'Пользователь не идентифицирован' });
+    }
+
+    if (!(await isCoachAnywhere(userId))) {
+      return res.status(403).json({ message: 'Раздел доступен только тренерам' });
+    }
+
+    next();
+  } catch (err) {
+    console.error('[RBAC Coach Error]:', err);
     res.status(500).json({ message: 'Ошибка проверки прав' });
   }
 };

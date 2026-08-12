@@ -12,6 +12,7 @@ import {
   deleteTraining,
 } from '../controllers/TrainingController.js';
 import { getTrainingLines, saveTrainingLines } from '../controllers/TrainingLinesController.js';
+import { getTrainingPlan, saveTrainingPlan, setPlanPublished } from '../controllers/TrainingPlanController.js';
 import { uploadTrainingFormationImage } from '../controllers/FormationImageController.js';
 import upload from '../config/upload.js';
 import { verifyToken, requireEventPermission } from '../middleware/auth.js';
@@ -62,6 +63,16 @@ router.delete('/:eventId', verifyToken, requireEventPermission('TRAINING_DELETE'
 
 router.get('/:eventId/lines', verifyToken, requireEventPermission('INTERNAL_VIEW', 'INTERNAL_VIEW'), getTrainingLines);
 router.post('/:eventId/lines', verifyToken, requireEventPermission('TRAINING_LINES_MANAGE', 'CLUB_TRAINING_LINES_MANAGE'), saveTrainingLines);
+
+// ==========================================
+// 📋 ПЛАН ТРЕНИРОВКИ
+// Список упражнений из личной библиотеки тренера. Читать план может любой, кто видит
+// карточку события, но неопубликованный черновик контроллер отдаёт только тренерам.
+// ==========================================
+
+router.get('/:eventId/plan', verifyToken, requireEventPermission('INTERNAL_VIEW', 'INTERNAL_VIEW'), getTrainingPlan);
+router.post('/:eventId/plan', verifyToken, requireEventPermission('TRAINING_PLAN_MANAGE', 'CLUB_TRAINING_PLAN_MANAGE'), saveTrainingPlan);
+router.put('/:eventId/plan/published', verifyToken, requireEventPermission('TRAINING_PLAN_MANAGE', 'CLUB_TRAINING_PLAN_MANAGE'), setPlanPublished);
 
 // Загрузить/перезаписать картинку расстановки в S3 (генерируется на клиенте после сохранения).
 // eventType и контекст приходят в query — тело здесь multipart и до multer недоступно.

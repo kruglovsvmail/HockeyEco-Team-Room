@@ -68,6 +68,7 @@ export const getSettings = async (req, res) => {
          COALESCE(ns.schedule, true) AS schedule,
          COALESCE(ns.attendance, true) AS attendance,
          COALESCE(ns.lines, true) AS lines,
+         COALESCE(ns.training_plan, true) AS training_plan,
          COALESCE(ns.tournaments, true) AS tournaments,
          COALESCE(ns.friendly, true) AS friendly,
          COALESCE(ns.team_news, true) AS team_news,
@@ -101,19 +102,19 @@ export const getSettings = async (req, res) => {
 export const updateSettings = async (req, res) => {
   try {
     const userId = req.user.id;
-    const { teamId, enabled, schedule, attendance, lines, tournaments, friendly, team_news, admin } = req.body;
+    const { teamId, enabled, schedule, attendance, lines, training_plan, tournaments, friendly, team_news, admin } = req.body;
 
     if (!teamId) {
       return res.status(400).json({ success: false, error: 'teamId обязателен' });
     }
 
     await pool.query(
-      `INSERT INTO notification_settings (user_id, team_id, enabled, schedule, attendance, lines, tournaments, friendly, team_news, admin)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+      `INSERT INTO notification_settings (user_id, team_id, enabled, schedule, attendance, lines, training_plan, tournaments, friendly, team_news, admin)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
        ON CONFLICT (user_id, team_id) DO UPDATE SET
-         enabled = $3, schedule = $4, attendance = $5, lines = $6,
-         tournaments = $7, friendly = $8, team_news = $9, admin = $10`,
-      [userId, teamId, enabled, schedule, attendance, lines, tournaments, friendly, team_news, admin]
+         enabled = $3, schedule = $4, attendance = $5, lines = $6, training_plan = $7,
+         tournaments = $8, friendly = $9, team_news = $10, admin = $11`,
+      [userId, teamId, enabled, schedule, attendance, lines, training_plan, tournaments, friendly, team_news, admin]
     );
 
     res.json({ success: true });

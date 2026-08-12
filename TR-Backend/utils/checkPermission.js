@@ -160,6 +160,49 @@ export async function checkPermissionInternal(userId, teamId, permissionKey, cli
 }
 
 /**
+ * Есть ли у пользователя тренерская роль ХОТЬ ГДЕ-НИБУДЬ.
+ *
+ * Особый случай в системе прав: библиотека упражнений личная, она не принадлежит ни
+ * команде, ни клубу, поэтому контекста для обычной проверки просто нет. Ключ в матрице
+ * PERMISSIONS завести нельзя — там всё построено вокруг teamId/clubId.
+ *
+ * Владельцы команд и клубов проходят наравне с тренерами: по всей матрице прав они
+ * идут вместе с ними, и вести тренировки владелец имеет полное право. Подписка не
+ * требуется — как и у остальных тренерских разделов (TRAINING_LINES_MANAGE).
+ *
+ * @param {number} userId - ID пользователя
+ * @param {object} client - Клиент пула подключений (по умолчанию pool)
+ * @returns {boolean} true если человек тренер (или владелец) хотя бы в одном месте
+ */
+export async function isCoachAnywhere(userId, client = pool) {
+  if (!userId) return false;
+
+  const res = await client.query(`
+    SELECT 1 WHERE EXISTS (
+      SELECT 1 FROM users WHERE id = $1 AND global_role = 'admin'
+      UNION ALL
+      -- Тренер команды: активная роль при активном членстве
+      SELECT 1 FROM team_roles tr
+      JOIN team_members tm ON tm.id = tr.member_id
+      WHERE tm.user_id = $1 AND tr.role IN ('coach', 'head_coach')
+        AND tr.left_at IS NULL AND tm.left_at IS NULL
+      UNION ALL
+      -- Тренер клуба: активная роль при активном членстве в клубе
+      SELECT 1 FROM club_roles cr
+      JOIN club_members cm ON cm.club_id = cr.club_id AND cm.user_id = cr.user_id
+      WHERE cr.user_id = $1 AND cr.role = 'coach'
+        AND cr.left_at IS NULL AND cm.left_at IS NULL
+      UNION ALL
+      SELECT 1 FROM teams WHERE owner_id = $1
+      UNION ALL
+      SELECT 1 FROM clubs WHERE owner_id = $1
+    )
+  `, [userId]);
+
+  return res.rowCount > 0;
+}
+
+/**
  * Клубный аналог checkPermissionInternal: контекст — клуб, а не команда.
  * Используется клубными экранами и клубными событиями (club_training, club_meeting).
  *

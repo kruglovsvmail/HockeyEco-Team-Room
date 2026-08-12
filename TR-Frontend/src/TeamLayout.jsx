@@ -26,6 +26,15 @@ const EditEventPanel = lazy(() =>
   import('./components/EventDetails/EditEventPanel').then(m => ({ default: m.EditEventPanel }))
 );
 
+// Панели Кабинета тренера. Ленивые: тактическая доска тянет за собой сцену и
+// проигрыватель, а большинству пользователей раздел вообще недоступен.
+const DrillEditor = lazy(() =>
+  import('./components/CoachCabinet/DrillEditor').then(m => ({ default: m.DrillEditor }))
+);
+const CoachSettingsPanel = lazy(() =>
+  import('./components/CoachCabinet/CoachSettingsPanel').then(m => ({ default: m.CoachSettingsPanel }))
+);
+
 import { ArenaSelector } from './components/Manager/ArenaSelector';
 import { OpponentSelectorFriendly } from './components/Manager/OpponentSelectorFriendly';
 import { ExternalTournamentSelector } from './components/Manager/ExternalTournamentSelector';
@@ -623,7 +632,7 @@ function TeamLayoutContent() {
           <Outlet context={{
             user, teams, selectedTeam, handleTeamChange,
             clubs, selectedClub, handleClubChange,
-            openRightPanel, pushRightPanel, openPanel100, registerHeaderEdit,
+            openRightPanel, pushRightPanel, openPanel100, closePanel100, registerHeaderEdit,
             onTeamUpdated: (updatedTeam) => {
               setSelectedTeam(prev => ({ ...prev, ...updatedTeam }));
               setTeams(prev => prev.map(t => t.id === updatedTeam.id ? { ...t, ...updatedTeam } : t));
@@ -712,6 +721,11 @@ function TeamLayoutContent() {
                     )}
                     {rightPanel.type === 'clubStats' && (
                       <ClubStatsPanel data={rightPanel.data} />
+                    )}
+                    {rightPanel.type === 'coachSettings' && (
+                      <Suspense fallback={<PageLoader />}>
+                        <CoachSettingsPanel />
+                      </Suspense>
                     )}
                     {rightPanel.type === 'editClubProfile' && (
                       <EditClubProfilePanel {...rightPanel.data} onClose={closeRightPanel} />
@@ -832,6 +846,16 @@ function TeamLayoutContent() {
             <FadeIn className="h-full w-full bg-surface-level2">
               {panel100.type === 'tournamentGameDetails' && (
                 <TournamentGamePanel data={panel100.data} openRightPanel={openRightPanel} />
+              )}
+              {panel100.type === 'drillDetails' && (
+                <Suspense fallback={<PageLoader />}>
+                  <DrillEditor
+                    drillId={panel100.data?.drillId || null}
+                    onClose={closePanel100}
+                    onSaved={panel100.data?.onSaved}
+                    onNotify={panel100.data?.onNotify}
+                  />
+                </Suspense>
               )}
             </FadeIn>
           )}

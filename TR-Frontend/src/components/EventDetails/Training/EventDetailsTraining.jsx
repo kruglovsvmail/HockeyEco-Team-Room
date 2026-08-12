@@ -25,11 +25,20 @@ const TrainingAttendance = lazy(() =>
 const TrainingLines = lazy(() =>
   import('./TrainingLines').then(m => ({ default: m.TrainingLines }))
 );
+const TrainingPlan = lazy(() =>
+  import('./TrainingPlan').then(m => ({ default: m.TrainingPlan }))
+);
 
 const TRAINING_TABS = [
   { id: 'attendance', label: 'Отметки' },
   { id: 'lines',     label: 'Формация' },
+  { id: 'plan',      label: 'План' },
 ];
+
+// Ширина ленты вкладок и шаг сдвига считаются от их количества: добавление вкладки
+// не должно требовать правки магических процентов в двух местах
+const TABS_TRACK_WIDTH = `${TRAINING_TABS.length * 100}%`;
+const TAB_PANE_WIDTH = `${100 / TRAINING_TABS.length}%`;
 
 // Высота контейнера 1 (text-[30px]=30) = 30px
 const HEADER_1_HEIGHT = 50;
@@ -364,7 +373,7 @@ export const EventDetailsTraining = ({ event, openRightPanel }) => {
   const arenaName = localEvent?.arena_name || 'Место не указано';
 
   const tabIndex = TRAINING_TABS.findIndex(t => t.id === activeTab);
-  const translateX = `-${tabIndex * 50}%`;
+  const translateX = `-${(tabIndex * 100) / TRAINING_TABS.length}%`;
 
   return (
     <div
@@ -524,13 +533,13 @@ export const EventDetailsTraining = ({ event, openRightPanel }) => {
           <PageLoader />
         ) : (
           <div
-            className="flex w-[200%] transition-transform duration-500 ease-[cubic-bezier(0.32,0.72,0,1)] items-start"
-            style={{ transform: `translateX(${translateX})` }}
+            className="flex transition-transform duration-500 ease-[cubic-bezier(0.32,0.72,0,1)] items-start"
+            style={{ width: TABS_TRACK_WIDTH, transform: `translateX(${translateX})` }}
           >
             {/* Вкладка: Отметки */}
             <div
-              className="w-1/2 shrink-0 transition-opacity duration-500"
-              style={{ opacity: activeTab === 'attendance' ? 1 : 0 }}
+              className="shrink-0 transition-opacity duration-500"
+              style={{ width: TAB_PANE_WIDTH, opacity: activeTab === 'attendance' ? 1 : 0 }}
             >
               <Suspense fallback={<PageLoader />}>
                 {activeTab === 'attendance' && (
@@ -550,8 +559,8 @@ export const EventDetailsTraining = ({ event, openRightPanel }) => {
 
             {/* Вкладка: Расстановка */}
             <div
-              className="w-1/2 shrink-0 transition-opacity duration-500"
-              style={{ opacity: activeTab === 'lines' ? 1 : 0 }}
+              className="shrink-0 transition-opacity duration-500"
+              style={{ width: TAB_PANE_WIDTH, opacity: activeTab === 'lines' ? 1 : 0 }}
             >
               <Suspense fallback={<PageLoader />}>
                 {activeTab === 'lines' && (
@@ -563,6 +572,20 @@ export const EventDetailsTraining = ({ event, openRightPanel }) => {
                       initialFormationFile={formationFile}
                       refreshData={fetchAllTrainingData}
                     />
+                  </FadeIn>
+                )}
+              </Suspense>
+            </div>
+
+            {/* Вкладка: План — упражнения из личной библиотеки тренера */}
+            <div
+              className="shrink-0 transition-opacity duration-500"
+              style={{ width: TAB_PANE_WIDTH, opacity: activeTab === 'plan' ? 1 : 0 }}
+            >
+              <Suspense fallback={<PageLoader />}>
+                {activeTab === 'plan' && (
+                  <FadeIn>
+                    <TrainingPlan event={localEvent} />
                   </FadeIn>
                 )}
               </Suspense>
