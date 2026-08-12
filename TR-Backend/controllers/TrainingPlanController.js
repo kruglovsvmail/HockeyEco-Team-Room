@@ -79,25 +79,41 @@ export const getTrainingPlan = async (req, res) => {
         p.position,
         p.drill_id,
         p.drill_name,
-        p.created_at AS added_at,
         d.name        AS live_name,
         d.description,
         d.rink_type,
         d.board_json,
         d.board_enabled,
-        (d.id IS NOT NULL)                     AS drill_exists,
-        (d.content_updated_at <= p.created_at) AS content_untouched
+        (d.id IS NOT NULL) AS drill_exists,
+        (s.id IS NOT NULL) AS has_snapshot,
+        s.description   AS snapshot_description,
+        s.rink_type     AS snapshot_rink_type,
+        s.board_json    AS snapshot_board_json,
+        s.board_enabled AS snapshot_board_enabled
       FROM ${planTable} p
       LEFT JOIN drills d ON d.id = p.drill_id
+      LEFT JOIN drill_snapshots s ON s.id = p.drill_snapshot_id
       WHERE p.${eventColumn} = $1
       ORDER BY p.position
     `, [eventId]);
 
     const items = rows.map(row => {
-      const detailsAvailable = row.drill_exists && (!training.is_past || row.content_untouched);
+      // Слепок снимается перед правкой или удалением упражнения и с этого момента
+      // главнее библиотеки: он и есть то, что команда реально отрабатывала. Живёт
+      // отдельной строкой, общей для всех тренировок, замороженных одной правкой.
+      const frozen = row.has_snapshot ? {
+        description: row.snapshot_description,
+        rink_type: row.snapshot_rink_type,
+        board_json: row.snapshot_board_json,
+        board_enabled: row.snapshot_board_enabled,
+      } : null;
+
+      const source = frozen || (row.drill_exists ? row : null);
+      const detailsAvailable = !!source;
+
       // Планшет отдаём, только если тренер оставил его включённым: схема у упражнения
       // есть всегда, но показывать её команде — отдельное решение
-      const showBoard = detailsAvailable && row.board_enabled;
+      const showBoard = detailsAvailable && source.board_enabled !== false;
 
       return {
         id: row.id,
@@ -107,9 +123,9 @@ export const getTrainingPlan = async (req, res) => {
         // история есть история. Предстоящая живёт вместе с библиотекой.
         name: training.is_past ? row.drill_name : (row.live_name || row.drill_name),
         details_available: detailsAvailable,
-        description: detailsAvailable ? row.description : null,
-        rink_type:   showBoard ? row.rink_type  : null,
-        board_json:  showBoard ? row.board_json : null,
+        description: detailsAvailable ? source.description : null,
+        rink_type:   showBoard ? source.rink_type  : null,
+        board_json:  showBoard ? source.board_json : null,
       };
     });
 

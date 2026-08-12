@@ -1,4 +1,4 @@
-import React, { useState, useRef, useMemo, useCallback } from 'react';
+import React, { useState, useRef, useMemo, useCallback, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import clsx from 'clsx';
 import { Icon } from '../../ui/Icon';
@@ -15,6 +15,9 @@ import {
   outerViewBox,
   sampleAlongPathWithLead,
   simplifyPath,
+  interpolatePositions,
+  frameTransitionMs,
+  FRAME_HOLD_MS,
   FRAME_SPEEDS,
   PUCK_LEAD_M,
   nextId,
@@ -69,6 +72,15 @@ export function BoardEditor({ scene: rawScene, rinkType = 'full', onChange }) {
   const [draft, setDraft] = useState(null);   // рисуемая прямо сейчас линия
   const [drag, setDrag] = useState(null);     // фишка, которую тащат прямо сейчас
   const [armed, setArmed] = useState(null);   // выбранное действие: { objId, kind }
+  // Проигрывание прямо в планшете: проверять анимацию, выходя из редактора и заходя
+  // обратно, — единственный способ, который был раньше, и он никуда не годится.
+  // Позиции на время проигрывания подменяются интерполяцией, а сам редактор остаётся
+  // на месте: своих органов управления у проигрывания нет, только кнопка в ленте кадров.
+  const [isPlaying, setIsPlaying] = useState(false);
+  const [elapsed, setElapsed] = useState(0);
+  const elapsedRef = useRef(0);
+  const rafRef = useRef(null);
+  const frameBeforePlay = useRef(0);
 
   const rinkRef = useRef(null);
   const boardRef = useRef(null);
@@ -130,6 +142,82 @@ export function BoardEditor({ scene: rawScene, rinkType = 'full', onChange }) {
       areaWidth: portal.offsetWidth,
       areaHeight: portal.offsetHeight,
     };
+  };
+
+  // ── Проигрывание ─────────────────────────────────────────────────────────
+  //
+  // Своей раскладки у просмотра нет: редактор остаётся на месте, подменяются только
+  // позиции фишек и подсветка кадра. Переходы разной длительности, поэтому позицию во
+  // времени ищем по накопленным началам отрезков — как в проигрывателе упражнения.
+  const timeline = useMemo(() => {
+    const starts = [0];
+    for (let i = 0; i < scene.frames.length - 1; i++) {
+      starts.push(starts[i] + FRAME_HOLD_MS + frameTransitionMs(scene.frames[i]));
+    }
+    return starts;
+  }, [scene]);
+
+  const totalMs = scene.frames.length > 1
+    ? timeline[scene.frames.length - 1] + FRAME_HOLD_MS
+    : 0;
+
+  const setTime = useCallback((ms) => {
+    elapsedRef.current = ms;
+    setElapsed(ms);
+  }, []);
+
+  useEffect(() => {
+    if (!isPlaying) return;
+    let lastTs = null;
+
+    const tick = (ts) => {
+      if (lastTs === null) lastTs = ts;
+      const next = elapsedRef.current + (ts - lastTs);
+      lastTs = ts;
+
+      if (next >= totalMs) {
+        setIsPlaying(false);
+        // Возвращаемся туда, откуда запускали: просмотр не должен уводить тренера
+        // на последний кадр и заставлять листать обратно
+        setFrameIndex(frameBeforePlay.current);
+        setTime(0);
+        return;
+      }
+
+      setTime(next);
+      rafRef.current = requestAnimationFrame(tick);
+    };
+
+    rafRef.current = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(rafRef.current);
+  }, [isPlaying, totalMs, setTime]);
+
+  const playback = useMemo(() => {
+    if (!isPlaying || scene.frames.length < 2) return null;
+
+    let index = 0;
+    while (index < scene.frames.length - 1 && elapsed >= timeline[index + 1]) index++;
+    if (index >= scene.frames.length - 1) return { index: scene.frames.length - 1, t: 0 };
+
+    const rest = elapsed - timeline[index];
+    const transition = frameTransitionMs(scene.frames[index]);
+    return { index, t: rest <= FRAME_HOLD_MS ? 0 : Math.min(1, (rest - FRAME_HOLD_MS) / transition) };
+  }, [isPlaying, elapsed, timeline, scene]);
+
+  const togglePlay = () => {
+    if (isPlaying) {
+      setIsPlaying(false);
+      setFrameIndex(frameBeforePlay.current);
+      setTime(0);
+      return;
+    }
+
+    frameBeforePlay.current = safeIndex;
+    setSelectedId(null);
+    setArmed(null);
+    closeMenu();
+    setTime(0);
+    setIsPlaying(true);
   };
 
   // ── Фишки ────────────────────────────────────────────────────────────────
@@ -503,12 +591,29 @@ export function BoardEditor({ scene: rawScene, rinkType = 'full', onChange }) {
 
   // Позиция тащимой фишки подмешивается только в отрисовку: в сцену она попадёт
   // на pointerup, поэтому во время жеста ни сцена, ни форма упражнения не трогаются.
-  const renderPositions = drag ? { ...positions, [drag.objId]: drag.point } : positions;
+  const renderPositions = playback
+    ? interpolatePositions(scene, playback.index, playback.t, rinkType)
+    : (drag ? { ...positions, [drag.objId]: drag.point } : positions);
 
-  const shapeLayers = [
-    { key: currentFrame.id, shapes: currentFrame.shapes, opacity: 1 },
-    ...(draft ? [{ key: 'draft', shapes: [draft], opacity: 0.6 }] : []),
-  ];
+  const shapeLayers = playback
+    ? (() => {
+        const current = scene.frames[playback.index];
+        if (playback.t === 0 || playback.index >= scene.frames.length - 1) {
+          return [{ key: current.id, shapes: current.shapes, opacity: 1 }];
+        }
+        const next = scene.frames[playback.index + 1];
+        return [
+          { key: current.id, shapes: current.shapes, opacity: 1 - playback.t },
+          { key: next.id,    shapes: next.shapes,    opacity: playback.t },
+        ];
+      })()
+    : [
+        { key: currentFrame.id, shapes: currentFrame.shapes, opacity: 1 },
+        ...(draft ? [{ key: 'draft', shapes: [draft], opacity: 0.6 }] : []),
+      ];
+
+  // Подсветка кадра во время проигрывания идёт за анимацией
+  const activeIndex = playback ? playback.index : safeIndex;
 
   const board = outerViewBox(rinkType);
   const isMenuVisible = !!(selectedObject && menuPos && !drag && !armed);
@@ -552,7 +657,7 @@ export function BoardEditor({ scene: rawScene, rinkType = 'full', onChange }) {
                 onClick={() => { setFrameIndex(index); setArmed(null); closeMenu(); }}
                 className={clsx(
                   'w-10 h-10 rounded-xl text-[14px] font-black transition-all outline-none',
-                  index === safeIndex
+                  index === activeIndex
                     ? 'bg-brand text-white'
                     // Невыбранные обводим: на фоне шапки заливка почти сливается с ней,
                     // и без контура кадры не читались бы как отдельные кнопки
@@ -561,7 +666,7 @@ export function BoardEditor({ scene: rawScene, rinkType = 'full', onChange }) {
               >
                 {index + 1}
               </button>
-              {index === safeIndex && scene.frames.length > 1 && (
+              {index === safeIndex && !isPlaying && scene.frames.length > 1 && (
                 <button
                   onClick={() => removeFrame(index)}
                   className="absolute -top-1.5 -right-1.5 w-5 h-5 rounded-full bg-danger text-white flex items-center justify-center outline-none"
@@ -580,6 +685,17 @@ export function BoardEditor({ scene: rawScene, rinkType = 'full', onChange }) {
           >
             <Icon name="plus" className="w-4 h-4" />
           </button>
+
+          {/* Проигрывание прямо в планшете. Появляется, когда есть что проигрывать */}
+          {scene.frames.length > 1 && (
+            <button
+              onClick={togglePlay}
+              className="shrink-0 w-10 h-10 ml-auto text-brand flex items-center justify-center active:scale-90 transition-transform outline-none"
+              aria-label={isPlaying ? 'Остановить' : 'Проиграть'}
+            >
+              <Icon name={isPlaying ? 'stop' : 'play'} className="w-7 h-7" />
+            </button>
+          )}
         </div>
 
         {/* ── Каток ──
@@ -601,8 +717,8 @@ export function BoardEditor({ scene: rawScene, rinkType = 'full', onChange }) {
             positions={renderPositions}
             shapeLayers={shapeLayers}
             selectedId={selectedId}
-            lockTouch={!!selectedId || !!armed || !!drag}
-            onSurfacePointerDown={handleSurfacePointerDown}
+            lockTouch={!isPlaying && (!!selectedId || !!armed || !!drag)}
+            onSurfacePointerDown={isPlaying ? undefined : handleSurfacePointerDown}
           />
 
         </div>

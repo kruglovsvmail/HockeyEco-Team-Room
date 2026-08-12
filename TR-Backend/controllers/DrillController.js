@@ -59,6 +59,81 @@ const normalizeDrillInput = (body) => {
   return { name, description, rinkType, boardJson, boardEnabled, tags };
 };
 
+/**
+ * Заморозка упражнения в планах тренировок.
+ *
+ * Пункт плана ссылается на упражнение, а не копирует его: одно и то же упражнение
+ * тренер гоняет весь сезон, и хранить его сцену заново на каждой тренировке значило бы
+ * платить гигабайтами за копии одного и того же. Но проведённая тренировка не должна
+ * терять содержание из-за того, что упражнение потом переделали, — поэтому копия
+ * снимается ровно в тот момент, когда упражнение собираются изменить или удалить,
+ * и только там, где её ещё нет.
+ *
+ * Снимок один на всю правку, а не на каждую тренировку: упражнение, стоявшее в тридцати
+ * проведённых тренировках, даёт одну строку в drill_snapshots и тридцать ссылок на неё.
+ * Иначе объём рос бы от того, как часто команды тренируются, а не от того, как часто
+ * тренеры правят упражнения.
+ *
+ * Замораживаются только проведённые тренировки — и при правке, и при удалении.
+ * Предстоящие остаются на ссылке и живут вместе с библиотекой: правку упражнения они
+ * подхватывают, а при удалении пункт из них просто уходит (см. removeFuturePlanItems).
+ */
+const PLAN_SCOPES = [
+  ['team_training_plan', 'team_training_id', 'team_training'],
+  ['club_training_plan', 'club_training_id', 'club_training'],
+];
+
+const freezePlanSnapshots = async (client, drillId) => {
+  const created = await client.query(`
+    INSERT INTO drill_snapshots (drill_id, description, rink_type, board_json, board_enabled)
+    SELECT id, description, rink_type, board_json, board_enabled FROM drills WHERE id = $1
+    RETURNING id
+  `, [drillId]);
+  if (created.rows.length === 0) return;
+
+  const snapshotId = created.rows[0].id;
+  let linked = 0;
+
+  for (const [planTable, eventColumn, eventTable] of PLAN_SCOPES) {
+    const res = await client.query(`
+      UPDATE ${planTable} p
+      SET drill_snapshot_id = $2
+      FROM ${eventTable} t
+      WHERE p.drill_id = $1
+        AND t.id = p.${eventColumn}
+        AND p.drill_snapshot_id IS NULL
+        AND t.training_date < now()
+    `, [drillId, snapshotId]);
+    linked += res.rowCount;
+  }
+
+  // Замораживать было нечего: упражнение либо ещё не проводили, либо все прошедшие
+  // тренировки уже со слепками. Пустой снимок в базе не оставляем.
+  if (linked === 0) {
+    await client.query('DELETE FROM drill_snapshots WHERE id = $1', [snapshotId]);
+  }
+};
+
+/**
+ * Снятие удалённого упражнения с планов предстоящих тренировок.
+ *
+ * Оставлять от него одно название незачем: тренер удалил упражнение сам и об этом
+ * знает, а пустая строка в плане будущей тренировки только сбивала бы команду.
+ * Дырки в position не мешают — он нужен лишь для сортировки, и следующее сохранение
+ * плана перенумерует пункты подряд.
+ */
+const removeFuturePlanItems = async (client, drillId) => {
+  for (const [planTable, eventColumn, eventTable] of PLAN_SCOPES) {
+    await client.query(`
+      DELETE FROM ${planTable} p
+      USING ${eventTable} t
+      WHERE p.drill_id = $1
+        AND t.id = p.${eventColumn}
+        AND t.training_date >= now()
+    `, [drillId]);
+  }
+};
+
 // Меняется ли содержимое упражнения — то, ради чего закрываются детали в прошедших
 // тренировках. Переименование и смена тегов сюда намеренно не входят: обидно закрыть
 // всю историю из-за того, что тренер добавил тег.
@@ -201,14 +276,19 @@ export const createDrill = async (req, res) => {
 // =============================================================================
 // РЕДАКТИРОВАНИЕ УПРАЖНЕНИЯ
 //
-// content_updated_at двигаем только при смене содержимого. По нему решается, открыть
-// ли детали упражнения в прошедшей тренировке: если тренер переделал упражнение после
-// того, как оно было проведено, показывать новую версию под старой датой нельзя.
+// Перед записью замораживаем упражнение в планах уже проведённых тренировок: там
+// должно остаться то, что команда реально отрабатывала, а не новая редакция. Планы
+// предстоящих тренировок следуют за библиотекой — в этом и смысл ссылки.
+//
+// content_updated_at двигаем только при смене содержимого. Для показа он больше не
+// используется (эту роль забрал слепок), но остаётся честной отметкой «когда упражнение
+// правили по существу», в отличие от updated_at, который дёргается и от переименования.
 //
 // Любое сохранение получателем подарка стирает отметку об отправителе: с этого момента
 // упражнение его собственное.
 // =============================================================================
 export const updateDrill = async (req, res) => {
+  const client = await pool.connect();
   try {
     const { drillId } = req.params;
     const userId = req.user.id;
@@ -218,7 +298,7 @@ export const updateDrill = async (req, res) => {
       return res.status(400).json({ success: false, error: input.error });
     }
 
-    const current = await pool.query(
+    const current = await client.query(
       'SELECT description, rink_type, board_json, board_enabled FROM drills WHERE id = $1 AND author_user_id = $2',
       [drillId, userId]
     );
@@ -228,7 +308,13 @@ export const updateDrill = async (req, res) => {
 
     const contentChanged = isContentChanged(current.rows[0], input);
 
-    const { rows } = await pool.query(`
+    await client.query('BEGIN');
+
+    // Слепок снимаем до записи и в одной транзакции с ней: иначе сбой между двумя
+    // запросами оставил бы прошедшую тренировку с новой редакцией упражнения
+    if (contentChanged) await freezePlanSnapshots(client, drillId);
+
+    const { rows } = await client.query(`
       UPDATE drills SET
         name = $3,
         description = $4,
@@ -253,35 +339,51 @@ export const updateDrill = async (req, res) => {
       contentChanged,
     ]);
 
+    await client.query('COMMIT');
     res.json({ success: true, drill: rows[0] });
   } catch (err) {
+    await client.query('ROLLBACK');
     console.error('Ошибка сохранения упражнения:', err);
     res.status(500).json({ success: false, error: 'Ошибка сервера' });
+  } finally {
+    client.release();
   }
 };
 
 // =============================================================================
 // УДАЛЕНИЕ УПРАЖНЕНИЯ
 //
-// Планы прошедших тренировок это не ломает: там лежит копия названия, а ссылка
-// на упражнение гасится в NULL (ON DELETE SET NULL). Список плана читается
-// по-прежнему, недоступными становятся только детали.
+// Перед удалением упражнение замораживается в планах уже проведённых тренировок —
+// там должно остаться то, что команда отрабатывала. Из планов предстоящих пункт
+// удаляется совсем: тренер убрал упражнение сам и об этом знает. Ссылка у прошедших
+// после удаления гасится в NULL (ON DELETE SET NULL), содержание берётся из слепка.
 // =============================================================================
 export const deleteDrill = async (req, res) => {
+  const client = await pool.connect();
   try {
-    const result = await pool.query(
-      'DELETE FROM drills WHERE id = $1 AND author_user_id = $2',
-      [req.params.drillId, req.user.id]
-    );
+    const { drillId } = req.params;
 
-    if (result.rowCount === 0) {
+    const owned = await client.query(
+      'SELECT id FROM drills WHERE id = $1 AND author_user_id = $2',
+      [drillId, req.user.id]
+    );
+    if (owned.rowCount === 0) {
       return res.status(404).json({ success: false, error: 'Упражнение не найдено' });
     }
 
+    await client.query('BEGIN');
+    await freezePlanSnapshots(client, drillId);
+    await removeFuturePlanItems(client, drillId);
+    await client.query('DELETE FROM drills WHERE id = $1', [drillId]);
+    await client.query('COMMIT');
+
     res.json({ success: true });
   } catch (err) {
+    await client.query('ROLLBACK');
     console.error('Ошибка удаления упражнения:', err);
     res.status(500).json({ success: false, error: 'Ошибка сервера' });
+  } finally {
+    client.release();
   }
 };
 

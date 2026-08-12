@@ -32,7 +32,7 @@ const TrainingPlan = lazy(() =>
 const TRAINING_TABS = [
   { id: 'attendance', label: 'Отметки' },
   { id: 'lines',     label: 'Формация' },
-  { id: 'plan',      label: 'План' },
+  { id: 'plan',      label: 'Сценарий' },
 ];
 
 // Ширина ленты вкладок и шаг сдвига считаются от их количества: добавление вкладки
