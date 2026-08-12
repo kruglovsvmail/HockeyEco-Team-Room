@@ -51,50 +51,25 @@ export function RinkSvg() {
     <g>
       <defs>
         {/* ── Фактура льда ──
-            Рисуется фильтрами, а не картинкой: лишний файл ради фона планшета грузить
-            незачем, а шум масштабируется под любой размер доски без потери резкости.
-            Слои считаются один раз и дальше кэшируются браузером — их атрибуты
-            неизменны, и React к ним не притрагивается на перерисовках сцены. */}
+            Только градиенты: они рисуются видеокартой и ничего не стоят. Шум и
+            царапины через feTurbulence выглядели живее, но пересчитывались на каждый
+            кадр анимации и перетаскивания — планшет заметно тормозил. */}
         <linearGradient id={ref('iceBase')} x1="0" y1="0" x2="0.6" y2="1">
-          <stop offset="0" stopColor="#eaf1fa" />
-          <stop offset="0.45" stopColor="#f8fbff" />
-          <stop offset="1" stopColor="#e3ebf6" />
+          <stop offset="0" stopColor="#e8f0fa" />
+          <stop offset="0.45" stopColor="#f9fcff" />
+          <stop offset="1" stopColor="#e1eaf6" />
         </linearGradient>
 
-        <radialGradient id={ref('iceSheen')} cx="0.42" cy="0.32" r="0.75">
-          <stop offset="0" stopColor="#ffffff" stopOpacity="0.55" />
+        <radialGradient id={ref('iceSheen')} cx="0.4" cy="0.28" r="0.7">
+          <stop offset="0" stopColor="#ffffff" stopOpacity="0.65" />
           <stop offset="1" stopColor="#ffffff" stopOpacity="0" />
         </radialGradient>
 
-        {/* Мелкое зерно: без него лёд выглядит пластиковым */}
-        <filter id={ref('iceGrain')} x="-5%" y="-5%" width="110%" height="110%" colorInterpolationFilters="sRGB">
-          <feTurbulence type="fractalNoise" baseFrequency="13" numOctaves="4" seed="11" />
-          <feColorMatrix type="matrix" values="0 0 0 0 0.44
-                                               0 0 0 0 0.52
-                                               0 0 0 0 0.63
-                                               0.4 0.4 0.4 0 -0.14" />
-        </filter>
-
-        {/* Следы коньков вдоль площадки и редкие поперечные */}
-        <filter id={ref('iceScratch')} x="-5%" y="-5%" width="110%" height="110%" colorInterpolationFilters="sRGB">
-          <feTurbulence type="fractalNoise" baseFrequency="0.14 9" numOctaves="2" seed="5" />
-          <feColorMatrix type="matrix" values="0 0 0 0 1
-                                               0 0 0 0 1
-                                               0 0 0 0 1
-                                               1.1 1.1 1.1 0 -0.72" />
-        </filter>
-
-        <filter id={ref('iceCross')} x="-5%" y="-5%" width="110%" height="110%" colorInterpolationFilters="sRGB">
-          <feTurbulence type="fractalNoise" baseFrequency="7 0.2" numOctaves="2" seed="19" />
-          <feColorMatrix type="matrix" values="0 0 0 0 1
-                                               0 0 0 0 1
-                                               0 0 0 0 1
-                                               1 1 1 0 -0.74" />
-        </filter>
-
-        <clipPath id={ref('iceClip')}>
-          <rect x="0" y="0" width="60" height="30" rx="8.5" />
-        </clipPath>
+        {/* Второй блик у дальнего борта — лёд перестаёт выглядеть плоской заливкой */}
+        <radialGradient id={ref('iceSheenFar')} cx="0.72" cy="0.78" r="0.55">
+          <stop offset="0" stopColor="#ffffff" stopOpacity="0.4" />
+          <stop offset="1" stopColor="#ffffff" stopOpacity="0" />
+        </radialGradient>
 
         {/* ── Логотип ──
             Готового файла с прозрачным фоном нет, поэтому маску строим сами: инверсия
@@ -120,13 +95,9 @@ export function RinkSvg() {
       </defs>
 
       {/* Лёд. Рисуем по всей площадке, обрезку делает viewBox */}
-      <g clipPath={`url(#${ref('iceClip')})`}>
-        <rect x="0" y="0" width="60" height="30" fill={`url(#${ref('iceBase')})`} />
-        <rect x="0" y="0" width="60" height="30" fill={`url(#${ref('iceSheen')})`} />
-        <rect x="0" y="0" width="60" height="30" filter={`url(#${ref('iceScratch')})`} opacity="0.5" />
-        <rect x="0" y="0" width="60" height="30" filter={`url(#${ref('iceCross')})`} opacity="0.3" />
-        <rect x="0" y="0" width="60" height="30" filter={`url(#${ref('iceGrain')})`} opacity="0.4" />
-      </g>
+      <rect x="0" y="0" width="60" height="30" rx="8.5" fill={`url(#${ref('iceBase')})`} />
+      <rect x="0" y="0" width="60" height="30" rx="8.5" fill={`url(#${ref('iceSheen')})`} />
+      <rect x="0" y="0" width="60" height="30" rx="8.5" fill={`url(#${ref('iceSheenFar')})`} />
 
       {/* Разметка приглушена: она фон для упражнения, а не его содержание — фишки
           и траектории должны читаться первыми */}

@@ -368,6 +368,15 @@ export function TrainingPlan({ event }) {
       ) : (
         <div
           className="flex flex-col gap-2"
+          // Внутри карточек цветом бренда покрашены кнопка проигрывания, лента кадров
+          // и тумблеры планшета. Подменяем бренд командным цветом на весь список, а не
+          // прокидываем цвет пропсами через проигрыватель: так его подхватит и всё,
+          // что появится в карточке позже. Прозрачную версию задаём отдельно —
+          // --color-brand-opacity вычисляется в :root и за подменой не следует.
+          style={hasTeamColor ? {
+            '--color-brand': event.team_color,
+            '--color-brand-opacity': `color-mix(in srgb, ${event.team_color} 12%, transparent)`,
+          } : undefined}
           onPointerMove={handleDragMove}
           onPointerUp={handleDragEnd}
           onPointerCancel={handleDragEnd}
@@ -484,9 +493,13 @@ export function TrainingPlan({ event }) {
                       )}
 
                       {/* Планшет монтируется только в раскрытом пункте: анимация крутит
-                          rAF, и держать её у восьми свёрнутых упражнений незачем */}
+                          rAF, и держать её у восьми свёрнутых упражнений незачем.
+                          Отступ сверху отделяет схему от текста — вплотную они читались
+                          как один блок. */}
                       {isExpanded && item.board_json && (
-                        <BoardPlayer scene={item.board_json} rinkType={item.rink_type} />
+                        <div className="pt-5">
+                          <BoardPlayer scene={item.board_json} rinkType={item.rink_type} />
+                        </div>
                       )}
                     </div>
                   </div>
