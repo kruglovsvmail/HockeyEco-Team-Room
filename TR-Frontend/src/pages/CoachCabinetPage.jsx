@@ -7,7 +7,6 @@ import { PageLoader } from '../ui/Loader';
 import { ConfirmSheet } from '../ui/ConfirmSheet';
 import { getAuthHeaders } from '../utils/helpers';
 import { ShareDrillSheet } from '../components/CoachCabinet/ShareDrillSheet';
-import { ACCENT_CHANGED_EVENT, readAccentSettings } from '../components/CoachCabinet/coachAccent';
 import { RINK_TYPES } from '../components/TacticalBoard/boardModel';
 
 // Кабинет тренера — личная библиотека упражнений.
@@ -45,42 +44,10 @@ export function CoachCabinetPage() {
   const [deleteTarget, setDeleteTarget] = useState(null);
   const [isDeleting, setIsDeleting] = useState(false);
 
-  const [accent, setAccent] = useState(readAccentSettings);
-
   const [toast, setToast] = useState({ isOpen: false, message: '', type: 'success' });
   const notify = useCallback((message, type = 'success') => {
     setToast({ isOpen: true, message, type });
   }, []);
-
-  // Переопределение бренда вешаем на корень документа, а не на саму страницу: панель
-  // упражнения и настройки раздела живут в другом поддереве, и переменная со страницы
-  // до них бы не дошла. При уходе из раздела всё возвращается на место.
-  useEffect(() => {
-    const sync = () => setAccent(readAccentSettings());
-    window.addEventListener(ACCENT_CHANGED_EVENT, sync);
-    return () => window.removeEventListener(ACCENT_CHANGED_EVENT, sync);
-  }, []);
-
-  useEffect(() => {
-    const root = document.documentElement;
-
-    // Переопределяем весь набор бренда, а не только основной цвет. Кнопки в приложении
-    // залиты градиентом brand-dark → brand: подменив одну переменную, мы получили бы
-    // переход от старого синего к новому цвету — ровно поэтому кнопка «Сохранить»
-    // выглядела чужеродной. Тени и brand-opacity считаются от --color-brand сами.
-    const TOKENS = {
-      '--color-brand': accent.color,
-      '--color-brand-dark': `color-mix(in srgb, ${accent.color} 84%, black)`,
-      '--color-brand-hover': `color-mix(in srgb, ${accent.color} 70%, black)`,
-    };
-
-    Object.entries(TOKENS).forEach(([token, value]) => {
-      if (accent.enabled) root.style.setProperty(token, value);
-      else root.style.removeProperty(token);
-    });
-
-    return () => Object.keys(TOKENS).forEach(token => root.style.removeProperty(token));
-  }, [accent]);
 
   const loadDrills = useCallback(async () => {
     try {

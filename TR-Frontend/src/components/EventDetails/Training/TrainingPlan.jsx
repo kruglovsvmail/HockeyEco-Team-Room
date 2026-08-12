@@ -1,11 +1,10 @@
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import clsx from 'clsx';
 import { Icon } from '../../../ui/Icon';
 import { Toast } from '../../../ui/Toast';
 import { FadeIn } from '../../../ui/FadeIn';
 import { PageLoader } from '../../../ui/Loader';
 import { BottomSheet } from '../../../ui/BottomSheet';
-import { SectionHeader } from '../../../ui/SectionHeader';
 import { getAuthHeaders } from '../../../utils/helpers';
 import { BoardPlayer } from '../../TacticalBoard/BoardPlayer';
 
@@ -33,9 +32,12 @@ export function TrainingPlan({ event }) {
     eventType: event?.event_type,
   }), [isClubEvent, event?.my_team_id, eventClubId, event?.event_type]);
 
+  // Цвет команды — как в остальных вкладках карточки события
+  const isColorsEnabled = localStorage.getItem('tr_use_team_colors') !== 'false';
+  const activeBrandColor = isColorsEnabled && event?.team_color ? event.team_color : 'var(--color-brand)';
+
   const [items, setItems] = useState([]);
   const [isPublished, setIsPublished] = useState(false);
-  const [isPast, setIsPast] = useState(false);
   const [canManage, setCanManage] = useState(false);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -45,6 +47,9 @@ export function TrainingPlan({ event }) {
   const [library, setLibrary] = useState([]);
   const [librarySearch, setLibrarySearch] = useState('');
   const [libraryLoading, setLibraryLoading] = useState(false);
+
+  const [draggingId, setDraggingId] = useState(null);
+  const itemRefs = useRef(new Map());
 
   const [toast, setToast] = useState({ isOpen: false, message: '', type: 'success' });
   const notify = useCallback((message, type = 'success') => {
@@ -63,7 +68,6 @@ export function TrainingPlan({ event }) {
 
       setItems(json.items || []);
       setIsPublished(json.plan_published);
-      setIsPast(json.is_past);
       setCanManage(json.can_manage);
     } catch {
       notify('Не удалось загрузить план', 'danger');
@@ -101,16 +105,6 @@ export function TrainingPlan({ event }) {
     }
   };
 
-  const move = (index, delta) => {
-    const target = index + delta;
-    if (target < 0 || target >= items.length) return;
-
-    const next = [...items];
-    [next[index], next[target]] = [next[target], next[index]];
-    setItems(next);
-    persist(next);
-  };
-
   const removeItem = (index) => {
     const next = items.filter((_, i) => i !== index);
     setItems(next);
@@ -140,6 +134,49 @@ export function TrainingPlan({ event }) {
     } finally {
       setSaving(false);
     }
+  };
+
+  // ── Перетаскивание за номер упражнения ───────────────────────────────────
+  //
+  // Порядок в списке считаем по фактическим границам карточек, а не по индексам из
+  // состояния: пока палец в движении, состояние обновляется рывками, а DOM всегда
+  // отражает то, что человек видит прямо сейчас.
+  const visualOrder = () => (
+    [...itemRefs.current.entries()]
+      .filter(([, el]) => el)
+      .map(([id, el]) => ({ id, rect: el.getBoundingClientRect() }))
+      .sort((a, b) => a.rect.top - b.rect.top)
+  );
+
+  const handleDragStart = (e, id) => {
+    e.stopPropagation();
+    e.currentTarget.setPointerCapture?.(e.pointerId);
+    setDraggingId(id);
+    setExpandedId(null);
+  };
+
+  const handleDragMove = (e) => {
+    if (!draggingId) return;
+
+    const order = visualOrder();
+    const from = order.findIndex(o => o.id === draggingId);
+    const to = order.findIndex(o => e.clientY >= o.rect.top && e.clientY <= o.rect.bottom);
+    if (from === -1 || to === -1 || from === to) return;
+
+    setItems(prev => {
+      const next = [...prev];
+      const fromIndex = next.findIndex(i => i.id === draggingId);
+      if (fromIndex === -1) return prev;
+      const [moved] = next.splice(fromIndex, 1);
+      next.splice(to, 0, moved);
+      return next;
+    });
+  };
+
+  const handleDragEnd = () => {
+    if (!draggingId) return;
+    setDraggingId(null);
+    persist(items);
   };
 
   // ── Библиотека упражнений ────────────────────────────────────────────────
@@ -191,52 +228,50 @@ export function TrainingPlan({ event }) {
   }
 
   return (
-    <div className="flex flex-col gap-3 px-2">
+    <FadeIn className="flex flex-col gap-2 pb-32 min-h-[30vh]">
 
-      {/* ── Публикация. Флаг существует только ради черновика: пока тренер собирает
-             тренировку, команде незачем видеть два упражнения из восьми ── */}
+      {/* КНОПКИ УПРАВЛЕНИЯ — тот же ряд, что у формации */}
       {canManage && (
-        <button
-          onClick={togglePublished}
-          disabled={saving}
-          className="flex items-center justify-between gap-3 p-3 rounded-2xl bg-surface-level1 border border-surface-border outline-none text-left disabled:opacity-60"
-        >
-          <div className="flex flex-col min-w-0">
-            <span className="text-[14px] font-bold text-content-main">
-              {isPublished ? 'План опубликован' : 'Черновик'}
-            </span>
-            <span className="text-[12px] text-content-muted leading-snug">
-              {isPublished
-                ? 'Команда видит план и может заранее разобрать упражнения'
-                : 'План виден только тренерам'}
-            </span>
-          </div>
-          <div className={clsx(
-            'shrink-0 w-12 h-7 rounded-full p-1 transition-colors',
-            isPublished ? 'bg-brand' : 'bg-surface-level2'
-          )}>
-            <div className={clsx(
-              'w-5 h-5 rounded-full bg-white transition-transform',
-              isPublished && 'translate-x-5'
-            )} />
-          </div>
-        </button>
-      )}
+        <div className="flex justify-center items-center gap-2.5 pb-2 mb-2 w-full bg-transparent flex-wrap">
+          {/* Опубликованный план залит цветом команды — как «Отправлено» в формации
+              матча: состояние читается по кнопке, а не по подписи рядом.
+              Снятие с публикации — повторное нажатие. */}
+          <button
+            onClick={togglePublished}
+            disabled={saving}
+            style={{
+              color: isPublished ? '#fff' : activeBrandColor,
+              borderColor: activeBrandColor,
+              backgroundColor: isPublished ? activeBrandColor : undefined,
+            }}
+            className={clsx(
+              'flex flex-1 justify-center items-center gap-1 px-3 py-2 rounded-full text-[14px] font-semibold border transition-all outline-none select-none active:scale-95 cursor-pointer disabled:opacity-60 disabled:active:scale-100',
+              !isPublished && 'bg-surface-base hover:opacity-80'
+            )}
+          >
+            {saving ? (
+              <div className={clsx(
+                'w-3.5 h-3.5 rounded-full border-2 border-t-transparent animate-spin shrink-0',
+                isPublished ? 'border-white' : 'border-current'
+              )} />
+            ) : (
+              // Глаз показывает состояние заодно с заливкой: перечёркнутый — команда
+              // плана не видит, открытый — видит
+              <Icon name={isPublished ? 'view' : 'view_off'} className="w-4 h-4 shrink-0" />
+            )}
+            {isPublished ? 'Опубликовано' : 'Опубликовать'}
+          </button>
 
-      {/* ── Пояснение к прошедшей тренировке ── */}
-      {isPast && items.length > 0 && (
-        <p className="text-[12px] text-content-muted leading-snug px-1">
-          Тренировка прошла, детали упражнений недоступны
-        </p>
-      )}
-
-      {canManage && (
-        <SectionHeader
-          title={`Упражнения (${items.length})`}
-          actionText="+ Добавить"
-          showAction
-          onActionClick={() => setIsLibraryOpen(true)}
-        />
+          <button
+            onClick={() => setIsLibraryOpen(true)}
+            disabled={saving}
+            style={{ color: activeBrandColor, borderColor: activeBrandColor }}
+            className="flex flex-1 justify-center items-center gap-1 px-3 py-2 rounded-full text-[14px] font-semibold border bg-surface-base transition-all active:scale-95 hover:opacity-80 outline-none cursor-pointer select-none disabled:opacity-60 disabled:active:scale-100"
+          >
+            <Icon name="plus" className="w-4 h-4 shrink-0" />
+            Добавить
+          </button>
+        </div>
       )}
 
       {items.length === 0 ? (
@@ -251,67 +286,70 @@ export function TrainingPlan({ event }) {
           </div>
         </FadeIn>
       ) : (
-        <div className="flex flex-col gap-2">
+        <div
+          className="flex flex-col gap-2"
+          onPointerMove={handleDragMove}
+          onPointerUp={handleDragEnd}
+          onPointerCancel={handleDragEnd}
+        >
           {items.map((item, index) => {
             const isExpanded = expandedId === item.id;
-            const canExpand = item.details_available;
+            const isDragging = draggingId === item.id;
 
             return (
               <div
                 key={item.id}
-                className="rounded-2xl bg-surface-level1 border border-surface-border overflow-hidden"
+                ref={(el) => {
+                  if (el) itemRefs.current.set(item.id, el);
+                  else itemRefs.current.delete(item.id);
+                }}
+                className={clsx(
+                  'rounded-2xl bg-surface-level1 border border-surface-border overflow-hidden transition-shadow',
+                  isDragging && 'shadow-xl relative z-10 opacity-90'
+                )}
               >
                 <div className="flex items-center gap-3 p-3">
-                  <span className="shrink-0 w-7 h-7 rounded-lg bg-surface-level2 text-content-muted text-[13px] font-black flex items-center justify-center">
+                  {/* Номер — он же ручка перетаскивания. touch-action none, иначе
+                      вертикальный жест уйдёт в прокрутку страницы */}
+                  <button
+                    onPointerDown={canManage ? (e) => handleDragStart(e, item.id) : undefined}
+                    disabled={!canManage}
+                    style={{ touchAction: canManage ? 'none' : undefined }}
+                    className={clsx(
+                      'shrink-0 w-7 h-7 rounded-lg text-[13px] font-black flex items-center justify-center transition-colors',
+                      canManage ? 'bg-surface-level2 text-content-main cursor-grab' : 'bg-surface-level2 text-content-muted',
+                      isDragging && 'bg-brand text-white'
+                    )}
+                    aria-label={canManage ? 'Перетащить упражнение' : undefined}
+                  >
                     {index + 1}
-                  </span>
+                  </button>
 
                   <button
-                    onClick={() => canExpand && setExpandedId(isExpanded ? null : item.id)}
-                    disabled={!canExpand}
+                    onClick={() => setExpandedId(isExpanded ? null : item.id)}
                     className="flex-1 min-w-0 flex items-center gap-2 text-left outline-none"
                   >
-                    <span className="flex-1 text-[15px] font-bold text-content-main leading-tight">
+                    <span className="flex-1 text-[15px] font-bold text-content-main leading-tight uppercase tracking-wide">
                       {item.name}
                     </span>
-                    {canExpand && (
-                      <Icon
-                        name="chevron"
-                        className={clsx(
-                          'w-4 h-4 shrink-0 text-content-muted transition-transform duration-300',
-                          isExpanded && 'rotate-180'
-                        )}
-                      />
-                    )}
+                    <Icon
+                      name="chevron"
+                      className={clsx(
+                        'w-4 h-4 shrink-0 text-content-muted transition-transform duration-300',
+                        isExpanded && 'rotate-180'
+                      )}
+                    />
                   </button>
 
                   {canManage && (
-                    <div className="shrink-0 flex items-center gap-1">
-                      <button
-                        onClick={() => move(index, -1)}
-                        disabled={index === 0 || saving}
-                        className="w-8 h-8 rounded-lg bg-surface-level2 text-content-muted flex items-center justify-center outline-none disabled:opacity-30"
-                        aria-label="Выше"
-                      >
-                        <Icon name="chevron" className="w-3.5 h-3.5 rotate-180" />
-                      </button>
-                      <button
-                        onClick={() => move(index, 1)}
-                        disabled={index === items.length - 1 || saving}
-                        className="w-8 h-8 rounded-lg bg-surface-level2 text-content-muted flex items-center justify-center outline-none disabled:opacity-30"
-                        aria-label="Ниже"
-                      >
-                        <Icon name="chevron" className="w-3.5 h-3.5" />
-                      </button>
-                      <button
-                        onClick={() => removeItem(index)}
-                        disabled={saving}
-                        className="w-8 h-8 rounded-lg bg-surface-level2 text-content-muted flex items-center justify-center outline-none disabled:opacity-30"
-                        aria-label="Убрать из плана"
-                      >
-                        <Icon name="close" className="w-3.5 h-3.5" />
-                      </button>
-                    </div>
+                    <button
+                      onClick={() => removeItem(index)}
+                      disabled={saving}
+                      className="shrink-0 w-8 h-8 rounded-lg bg-surface-level2 text-content-muted flex items-center justify-center outline-none disabled:opacity-30"
+                      aria-label="Убрать из плана"
+                    >
+                      <Icon name="close" className="w-3.5 h-3.5" />
+                    </button>
                   )}
                 </div>
 
@@ -323,13 +361,22 @@ export function TrainingPlan({ event }) {
                 )}>
                   <div className="overflow-hidden">
                     <div className="px-3 pb-3 flex flex-col gap-3">
+                      {/* Упражнение удалено из библиотеки или изменено после проведения
+                          тренировки. Аккордеон оставляем: пункт плана остаётся частью
+                          истории, просто рассказать о нём нечего. */}
+                      {!item.details_available && (
+                        <p className="text-[13px] text-content-muted leading-snug">
+                          Подробности упражнения недоступны
+                        </p>
+                      )}
+
                       {item.description && (
                         <p className="text-[14px] text-content-main leading-snug whitespace-pre-line">
                           {item.description}
                         </p>
                       )}
 
-                      {/* Доска монтируется только в раскрытом пункте: анимация крутит
+                      {/* Планшет монтируется только в раскрытом пункте: анимация крутит
                           rAF, и держать её у восьми свёрнутых упражнений незачем */}
                       {isExpanded && item.board_json && (
                         <BoardPlayer scene={item.board_json} rinkType={item.rink_type} />
@@ -377,11 +424,6 @@ export function TrainingPlan({ event }) {
                   <span className="text-[14px] font-bold text-content-main leading-tight">
                     {drill.name}
                   </span>
-                  {drill.tags?.length > 0 && (
-                    <span className="text-[11px] text-content-subtle truncate max-w-full">
-                      {drill.tags.join(' · ')}
-                    </span>
-                  )}
                 </button>
               ))
             )}
@@ -395,6 +437,6 @@ export function TrainingPlan({ event }) {
         type={toast.type}
         onClose={() => setToast(prev => ({ ...prev, isOpen: false }))}
       />
-    </div>
+    </FadeIn>
   );
 }

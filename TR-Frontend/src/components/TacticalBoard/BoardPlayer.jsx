@@ -6,7 +6,7 @@ import {
   normalizeScene,
   interpolatePositions,
   outerViewBox,
-  FRAME_TRANSITION_MS,
+  frameTransitionMs,
   FRAME_HOLD_MS,
 } from './boardModel';
 
@@ -31,8 +31,18 @@ export function BoardPlayer({ scene: rawScene, rinkType = 'full', autoPlay = fal
   const boardRatio = useMemo(() => outerViewBox(rinkType), [rinkType]);
 
   const holdMs = continuous ? 0 : FRAME_HOLD_MS;
-  const segmentMs = holdMs + FRAME_TRANSITION_MS;
-  const totalMs = frameCount > 1 ? (frameCount - 1) * segmentMs + holdMs : 0;
+
+  // Переходы у кадров разной длительности, поэтому позицию во времени считаем по
+  // накопленным началам отрезков, а не делением на общий шаг.
+  const timeline = useMemo(() => {
+    const starts = [0];
+    for (let i = 0; i < frameCount - 1; i++) {
+      starts.push(starts[i] + holdMs + frameTransitionMs(scene.frames[i]));
+    }
+    return starts;
+  }, [scene, frameCount, holdMs]);
+
+  const totalMs = frameCount > 1 ? timeline[frameCount - 1] + holdMs : 0;
 
   // Время внутри упражнения. Хранится в state, потому что от него зависит вся картинка,
   // и в ref — потому что цикл rAF не должен зависеть от замыкания на каждый кадр.
@@ -80,15 +90,18 @@ export function BoardPlayer({ scene: rawScene, rinkType = 'full', autoPlay = fal
   const { frameIndex, t } = useMemo(() => {
     if (frameCount < 2) return { frameIndex: 0, t: 0 };
 
-    const index = Math.min(Math.floor(elapsed / segmentMs), frameCount - 1);
-    const rest = elapsed - index * segmentMs;
+    let index = 0;
+    while (index < frameCount - 1 && elapsed >= timeline[index + 1]) index++;
     if (index >= frameCount - 1) return { frameIndex: frameCount - 1, t: 0 };
+
+    const rest = elapsed - timeline[index];
+    const transition = frameTransitionMs(scene.frames[index]);
 
     return {
       frameIndex: index,
-      t: rest <= holdMs ? 0 : (rest - holdMs) / FRAME_TRANSITION_MS,
+      t: rest <= holdMs ? 0 : Math.min(1, (rest - holdMs) / transition),
     };
-  }, [elapsed, frameCount, segmentMs, holdMs]);
+  }, [elapsed, frameCount, timeline, holdMs, scene]);
 
   const positions = useMemo(
     () => interpolatePositions(scene, frameIndex, t, rinkType),
@@ -124,10 +137,14 @@ export function BoardPlayer({ scene: rawScene, rinkType = 'full', autoPlay = fal
     const next = !continuous;
     localStorage.setItem(CONTINUOUS_KEY, String(next));
 
-    // Перематываем на начало текущего кадра: длина сегмента меняется, и старое время
-    // в новой шкале указывало бы на другое место упражнения
+    // Перематываем на начало текущего кадра: паузы исчезают или возвращаются, и старое
+    // время в новой шкале указывало бы на другое место упражнения
+    const nextHold = next ? 0 : FRAME_HOLD_MS;
+    let start = 0;
+    for (let i = 0; i < frameIndex; i++) start += nextHold + frameTransitionMs(scene.frames[i]);
+
     setContinuous(next);
-    setTime(frameIndex * ((next ? 0 : FRAME_HOLD_MS) + FRAME_TRANSITION_MS));
+    setTime(start);
   };
 
   const handlePlayToggle = () => {
@@ -139,7 +156,7 @@ export function BoardPlayer({ scene: rawScene, rinkType = 'full', autoPlay = fal
 
   const jumpToFrame = (index) => {
     setIsPlaying(false);
-    setTime(index * segmentMs);
+    setTime(timeline[index] || 0);
   };
 
   // Подпись показываем от кадра, к которому идёт движение: пока фишки едут, читать
@@ -149,11 +166,14 @@ export function BoardPlayer({ scene: rawScene, rinkType = 'full', autoPlay = fal
 
   return (
     <div className={clsx('flex flex-col gap-2', className)}>
-      {/* Доска занимает всю доступную ширину, высота следует за пропорцией площадки.
+      {/* Планшет занимает всю доступную ширину, высота следует за пропорцией площадки.
           Фиксированный размер важнее компактности: иначе каток прыгал бы при
-          появлении и исчезновении элементов вокруг. */}
+          появлении и исчезновении элементов вокруг.
+
+          Без собственного фона: каток скруглён, контейнер прямоугольный, и в углах
+          просвечивает то, на чём планшет лежит. */}
       <div
-        className="w-full rounded-xl overflow-hidden bg-surface-level2"
+        className="w-full"
         style={{ aspectRatio: `${boardRatio.w} / ${boardRatio.h}` }}
       >
         <BoardScene rinkType={rinkType} scene={scene} positions={positions} shapeLayers={shapeLayers} />
@@ -164,10 +184,10 @@ export function BoardPlayer({ scene: rawScene, rinkType = 'full', autoPlay = fal
         <div className="flex items-center gap-3 px-1">
           <button
             onClick={handlePlayToggle}
-            className="w-9 h-9 shrink-0 rounded-full bg-brand text-white flex items-center justify-center active:scale-95 transition-transform outline-none"
+            className="shrink-0 text-brand flex items-center justify-center active:scale-90 transition-transform outline-none"
             aria-label={isPlaying ? 'Пауза' : 'Проиграть'}
           >
-            <Icon name={isPlaying ? 'stop' : 'play'} className="w-4 h-4" />
+            <Icon name={isPlaying ? 'stop' : 'play'} className="w-7 h-7" />
           </button>
 
           {/* Кадры — одновременно индикатор и перемотка */}

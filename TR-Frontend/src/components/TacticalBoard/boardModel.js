@@ -103,6 +103,21 @@ export const OBJECT_TYPES = [
 export const FRAME_TRANSITION_MS = 1400;
 export const FRAME_HOLD_MS = 700;
 
+// Скорость перехода задаётся у кадра, из которого идёт движение: тренер смотрит на
+// расстановку и решает, насколько быстро из неё выходят. Вместо цифр — три ступени,
+// секунды тут всё равно никто не считает. Отсутствие поля означает среднюю скорость,
+// поэтому упражнения, созданные раньше, проигрываются как прежде.
+export const FRAME_SPEEDS = [
+  { id: 'slow',   label: '>',   factor: 1.8  },
+  { id: 'normal', label: '>>',  factor: 1    },
+  { id: 'fast',   label: '>>>', factor: 0.55 },
+];
+
+export const frameTransitionMs = (frame) => {
+  const speed = FRAME_SPEEDS.find(s => s.id === frame?.speed);
+  return FRAME_TRANSITION_MS * (speed ? speed.factor : 1);
+};
+
 let idCounter = 0;
 export const nextId = (prefix) => `${prefix}${Date.now().toString(36)}${(idCounter++).toString(36)}`;
 
@@ -129,6 +144,7 @@ export const normalizeScene = (raw) => {
     frames: frames.map(f => ({
       id: f.id || nextId('f'),
       note: typeof f.note === 'string' ? f.note : '',
+      speed: FRAME_SPEEDS.some(s => s.id === f.speed) ? f.speed : 'normal',
       positions: f.positions && typeof f.positions === 'object' ? f.positions : {},
       // Линия может вести сразу несколько фишек — при ведении шайбы это игрок и шайба.
       // Ранние сцены хранили одиночный objId, приводим их к общему виду на чтении:
@@ -305,6 +321,132 @@ export const rinkToPercent = (rinkType, sx, sy) => {
   ];
 };
 
+// Насколько путь можно упростить и когда считать его прямым, в метрах катка.
+// Палец дрожит, и каждая случайная точка превращалась в излом — схема выглядела
+// нарисованной от руки в худшем смысле слова.
+const SIMPLIFY_TOLERANCE_M = 0.85;
+const STRAIGHT_TOLERANCE_M = 1.3;
+
+// Сколько раз усреднить точки с соседями перед упрощением
+const SMOOTH_PASSES = 3;
+
+// Расстояние от точки до отрезка, в метрах катка
+const distanceToSegment = (p, a, b) => {
+  const dx = b[0] - a[0];
+  const dy = b[1] - a[1];
+  const lengthSq = dx * dx + dy * dy;
+
+  if (lengthSq === 0) return Math.hypot(p[0] - a[0], p[1] - a[1]);
+
+  const t = Math.max(0, Math.min(1, ((p[0] - a[0]) * dx + (p[1] - a[1]) * dy) / lengthSq));
+  return Math.hypot(p[0] - (a[0] + dx * t), p[1] - (a[1] + dy * t));
+};
+
+/**
+ * Усреднение точек с соседями.
+ *
+ * Обязательный шаг перед упрощением: Дуглас — Пекер по своей природе сохраняет самые
+ * выступающие точки, а при дрожании пальца это ровно пики дрожания. Одним порогом
+ * дугу поэтому не выровнять — сначала надо сбить сами пики. Концы не трогаем: начало
+ * привязано к фишке, конец задаёт её место на следующем кадре.
+ */
+const smoothPoints = (points, passes) => {
+  let result = points;
+
+  for (let pass = 0; pass < passes; pass++) {
+    const next = [result[0]];
+    for (let i = 1; i < result.length - 1; i++) {
+      next.push([
+        result[i - 1][0] * 0.25 + result[i][0] * 0.5 + result[i + 1][0] * 0.25,
+        result[i - 1][1] * 0.25 + result[i][1] * 0.5 + result[i + 1][1] * 0.25,
+      ]);
+    }
+    next.push(result[result.length - 1]);
+    result = next;
+  }
+
+  return result;
+};
+
+/**
+ * Приведение нарисованного пути в человеческий вид.
+ *
+ * Сначала усредняем точки, чтобы убрать дрожание, затем выбрасываем те, что почти
+ * лежат на линии между соседями (Рамер — Дуглас — Пекер): форма дуги остаётся, лишние
+ * изломы уходят. Путь, отклонившийся от своей хорды меньше чем на STRAIGHT_TOLERANCE_M,
+ * распрямляем — провести идеально ровную линию пальцем иначе невозможно.
+ */
+export const simplifyPath = (points, rinkType) => {
+  if (!points || points.length < 3) return points;
+
+  const smoothed = smoothPoints(points, SMOOTH_PASSES);
+  const metric = smoothed.map(([x, y]) => percentToRink(rinkType, x, y));
+
+  // Почти прямая — делаем прямой
+  const chordDeviation = metric.reduce(
+    (max, p) => Math.max(max, distanceToSegment(p, metric[0], metric[metric.length - 1])),
+    0
+  );
+  if (chordDeviation <= STRAIGHT_TOLERANCE_M) return [smoothed[0], smoothed[smoothed.length - 1]];
+
+  const keep = new Array(smoothed.length).fill(false);
+  keep[0] = true;
+  keep[smoothed.length - 1] = true;
+
+  const stack = [[0, smoothed.length - 1]];
+  while (stack.length > 0) {
+    const [from, to] = stack.pop();
+    if (to - from < 2) continue;
+
+    let farthest = -1;
+    let maxDistance = SIMPLIFY_TOLERANCE_M;
+
+    for (let i = from + 1; i < to; i++) {
+      const distance = distanceToSegment(metric[i], metric[from], metric[to]);
+      if (distance > maxDistance) {
+        maxDistance = distance;
+        farthest = i;
+      }
+    }
+
+    if (farthest === -1) continue;
+    keep[farthest] = true;
+    stack.push([from, farthest], [farthest, to]);
+  }
+
+  // Возвращаем именно сглаженные точки: исходные вернули бы дрожание обратно, а
+  // усреднение тогда влияло бы лишь на то, какие из них выжили
+  return smoothed.filter((_, i) => keep[i]);
+};
+
+/**
+ * Ломаная в гладкий путь SVG через кривые Катмулла — Рома.
+ *
+ * Прямые отрезки между точками давали видимые углы на каждом сэмпле; кривая проходит
+ * через те же точки, но без изломов, и дуга наконец выглядит дугой.
+ */
+const toSmoothPath = (pts) => {
+  if (pts.length === 2) {
+    return `M${pts[0][0].toFixed(2)},${pts[0][1].toFixed(2)} L${pts[1][0].toFixed(2)},${pts[1][1].toFixed(2)}`;
+  }
+
+  let d = `M${pts[0][0].toFixed(2)},${pts[0][1].toFixed(2)}`;
+
+  for (let i = 0; i < pts.length - 1; i++) {
+    const p0 = pts[i - 1] || pts[i];
+    const p1 = pts[i];
+    const p2 = pts[i + 1];
+    const p3 = pts[i + 2] || pts[i + 1];
+
+    const c1 = [p1[0] + (p2[0] - p0[0]) / 6, p1[1] + (p2[1] - p0[1]) / 6];
+    const c2 = [p2[0] - (p3[0] - p1[0]) / 6, p2[1] - (p3[1] - p1[1]) / 6];
+
+    d += ` C${c1[0].toFixed(2)},${c1[1].toFixed(2)} ${c2[0].toFixed(2)},${c2[1].toFixed(2)} ${p2[0].toFixed(2)},${p2[1].toFixed(2)}`;
+  }
+
+  return d;
+};
+
 /**
  * Ломаная в путь SVG. Для ведения шайбы линия рисуется волной — это стандартная
  * тренерская нотация, а не украшение: по ней упражнение читается без подписи.
@@ -314,9 +456,7 @@ export const pointsToPath = (points, kind, rinkType) => {
 
   const pts = points.map(([x, y]) => percentToRink(rinkType, x, y));
 
-  if (kind !== 'carry') {
-    return pts.map(([x, y], i) => `${i === 0 ? 'M' : 'L'}${x.toFixed(2)},${y.toFixed(2)}`).join(' ');
-  }
+  if (kind !== 'carry') return toSmoothPath(pts);
 
   // Волна: идём вдоль ломаной с постоянным шагом и смещаем точку по нормали.
   //

@@ -261,7 +261,7 @@ export function DrillEditor({ drillId, onClose, onSaved, onNotify }) {
             onConfirm={() => closeBoard(null)}
             title="Отменить изменения?"
             description="Всё, что вы нарисовали на планшете с момента открытия, будет потеряно."
-            confirmLabel="Отменить изменения"
+            confirmLabel="Отменить"
             cancelLabel="Продолжить"
             variant="danger"
           />

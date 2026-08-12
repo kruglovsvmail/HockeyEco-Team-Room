@@ -13,7 +13,7 @@ const PUCK_FILL = '#111418';
 
 // Выделение и ареол — оранжевый бренда. Он не совпадает ни с одной командой,
 // поэтому обводка читается и на зелёной фишке, и на красной.
-const SELECT_ACCENT = '#e8590c';
+const SELECT_ACCENT = '#0c7ee8';
 
 const SHAPE_COLOR = '#1f2b3d';
 const SHAPE_WIDTH = 0.28;
@@ -69,15 +69,12 @@ export function ObjectChip({ type, label, size = 30 }) {
   );
 }
 
-function BoardObject({ obj, pos, rinkType, isSelected, upright, onPointerDown }) {
+function BoardObject({ obj, pos, rinkType, isSelected, upright }) {
   const [cx, cy] = percentToRink(rinkType, pos[0], pos[1]);
 
-  // Перехватываем жест только у выбранной фишки: у остальных касание должно уходить
-  // странице, иначе планшет становится мёртвой зоной, по которой нельзя проскроллить
-  const common = {
-    onPointerDown: onPointerDown ? (e) => onPointerDown(e, obj.id) : undefined,
-    style: onPointerDown ? { cursor: 'grab', touchAction: isSelected ? 'none' : 'auto' } : undefined,
-  };
+  // Фишки не ловят события сами: выбор считает планшет, по расстоянию до центров.
+  // Иначе в куче побеждала бы верхняя по порядку отрисовки, а не ближайшая к пальцу.
+  const common = { style: { pointerEvents: 'none' } };
 
   // Ареол выделенной фишки — это не украшение, а зона, в которой шайба считается её:
   // именно по нему система решает, кто владеет шайбой, и какие действия ей доступны.
@@ -140,8 +137,6 @@ function BoardObject({ obj, pos, rinkType, isSelected, upright, onPointerDown })
         </text>
       )}
 
-      {/* Прозрачная мишень под палец: сама фишка слишком мелкая, чтобы в неё попасть */}
-      {onPointerDown && <circle cx={cx} cy={cy} r={PLAYER_R + 1} fill="transparent" />}
     </g>
   );
 }
@@ -154,7 +149,6 @@ export function BoardScene({
   // между кадрами — тогда стрелки прошлого кадра гаснут, пока проявляются новые.
   shapeLayers = [],
   selectedId = null,
-  onObjectPointerDown = null,
   onSurfacePointerDown = null,
   svgRef = null,
   className = '',
@@ -230,17 +224,20 @@ export function BoardScene({
         </g>
       ))}
 
-      {scene.objects.map(obj => (
-        <BoardObject
-          key={obj.id}
-          obj={obj}
-          pos={positions[obj.id] || [50, 50]}
-          rinkType={rinkType}
-          isSelected={selectedId === obj.id}
-          upright
-          onPointerDown={onObjectPointerDown}
-        />
-      ))}
+      {/* Выделенная рисуется последней — в куче она должна лежать поверх остальных,
+          иначе ареол и обводка теряются под соседями */}
+      {[...scene.objects]
+        .sort((a, b) => (a.id === selectedId ? 1 : 0) - (b.id === selectedId ? 1 : 0))
+        .map(obj => (
+          <BoardObject
+            key={obj.id}
+            obj={obj}
+            pos={positions[obj.id] || [50, 50]}
+            rinkType={rinkType}
+            isSelected={selectedId === obj.id}
+            upright
+          />
+        ))}
 
       {children}
 

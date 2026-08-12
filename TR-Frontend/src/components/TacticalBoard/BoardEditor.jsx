@@ -10,9 +10,12 @@ import {
   resolvePositions,
   isPuckInReach,
   rinkToPercent,
+  percentToRink,
   percentToScreen,
   outerViewBox,
   sampleAlongPathWithLead,
+  simplifyPath,
+  FRAME_SPEEDS,
   PUCK_LEAD_M,
   nextId,
 } from './boardModel';
@@ -41,6 +44,10 @@ const ACTIONS = [
 // Насколько палец должен уехать, чтобы жест считался перетаскиванием, а не касанием
 const TAP_TOLERANCE_PERCENT = 1.2;
 
+// С какого расстояния касание засчитывается фишке, в метрах катка. Заметно больше
+// самой фишки: попасть пальцем в кружок диаметром метр невозможно.
+const PICK_RADIUS_M = 3.2;
+
 // Перевод точки экрана в проценты площадки. Идём через getScreenCTM, а не через
 // getBoundingClientRect: матрица учитывает и viewBox, и разворот катка на вертикаль,
 // и любые CSS-трансформации выше по дереву — включая масштаб интерфейса из настроек.
@@ -62,7 +69,6 @@ export function BoardEditor({ scene: rawScene, rinkType = 'full', onChange }) {
   const [draft, setDraft] = useState(null);   // рисуемая прямо сейчас линия
   const [drag, setDrag] = useState(null);     // фишка, которую тащат прямо сейчас
   const [armed, setArmed] = useState(null);   // выбранное действие: { objId, kind }
-  const [isArrowMode, setIsArrowMode] = useState(false);
 
   const rinkRef = useRef(null);
   const boardRef = useRef(null);
@@ -157,7 +163,6 @@ export function BoardEditor({ scene: rawScene, rinkType = 'full', onChange }) {
     });
 
     setArmed(null);
-    setIsArrowMode(false);
     setSelectedId(obj.id);
     closeMenu();
   };
@@ -328,43 +333,82 @@ export function BoardEditor({ scene: rawScene, rinkType = 'full', onChange }) {
   };
 
   // ── Указатель ────────────────────────────────────────────────────────────
-  const handleObjectPointerDown = (e, objId) => {
-    // Когда действие выбрано, касание фишки начинает рисовать путь, а не тащит её
-    if (armed || isArrowMode) return;
 
-    e.stopPropagation();
-    e.currentTarget.setPointerCapture?.(e.pointerId);
+  /**
+   * Фишка, ближайшая к точке касания.
+   *
+   * Выбор считается по расстоянию до центров, а не отдаётся попаданию в саму фишку.
+   * В куче у борта фишки перекрывают друг друга, и SVG отдал бы верхнюю по порядку
+   * отрисовки — то есть случайную. Теперь достаточно тапнуть чуть ближе к нужной.
+   */
+  const pickObjectAt = (point) => {
+    let best = null;
+    let bestDistance = PICK_RADIUS_M;
 
-    const start = positions[objId] || [50, 50];
-    setDrag({
-      objId,
-      start,
-      point: start,
-      wasSelected: selectedId === objId,
-      // Свободно расставлять фишки можно только на первом кадре: дальше их положение
-      // задают траектории, и перетаскивание руками расходилось бы с нарисованным путём
-      movable: safeIndex === 0,
+    scene.objects.forEach(obj => {
+      const pos = positions[obj.id];
+      if (!pos) return;
+
+      const [ox, oy] = percentToRink(rinkType, pos[0], pos[1]);
+      const [px, py] = percentToRink(rinkType, point[0], point[1]);
+      const distance = Math.hypot(px - ox, py - oy);
+
+      if (distance <= bestDistance) {
+        bestDistance = distance;
+        best = obj;
+      }
     });
-    setSelectedId(objId);
+
+    return best;
+  };
+
+  // Выбор фишки из ряда чипов под планшетом. Повторное нажатие открывает её меню,
+  // привязанное к самой фишке на площадке, — так чипы полностью заменяют тап по льду.
+  const pickFromChip = (objId) => {
+    if (selectedId !== objId) {
+      setSelectedId(objId);
+      closeMenu();
+      return;
+    }
+    setMenuPos(menuPos ? null : measureAnchor(objId));
   };
 
   const handleSurfacePointerDown = (e) => {
-    if (!armed && !isArrowMode) {
+    const point = clientToPercent(rinkRef.current, rinkType, e.clientX, e.clientY);
+    if (!point) return;
+
+    // Когда действие выбрано, касание начинает рисовать путь, а не трогает фишки
+    if (armed) {
+      rinkRef.current.setPointerCapture?.(e.pointerId);
+      setDraft({
+        id: nextId('s'),
+        kind: armed.kind,
+        points: [point],
+        action: armed,
+      });
+      return;
+    }
+
+    const hit = pickObjectAt(point);
+    if (!hit) {
       setSelectedId(null);
       closeMenu();
       return;
     }
 
-    const point = clientToPercent(rinkRef.current, rinkType, e.clientX, e.clientY);
-    if (!point) return;
-
     rinkRef.current.setPointerCapture?.(e.pointerId);
-    setDraft({
-      id: nextId('s'),
-      kind: armed ? armed.kind : 'skate',
-      points: [point],
-      action: armed,
+
+    const start = positions[hit.id] || [50, 50];
+    setDrag({
+      objId: hit.id,
+      start,
+      point: start,
+      wasSelected: selectedId === hit.id,
+      // Свободно расставлять фишки можно только на первом кадре: дальше их положение
+      // задают траектории, и перетаскивание руками расходилось бы с нарисованным путём
+      movable: safeIndex === 0,
     });
+    setSelectedId(hit.id);
   };
 
   const handlePointerMove = (e) => {
@@ -390,8 +434,9 @@ export function BoardEditor({ scene: rawScene, rinkType = 'full', onChange }) {
       const point = clientToPercent(rinkRef.current, rinkType, item.clientX, item.clientY);
       if (!point) return;
       const last = points[points.length - 1];
-      // Точки реже, чем события указателя: линия из сотни точек тяжелеет впустую
-      if (Math.hypot(point[0] - last[0], point[1] - last[1]) < 1.2) return;
+      // Ловим часто: лишние точки всё равно уйдут при упрощении на отпускании,
+      // а вот пропущенные восстановить уже нечем
+      if (Math.hypot(point[0] - last[0], point[1] - last[1]) < 0.6) return;
       points = [...points, point];
     });
 
@@ -419,7 +464,9 @@ export function BoardEditor({ scene: rawScene, rinkType = 'full', onChange }) {
       // Случайный тык линией не считаем
       if (draft.points.length >= 2) {
         const { action, ...shape } = draft;
-        commitShape(shape, action);
+        // Дрожание пальца выбрасываем до сохранения: по упрощённому пути пойдёт
+        // и отрисовка, и анимация, поэтому чистим один раз здесь
+        commitShape({ ...shape, points: simplifyPath(shape.points, rinkType) }, action);
       }
       setDraft(null);
       // Действие одноразовое: нарисовал путь — вернулись к обычному режиму, иначе
@@ -464,7 +511,7 @@ export function BoardEditor({ scene: rawScene, rinkType = 'full', onChange }) {
   ];
 
   const board = outerViewBox(rinkType);
-  const isMenuVisible = !!(selectedObject && menuPos && !drag && !armed && !isArrowMode);
+  const isMenuVisible = !!(selectedObject && menuPos && !drag && !armed);
 
   const armedLabel = armed ? ACTIONS.find(a => a.kind === armed.kind)?.label : null;
   const availableActions = ACTIONS.filter(a => !a.needsPuck || hasPuck);
@@ -496,16 +543,20 @@ export function BoardEditor({ scene: rawScene, rinkType = 'full', onChange }) {
 
         {/* ── Кадры ──
             Прилипают к верху и не уезжают при прокрутке: переключаться между кадрами
-            нужно постоянно, а каток под ними при этом проходит сквозь размытие —
-            матовое стекло здесь работает по назначению, а не как плашка на плоском фоне. */}
-        <div className="sticky top-0 z-[15] shrink-0 flex items-center gap-2 overflow-x-auto scrollbar-hide p-2 rounded-2xl bg-surface-level1/55 backdrop-blur-xl border border-white/20 shadow-lg">
+            нужно постоянно. Фон тот же, что у шапки, — полоса читается как её
+            продолжение, а каток проезжает под ней, ничего не просвечивая. */}
+        <div className="sticky top-0 z-[15] shrink-0 flex items-center gap-2 overflow-x-auto scrollbar-hide p-2 bg-surface-base shadow-lg">
           {scene.frames.map((frame, index) => (
             <div key={frame.id} className="relative shrink-0">
               <button
                 onClick={() => { setFrameIndex(index); setArmed(null); closeMenu(); }}
                 className={clsx(
                   'w-10 h-10 rounded-xl text-[14px] font-black transition-all outline-none',
-                  index === safeIndex ? 'bg-brand text-white' : 'bg-surface-level2/80 text-content-muted'
+                  index === safeIndex
+                    ? 'bg-brand text-white'
+                    // Невыбранные обводим: на фоне шапки заливка почти сливается с ней,
+                    // и без контура кадры не читались бы как отдельные кнопки
+                    : 'bg-surface-level2 text-content-muted border border-brand-opacity'
                 )}
               >
                 {index + 1}
@@ -524,17 +575,20 @@ export function BoardEditor({ scene: rawScene, rinkType = 'full', onChange }) {
 
           <button
             onClick={addFrame}
-            className="shrink-0 w-10 h-10 rounded-xl bg-surface-level2/80 text-content-main flex items-center justify-center active:scale-95 transition-transform outline-none"
+            className="shrink-0 w-10 h-10 rounded-xl bg-surface-level2 text-content-main border border-surface-border flex items-center justify-center active:scale-95 transition-transform outline-none"
             aria-label="Добавить кадр"
           >
             <Icon name="plus" className="w-4 h-4" />
           </button>
         </div>
 
-        {/* ── Каток ── */}
+        {/* ── Каток ──
+            Без собственного фона: каток скруглён, контейнер прямоугольный, и в углах
+            просвечивает то, на чём планшет лежит. Своя заливка выдавала бы себя
+            четырьмя уголками чужого цвета. */}
         <div
           ref={boardRef}
-          className="relative w-full shrink-0 rounded-xl overflow-hidden bg-surface-level2"
+          className="relative w-full shrink-0"
           style={{ aspectRatio: `${board.w} / ${board.h}` }}
           onPointerMove={handlePointerMove}
           onPointerUp={handlePointerUp}
@@ -547,16 +601,39 @@ export function BoardEditor({ scene: rawScene, rinkType = 'full', onChange }) {
             positions={renderPositions}
             shapeLayers={shapeLayers}
             selectedId={selectedId}
-            lockTouch={!!selectedId || !!armed || isArrowMode || !!drag}
-            onObjectPointerDown={handleObjectPointerDown}
+            lockTouch={!!selectedId || !!armed || !!drag}
             onSurfacePointerDown={handleSurfacePointerDown}
           />
 
         </div>
 
-          {/* Почему фишка не двигается — объясняем ровно в тот момент, когда тренер
+          {/* ── Фишки кадра ──
+            Страховка для плотных куч: до фишки, полностью закрытой соседями, пальцем
+            на площадке не добраться никак. Тап по чипу выделяет её, повторный —
+            открывает то же меню, что и на планшете. */}
+        {scene.objects.length > 0 && !armed && (
+          <div className="shrink-0 flex items-center gap-2 overflow-x-auto scrollbar-hide">
+            {scene.objects.map(obj => (
+              <button
+                key={obj.id}
+                onClick={() => pickFromChip(obj.id)}
+                className={clsx(
+                  'shrink-0 p-1.5 rounded-xl border transition-colors outline-none active:scale-95',
+                  selectedId === obj.id
+                    ? 'bg-brand-opacity border-brand'
+                    : 'bg-surface-level2 border-surface-border'
+                )}
+                aria-label={`Фишка ${obj.label || ''}`}
+              >
+                <ObjectChip type={obj.type} label={obj.label} size={24} />
+              </button>
+            ))}
+          </div>
+        )}
+
+        {/* Почему фишка не двигается — объясняем ровно в тот момент, когда тренер
             пробует её потащить не на первом кадре */}
-        {selectedObject && safeIndex > 0 && !armed && !isArrowMode && (
+        {selectedObject && safeIndex > 0 && !armed && (
           <p className="shrink-0 text-[12px] text-content-muted leading-snug">
             Расставить фишки свободно можно на кадре 1. Здесь их положение задают
             траектории.
@@ -564,12 +641,40 @@ export function BoardEditor({ scene: rawScene, rinkType = 'full', onChange }) {
         )}
 
         {/* ── Подсказка режима рисования ── */}
-        {(armed || isArrowMode) && (
+        {armed && (
           <p className="shrink-0 text-[12px] text-brand font-semibold leading-snug">
-            {isArrowMode
-              ? 'Проведите стрелку по площадке. Она ничего не двигает — только поясняет.'
-              : `${armedLabel}: нарисуйте путь — хоть дугой, хоть вокруг конуса. Конец пути станет местом на следующем кадре.`}
+            {armedLabel}: нарисуйте путь — хоть дугой, хоть вокруг конуса. Конец пути
+            станет местом на следующем кадре.
           </p>
+        )}
+
+        {/* ── Скорость перехода ──
+            Принадлежит кадру, из которого идёт движение: тренер смотрит на расстановку
+            и решает, насколько быстро из неё выходят. На последнем кадре выходить
+            некуда, поэтому там выбора нет. */}
+        {safeIndex < scene.frames.length - 1 && (
+          <div className="shrink-0 flex items-center gap-2">
+            <span className="text-[12px] font-bold text-content-muted uppercase tracking-wider shrink-0">
+              Скорость
+            </span>
+            <div className="flex items-center gap-2">
+              {FRAME_SPEEDS.map(speed => (
+                <button
+                  key={speed.id}
+                  onClick={() => patchFrame(safeIndex, { speed: speed.id })}
+                  className={clsx(
+                    'px-3 py-1.5 rounded-lg text-[13px] font-black tracking-widest transition-colors outline-none',
+                    currentFrame.speed === speed.id
+                      ? 'bg-brand text-white'
+                      : 'bg-surface-level2 text-content-muted border border-surface-border'
+                  )}
+                  aria-label={`Скорость ${speed.label}`}
+                >
+                  {speed.label}
+                </button>
+              ))}
+            </div>
+          </div>
         )}
 
         {/* ── Подпись кадра ── */}
@@ -581,7 +686,7 @@ export function BoardEditor({ scene: rawScene, rinkType = 'full', onChange }) {
           className="shrink-0 w-full px-3 py-2.5 rounded-xl bg-surface-level2 text-content-main text-[14px] outline-none border border-surface-border placeholder:text-content-subtle"
         />
 
-        {/* ── Фишки и стрелка-пояснение ── */}
+        {/* ── Фишки ── */}
         <div className="shrink-0 flex items-center gap-2 overflow-x-auto scrollbar-hide pb-1">
           {OBJECT_TYPES.map(type => (
             <button
@@ -592,16 +697,6 @@ export function BoardEditor({ scene: rawScene, rinkType = 'full', onChange }) {
               + {type.label}
             </button>
           ))}
-
-          <button
-            onClick={() => { setIsArrowMode(!isArrowMode); setArmed(null); setSelectedId(null); closeMenu(); }}
-            className={clsx(
-              'shrink-0 px-3 py-2 rounded-xl text-[12px] font-bold uppercase tracking-wider transition-colors outline-none',
-              isArrowMode ? 'bg-brand text-white' : 'bg-surface-level2 text-content-muted'
-            )}
-          >
-            Стрелка
-          </button>
         </div>
 
       {/* ── Выпадалка фишки ──
