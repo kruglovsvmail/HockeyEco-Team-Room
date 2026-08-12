@@ -159,6 +159,32 @@ export function BoardPlayer({ scene: rawScene, rinkType = 'full', autoPlay = fal
     setTime(timeline[index] || 0);
   };
 
+  // ── Свайп по планшету переключает кадры ──────────────────────────────────
+  //
+  // Горизонтальный жест забираем себе, вертикальный отдаём странице: у сцены
+  // touch-action: pan-y, поэтому прокрутка экрана продолжает работать поверх планшета.
+  const swipeRef = useRef(null);
+
+  const handleSwipeStart = (e) => {
+    if (frameCount < 2) return;
+    swipeRef.current = { x: e.clientX, y: e.clientY };
+  };
+
+  const handleSwipeEnd = (e) => {
+    if (!swipeRef.current) return;
+
+    const dx = e.clientX - swipeRef.current.x;
+    const dy = e.clientY - swipeRef.current.y;
+    swipeRef.current = null;
+
+    // Короткий или преимущественно вертикальный жест — не наш
+    if (Math.abs(dx) < 40 || Math.abs(dx) <= Math.abs(dy)) return;
+
+    const target = dx < 0 ? frameIndex + 1 : frameIndex - 1;
+    if (target < 0 || target > frameCount - 1) return;
+    jumpToFrame(target);
+  };
+
   // Подпись показываем от кадра, к которому идёт движение: пока фишки едут, читать
   // нужно уже про новый шаг, а не про тот, который закончился.
   const noteIndex = t > 0.35 ? Math.min(frameIndex + 1, frameCount - 1) : frameIndex;
@@ -175,6 +201,9 @@ export function BoardPlayer({ scene: rawScene, rinkType = 'full', autoPlay = fal
       <div
         className="w-full"
         style={{ aspectRatio: `${boardRatio.w} / ${boardRatio.h}` }}
+        onPointerDown={handleSwipeStart}
+        onPointerUp={handleSwipeEnd}
+        onPointerCancel={() => { swipeRef.current = null; }}
       >
         <BoardScene rinkType={rinkType} scene={scene} positions={positions} shapeLayers={shapeLayers} />
       </div>
