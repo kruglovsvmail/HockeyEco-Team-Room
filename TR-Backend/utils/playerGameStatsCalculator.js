@@ -140,7 +140,11 @@ goals AS (
         COUNT(*) FILTER (WHERE ge.period = 'OT')                     AS g_ot,
         COUNT(*) FILTER (WHERE ge.goal_strength IN ('pp1', 'pp2'))   AS g_pp,
         COUNT(*) FILTER (WHERE ge.goal_strength IN ('sh1', 'sh2'))   AS g_sh,
-        COUNT(*) FILTER (WHERE ge.goal_strength = 'en')              AS g_en
+        COUNT(*) FILTER (WHERE ge.goal_strength = 'en')              AS g_en,
+        -- Реализованный штрафной бросок по ходу матча. Это разрез обычной шайбы,
+        -- как большинство или пустые ворота: гол уже посчитан в goals_p1..goals_ot
+        -- и в счёте матча. С послематчевой серией (so_goals) ничего общего не имеет.
+        COUNT(*) FILTER (WHERE ge.goal_strength = 'ps')              AS g_ps
     FROM game_events ge
     CROSS JOIN ctx c
     WHERE ge.game_id = c.game_id
@@ -455,7 +459,7 @@ INSERT INTO player_game_statistics (
     game_type, stage_type, game_date, is_home,
     position_in_line, is_goalie, is_captain, is_assistant, team_result,
     goals_p1, goals_p2, goals_p3, goals_ot,
-    goals_pp, goals_sh, goals_en, goals_gw,
+    goals_pp, goals_sh, goals_en, goals_ps, goals_gw,
     assists,
     plus_count, minus_count, pm_is_official,
     pim_p1, pim_p2, pim_p3, pim_ot,
@@ -497,7 +501,7 @@ SELECT
     END AS team_result,
 
     COALESCE(g.g_p1, 0), COALESCE(g.g_p2, 0), COALESCE(g.g_p3, 0), COALESCE(g.g_ot, 0),
-    COALESCE(g.g_pp, 0), COALESCE(g.g_sh, 0), COALESCE(g.g_en, 0),
+    COALESCE(g.g_pp, 0), COALESCE(g.g_sh, 0), COALESCE(g.g_en, 0), COALESCE(g.g_ps, 0),
     CASE WHEN w.player_id IS NOT NULL THEN 1 ELSE 0 END AS goals_gw,
 
     COALESCE(a.a, 0),
