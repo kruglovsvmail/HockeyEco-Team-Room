@@ -349,6 +349,42 @@ export default function App() {
     },
   });
 
+  /**
+   * Применение обновления по кнопке.
+   *
+   * Ждать updateServiceWorker нельзя: он только шлёт SKIP_WAITING ждущему воркеру,
+   * а перезагрузку плагин вешает на событие controlling. Если registration.waiting
+   * к моменту нажатия уже пуст (окно провисело открытым, воркера подобрала другая
+   * вкладка), сообщение уходит в никуда — события нет, и кнопка крутится бесконечно.
+   * Поэтому будим воркера, но перезагружаемся сами.
+   *
+   * Сервис-воркер при этом НЕ снимаем, в отличие от LMS: к его регистрации привязана
+   * push-подписка (usePushSubscription), и unregister тихо убил бы уведомления.
+   * Достаточно выкинуть precache старой сборки — тогда после перезагрузки страница
+   * и ассеты приедут из сети, даже если вкладку ещё держит прежний воркер.
+   * Кэши данных и картинок (api-cache, image-cache) не трогаем: это офлайн-запас
+   * приложения, и обновление кода не повод его сбрасывать.
+   */
+  const applyUpdate = async () => {
+    setNeedRefresh(false);
+
+    try {
+      updateServiceWorker(true);
+
+      if (window.caches) {
+        const keys = await caches.keys();
+        await Promise.all(
+          keys.filter(k => k.startsWith('workbox-precache')).map(k => caches.delete(k))
+        );
+      }
+    } catch (err) {
+      // Не вышло — перезагрузиться всё равно надо, хуже от этого не станет
+      console.error('Не удалось подготовить обновление:', err);
+    }
+
+    window.location.reload();
+  };
+
   // Что реально висит в дереве: при скрытии плашка задерживается здесь на время
   // анимации ухода вверх, иначе она пропадала бы рывком.
   const [renderedBannerKey, setRenderedBannerKey] = useState(null);
@@ -540,10 +576,9 @@ export default function App() {
       />
 
       {/* ГЛОБАЛЬНЫЙ ИНТЕРАКТИВНЫЙ ОБНОВЛЯТОР КОДА PWA С СПИСКОМ ИЗМЕНЕНИЙ */}
-      <UpdatePromptModal 
+      <UpdatePromptModal
         isOpen={needRefresh}
-        onUpdate={() => updateServiceWorker(true)}
-        onLater={() => setNeedRefresh(false)}
+        onUpdate={applyUpdate}
       />
 
     </div>

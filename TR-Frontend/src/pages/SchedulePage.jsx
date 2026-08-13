@@ -15,8 +15,10 @@ import { TopSheet } from '../ui/TopSheet';
 import EventCard from '../components/EventCalendar/EventCard';
 import { getAuthHeaders } from '../utils/helpers';
 import { useFocusRevalidate } from '../hooks/useFocusRevalidate';
+import { usePullToRefresh } from '../hooks/usePullToRefresh';
 import { usePageVisit } from '../hooks/usePageVisit';
 import { PageLoader } from '../ui/Loader';
+import { PullToRefreshIndicator } from '../ui/PullToRefreshIndicator';
 import { FadeIn } from '../ui/FadeIn';
 
 dayjs.extend(isoWeek);
@@ -92,7 +94,9 @@ export function SchedulePage() {
   const isSwipeLocked = useRef(false);
   
   const scrollRefs = useRef([]);
-  
+  // Отдельная ссылка на центральный (видимый) слайд — на нём висит «потяни — обнови»
+  const activeSlideRef = useRef(null);
+
   const [offsetIndex, setOffsetIndex] = useState(0);
   const [isAnimating, setIsAnimating] = useState(false);
   const animationTimer = useRef(null);
@@ -377,13 +381,27 @@ export function SchedulePage() {
     isHorizontalSwipe.current = false;
   };
 
+  // Жест «потяни — обнови» живёт на центральном (видимом) слайде недели. resetKey
+  // нужен потому, что при перелистывании слайды пересоздаются и элемент меняется;
+  // во время анимации перелистывания жест выключен, чтобы не спорить со свайпом.
+  const { pullDistance, isRefreshing, threshold: pullThreshold } = usePullToRefresh(
+    activeSlideRef,
+    fetchEvents,
+    {
+      enabled: isPageReady && !isAnimating,
+      resetKey: currentDate.startOf('isoWeek').format('YYYY-MM-DD'),
+    }
+  );
+
   if (!isPageReady) {
     return <PageLoader />;
   }
 
   return (
     <FadeIn className="w-full h-full">
-      <div 
+      <PullToRefreshIndicator distance={pullDistance} isRefreshing={isRefreshing} threshold={pullThreshold} />
+
+      <div
         className="flex flex-col w-full h-full overflow-hidden relative"
         style={{ touchAction: 'pan-y' }}
       >
@@ -432,7 +450,10 @@ export function SchedulePage() {
               return (
                 <div 
                   key={slideWeekKey} 
-                  ref={el => scrollRefs.current[idx] = el}
+                  ref={el => {
+                    scrollRefs.current[idx] = el;
+                    if (idx === 1) activeSlideRef.current = el;
+                  }}
                   className="w-1/3 shrink-0 flex flex-col px-3 h-full overflow-y-auto scrollbar-hide pt-[80px] pb-32"
                 >
                   <div>

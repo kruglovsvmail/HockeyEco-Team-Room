@@ -3,6 +3,8 @@ import { getAuthHeaders, uiFixed } from '../../../utils/helpers';
 import { Icon } from '../../../ui/Icon';
 import { ChipTabs } from '../../../ui/ChipTabs';
 import { useFocusRevalidate } from '../../../hooks/useFocusRevalidate';
+import { usePullToRefresh } from '../../../hooks/usePullToRefresh';
+import { PullToRefreshIndicator } from '../../../ui/PullToRefreshIndicator';
 import { PageLoader } from '../../../ui/Loader';
 import { FadeIn } from '../../../ui/FadeIn';
 import { HintPopover } from '../../../ui/HintPopover';
@@ -109,6 +111,11 @@ export const EventDetailsMeeting = ({ event, openRightPanel }) => {
   useEffect(() => { fetchAllMeetingData(); }, [fetchAllMeetingData]);
   useFocusRevalidate(fetchAllMeetingData);
 
+  // «Потяни вниз — обнови»: тот же ре-фетч, что и при возврате на вкладку,
+  // только руками. Жест стартует лишь когда экран прокручен в самый верх.
+  const { pullDistance, isRefreshing, threshold: pullThreshold } =
+    usePullToRefresh(scrollContainerRef, fetchAllMeetingData);
+
   // ── Синхронизация event при редактировании через панель ──────────────────
   useEffect(() => {
     const onUpdate = () => {
@@ -145,6 +152,7 @@ export const EventDetailsMeeting = ({ event, openRightPanel }) => {
       className="h-full overflow-y-auto scrollbar-hide relative z-10 event-scroll-timeline"
       style={{ overflowAnchor: 'none' }}
     >
+      <PullToRefreshIndicator distance={pullDistance} isRefreshing={isRefreshing} threshold={pullThreshold} />
 
       {/* ── К1: БЕЙДЖ «КЛУБНОЕ» + СОБРАНИЕ + ВРЕМЯ — sticky, всегда виден ──
           Высота задана явно и растёт на высоту строки бейджа у клубного события:

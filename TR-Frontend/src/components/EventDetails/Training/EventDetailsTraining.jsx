@@ -3,6 +3,8 @@ import { getAuthHeaders, getImageUrl, uiFixed, getTrainingTypeIcon } from '../..
 import { Icon } from '../../../ui/Icon';
 import { ChipTabs } from '../../../ui/ChipTabs';
 import { useFocusRevalidate } from '../../../hooks/useFocusRevalidate';
+import { usePullToRefresh } from '../../../hooks/usePullToRefresh';
+import { PullToRefreshIndicator } from '../../../ui/PullToRefreshIndicator';
 import { PageLoader } from '../../../ui/Loader';
 import { FadeIn } from '../../../ui/FadeIn';
 import { useAccess } from '../../../hooks/useAccess';
@@ -254,6 +256,11 @@ export const EventDetailsTraining = ({ event, openRightPanel }) => {
   useEffect(() => { fetchAllTrainingData(); }, [fetchAllTrainingData]);
   useFocusRevalidate(fetchAllTrainingData);
 
+  // «Потяни вниз — обнови»: тот же ре-фетч, что и при возврате на вкладку,
+  // только руками. Жест стартует лишь когда экран прокручен в самый верх.
+  const { pullDistance, isRefreshing, threshold: pullThreshold } =
+    usePullToRefresh(scrollContainerRef, fetchAllTrainingData);
+
   // Предзагрузка картинки расстановки из S3 заранее (на уровне страницы деталей, а не вкладки «Расстановка»).
   const [formationFile, setFormationFile] = useState(null);
   useEffect(() => {
@@ -381,6 +388,7 @@ export const EventDetailsTraining = ({ event, openRightPanel }) => {
       className="h-full overflow-y-auto scrollbar-hide relative z-10 event-scroll-timeline"
       style={{ overflowAnchor: 'none' }}
     >
+      <PullToRefreshIndicator distance={pullDistance} isRefreshing={isRefreshing} threshold={pullThreshold} />
 
       {/* ── К1: БЕЙДЖ «КЛУБНАЯ» + ТРЕНИРОВКА + ВРЕМЯ — sticky, всегда виден ──
           Высота задана явно и растёт на высоту строки бейджа у клубного события:

@@ -3,6 +3,8 @@ import { getImageUrl, getAuthHeaders, getContrastTextColor, uiFixed } from '../.
 import { Icon } from '../../../ui/Icon';
 import { ChipTabs } from '../../../ui/ChipTabs';
 import { useFocusRevalidate } from '../../../hooks/useFocusRevalidate';
+import { usePullToRefresh } from '../../../hooks/usePullToRefresh';
+import { PullToRefreshIndicator } from '../../../ui/PullToRefreshIndicator';
 import { HintPopover } from '../../../ui/HintPopover';
 import { useAccess } from '../../../hooks/useAccess';
 import { PERMISSIONS } from '../../../utils/permissions';
@@ -156,6 +158,11 @@ export const EventDetailsMatch = ({ event, user: userProp, selectedTeam: selecte
 
   useEffect(() => { fetchAllMatchData(); }, [fetchAllMatchData]);
   useFocusRevalidate(fetchAllMatchData);
+
+  // «Потяни вниз — обнови»: тот же ре-фетч, что и при возврате на вкладку,
+  // только руками. Жест стартует лишь когда экран прокручен в самый верх.
+  const { pullDistance, isRefreshing, threshold: pullThreshold } =
+    usePullToRefresh(scrollContainerRef, fetchAllMatchData);
   useEffect(() => () => { if (rafRef.current) cancelAnimationFrame(rafRef.current); }, []);
 
   // Предзагрузка картинки состава из S3 заранее (на уровне страницы деталей, а не вкладки «Состав»).
@@ -213,6 +220,7 @@ export const EventDetailsMatch = ({ event, user: userProp, selectedTeam: selecte
       className="h-full overflow-y-auto scrollbar-hide relative z-10 event-scroll-timeline"
       style={{ overflowAnchor: 'none' }}
     >
+      <PullToRefreshIndicator distance={pullDistance} isRefreshing={isRefreshing} threshold={pullThreshold} />
       {/* ══════════════════════════════════════════════════════════════════════
           АРХИТЕКТУРА ШАПКИ:
           

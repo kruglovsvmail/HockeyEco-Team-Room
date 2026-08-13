@@ -2,16 +2,16 @@ import React, { useState, useEffect } from 'react';
 import { Icon } from '../ui/Icon';
 import { ButtonLP } from '../ui/Button-LP';
 
-export function UpdatePromptModal({ isOpen, onUpdate, onLater }) {
+export function UpdatePromptModal({ isOpen, onUpdate }) {
   const [changelog, setChangelog] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isUpdating, setIsUpdating] = useState(false);
 
+  // Без паузы: перезагрузка идёт сразу по нажатию. Состояние нужно только чтобы
+  // кнопка не приняла второй клик за те миллисекунды, пока окно ещё на экране.
   const handleUpdate = () => {
     setIsUpdating(true);
-    setTimeout(() => {
-      onUpdate();
-    }, 3000);
+    onUpdate();
   };
 
   useEffect(() => {
