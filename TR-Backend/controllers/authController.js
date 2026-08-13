@@ -51,8 +51,9 @@ const fetchPwaUserProfile = async (userId) => {
   // (TeamController.js) — если подмешать турнирные роли здесь, фронт начнёт рисовать
   // кнопки, которые сервер потом отклонит.
   //
-  // Ниже в WHERE обращение к tournament_team_roles остаётся: заявленный на турнир человек
-  // должен видеть команду в списке, просто с пустым набором ролей.
+  // Ниже в WHERE обращения к tournament_team_roles и club_members остаются: и заявленный
+  // на турнир человек, и рядовой член клуба должны видеть команду в списке, просто с
+  // пустым набором ролей.
   const teamsResult = await pool.query(`
     SELECT t.id, t.name, t.short_name, t.logo_url, t.owner_id, t.club_id,
       (
@@ -94,10 +95,18 @@ const fetchPwaUserProfile = async (userId) => {
       WHERE cr.club_id = t.club_id AND cr.user_id = $1 AND cr.left_at IS NULL AND cm.left_at IS NULL
     )
     OR EXISTS (
+      -- Членство в общей базе клуба даёт видимость всех его составов, но не права:
+      -- ролей у чужой команды не появится, и user_role придёт пустым. Именно на этот
+      -- список опирается настройка «Все команды клуба» в сайдбаре — выключенная,
+      -- она оставляет только те составы, где человек реально числится.
+      SELECT 1 FROM club_members cm
+      WHERE cm.club_id = t.club_id AND cm.user_id = $1 AND cm.left_at IS NULL
+    )
+    OR EXISTS (
       SELECT 1 FROM clubs c WHERE c.id = t.club_id AND c.owner_id = $1
     )
     OR EXISTS (
-      SELECT 1 FROM tournament_team_roles ttr 
+      SELECT 1 FROM tournament_team_roles ttr
       JOIN tournament_teams tt ON ttr.tournament_team_id = tt.id 
       WHERE tt.team_id = t.id AND ttr.user_id = $1 AND ttr.left_at IS NULL
     )
