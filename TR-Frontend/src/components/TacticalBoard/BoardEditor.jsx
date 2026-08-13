@@ -1,4 +1,4 @@
-import React, { useState, useRef, useMemo, useCallback, useEffect } from 'react';
+import React, { useState, useRef, useMemo, useCallback, useEffect, useLayoutEffect } from 'react';
 import { createPortal } from 'react-dom';
 import clsx from 'clsx';
 import { Icon } from '../../ui/Icon';
@@ -51,6 +51,13 @@ const TAP_TOLERANCE_PERCENT = 1.2;
 // самой фишки: попасть пальцем в кружок диаметром метр невозможно.
 const PICK_RADIUS_M = 3.2;
 
+// Пределы масштаба планшета, в процентах. Увеличивать некуда: сто процентов — это уже
+// вся доступная ширина. А уменьшение нужно затем, чтобы полный каток влез в экран
+// целиком и траекторию через всю площадку можно было провести одним движением,
+// не упираясь пальцем в край.
+const ZOOM_MIN = 50;
+const ZOOM_MAX = 100;
+
 // Перевод точки экрана в проценты площадки. Идём через getScreenCTM, а не через
 // getBoundingClientRect: матрица учитывает и viewBox, и разворот катка на вертикаль,
 // и любые CSS-трансформации выше по дереву — включая масштаб интерфейса из настроек.
@@ -72,6 +79,10 @@ export function BoardEditor({ scene: rawScene, rinkType = 'full', onChange }) {
   const [draft, setDraft] = useState(null);   // рисуемая прямо сейчас линия
   const [drag, setDrag] = useState(null);     // фишка, которую тащат прямо сейчас
   const [armed, setArmed] = useState(null);   // выбранное действие: { objId, kind }
+  // Масштаб планшета. Каток не подгоняется под экран сам: уменьшение — осознанное
+  // действие тренера на время длинной траектории, а не постоянное состояние.
+  const [zoomPercent, setZoomPercent] = useState(ZOOM_MAX);
+
   // Проигрывание прямо в планшете: проверять анимацию, выходя из редактора и заходя
   // обратно, — единственный способ, который был раньше, и он никуда не годится.
   // Позиции на время проигрывания подменяются интерполяцией, а сам редактор остаётся
@@ -84,6 +95,13 @@ export function BoardEditor({ scene: rawScene, rinkType = 'full', onChange }) {
 
   const rinkRef = useRef(null);
   const boardRef = useRef(null);
+  const scrollRef = useRef(null);
+
+  // Указатели на планшете. Нужны только ради щипка: пока палец один, всё решает
+  // обычная логика выбора и рисования.
+  const pointersRef = useRef(new Map());
+  const pinchRef = useRef(null);
+  const scrollFixRef = useRef(null);
 
   // Кадр мог исчезнуть после удаления — зажимаем указатель в границы прямо при
   // вычислении. Синхронизировать frameIndex отдельным эффектом не нужно: везде ниже
@@ -144,6 +162,93 @@ export function BoardEditor({ scene: rawScene, rinkType = 'full', onChange }) {
     };
   };
 
+  // ── Щипок ────────────────────────────────────────────────────────────────
+  //
+  // Браузерный зум в приложении отключён (user-scalable=no), поэтому масштабируем сами.
+  // Каток растягивается от середины между пальцами: без этого зона, которую разглядывают,
+  // уезжает из виду и щипок ощущается неточным. Компенсируем прокруткой контейнера —
+  // ширина катка меняется, и точка под пальцами сдвигается вместе с ней.
+
+  // Экранные размеры приходят с учётом масштаба интерфейса из настроек, а scrollTop —
+  // нет. Приводим одно к другому, иначе при увеличенном шрифте каток уползал бы.
+  const scrollScale = () => {
+    const scroll = scrollRef.current;
+    if (!scroll?.offsetWidth) return 1;
+    return scroll.getBoundingClientRect().width / scroll.offsetWidth;
+  };
+
+  const pinchMidY = () => {
+    const points = [...pointersRef.current.values()];
+    return (points[0].y + points[1].y) / 2;
+  };
+
+  const pinchDistance = () => {
+    const points = [...pointersRef.current.values()];
+    return Math.hypot(points[0].x - points[1].x, points[0].y - points[1].y);
+  };
+
+  const startPinch = () => {
+    const scroll = scrollRef.current;
+    const board = boardRef.current;
+    if (!scroll || !board) return;
+
+    // Начатый одним пальцем жест отменяем: иначе в сцене останется огрызок линии
+    setDraft(null);
+    setDrag(null);
+    closeMenu();
+
+    const scale = scrollScale();
+    const scrollTop = scroll.getBoundingClientRect().top;
+    const boardTop = (board.getBoundingClientRect().top - scrollTop) / scale + scroll.scrollTop;
+    const anchor = scroll.scrollTop + (pinchMidY() - scrollTop) / scale;
+
+    pinchRef.current = {
+      distance: pinchDistance(),
+      zoom: zoomPercent,
+      boardTop,
+      // Насколько глубоко от верха катка находится точка между пальцами
+      depth: anchor - boardTop,
+    };
+  };
+
+  const handlePinchMove = () => {
+    const pinch = pinchRef.current;
+    const scroll = scrollRef.current;
+    if (!pinch || !scroll || pinch.distance === 0) return;
+
+    const next = Math.round(pinch.zoom * (pinchDistance() / pinch.distance));
+    const clamped = Math.max(ZOOM_MIN, Math.min(ZOOM_MAX, next));
+
+    const scale = scrollScale();
+    const midOffset = (pinchMidY() - scroll.getBoundingClientRect().top) / scale;
+    scrollFixRef.current = pinch.boardTop + pinch.depth * (clamped / pinch.zoom) - midOffset;
+
+    setZoomPercent(clamped);
+  };
+
+  // Прокрутку правим после перерисовки: до неё каток ещё прежней ширины
+  useLayoutEffect(() => {
+    const fix = scrollFixRef.current;
+    if (fix === null || !scrollRef.current) return;
+    scrollFixRef.current = null;
+    scrollRef.current.scrollTop = Math.max(0, fix);
+  }, [zoomPercent]);
+
+  // Двумя пальцами прокрутка контейнера должна замолчать, иначе она тянет каток
+  // против нашей компенсации. Слушатель нативный: React вешает touchmove пассивным,
+  // и preventDefault из его обработчика браузер игнорирует.
+  useEffect(() => {
+    const board = boardRef.current;
+    if (!board) return;
+
+    const blockTwoFinger = (e) => {
+      if (e.touches.length >= 2) e.preventDefault();
+    };
+
+    board.addEventListener('touchmove', blockTwoFinger, { passive: false });
+    return () => board.removeEventListener('touchmove', blockTwoFinger);
+  }, []);
+
   // ── Проигрывание ─────────────────────────────────────────────────────────
   //
   // Своей раскладки у просмотра нет: редактор остаётся на месте, подменяются только
@@ -203,6 +308,14 @@ export function BoardEditor({ scene: rawScene, rinkType = 'full', onChange }) {
     const transition = frameTransitionMs(scene.frames[index]);
     return { index, t: rest <= FRAME_HOLD_MS ? 0 : Math.min(1, (rest - FRAME_HOLD_MS) / transition) };
   }, [isPlaying, elapsed, timeline, scene]);
+
+  const zoom = zoomPercent / 100;
+
+  // Меню привязано к экранным координатам фишки, а масштаб их сдвигает — закрываем
+  const changeZoom = (next) => {
+    setZoomPercent(next);
+    closeMenu();
+  };
 
   const togglePlay = () => {
     if (isPlaying) {
@@ -462,6 +575,19 @@ export function BoardEditor({ scene: rawScene, rinkType = 'full', onChange }) {
   };
 
   const handleSurfacePointerDown = (e) => {
+    pointersRef.current.set(e.pointerId, { x: e.clientX, y: e.clientY });
+
+    // Захватываем указатель сразу: иначе палец, поднятый мимо планшета, не пришлёт
+    // pointerup, останется в списке навсегда, и следующее одиночное касание сразу
+    // сойдёт за щипок
+    e.currentTarget.setPointerCapture?.(e.pointerId);
+
+    if (pointersRef.current.size === 2) {
+      startPinch();
+      return;
+    }
+    if (pointersRef.current.size > 2) return;
+
     const point = clientToPercent(rinkRef.current, rinkType, e.clientX, e.clientY);
     if (!point) return;
 
@@ -500,6 +626,15 @@ export function BoardEditor({ scene: rawScene, rinkType = 'full', onChange }) {
   };
 
   const handlePointerMove = (e) => {
+    if (pointersRef.current.has(e.pointerId)) {
+      pointersRef.current.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    }
+
+    if (pinchRef.current) {
+      if (pointersRef.current.size >= 2) handlePinchMove();
+      return;
+    }
+
     if (!drag && !draft) return;
 
     if (drag) {
@@ -531,7 +666,16 @@ export function BoardEditor({ scene: rawScene, rinkType = 'full', onChange }) {
     if (points !== draft.points) setDraft({ ...draft, points });
   };
 
-  const handlePointerUp = () => {
+  const handlePointerUp = (e) => {
+    pointersRef.current.delete(e.pointerId);
+
+    // Щипок держится, пока на планшете два пальца. Убрали один — просто выходим:
+    // ни линии, ни перетаскивания за это время не начиналось.
+    if (pinchRef.current) {
+      if (pointersRef.current.size < 2) pinchRef.current = null;
+      return;
+    }
+
     if (drag) {
       const moved = drag.movable
         ? Math.hypot(drag.point[0] - drag.start[0], drag.point[1] - drag.start[1])
@@ -642,6 +786,7 @@ export function BoardEditor({ scene: rawScene, rinkType = 'full', onChange }) {
           появляются и исчезают, не сжимая её. Раньше от одной кнопки «Убрать фишку»
           каток заметно прыгал. */}
       <div
+        ref={scrollRef}
         className="flex-1 min-h-0 overflow-y-auto scrollbar-hide flex flex-col gap-3"
         onScroll={closeMenu}
       >
@@ -704,8 +849,8 @@ export function BoardEditor({ scene: rawScene, rinkType = 'full', onChange }) {
             четырьмя уголками чужого цвета. */}
         <div
           ref={boardRef}
-          className="relative w-full shrink-0"
-          style={{ aspectRatio: `${board.w} / ${board.h}` }}
+          className="relative shrink-0 mx-auto"
+          style={{ width: `${zoom * 100}%`, aspectRatio: `${board.w} / ${board.h}` }}
           onPointerMove={handlePointerMove}
           onPointerUp={handlePointerUp}
           onPointerCancel={handlePointerUp}
@@ -768,12 +913,15 @@ export function BoardEditor({ scene: rawScene, rinkType = 'full', onChange }) {
             Принадлежит кадру, из которого идёт движение: тренер смотрит на расстановку
             и решает, насколько быстро из неё выходят. На последнем кадре выходить
             некуда, поэтому там выбора нет. */}
-        {safeIndex < scene.frames.length - 1 && (
-          <div className="shrink-0 flex items-center gap-2">
-            <span className="text-[12px] font-bold text-content-muted uppercase tracking-wider shrink-0">
-              Скорость
-            </span>
-            <div className="flex items-center gap-2">
+        {/* Скорость перехода и масштаб — в одном ряду. На узком экране масштаб
+            переносится на следующую строку, вместо того чтобы сжимать кнопки скорости
+            до нечитаемых. */}
+        <div className="shrink-0 flex items-center gap-x-4 gap-y-2 flex-wrap">
+          {safeIndex < scene.frames.length - 1 && (
+            <div className="flex items-center gap-2 shrink-0">
+              <span className="text-[12px] font-bold text-content-muted uppercase tracking-wider shrink-0">
+                Скорость
+              </span>
               {FRAME_SPEEDS.map(speed => (
                 <button
                   key={speed.id}
@@ -790,8 +938,28 @@ export function BoardEditor({ scene: rawScene, rinkType = 'full', onChange }) {
                 </button>
               ))}
             </div>
+          )}
+
+          <div className="flex items-center gap-2 flex-1 min-w-[160px]">
+            <span className="text-[12px] font-bold text-content-muted uppercase tracking-wider shrink-0">
+              Масштаб
+            </span>
+            <input
+              type="range"
+              min={ZOOM_MIN}
+              max={ZOOM_MAX}
+              step={1}
+              value={zoomPercent}
+              onChange={(e) => changeZoom(Number(e.target.value))}
+              style={{ accentColor: 'var(--color-brand)' }}
+              className="flex-1 min-w-0 h-1.5 cursor-pointer"
+              aria-label="Масштаб планшета"
+            />
+            <span className="w-10 text-right text-[11px] font-bold text-content-muted tabular-nums shrink-0">
+              {zoomPercent}%
+            </span>
           </div>
-        )}
+        </div>
 
         {/* ── Подпись кадра ── */}
         <input
