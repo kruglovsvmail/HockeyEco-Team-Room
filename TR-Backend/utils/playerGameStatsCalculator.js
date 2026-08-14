@@ -17,11 +17,25 @@ import pool from '../config/db.js';
  * таблицы лидеров, профили игроков, витрина THF — агрегирует эту таблицу.
  *
  * Коэффициент надёжности (КН/GAA) здесь сознательно не считается.
+ *
+ * ─── ДВА ПОЛУЧАТЕЛЯ ─────────────────────────────────────────────────────────
+ * Резервные вратари дивизиона (game_rosters.is_reserve_goalie) идут НЕ сюда,
+ * а в отдельную таблицу reserve_goalie_game_statistics: их статистика не должна
+ * нигде суммироваться с личной статистикой заявленных игроков, и физическое
+ * разделение таблиц гарантирует это без фильтра в каждом будущем запросе.
+ *
+ * При этом расчёт у них общий: блок CTE (CTE_BLOCK) один на обе таблицы, к нему
+ * приставляется один из двух INSERT-хвостов, разведённых по одному флагу. Логика
+ * расчёта продублироваться не может — дублируются только списки колонок.
+ *
+ * На страницу матча разделение не влияет вовсе: getGameStats считает боксскор
+ * матча на лету из первичных таблиц и в player_game_statistics не заглядывает.
  */
 
-const DELETE_SQL = `DELETE FROM player_game_statistics WHERE game_id = $1`;
+const DELETE_MAIN_SQL    = `DELETE FROM player_game_statistics WHERE game_id = $1`;
+const DELETE_RESERVE_SQL = `DELETE FROM reserve_goalie_game_statistics WHERE game_id = $1`;
 
-const INSERT_SQL = `
+const CTE_BLOCK = `
 WITH ctx AS (
     -- Контекст матча. Ровно одна строка, если матч подлежит учёту, иначе ноль —
     -- и тогда весь запрос ничего не вставит.
@@ -76,6 +90,11 @@ roster AS (
         gr.player_id,
         gr.team_id,
         gr.position_in_line,
+        gr.jersey_number,
+        -- Резервный вратарь дивизиона: сыграл за команду, не будучи в её заявке.
+        -- По этому флагу строка уходит в reserve_goalie_game_statistics вместо
+        -- player_game_statistics.
+        gr.is_reserve_goalie,
         -- COALESCE обязателен: position_in_line может быть пустым, и тогда
         -- сравнение даёт NULL, а колонка объявлена NOT NULL
         COALESCE(gr.position_in_line = 'G', false)        AS is_goalie,
@@ -452,7 +471,11 @@ incomplete AS (
     ) AS flag
     FROM ctx c
 )
+`;
 
+// ─── ХВОСТ 1: ЗАЯВЛЕННЫЕ ИГРОКИ → player_game_statistics ────────────────────
+
+const INSERT_MAIN_SQL = `${CTE_BLOCK}
 INSERT INTO player_game_statistics (
     game_id, player_id, team_id, tournament_roster_id,
     division_id, season_id, league_id, external_tournament_id,
@@ -569,15 +592,123 @@ LEFT JOIN goalie_shots       gs  ON gs.player_id  = r.player_id AND gs.team_id  
 LEFT JOIN goalie_minutes_agg gm  ON gm.player_id  = r.player_id AND gm.team_id  = r.team_id
 LEFT JOIN goalie_decision    gd  ON gd.player_id  = r.player_id AND gd.team_id  = r.team_id
 LEFT JOIN so_goalie          sog ON sog.player_id = r.player_id AND sog.team_id = r.team_id
+
+WHERE NOT r.is_reserve_goalie
+`;
+
+// ─── ХВОСТ 2: РЕЗЕРВНЫЕ ВРАТАРИ → reserve_goalie_game_statistics ────────────
+// Тот же блок CTE, тот же расчёт — другой получатель и урезанный набор колонок:
+// полевые разрезы (шайбы по периодам, +/-, победная шайба, буллиты как бьющий)
+// резервному вратарю не заводятся, у него только вратарская линия плюс то, что
+// вратарь всё же может набрать: передача, штраф, гол в пустые ворота.
+
+const INSERT_RESERVE_SQL = `${CTE_BLOCK}
+INSERT INTO reserve_goalie_game_statistics (
+    game_id, player_id, team_id,
+    division_id, season_id, league_id,
+    stage_type, game_date, is_home, jersey_number, team_result,
+    goalie_seconds, goalie_started, goalie_shutout, goalie_decision,
+    goalie_shots_p1, goalie_shots_p2, goalie_shots_p3, goalie_shots_ot,
+    goalie_ga_p1, goalie_ga_p2, goalie_ga_p3, goalie_ga_ot,
+    goalie_ga_shot_p1, goalie_ga_shot_p2, goalie_ga_shot_p3, goalie_ga_shot_ot,
+    goalie_so_against, goalie_so_saves,
+    goals, assists, penalty_minutes, penalties_count,
+    shots_is_official, data_incomplete, calculated_at
+)
+SELECT
+    c.game_id,
+    r.player_id,
+    r.team_id,
+    c.division_id,
+    c.season_id,
+    c.league_id,
+    c.stage_type,
+    c.game_date,
+    r.is_home,
+    r.jersey_number,
+    CASE
+        WHEN c.home_score = c.away_score THEN 'draw'
+        WHEN (r.is_home AND c.home_score > c.away_score)
+          OR (NOT r.is_home AND c.away_score > c.home_score)
+            THEN CASE WHEN c.end_type IN ('ot', 'so') THEN 'ot_win'  ELSE 'win'  END
+        ELSE     CASE WHEN c.end_type IN ('ot', 'so') THEN 'ot_loss' ELSE 'loss' END
+    END AS team_result,
+
+    COALESCE(gm.secs, 0),
+    COALESCE(
+        (r.player_id = gst.home_starter AND r.is_home)
+            OR (r.player_id = gst.away_starter AND NOT r.is_home),
+        false
+    ) AS goalie_started,
+    -- Сухарь по тому же правилу, что и у заявленных вратарей: отстоял матч
+    -- единственным вратарём команды, не пропустил и команда не проиграла.
+    COALESCE(
+        (
+            r.is_goalie
+            AND CASE WHEN r.is_home THEN gc.home_cnt ELSE gc.away_cnt END = 1
+            AND CASE WHEN r.is_home THEN tc.home_conceded ELSE tc.away_conceded END = 0
+            AND NOT (
+                (r.is_home     AND c.home_score < c.away_score)
+             OR (NOT r.is_home AND c.away_score < c.home_score)
+            )
+        ),
+        false
+    ) AS goalie_shutout,
+    gd.decision,
+
+    COALESCE(gs.s_p1, 0), COALESCE(gs.s_p2, 0), COALESCE(gs.s_p3, 0), COALESCE(gs.s_ot, 0),
+    COALESCE(gga.ga_p1, 0), COALESCE(gga.ga_p2, 0), COALESCE(gga.ga_p3, 0), COALESCE(gga.ga_ot, 0),
+    COALESCE(gga.gas_p1, 0), COALESCE(gga.gas_p2, 0), COALESCE(gga.gas_p3, 0), COALESCE(gga.gas_ot, 0),
+
+    COALESCE(sog.so_against, 0), COALESCE(sog.so_saves, 0),
+
+    -- Разрезы по периодам здесь не хранятся, поэтому суммируем прямо в INSERT
+    (COALESCE(g.g_p1, 0) + COALESCE(g.g_p2, 0) + COALESCE(g.g_p3, 0) + COALESCE(g.g_ot, 0)),
+    COALESCE(a.a, 0),
+    (COALESCE(p.pim_p1, 0) + COALESCE(p.pim_p2, 0) + COALESCE(p.pim_p3, 0) + COALESCE(p.pim_ot, 0)),
+    COALESCE(p.pen_cnt, 0),
+
+    c.shots_is_official,
+    inc.flag,
+    NOW()
+
+FROM roster r
+CROSS JOIN ctx c
+CROSS JOIN incomplete inc
+LEFT JOIN goalie_start gst ON true
+LEFT JOIN goalie_count gc  ON true
+LEFT JOIN team_conceded tc ON true
+
+LEFT JOIN goals              g   ON g.player_id   = r.player_id AND g.team_id   = r.team_id
+LEFT JOIN assists            a   ON a.player_id   = r.player_id AND a.team_id   = r.team_id
+LEFT JOIN penalties          p   ON p.player_id   = r.player_id AND p.team_id   = r.team_id
+LEFT JOIN goalie_ga          gga ON gga.player_id = r.player_id AND gga.team_id = r.team_id
+LEFT JOIN goalie_shots       gs  ON gs.player_id  = r.player_id AND gs.team_id  = r.team_id
+LEFT JOIN goalie_minutes_agg gm  ON gm.player_id  = r.player_id AND gm.team_id  = r.team_id
+LEFT JOIN goalie_decision    gd  ON gd.player_id  = r.player_id AND gd.team_id  = r.team_id
+LEFT JOIN so_goalie          sog ON sog.player_id = r.player_id AND sog.team_id = r.team_id
+
+WHERE r.is_reserve_goalie
+  -- Страховка от невозможного состояния: резервный вратарь появляется только в
+  -- официальном матче дивизиона, а колонки таблицы это требуют (division_id NOT
+  -- NULL, stage_type без 'friendly'). Роняться на пересчёте из-за битой карточки
+  -- матча нельзя — вместе с ним откатился бы и основной боксскор.
+  AND c.division_id IS NOT NULL
+  AND c.stage_type <> 'friendly'
 `;
 
 /**
- * Пересчитывает боксскор одного матча.
+ * Пересчитывает боксскор одного матча — обе таблицы сразу.
+ *
+ * Обе всегда пересчитываются вместе и в одной транзакции: игрока могут пометить
+ * резервным вратарём или снять эту пометку правкой состава, и тогда его строка
+ * должна переехать из одной таблицы в другую целиком, без промежуточного
+ * состояния, где она есть в обеих или ни в одной.
  *
  * @param {number} gameId
  * @param {object} [externalClient] — уже открытый клиент/транзакция вызывающего.
  *   Если передан, функция работает внутри его транзакции и своей не открывает.
- * @returns {Promise<number>} сколько строк записано
+ * @returns {Promise<number>} сколько строк записано суммарно по обеим таблицам
  */
 export const recalculatePlayerGameStats = async (gameId, externalClient = null) => {
     const client = externalClient || await pool.connect();
@@ -586,11 +717,14 @@ export const recalculatePlayerGameStats = async (gameId, externalClient = null) 
     try {
         if (ownsTransaction) await client.query('BEGIN');
 
-        await client.query(DELETE_SQL, [gameId]);
-        const res = await client.query(INSERT_SQL, [gameId]);
+        await client.query(DELETE_MAIN_SQL, [gameId]);
+        await client.query(DELETE_RESERVE_SQL, [gameId]);
+
+        const mainRes    = await client.query(INSERT_MAIN_SQL, [gameId]);
+        const reserveRes = await client.query(INSERT_RESERVE_SQL, [gameId]);
 
         if (ownsTransaction) await client.query('COMMIT');
-        return res.rowCount;
+        return mainRes.rowCount + reserveRes.rowCount;
     } catch (error) {
         if (ownsTransaction) await client.query('ROLLBACK');
         console.error(`Ошибка пересчёта боксскора матча ${gameId}:`, error);
