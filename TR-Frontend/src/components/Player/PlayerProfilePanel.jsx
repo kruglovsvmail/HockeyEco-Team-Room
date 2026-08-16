@@ -8,6 +8,14 @@ import { HintPopover } from '../../ui/HintPopover';
 
 const GRIP_LABELS = { left: 'Левый', right: 'Правый' };
 
+// Даты истории квалификаций приходят строками 'YYYY-MM-DD'. Разбираем их вручную, а не
+// через Date: разбор строки даёт UTC-полночь, и в минусовых поясах дата уехала бы на день назад.
+const formatQualDate = (value) => {
+  if (!value) return '';
+  const [year, month, day] = String(value).split('-');
+  return day ? `${day}.${month}.${year}` : value;
+};
+
 const calcAge = (birthDate) => {
   if (!birthDate) return null;
   const diff = Date.now() - new Date(birthDate).getTime();
@@ -151,6 +159,37 @@ const SeasonRow = ({ row, isGoalie, isLast }) => {
             <div className="text-[12px] font-normal text-content-muted truncate -mt-1.5">{row.division_short_name || row.division_name}</div>
           )}
         </div>
+
+        {/* Квалификация игрока в этой лиге. Она лиговая, а не турнирная: во всех строках
+            одной лиги бейдж одинаковый и всегда показывает текущую, даже в прошлых сезонах.
+            Поэтому в подсказку добавлена история смен — иначе бейдж в старом сезоне
+            выглядит ошибкой. Одна запись — это и есть текущая, истории в ней нет. */}
+        {row.qual_name && (
+          <HintPopover customContent={
+            <div className="text-center">
+              <div className="text-[14px] font-bold text-content-main">{row.qual_full_name}</div>
+              {row.qual_description && (
+                <div className="text-[12px] text-content-muted mt-1 whitespace-pre-line">{row.qual_description}</div>
+              )}
+              {(row.qual_history || []).length > 1 && (
+                <div className="mt-2 pt-2 border-t border-surface-border">
+                  <div className="text-[10px] font-bold uppercase tracking-widest text-content-subtle mb-1">
+                    История квалификаций
+                  </div>
+                  {row.qual_history.map((h, i) => (
+                    <div key={i} className="text-[12px] text-content-muted">
+                      {h.short}: {h.to ? `${formatQualDate(h.from)} — ${formatQualDate(h.to)}` : `с ${formatQualDate(h.from)}`}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          } className="shrink-0">
+            <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[14px] font-bold whitespace-nowrap bg-brand/10 text-brand">
+              {row.qual_name}
+            </span>
+          </HintPopover>
+        )}
       </div>
 
       {/* Максимум 3 тайла в ряд — при большем числе параметров всё сжималось в кашу

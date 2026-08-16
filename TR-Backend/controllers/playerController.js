@@ -74,6 +74,21 @@ export const getPlayerProfile = async (req, res) => {
           lq.short_name AS qual_name,
           lq.name AS qual_full_name,
           lq.description AS qual_description,
+          -- История смен квалификации в этой лиге — для подсказки под бейджем. В прошлом
+          -- сезоне показывается сегодняшняя квалификация, и без истории это выглядит ошибкой.
+          -- Даты отдаём строками, чтобы node-postgres не сдвинул их на день при переводе
+          -- в JS Date по локальной полуночи.
+          COALESCE((
+            SELECT json_agg(json_build_object(
+                     'short', COALESCE(NULLIF(btrim(hlq.short_name), ''), hlq.name),
+                     'name', hlq.name,
+                     'from', to_char(huq.assigned_at, 'YYYY-MM-DD'),
+                     'to', to_char(huq.ended_at, 'YYYY-MM-DD')
+                   ) ORDER BY huq.assigned_at DESC)
+            FROM "public"."user_qualifications" huq
+            JOIN "public"."league_qualifications" hlq ON hlq.id = huq.qualification_id
+            WHERE huq.user_id = tr.player_id AND huq.league_id = l.id
+          ), '[]'::json) AS qual_history,
           (
             EXISTS(SELECT 1 FROM "public"."teams" tow WHERE tow.id = tt.team_id AND tow.owner_id = $2)
             OR EXISTS(SELECT 1 FROM "public"."team_members" tmem WHERE tmem.team_id = tt.team_id AND tmem.user_id = $2 AND tmem.left_at IS NULL)
@@ -86,7 +101,12 @@ export const getPlayerProfile = async (req, res) => {
         JOIN "public"."divisions" d ON tt.division_id = d.id
         JOIN "public"."seasons" s ON d.season_id = s.id
         JOIN "public"."leagues" l ON s.league_id = l.id
-        LEFT JOIN "public"."league_qualifications" lq ON tr.qualification_id = lq.id
+        -- Квалификация лиговая, а не турнирная: у всех строк одной лиги она одна и та же —
+        -- текущая. В прошлых сезонах бейдж меняется вместе с ней, история смен лежит
+        -- в user_qualifications.
+        LEFT JOIN "public"."user_qualifications" uq
+               ON uq.user_id = tr.player_id AND uq.league_id = l.id AND uq.ended_at IS NULL
+        LEFT JOIN "public"."league_qualifications" lq ON lq.id = uq.qualification_id
         WHERE tr.player_id = $1
       ),
       agg AS (
@@ -196,7 +216,7 @@ export const getPlayerProfile = async (req, res) => {
         league_name, league_full_name, league_logo, league_city,
         division_name, division_short_name, division_logo,
         team_name, team_name AS team_full_name, team_logo, team_city,
-        position, qual_name, qual_full_name, qual_description,
+        position, qual_name, qual_full_name, qual_description, qual_history,
         is_fee_paid, hide_stats_unpaid,
         gp, g, a, pts, pm, pm_is_unofficial, pim, ga, sho, toi,
         sa, sv, shots_is_unofficial,

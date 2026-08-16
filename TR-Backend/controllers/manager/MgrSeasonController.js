@@ -1,6 +1,7 @@
 import pool from '../../config/db.js';
 import s3 from '../../config/s3.js';
 import { PutObjectCommand } from '@aws-sdk/client-s3';
+import { assertPlayersAllowedInDivision, assertApplicationRosterAllowed, loadDivisionQualificationRules } from '../../utils/qualificationAccess.js';
 
 const S3_BUCKET = process.env.S3_BUCKET || 'hockeyeco-uploads';
 
@@ -215,19 +216,34 @@ export const getTeamRosterForPicker = async (req, res) => {
     // поведение и пикер игроков) прячем любого, кто уже есть в штабе.
     const roleFilter = TOURNAMENT_ROLES.includes(req.query.role) ? req.query.role : null;
 
+    // Дивизион нужен, чтобы пометить в пикере тех, кого не пропустит квалификация. У реальной
+    // заявки он берётся из неё, у виртуальной («new») приходит параметром — форма создания
+    // заявки дивизион уже выбрала. Шторка при этом только подсказывает: сохранение проверяет
+    // допуск само (assertPlayersAllowedInDivision).
+    let divisionId = req.query.divisionId ? Number(req.query.divisionId) : null;
+    if (!isVirtual) {
+      const { rows } = await pool.query(`SELECT division_id FROM tournament_teams WHERE id = $1`, [appId]);
+      divisionId = rows[0]?.division_id ?? null;
+    }
+    const qualRules = await loadDivisionQualificationRules(pool, divisionId);
+
     const playersRes = await pool.query(`
       SELECT tm.user_id as id, u.first_name, u.last_name, u.avatar_url, tm.photo_url,
-             tr.position, tr.jersey_number
+             tr.position, tr.jersey_number,
+             uq.qualification_id, lq.short_name as qualification_short_name
       FROM team_rosters tr
       JOIN team_members tm ON tr.member_id = tm.id
       JOIN users u ON tm.user_id = u.id
+      LEFT JOIN user_qualifications uq
+             ON uq.user_id = tm.user_id AND uq.league_id = $3::int AND uq.ended_at IS NULL
+      LEFT JOIN league_qualifications lq ON lq.id = uq.qualification_id
       WHERE tm.team_id = $1 AND tm.left_at IS NULL AND tr.left_at IS NULL
         AND NOT EXISTS (
           SELECT 1 FROM tournament_rosters ex
           WHERE ex.tournament_team_id = $2 AND ex.player_id = tm.user_id AND ex.period_end IS NULL
         )
       ORDER BY u.last_name ASC, u.first_name ASC
-    `, [teamId, exclusionAppId]);
+    `, [teamId, exclusionAppId, qualRules?.leagueId ?? null]);
 
     const staffRes = await pool.query(`
       SELECT tm.user_id as id, u.first_name, u.last_name, u.avatar_url, tm.photo_url,
@@ -245,7 +261,25 @@ export const getTeamRosterForPicker = async (req, res) => {
       ORDER BY u.last_name ASC, u.first_name ASC
     `, [teamId, exclusionAppId, roleFilter]);
 
-    return res.json({ success: true, players: playersRes.rows, staff: staffRes.rows });
+    // qual_block_reason — почему игрока нельзя добавить в эту заявку. null у всех, если
+    // контроль в дивизионе выключен или дивизион неизвестен.
+    const allowedQualIds = new Set((qualRules?.allowed || []).map(q => q.id));
+    const players = playersRes.rows.map(player => {
+      if (!qualRules?.enabled) return { ...player, qual_block_reason: null };
+
+      const isAllowed = player.qualification_id
+        ? allowedQualIds.has(player.qualification_id)
+        : qualRules.allowsNone;
+
+      return {
+        ...player,
+        qual_block_reason: isAllowed
+          ? null
+          : `${player.qualification_short_name || 'Без квалификации'} — не допущены в этот дивизион`,
+      };
+    });
+
+    return res.json({ success: true, players, staff: staffRes.rows });
   } catch (err) {
     console.error('[Get Team Roster For Picker Error]:', err);
     return res.status(err.status || 500).json({ success: false, error: err.status ? err.message : 'Ошибка сервера при получении состава команды' });
@@ -308,6 +342,10 @@ export const createApplication = async (req, res) => {
       const err = new Error('Нельзя отправить заявку: необходимо добавить хотя бы одного представителя команды (тренера или руководителя)');
       err.status = 400;
       throw err;
+    }
+
+    if (isDigital) {
+      await assertPlayersAllowedInDivision(client, divisionId, players.map(p => p.player_id));
     }
 
     const appRes = await client.query(
@@ -406,11 +444,15 @@ export const sendApplicationForReview = async (req, res) => {
       }
     }
 
+    // Состав собирали раньше, а лига могла за это время сменить игроку квалификацию или
+    // список допущенных в дивизион — поэтому перед отправкой проверяем заявку целиком.
+    await assertApplicationRosterAllowed(pool, appId);
+
     await pool.query(`UPDATE tournament_teams SET status = 'pending', updated_at = NOW() WHERE id = $1`, [appId]);
     return res.json({ success: true });
   } catch (err) {
     console.error('[Send Application For Review Error]:', err);
-    return res.status(500).json({ success: false, error: 'Ошибка сервера при отправке заявки на проверку' });
+    return res.status(err.status || 500).json({ success: false, error: err.status ? err.message : 'Ошибка сервера при отправке заявки на проверку' });
   }
 };
 
@@ -484,9 +526,11 @@ export const addPlayersToApplication = async (req, res) => {
     const { teamId, appId } = req.params;
     const { playerIds, position } = req.body;
 
-    await assertApplicationEditable(client, appId, teamId);
+    const app = await assertApplicationEditable(client, appId, teamId);
 
     if (Array.isArray(playerIds) && playerIds.length > 0) {
+      await assertPlayersAllowedInDivision(client, app.division_id, playerIds);
+
       const pRes = await client.query(`
         SELECT tm.user_id as pid, tr.position, tr.jersey_number, tr.is_captain, tr.is_assistant
         FROM team_rosters tr

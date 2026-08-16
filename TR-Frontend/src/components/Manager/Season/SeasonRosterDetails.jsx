@@ -223,7 +223,7 @@ function StaffEditSheet({ isOpen, onClose, person, canEdit, activeBrandColor, on
 // appId может быть null (виртуальная заявка): пикер тогда грузится по 'new' (без серверных
 // исключений, уже выбранные скрываются через excludeIds), а выбор возвращается родителю
 // через onAddLocal — заявка в БД при этом не создаётся.
-function AddPlayerSheet({ isOpen, onClose, teamId, appId, targetPosition, excludeIds, onAddLocal, activeBrandColor, onSuccess }) {
+function AddPlayerSheet({ isOpen, onClose, teamId, appId, divisionId, targetPosition, excludeIds, onAddLocal, activeBrandColor, onSuccess }) {
   const [isLoading, setIsLoading] = useState(false);
   const [players, setPlayers] = useState([]);
   const [search, setSearch] = useState('');
@@ -237,17 +237,23 @@ function AddPlayerSheet({ isOpen, onClose, teamId, appId, targetPosition, exclud
     setSelectedIds(new Set());
     setSheetError('');
     setIsLoading(true);
-    fetch(`${import.meta.env.VITE_API_URL}/api/manager/seasons/${teamId}/applications/${appId || 'new'}/roster-picker`, { headers: getAuthHeaders() })
+    // divisionId нужен только виртуальной заявке (её ещё нет в БД, дивизион знает форма);
+    // у реальной сервер берёт дивизион из самой заявки. По нему приходит qual_block_reason —
+    // почему игрока нельзя добавить сюда по квалификации.
+    const divisionParam = !appId && divisionId ? `?divisionId=${divisionId}` : '';
+    fetch(`${import.meta.env.VITE_API_URL}/api/manager/seasons/${teamId}/applications/${appId || 'new'}/roster-picker${divisionParam}`, { headers: getAuthHeaders() })
       .then(r => r.json())
       .then(json => { if (json.success) setPlayers(json.players || []); })
       .catch(err => console.error('Ошибка загрузки состава команды:', err))
       .finally(() => setIsLoading(false));
-  }, [isOpen, teamId, appId]);
+  }, [isOpen, teamId, appId, divisionId]);
 
   const available = excludeIds ? players.filter(p => !excludeIds.has(p.id)) : players;
   const filtered = available.filter(p => `${p.last_name} ${p.first_name}`.toLowerCase().includes(search.trim().toLowerCase()));
 
   const toggle = (id) => setSelectedIds(prev => {
+    // Недопущенных по квалификации не выбираем: сервер их всё равно не примет
+    if (players.find(p => p.id === id)?.qual_block_reason) return prev;
     const next = new Set(prev);
     if (next.has(id)) next.delete(id); else next.add(id);
     return next;
@@ -294,15 +300,27 @@ function AddPlayerSheet({ isOpen, onClose, teamId, appId, targetPosition, exclud
         ) : (
           <div className="flex flex-col gap-2 max-h-[45vh] overflow-y-auto scrollbar-hide">
             {filtered.map(player => (
-              <div key={player.id} onClick={() => toggle(player.id)} className="w-full py-3 px-4 border border-surface-border rounded-xl flex items-center justify-between bg-surface-level2 cursor-pointer select-none active:scale-[0.995] transition-all">
+              <div
+                key={player.id}
+                onClick={() => toggle(player.id)}
+                className={`w-full py-3 px-4 border border-surface-border rounded-xl flex items-center justify-between bg-surface-level2 select-none transition-all ${
+                  player.qual_block_reason ? 'opacity-50' : 'cursor-pointer active:scale-[0.995]'
+                }`}
+              >
                 <div className="flex items-center gap-3 min-w-0">
                   <Avatar photoUrl={player.photo_url || player.avatar_url} firstName={player.first_name} lastName={player.last_name} className="w-10 h-10 rounded-xl" />
                   <div className="flex flex-col min-w-0 text-left">
                     <span className="text-[14px] font-bold text-content-main truncate">{player.last_name} {player.first_name}</span>
-                    <span className="text-[10px] text-content-muted uppercase font-bold tracking-wider mt-0.5">{player.jersey_number ? `№${player.jersey_number}` : '—'}</span>
+                    {player.qual_block_reason ? (
+                      <span className="text-[10px] text-danger font-bold tracking-wider mt-0.5 leading-tight">{player.qual_block_reason}</span>
+                    ) : (
+                      <span className="text-[10px] text-content-muted uppercase font-bold tracking-wider mt-0.5">{player.jersey_number ? `№${player.jersey_number}` : '—'}</span>
+                    )}
                   </div>
                 </div>
-                <CheckboxLP checked={selectedIds.has(player.id)} onChange={() => toggle(player.id)} activeColor={activeBrandColor} />
+                {!player.qual_block_reason && (
+                  <CheckboxLP checked={selectedIds.has(player.id)} onChange={() => toggle(player.id)} activeColor={activeBrandColor} />
+                )}
               </div>
             ))}
           </div>
@@ -934,6 +952,7 @@ export function SeasonRosterDetails({ app, teamId, onClose, activeBrandColor, op
         onClose={() => setIsAddPlayerOpen(false)}
         teamId={teamId}
         appId={app.id}
+        divisionId={app.division_id}
         targetPosition={addPlayerPosition}
         excludeIds={isVirtual ? new Set(localRoster.map(p => p.player_id)) : null}
         onAddLocal={handleAddLocalPlayers}
