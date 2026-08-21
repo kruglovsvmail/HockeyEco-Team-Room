@@ -7,19 +7,39 @@ import { Icon } from '../../../ui/Icon';
 import { getImageUrl } from '../../../utils/helpers';
 
 const GOAL_STRENGTHS = [
-  { value: 'equal', label: 'Равные составы' },
+  { value: 'equal', label: 'Рав. составы' },
   { value: 'pp1',   label: 'Большинство' },
   { value: 'sh1',   label: 'Меньшинство' },
-  { value: 'ps',    label: 'Буллит' },
-  { value: 'en',    label: 'Пустые ворота' },
+  { value: 'ps',    label: 'Штраф. бросок' },
+  { value: 'en',    label: 'Пуст. ворота' },
 ];
 
 const PENALTIES = [
   { label: '2:00', penalty_class: 'minor',           penalty_minutes: 2  },
   { label: '4:00', penalty_class: 'double_minor',    penalty_minutes: 4  },
   { label: '5+20', penalty_class: 'major',           penalty_minutes: 25 },
-  { label: 'Бул',  penalty_class: 'penalty_shot',    penalty_minutes: 0  },
+  { label: 'ШБ',  penalty_class: 'penalty_shot',    penalty_minutes: 0  },
 ];
+
+// ─── ШТРАФНОЙ БРОСОК ПО ХОДУ МАТЧА ───────────────────────────────────────────
+// Строку заводит сервер, когда команде записали штраф вида «Бул»; здесь у неё
+// правятся только время, бьющий и исход. Три состояния — три типа события:
+// «ещё не исполнен» (pending_ps), «реализован» (goal + ИС «ШБ»), «не реализован»
+// (failed_ps). Неисполненные переписываются в нереализованные при публикации.
+// Исход — выбор из двух. «Ещё не исполнен» вариантом не предлагается: это
+// состояние по умолчанию, в котором строка рождается, и возвращаться в него
+// незачем — при публикации матча оно само становится «не реализован».
+const PS_OUTCOMES = [
+  { value: 'goal',      label: 'Реализован' },
+  { value: 'failed_ps', label: 'Не реализован' },
+];
+const PS_PENDING_LABEL = 'Не испол.';
+
+const isPenaltyShotRow = (ev) => !!ev && (
+  ev.event_type === 'pending_ps'
+  || ev.event_type === 'failed_ps'
+  || (ev.event_type === 'goal' && ev.goal_strength === 'ps')
+);
 
 const SELECTION_CHIPS = [
   { value: 'scorer', label: 'Автор' },
@@ -97,8 +117,14 @@ export function MatchEventSheet({
   onSave,
 }) {
   const isEdit = !!existingEvent;
-  const actualMode = existingEvent ? (existingEvent.event_type === 'penalty' ? 'penalty' : 'goal') : (mode || 'goal');
+  const actualMode = existingEvent
+    ? (isPenaltyShotRow(existingEvent) ? 'penalty_shot'
+      : existingEvent.event_type === 'penalty' ? 'penalty' : 'goal')
+    : (mode || 'goal');
   const actualTeamId = existingEvent?.team_id ?? scoringTeamId ?? null;
+  // Штрафной бросок раскладывается как штраф — одна команда, без карусели +/-:
+  // эпизод разыгрывается один на один, полезность на нём не считается.
+  const isPS = actualMode === 'penalty_shot';
   const isGoal = actualMode === 'goal';
 
   // Соперник правит только свою сторону. Для гола actualTeamId = забившая команда:
@@ -121,6 +147,13 @@ export function MatchEventSheet({
   const [scorerId, setScorerId] = useState(null);
   const [assistIds, setAssistIds] = useState([]);
   const [penaltyIdx, setPenaltyIdx] = useState(0);
+  const [psOutcome, setPsOutcome] = useState('pending_ps');
+  // «Ещё не исполнен» остаётся в списке, только пока исход действительно не выбран:
+  // это состояние по умолчанию, возвращаться в него незачем. Как только секретарь
+  // выбрал реализован/не реализован, вариантов остаётся ровно два.
+  const psOutcomeOptions = psOutcome === 'pending_ps'
+    ? [{ value: 'pending_ps', label: PS_PENDING_LABEL }, ...PS_OUTCOMES]
+    : PS_OUTCOMES;
   const [penaltyPlayerId, setPenaltyPlayerId] = useState(null);
   const [activeChip, setActiveChip] = useState('scorer'); // 'scorer' | 'assist' | 'pm'
   const [pmHome, setPmHome] = useState([]);
@@ -176,7 +209,13 @@ export function MatchEventSheet({
       const total = Number(existingEvent.time_seconds) || 0;
       setMinutes(pad2(Math.floor(total / 60)));
       setSeconds(pad2(total % 60));
-      if (existingEvent.event_type === 'penalty') {
+      if (isPenaltyShotRow(existingEvent)) {
+        setPsOutcome(existingEvent.event_type);
+        setScorerId(existingEvent.scorer_id || null);
+        setAssistIds([]); setGoalStrength('ps'); setFromShot(true);
+        setPenaltyIdx(0); setPenaltyPlayerId(null);
+        setPmHome([]); setPmAway([]);
+      } else if (existingEvent.event_type === 'penalty') {
         const idx = PENALTIES.findIndex(p => p.penalty_class === existingEvent.penalty_class);
         setPenaltyIdx(idx >= 0 ? idx : 0);
         setPenaltyPlayerId(existingEvent.scorer_id || existingEvent.penalty_player_id || null);
@@ -197,6 +236,7 @@ export function MatchEventSheet({
       setGoalStrength('equal'); setFromShot(true);
       setScorerId(null); setAssistIds([]);
       setPenaltyIdx(0); setPenaltyPlayerId(null);
+      setPsOutcome('pending_ps');
       setPmHome([]); setPmAway([]);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -225,13 +265,19 @@ export function MatchEventSheet({
   const concedingLogo = isHomeScoring ? awayLogo : homeLogo;
 
   // Заголовок шторки
-  const title = isGoal
-    ? (isEdit ? 'Редактирование гола' : 'Добавление гола')
-    : (isEdit ? 'Редактирование штрафа' : 'Добавление штрафа');
+  const title = isPS
+    ? 'Штрафной бросок'
+    : isGoal
+      ? (isEdit ? 'Редактирование гола' : 'Добавление гола')
+      : (isEdit ? 'Редактирование штрафа' : 'Добавление штрафа');
 
   // ── Тапы по игрокам ────────────────────────────────────────────────────
   const handleScoringPlayerTap = (playerId) => {
     if (!canEditScoring) return;
+    if (isPS) {
+      setScorerId(prev => (prev === playerId ? null : playerId));
+      return;
+    }
     if (!isGoal) {
       setPenaltyPlayerId(prev => (prev === playerId ? null : playerId));
       return;
@@ -258,6 +304,9 @@ export function MatchEventSheet({
 
   // ── Бейдж и заливка для конкретного игрока ─────────────────────────────
   const scoringPlayerProps = (playerId) => {
+    if (isPS) {
+      return { roleBadge: scorerId === playerId ? 'author' : null, fill: null };
+    }
     if (!isGoal) {
       return { roleBadge: null, fill: penaltyPlayerId === playerId ? 'danger' : null };
     }
@@ -294,7 +343,17 @@ export function MatchEventSheet({
     const { period, time_seconds } = totalToPeriod(totalSec, regulation);
 
     let payload;
-    if (isGoal) {
+    if (isPS) {
+      // Тип события и есть исход броска. goal_strength 'ps' держим всегда: при
+      // переключении в «реализован» строка становится обычным голом с ИС «ШБ».
+      payload = {
+        period, time_seconds, event_type: psOutcome,
+        team_id: actualTeamId,
+        scorer_id: scorerId || null,
+        goal_strength: 'ps',
+        from_shot: true,
+      };
+    } else if (isGoal) {
       payload = {
         period, time_seconds, event_type: 'goal',
         team_id: actualTeamId,
@@ -338,6 +397,8 @@ export function MatchEventSheet({
           <TimeMMSSInputLP label="Время" value={timeValue} onChange={handleTimeChange} size="md" activeColor={activeBrandColor} disabled={isOpponent} />
           {isGoal ? (
             <SelectInputLP label="Ситуация" options={GOAL_STRENGTHS} value={goalStrength} onChange={setGoalStrength} size="md" activeColor={activeBrandColor} disabled={isOpponent} />
+          ) : isPS ? (
+            <SelectInputLP label="Исход" options={psOutcomeOptions} value={psOutcome} onChange={setPsOutcome} size="md" activeColor={activeBrandColor} disabled={isOpponent} />
           ) : (
             <SelectInputLP label="Тип штрафа" options={PENALTIES.map((p, i) => ({ value: i, label: p.label }))} value={penaltyIdx} onChange={setPenaltyIdx} size="md" activeColor={activeBrandColor} disabled={isOpponent} />
           )}

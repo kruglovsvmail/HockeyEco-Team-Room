@@ -167,8 +167,12 @@ const EventCenter = ({ event }) => {
       case 'shootout_goal':
         return <span className="font-bold uppercase rounded-full bg-emerald-500 text-white leading-none" style={badgeStyle}>ШБ</span>;
       case 'shootout_miss':
-      case 'failed_ps':
         return <span className="font-bold uppercase rounded-full bg-surface-level2 text-content-muted leading-none" style={badgeStyle}>МИМО</span>;
+      // Штрафной бросок по ходу матча: назначен, но шайбы не было. Реализованный
+      // сюда не попадает — он обычный гол с ИС «ШБ».
+      case 'pending_ps':
+      case 'failed_ps':
+        return <span className="font-bold uppercase rounded-full bg-surface-level2 text-content-muted leading-none" style={badgeStyle}>ШБ</span>;
       case 'goalie':
         return (
           <span className="font-semibold uppercase rounded-lg bg-surface-level2 text-content-main leading-tight text-center" style={goalieBadgeStyle}>
@@ -194,7 +198,12 @@ const EventCenter = ({ event }) => {
       )}
       {event.event_type === 'penalty' && event.penalty_minutes != null && (
         <span className="font-bold text-content-muted uppercase tracking-wider leading-none" style={{ fontSize: uiFixed(10) }}>
-          {event.penalty_minutes} МИН
+          {event.penalty_class === 'penalty_shot' ? 'ШБ' : `${event.penalty_minutes} МИН`}
+        </span>
+      )}
+      {(event.event_type === 'failed_ps' || event.event_type === 'pending_ps') && (
+        <span className="font-bold text-content-muted uppercase tracking-wider leading-none text-center" style={{ fontSize: uiFixed(10) }}>
+          {event.event_type === 'failed_ps' ? 'НЕ РЕАЛИЗОВАН' : 'НЕ ИСПОЛНЕН'}
         </span>
       )}
     </div>
@@ -218,7 +227,13 @@ const EventCard = ({ event, homeTeamId, canEdit, editRole, myTeamId, onEdit, onD
   // Инициатор: правит и удаляет всё. Соперник: правит голы (своё авторство/«±»),
   // свои штрафы и свои смены вратаря (их же может удалять).
   const isMyGoalieCard = event.event_type === 'goalie' && Number(event.team_id) === Number(myTeamId);
-  const canDelete = canEdit && (editRole === 'initiator' || (editRole === 'opponent' && isMyGoalieCard));
+  // Строку штрафного броска отдельно не удаляют: она живёт ровно столько, сколько
+  // штраф вида «Бул», который её породил, — удалять надо его. Иначе в протоколе
+  // останется назначение без броска.
+  const isPenaltyShotRow = event.event_type === 'failed_ps' || event.event_type === 'pending_ps'
+    || (event.event_type === 'goal' && event.goal_strength === 'ps');
+  const canDelete = canEdit && !isPenaltyShotRow
+    && (editRole === 'initiator' || (editRole === 'opponent' && isMyGoalieCard));
   const canEditThis = canEdit && (
     editRole === 'initiator' ||
     (editRole === 'opponent' && (
@@ -260,6 +275,7 @@ const EventCard = ({ event, homeTeamId, canEdit, editRole, myTeamId, onEdit, onD
       case 'shootout_goal':
       case 'shootout_miss':
       case 'failed_ps':
+      case 'pending_ps':
         return <GoalPlayer event={event} side={side} onPlayerClick={onPlayerClick} />;
       case 'penalty':
         return <PenaltyPlayer event={event} side={side} onPlayerClick={onPlayerClick} />;

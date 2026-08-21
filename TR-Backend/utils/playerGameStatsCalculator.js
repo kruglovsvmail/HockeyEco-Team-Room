@@ -204,6 +204,10 @@ plus_minus AS (
 ),
 
 penalties AS (
+    -- Штраф вида «ШБ» (penalty_class = 'penalty_shot') сюда не попадает: игрок на
+    -- скамейку не садится, команда в меньшинстве не остаётся, минут ноль. Считать
+    -- его удалением нельзя — иначе номинация «Количество удалений» распухнет на
+    -- эпизодах, где никого не удаляли. Само нарушение видно в протоколе строкой ШБ.
     SELECT
         ge.penalty_player_id AS player_id,
         ge.team_id,
@@ -222,6 +226,7 @@ penalties AS (
     CROSS JOIN ctx c
     WHERE ge.game_id = c.game_id
       AND ge.event_type = 'penalty'
+      AND ge.penalty_class IS DISTINCT FROM 'penalty_shot'
       AND ge.penalty_player_id IS NOT NULL
     GROUP BY ge.penalty_player_id, ge.team_id
 ),
@@ -274,15 +279,43 @@ so_skater AS (
     GROUP BY ge.scorer_id, ge.team_id
 ),
 
+ps_skater AS (
+    -- Штрафной бросок по ходу матча как бьющий. В отличие от послематчевой серии
+    -- реализованный бросок — это настоящая шайба: она уже посчитана в goals и в
+    -- счёте матча, здесь считается только сам факт попытки. Поэтому ps_misses
+    -- заводится отдельной колонкой, а «реализовано» берётся из goals_ps.
+    --
+    -- pending_ps сюда не приходит: при завершении матча неисполненные броски
+    -- переписываются в failed_ps (updateGameStatus), а боксскор считается только
+    -- по завершённым матчам. Условие всё равно перечисляет оба типа — чтобы
+    -- порядок этих двух операций не мог тихо съесть попытку.
+    SELECT
+        ge.scorer_id AS player_id,
+        ge.team_id,
+        COUNT(*) AS ps_m
+    FROM game_events ge
+    CROSS JOIN ctx c
+    WHERE ge.game_id = c.game_id
+      AND ge.event_type IN ('failed_ps', 'pending_ps')
+      AND ge.scorer_id IS NOT NULL
+    GROUP BY ge.scorer_id, ge.team_id
+),
+
 -- ─── ВРАТАРСКАЯ СТАТИСТИКА ───────────────────────────────────────────────
 
 goal_to_goalie AS (
     -- Для каждого гола ищем вратаря, стоявшего в воротах в этот момент:
     -- последняя запись журнала замен с time_seconds <= времени гола.
     -- game_events.time_seconds — сквозное время матча, та же шкала, что
-    -- и у game_goalie_log.
-    -- Голы с назначенного буллита по ходу матча (goal_strength = 'ps')
-    -- на вратаря не записываются — правило унаследовано из старого расчёта.
+    -- и у game_goalie_log. Журнал — единственный источник правды о том, кто стоял
+    -- в воротах; against_goalie_id здесь не читается даже там, где он заполнен.
+    --
+    -- Шайбы с назначенного штрафного броска (goal_strength = 'ps') вратарю
+    -- ЗАПИСЫВАЮТСЯ — это обычная пропущенная шайба с броска в створ. Секретарь
+    -- заносит штрафной бросок и в game_shots_by_goalie, и если его не считать
+    -- пропущенным, реализованный буллит зачтётся вратарю как сейв (goalie_saves —
+    -- вычисляемая колонка «броски минус голы с броска»). Послематчевая серия —
+    -- другое дело: она идёт отдельными событиями и в пропущенные не идёт.
     SELECT DISTINCT ON (ge.id)
         ge.id                        AS event_id,
         ge.period,
@@ -296,7 +329,6 @@ goal_to_goalie AS (
      AND gl.time_seconds <= ge.time_seconds
     WHERE ge.game_id = c.game_id
       AND ge.event_type = 'goal'
-      AND ge.goal_strength IS DISTINCT FROM 'ps'
     ORDER BY ge.id, gl.time_seconds DESC
 ),
 
@@ -442,6 +474,45 @@ goalie_decision AS (
     WHERE dg.away_goalie_id IS NOT NULL AND c.home_score <> c.away_score
 ),
 
+ps_goalie AS (
+    -- Штрафные броски, пробитые по вратарю: отражённые (ОШБ) и реализованные.
+    -- Вратарь определяется по журналу замен, как и у обычных голов, — тренер
+    -- имеет право поменять вратаря специально на буллит, и запись в журнале это
+    -- уже отражает. against_goalie_id намеренно не читается: два источника правды
+    -- разъедутся, а у реализованного броска (обычный гол) его и не бывает.
+    --
+    -- Нереализованные броски берём из failed_ps, реализованные — из голов с ИС
+    -- «ШБ», уже привязанных к вратарю в goal_to_goalie. Отдельный счётчик нужен
+    -- потому, что в goalie_shots_against буллиты не отличить от бросков из игры.
+    SELECT player_id, team_id,
+           COUNT(*)                        AS ps_against,
+           COUNT(*) FILTER (WHERE is_save) AS ps_saves
+    FROM (
+        SELECT
+            CASE WHEN ge.team_id = c.home_team_id THEN gl.away_goalie_id ELSE gl.home_goalie_id END AS player_id,
+            CASE WHEN ge.team_id = c.home_team_id THEN c.away_team_id    ELSE c.home_team_id    END AS team_id,
+            true AS is_save
+        FROM game_events ge
+        CROSS JOIN ctx c
+        JOIN LATERAL (
+            SELECT l.home_goalie_id, l.away_goalie_id
+            FROM game_goalie_log l
+            WHERE l.game_id = c.game_id AND l.time_seconds <= ge.time_seconds
+            ORDER BY l.time_seconds DESC
+            LIMIT 1
+        ) gl ON true
+        WHERE ge.game_id = c.game_id
+          AND ge.event_type IN ('failed_ps', 'pending_ps')
+        UNION ALL
+        SELECT gtg.goalie_id, gtg.team_id, false
+        FROM goal_to_goalie gtg
+        JOIN game_events ge ON ge.id = gtg.event_id
+        WHERE ge.goal_strength = 'ps'
+    ) shots
+    WHERE player_id IS NOT NULL
+    GROUP BY player_id, team_id
+),
+
 so_goalie AS (
     SELECT
         ge.against_goalie_id AS player_id,
@@ -490,11 +561,13 @@ INSERT INTO player_game_statistics (
     penalties_misconduct, penalties_game_misconduct, penalties_match,
     goals_against_on_penalty,
     so_goals, so_misses,
+    ps_misses,
     goalie_seconds, goalie_started, goalie_shutout, goalie_decision,
     goalie_shots_p1, goalie_shots_p2, goalie_shots_p3, goalie_shots_ot,
     goalie_ga_p1, goalie_ga_p2, goalie_ga_p3, goalie_ga_ot,
     goalie_ga_shot_p1, goalie_ga_shot_p2, goalie_ga_shot_p3, goalie_ga_shot_ot,
-    goalie_so_against, goalie_so_saves, shots_is_official,
+    goalie_so_against, goalie_so_saves,
+    goalie_ps_against, goalie_ps_saves, shots_is_official,
     data_incomplete, calculated_at
 )
 SELECT
@@ -538,6 +611,8 @@ SELECT
 
     COALESCE(sos.so_g, 0), COALESCE(sos.so_m, 0),
 
+    COALESCE(pss.ps_m, 0),
+
     COALESCE(gm.secs, 0),
     -- COALESCE обязателен: если стартовый вратарь стороны в журнале не указан
     -- (пустые ворота, сторона внешнего соперника) либо журнала нет вовсе,
@@ -568,7 +643,8 @@ SELECT
     COALESCE(gga.ga_p1, 0), COALESCE(gga.ga_p2, 0), COALESCE(gga.ga_p3, 0), COALESCE(gga.ga_ot, 0),
     COALESCE(gga.gas_p1, 0), COALESCE(gga.gas_p2, 0), COALESCE(gga.gas_p3, 0), COALESCE(gga.gas_ot, 0),
 
-    COALESCE(sog.so_against, 0), COALESCE(sog.so_saves, 0), c.shots_is_official,
+    COALESCE(sog.so_against, 0), COALESCE(sog.so_saves, 0),
+    COALESCE(psg.ps_against, 0), COALESCE(psg.ps_saves, 0), c.shots_is_official,
 
     inc.flag,
     NOW()
@@ -592,6 +668,8 @@ LEFT JOIN goalie_shots       gs  ON gs.player_id  = r.player_id AND gs.team_id  
 LEFT JOIN goalie_minutes_agg gm  ON gm.player_id  = r.player_id AND gm.team_id  = r.team_id
 LEFT JOIN goalie_decision    gd  ON gd.player_id  = r.player_id AND gd.team_id  = r.team_id
 LEFT JOIN so_goalie          sog ON sog.player_id = r.player_id AND sog.team_id = r.team_id
+LEFT JOIN ps_skater          pss ON pss.player_id = r.player_id AND pss.team_id = r.team_id
+LEFT JOIN ps_goalie          psg ON psg.player_id = r.player_id AND psg.team_id = r.team_id
 
 WHERE NOT r.is_reserve_goalie
 `;
@@ -612,6 +690,7 @@ INSERT INTO reserve_goalie_game_statistics (
     goalie_ga_p1, goalie_ga_p2, goalie_ga_p3, goalie_ga_ot,
     goalie_ga_shot_p1, goalie_ga_shot_p2, goalie_ga_shot_p3, goalie_ga_shot_ot,
     goalie_so_against, goalie_so_saves,
+    goalie_ps_against, goalie_ps_saves,
     goals, assists, penalty_minutes, penalties_count,
     shots_is_official, data_incomplete, calculated_at
 )
@@ -661,6 +740,7 @@ SELECT
     COALESCE(gga.gas_p1, 0), COALESCE(gga.gas_p2, 0), COALESCE(gga.gas_p3, 0), COALESCE(gga.gas_ot, 0),
 
     COALESCE(sog.so_against, 0), COALESCE(sog.so_saves, 0),
+    COALESCE(psg.ps_against, 0), COALESCE(psg.ps_saves, 0),
 
     -- Разрезы по периодам здесь не хранятся, поэтому суммируем прямо в INSERT
     (COALESCE(g.g_p1, 0) + COALESCE(g.g_p2, 0) + COALESCE(g.g_p3, 0) + COALESCE(g.g_ot, 0)),
@@ -687,6 +767,7 @@ LEFT JOIN goalie_shots       gs  ON gs.player_id  = r.player_id AND gs.team_id  
 LEFT JOIN goalie_minutes_agg gm  ON gm.player_id  = r.player_id AND gm.team_id  = r.team_id
 LEFT JOIN goalie_decision    gd  ON gd.player_id  = r.player_id AND gd.team_id  = r.team_id
 LEFT JOIN so_goalie          sog ON sog.player_id = r.player_id AND sog.team_id = r.team_id
+LEFT JOIN ps_goalie          psg ON psg.player_id = r.player_id AND psg.team_id = r.team_id
 
 WHERE r.is_reserve_goalie
   -- Страховка от невозможного состояния: резервный вратарь появляется только в

@@ -229,7 +229,7 @@ export const addMatchEvent = async (req, res) => {
   if (!['1','2','3','OT'].includes(String(period))) {
     return res.status(400).json({ success: false, error: 'Некорректный период (допустимо 1/2/3/OT)' });
   }
-  if (!['goal','penalty','failed_ps'].includes(event_type)) {
+  if (!['goal','penalty','failed_ps','pending_ps'].includes(event_type)) {
     return res.status(400).json({ success: false, error: 'Некорректный тип события' });
   }
   if (time_seconds == null || Number(time_seconds) < 0) {
@@ -271,6 +271,19 @@ export const addMatchEvent = async (req, res) => {
     ]);
 
     const newEventId = ins.rows[0].id;
+
+    // Штраф вида «ШБ» неполон сам по себе: назначенный бросок обязан появиться
+    // строкой у соперника. Заводим её в той же транзакции — состояния «штраф есть,
+    // броска нет» быть не должно. То же делает LMS (GameLiveDeskController).
+    if (event_type === 'penalty' && penalty_class === 'penalty_shot') {
+      const shootingTeamId = Number(eventTeamId) === Number(check.game.home_team_id)
+        ? check.game.away_team_id
+        : check.game.home_team_id;
+      await client.query(`
+        INSERT INTO "public"."game_events" (game_id, period, time_seconds, event_type, team_id, goal_strength, linked_event_id)
+        VALUES ($1, $2, $3, 'pending_ps', $4, 'ps', $5)
+      `, [gameId, String(period), Number(time_seconds), shootingTeamId, newEventId]);
+    }
 
     // +/- только для голов
     if (event_type === 'goal' && (Array.isArray(plus_minus_home) || Array.isArray(plus_minus_away))) {
@@ -343,7 +356,7 @@ export const updateMatchEvent = async (req, res) => {
       if (!['1','2','3','OT'].includes(String(period))) {
         return res.status(400).json({ success: false, error: 'Некорректный период' });
       }
-      if (!['goal','penalty','failed_ps'].includes(event_type)) {
+      if (!['goal','penalty','failed_ps','pending_ps'].includes(event_type)) {
         return res.status(400).json({ success: false, error: 'Некорректный тип события' });
       }
       if (time_seconds == null || Number(time_seconds) < 0) {
@@ -438,6 +451,15 @@ export const updateMatchEvent = async (req, res) => {
        WHERE id = $15
     `, vals);
 
+    // Секретарь поправил время штрафа «ШБ» — строка броска едет следом,
+    // иначе бросок окажется в другом периоде, чем нарушение.
+    if (check.role !== 'official_team' && event_type === 'penalty' && penalty_class === 'penalty_shot') {
+      await client.query(
+        `UPDATE "public"."game_events" SET period = $1, time_seconds = $2 WHERE linked_event_id = $3`,
+        [String(period), Number(time_seconds), rowId]
+      );
+    }
+
     // +/- : инициатор — полная замена; соперник/official_team — только своя сторона.
     const isGoalNow = (check.role === 'opponent' || check.role === 'official_team' ? existing.event_type : event_type) === 'goal';
 
@@ -499,6 +521,14 @@ export const deleteMatchEvent = async (req, res) => {
     if (check.role !== 'initiator') {
       return res.status(403).json({ success: false, error: 'Удалять события может только команда-инициатор' });
     }
+
+    // Штраф вида «ШБ» уносит с собой строку броска: без назначения бросок не
+    // существует. Счёт здесь править не нужно — он пересчитывается из событий
+    // при публикации матча (publishMatchResults).
+    await client.query(
+      'DELETE FROM "public"."game_events" WHERE linked_event_id = $1',
+      [rowId]
+    );
 
     const del = await client.query(
       'DELETE FROM "public"."game_events" WHERE id = $1 AND game_id = $2',
@@ -826,6 +856,15 @@ export const publishMatchResults = async (req, res) => {
   try {
     const check = await assertEditable(client, gameId, teamId, req.user.id);
     if (!check.ok) return res.status(check.code).json({ success: false, error: check.error });
+
+    // Штрафной бросок без отмеченного исхода к моменту публикации трактуется как
+    // нереализованный: назначение было, шайбы не было. Переписываем до пересчёта
+    // счёта — pending_ps в него всё равно не входит, но в статистику и в протокол
+    // состояние «ещё не исполнен» уходить не должно.
+    await client.query(
+      `UPDATE "public"."game_events" SET event_type = 'failed_ps' WHERE game_id = $1 AND event_type = 'pending_ps'`,
+      [gameId]
+    );
 
     // При публикации пересчитываем счёт из game_events (event_type='goal').
     // Так избегаем рассинхрона: home_score/away_score всегда отражают сохранённые голы.

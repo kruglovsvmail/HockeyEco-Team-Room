@@ -537,10 +537,7 @@ export const getMatchStats = async (req, res) => {
           COUNT(*) FILTER (WHERE goal_strength IN ('pp1', 'pp2'))::int AS pp_goals,
           COUNT(*) FILTER (WHERE goal_strength IN ('sh1', 'sh2'))::int AS sh_goals,
           -- Голы С БРОСКА (нужны для физического минимума командного SOG)
-          COUNT(*) FILTER (
-            WHERE COALESCE(from_shot, true) = true
-              AND COALESCE(goal_strength, '') <> 'ps'
-          )::int AS goals_from_shot
+          COUNT(*) FILTER (WHERE COALESCE(from_shot, true) = true)::int AS goals_from_shot
         FROM "public"."game_events"
         WHERE game_id = $1 AND event_type = 'goal'
         GROUP BY team_id
@@ -599,7 +596,6 @@ export const getMatchStats = async (req, res) => {
          AND gl.time_seconds <= ge.time_seconds
         WHERE ge.game_id = $1
           AND ge.event_type = 'goal'
-          AND COALESCE(ge.goal_strength, '') <> 'ps'
         ORDER BY ge.id, gl.time_seconds DESC
       ),
       ga_from_shot_stats AS (
@@ -768,7 +764,6 @@ export const getMatchStats = async (req, res) => {
         FROM "public"."game_events" ge
         CROSS JOIN game_info gi
         WHERE ge.game_id = $1 AND ge.event_type = 'goal'
-          AND COALESCE(ge.goal_strength, '') <> 'ps'
       ),
       goals_against_per_goalie AS (
         -- Все пропущенные шайбы (для отображения GA)
@@ -1087,7 +1082,7 @@ export const getMatchProtocol = async (req, res) => {
         ON gk_gr.player_id = gk.id AND gk_gr.game_id = ge.game_id
 
       WHERE ge.game_id = $1
-        AND ge.event_type IN ('goal', 'penalty', 'shootout_goal', 'shootout_miss', 'failed_ps')
+        AND ge.event_type IN ('goal', 'penalty', 'shootout_goal', 'shootout_miss', 'failed_ps', 'pending_ps')
       ORDER BY
         CASE ge.period
           WHEN '1'  THEN 1

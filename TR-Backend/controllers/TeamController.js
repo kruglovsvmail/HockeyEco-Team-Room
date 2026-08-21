@@ -418,8 +418,10 @@ export const getMemberTeamStats = async (req, res) => {
         pgs.plus_count, pgs.minus_count, pgs.plus_minus,
         pgs.goals_gw, pgs.penalty_minutes, pgs.goals_against_on_penalty,
         pgs.so_goals, pgs.so_misses,
+        pgs.goals_ps, pgs.ps_misses, pgs.ps_attempts,
         pgs.goalie_shots_against, pgs.goalie_saves, pgs.goalie_goals_against,
-        pgs.goalie_shutout, pgs.goalie_so_against, pgs.goalie_so_saves`;
+        pgs.goalie_shutout, pgs.goalie_so_against, pgs.goalie_so_saves,
+        pgs.goalie_ps_against, pgs.goalie_ps_saves`;
 
     const pgsJoin = `
       LEFT JOIN player_game_statistics pgs ON pgs.game_id = g.id AND pgs.player_id = $2 AND pgs.team_id = $1`;
@@ -539,12 +541,19 @@ ${pgsFields}
         gaOnPenalty: num(row.goals_against_on_penalty),
         soGoals: num(row.so_goals),
         soMisses: num(row.so_misses),
+        // Штрафные броски по ходу матча. Реализованный — настоящая шайба, он уже
+        // сидит в goals; здесь только разрез по буллитам.
+        goalsPs: num(row.goals_ps),
+        psMisses: num(row.ps_misses),
+        psAttempts: num(row.ps_attempts),
         goalieShotsAgainst: num(row.goalie_shots_against),
         goalieSaves: num(row.goalie_saves),
         goalieGoalsAgainst: num(row.goalie_goals_against),
         goalieShutout: !!row.goalie_shutout,
         goalieSoAgainst: num(row.goalie_so_against),
-        goalieSoSaves: num(row.goalie_so_saves)
+        goalieSoSaves: num(row.goalie_so_saves),
+        goaliePsAgainst: num(row.goalie_ps_against),
+        goaliePsSaves: num(row.goalie_ps_saves)
       } : null,
       division: row.division_id != null
         ? { id: row.division_id, name: row.division_name, logo: row.division_logo, seasonName: row.season_name, leagueName: row.league_name }

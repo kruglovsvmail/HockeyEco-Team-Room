@@ -117,26 +117,32 @@ const SectionLabel = ({ children }) => (
   <span className="text-[10px] font-bold uppercase tracking-widest text-content-subtle">{children}</span>
 );
 
-// Послематчевые буллиты: два тайла слева, кольцевая диаграмма процента справа —
+// Один ряд блока «Буллиты»: два тайла слева, кольцевая диаграмма процента справа —
 // та же раскладка, что и у строки посещаемости в шапке карточки. Кольцо тоже
 // кликабельно и объясняет, что именно за процент показан.
-const ShootoutRow = ({ attempts, made, percent, percentTitle, percentHint }) => (
-  <div className="flex items-center justify-between gap-3">
-    <div className="grid grid-cols-2 gap-1.5 flex-1 min-w-0">
-      <StatTile label={attempts.label} value={attempts.value} title={attempts.title} hint={attempts.hint} />
-      <StatTile label={made.label} value={made.value} title={made.title} hint={made.hint} />
+// caption разводит два ряда: штрафные броски по ходу матча и послематчевую серию.
+const ShootoutRow = ({ caption, attempts, made, percent, percentTitle, percentHint }) => (
+  <div className="flex flex-col gap-1.5">
+    {caption && (
+      <span className="text-[10px] font-bold uppercase tracking-wider text-content-subtle/70">{caption}</span>
+    )}
+    <div className="flex items-center justify-between gap-3">
+      <div className="grid grid-cols-2 gap-1.5 flex-1 min-w-0">
+        <StatTile label={attempts.label} value={attempts.value} title={attempts.title} hint={attempts.hint} />
+        <StatTile label={made.label} value={made.value} title={made.title} hint={made.hint} />
+      </div>
+      <HintPopover
+        className="shrink-0"
+        customContent={
+          <div className="flex flex-col gap-1.5 text-center">
+            <span className="text-[10px] font-black uppercase tracking-widest text-brand">{percentTitle}</span>
+            <span className="text-[12px] font-semibold text-content-main leading-snug whitespace-normal break-words">{percentHint}</span>
+          </div>
+        }
+      >
+        <AttendanceRing percent={percent} />
+      </HintPopover>
     </div>
-    <HintPopover
-      className="shrink-0"
-      customContent={
-        <div className="flex flex-col gap-1.5 text-center">
-          <span className="text-[10px] font-black uppercase tracking-widest text-brand">{percentTitle}</span>
-          <span className="text-[12px] font-semibold text-content-main leading-snug whitespace-normal break-words">{percentHint}</span>
-        </div>
-      }
-    >
-      <AttendanceRing percent={percent} />
-    </HintPopover>
   </div>
 );
 
@@ -513,6 +519,13 @@ export function TeamStatsPanel({ data }) {
     const saves = sum(s => s.goalieSaves);
     const goalieSoAgainst = sum(s => s.goalieSoAgainst);
     const goalieSoSaves = sum(s => s.goalieSoSaves);
+    // Штрафные броски по ходу матча — отдельный от послематчевой серии зачёт.
+    // Смешивать проценты нельзя: буллит на скорости из игры и бросок из центра
+    // после матча реализуются по-разному, общая доля не значила бы ничего.
+    const psAttempts = sum(s => s.psAttempts);
+    const goalsPs = sum(s => s.goalsPs);
+    const goaliePsAgainst = sum(s => s.goaliePsAgainst);
+    const goaliePsSaves = sum(s => s.goaliePsSaves);
 
     return {
       hasRows: rows.length > 0,
@@ -526,11 +539,13 @@ export function TeamStatsPanel({ data }) {
       goalsGw: sum(s => s.goalsGw),
       gaOnPenalty: sum(s => s.gaOnPenalty),
       soAttempts, soGoals, soPercent: pct(soGoals, soAttempts),
+      psAttempts, goalsPs, psPercent: pct(goalsPs, psAttempts),
       // Вратарские
       shotsAgainst, saves, savePercent: pct(saves, shotsAgainst),
       goalsAgainst: sum(s => s.goalieGoalsAgainst),
       shutouts: rows.filter(s => s.goalieShutout).length,
       goalieSoAgainst, goalieSoSaves, goalieSoPercent: pct(goalieSoSaves, goalieSoAgainst),
+      goaliePsAgainst, goaliePsSaves, goaliePsPercent: pct(goaliePsSaves, goaliePsAgainst),
       // Общие
       pim: sum(s => s.pim),
     };
@@ -639,40 +654,81 @@ export function TeamStatsPanel({ data }) {
                   ))}
                 </div>
 
+                {/* Два вида буллитов в одном блоке, но с раздельными процентами:
+                    штрафной бросок по ходу матча и попытка в послематчевой серии
+                    реализуются по-разному, общая доля не значила бы ничего. */}
                 <div className="flex flex-col gap-3 pt-3 border-t border-surface-border">
-                  <SectionLabel>Послематчевые буллиты</SectionLabel>
+                  <SectionLabel>Буллиты</SectionLabel>
                   {isGoalie ? (
-                    <ShootoutRow
-                      attempts={{
-                        label: 'Буллиты', value: playerStats.goalieSoAgainst,
-                        title: 'Количество послематчевых буллитов',
-                        hint: 'Сколько буллитов послематчевой серии пробили по этому вратарю.'
-                      }}
-                      made={{
-                        label: 'Отражено', value: playerStats.goalieSoSaves,
-                        title: 'Отражённые послематчевые буллиты',
-                        hint: 'Сколько буллитов послематчевой серии вратарь отразил.'
-                      }}
-                      percent={playerStats.goalieSoPercent}
-                      percentTitle="Процент отражённых буллитов"
-                      percentHint="Доля отражённых послематчевых буллитов от всех, пробитых по вратарю."
-                    />
+                    <>
+                      <ShootoutRow
+                        caption="По ходу матча"
+                        attempts={{
+                          label: 'Всего', value: playerStats.goaliePsAgainst,
+                          title: 'Назначенные штрафные броски',
+                          hint: 'Сколько штрафных бросков, назначенных по ходу матча, пробили по этому вратарю.'
+                        }}
+                        made={{
+                          label: 'Отражено', value: playerStats.goaliePsSaves,
+                          title: 'Отражённые штрафные броски (ОШБ)',
+                          hint: 'Сколько штрафных бросков вратарь отразил. Реализованный штрафной бросок идёт ему в пропущенные шайбы — это обычная шайба в счёте матча.'
+                        }}
+                        percent={playerStats.goaliePsPercent}
+                        percentTitle="Процент отражённых ШБ"
+                        percentHint="Доля отражённых штрафных бросков от всех назначенных по воротам этого вратаря."
+                      />
+                      <ShootoutRow
+                        caption="Послематчевые"
+                        attempts={{
+                          label: 'Всего', value: playerStats.goalieSoAgainst,
+                          title: 'Количество послематчевых буллитов',
+                          hint: 'Сколько буллитов послематчевой серии пробили по этому вратарю.'
+                        }}
+                        made={{
+                          label: 'Отражено', value: playerStats.goalieSoSaves,
+                          title: 'Отражённые послематчевые буллиты',
+                          hint: 'Сколько буллитов послематчевой серии вратарь отразил. В пропущенные шайбы серия не идёт.'
+                        }}
+                        percent={playerStats.goalieSoPercent}
+                        percentTitle="Процент отражённых буллитов"
+                        percentHint="Доля отражённых послематчевых буллитов от всех, пробитых по вратарю."
+                      />
+                    </>
                   ) : (
-                    <ShootoutRow
-                      attempts={{
-                        label: 'Попытки', value: playerStats.soAttempts,
-                        title: 'Попытки послематчевых буллитов',
-                        hint: 'Сколько буллитов послематчевой серии игрок пробил — реализованные и нереализованные вместе.'
-                      }}
-                      made={{
-                        label: 'Забито', value: playerStats.soGoals,
-                        title: 'Реализованные послематчевые буллиты',
-                        hint: 'Сколько буллитов послематчевой серии игрок реализовал. В заброшенные шайбы они не идут — по правилам это не гол игрока.'
-                      }}
-                      percent={playerStats.soPercent}
-                      percentTitle="Процент реализации буллитов"
-                      percentHint="Доля реализованных послематчевых буллитов от всех попыток игрока."
-                    />
+                    <>
+                      <ShootoutRow
+                        caption="По ходу матча"
+                        attempts={{
+                          label: 'Попытки', value: playerStats.psAttempts,
+                          title: 'Назначенные штрафные броски',
+                          hint: 'Сколько штрафных бросков игрок пробил по ходу матча — реализованные и нереализованные вместе.'
+                        }}
+                        made={{
+                          label: 'Забито', value: playerStats.goalsPs,
+                          title: 'Реализованные штрафные броски',
+                          hint: 'Сколько штрафных бросков игрок реализовал. Это настоящие шайбы: они уже входят в заброшенные и в счёт матча.'
+                        }}
+                        percent={playerStats.psPercent}
+                        percentTitle="Процент реализации ШБ"
+                        percentHint="Доля реализованных штрафных бросков от всех назначенных этому игроку."
+                      />
+                      <ShootoutRow
+                        caption="Послематчевые"
+                        attempts={{
+                          label: 'Попытки', value: playerStats.soAttempts,
+                          title: 'Попытки послематчевых буллитов',
+                          hint: 'Сколько буллитов послематчевой серии игрок пробил — реализованные и нереализованные вместе.'
+                        }}
+                        made={{
+                          label: 'Забито', value: playerStats.soGoals,
+                          title: 'Реализованные послематчевые буллиты',
+                          hint: 'Сколько буллитов послематчевой серии игрок реализовал. В заброшенные шайбы они не идут — по правилам это не гол игрока.'
+                        }}
+                        percent={playerStats.soPercent}
+                        percentTitle="Процент реализации буллитов"
+                        percentHint="Доля реализованных послематчевых буллитов от всех попыток игрока."
+                      />
+                    </>
                   )}
                 </div>
               </div>
