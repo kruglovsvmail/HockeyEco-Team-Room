@@ -1,6 +1,6 @@
 import pool from '../../config/db.js';
 import s3 from '../../config/s3.js';
-import { PutObjectCommand } from '@aws-sdk/client-s3';
+import { PutObjectCommand, DeleteObjectCommand } from '@aws-sdk/client-s3';
 import { assertPlayersAllowedInDivision, assertApplicationRosterAllowed, loadDivisionQualificationRules } from '../../utils/qualificationAccess.js';
 
 const S3_BUCKET = process.env.S3_BUCKET || 'hockeyeco-uploads';
@@ -16,6 +16,25 @@ const uploadBufferToS3 = async (file, key) => {
 };
 
 const getFileExt = (originalname) => (originalname.split('.').pop() || 'bin');
+
+// Прежний файл документа игрока в S3 после замены или очистки. Раньше он оставался
+// в бакете навсегда: «очистить документ» обнуляло только ссылку в базе, а новый скан
+// ложился рядом, если у него другое расширение — или если согласие до этого подписали
+// на сайте лиги, где в имя файла добавляется случайный хвост.
+//
+// Вызывать строго ПОСЛЕ успешной записи в БД: иначе сбой на UPDATE оставил бы заявку
+// со ссылкой на уже удалённый файл.
+const deleteReplacedDoc = async (previousUrl, newUrl, rosterId, type) => {
+  const key = (previousUrl || '').replace(/^\//, '');
+  if (!key || `/${key}` === newUrl) return;
+  // Трогаем только «свои» файлы этой заявки: в колонке теоретически может оказаться
+  // ссылка на что-то постороннее, и удалять её вслепую нельзя.
+  if (!key.startsWith(`uploads/tournament_rosters_${rosterId}_${type}`)) return;
+
+  await s3
+    .send(new DeleteObjectCommand({ Bucket: S3_BUCKET, Key: key }))
+    .catch((err) => console.error(`Не удалось удалить прежний файл (${type}):`, err.message));
+};
 
 /**
  * Роли представителя в турнирной заявке. Их ровно три — в отличие от ролей внутри команды
@@ -501,7 +520,6 @@ export const deleteApplicationPaper = async (req, res) => {
 
     if (app.paper_roster_team_url) {
       try {
-        const { DeleteObjectCommand } = await import('@aws-sdk/client-s3');
         await s3.send(new DeleteObjectCommand({ Bucket: S3_BUCKET, Key: app.paper_roster_team_url.replace(/^\//, '') }));
       } catch (e) {
         console.error('[Delete Application Paper S3 Error]:', e);
@@ -677,13 +695,17 @@ export const uploadRosterDocs = async (req, res) => {
 
     await assertApplicationEditable(pool, appId, teamId);
 
+    // Ссылки на текущие файлы забираем той же проверкой владения: после UPDATE узнать,
+    // что лежало раньше, уже неоткуда, а старые объекты надо убрать из бакета.
     const ownerCheck = await pool.query(
-      `SELECT id FROM tournament_rosters WHERE id = $1 AND tournament_team_id = $2`,
+      `SELECT id, insurance_url, medical_url, consent_url
+       FROM tournament_rosters WHERE id = $1 AND tournament_team_id = $2`,
       [rosterId, appId]
     );
     if (ownerCheck.rows.length === 0) {
       return res.status(404).json({ success: false, error: 'Игрок не найден в этой заявке' });
     }
+    const previous = ownerCheck.rows[0];
 
     const files = req.files || {};
     let insuranceUrl, medicalUrl, consentUrl;
@@ -717,6 +739,10 @@ export const uploadRosterDocs = async (req, res) => {
     if (updates.length > 1) {
       values.push(rosterId);
       await pool.query(`UPDATE tournament_rosters SET ${updates.join(', ')} WHERE id = $${counter}`, values);
+
+      if (insuranceUrl !== undefined) await deleteReplacedDoc(previous.insurance_url, insuranceUrl, rosterId, 'insurance');
+      if (medicalUrl !== undefined) await deleteReplacedDoc(previous.medical_url, medicalUrl, rosterId, 'medical');
+      if (consentUrl !== undefined) await deleteReplacedDoc(previous.consent_url, consentUrl, rosterId, 'consent');
     }
 
     return res.json({ success: true, insurance_url: insuranceUrl, medical_url: medicalUrl, consent_url: consentUrl });

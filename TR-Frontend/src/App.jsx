@@ -98,7 +98,7 @@ const ProfilePage = lazy(() => import('./pages/ProfilePage').then(module => ({ d
 const SettingsPage = lazy(() => import('./pages/SettingsPage').then(module => ({ default: module.SettingsPage })));
 const SubscriptionPage = lazy(() => import('./pages/SubscriptionPage').then(module => ({ default: module.SubscriptionPage })));
 const PrivacyPage = lazy(() => import('./pages/PrivacyPage').then(module => ({ default: module.PrivacyPage })));
-// Кабинет тренера: библиотека упражнений и редактор тактической доски
+// Тренерская: библиотека упражнений и редактор тактической доски
 const CoachCabinetPage = lazy(() => import('./pages/CoachCabinetPage').then(module => ({ default: module.CoachCabinetPage })));
 
 // Чанки страниц раздела Руководства — ИСПРАВЛЕНЫ пути импорта для сборщика Vite

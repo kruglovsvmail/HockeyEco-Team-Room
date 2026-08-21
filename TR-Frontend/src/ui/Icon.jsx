@@ -65,8 +65,11 @@ export function Icon({ name, className = "w-6 h-6", style, strokeWidth }) {
     // Результативные хоккейные действия и судейство
     shootout_goal: <svg {...baseProps}><ellipse cx="10" cy="10" rx="7" ry="2.5"></ellipse><path d="M3 10v5c0 1.38 3.13 2.5 7 2.5 1.15 0 2.23-.13 3.18-.36"></path><polyline points="14 17 17 20 23 13"></polyline></svg>,
     shootout_miss: <svg {...baseProps}><ellipse cx="10" cy="10" rx="7" ry="2.5"></ellipse><path d="M3 10v5c0 1.38 3.13 2.5 7 2.5 1.15 0 2.23-.13 3.18-.36"></path><line x1="16" y1="14" x2="22" y2="20"></line><line x1="22" y1="14" x2="16" y2="20"></line></svg>,
-    play: <svg {...baseProps} strokeWidth="2.5"><path d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z" /><path strokeWidth="2" d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>,
-    stop: <svg {...baseProps} strokeWidth="2.5"><path d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /><path d="M9 10a1 1 0 011-1h4a1 1 0 011 1v4a1 1 0 01-1 1h-4a1 1 0 01-1-1v-4z" /></svg>,
+    // Без окружности и во весь размер: это кнопка проигрывания, а не значок в списке,
+    // и на маленькой площади каждый пиксель под палец на счету. Заливка обведена своим
+    // же цветом — так у фигуры скругляются углы (strokeLinejoin из baseProps).
+    play: <svg {...baseProps} fill="currentColor" strokeWidth="2.5"><path d="M6.5 4 L20 12 L6.5 20 Z" /></svg>,
+    stop: <svg {...baseProps} fill="currentColor" strokeWidth="2.5"><rect x="7" y="7" width="10" height="10" rx="1" /></svg>,
     refresh: <svg {...baseProps} strokeWidth="2.5"><path d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" /></svg>,
     trophy: <svg {...baseProps}><path d="M5 3v4M3 5h4M6 17v4m-2-2h4m5-16l2.286 6.857L21 12l-5.714 2.143L13 21l-2.286-6.857L5 12l5.714-2.143L13 3z" /></svg>,
     puck: <svg {...baseProps}><ellipse cx="12" cy="8" rx="9" ry="3"/><line x1="3" y1="8" x2="3" y2="14"/><line x1="21" y1="8" x2="21" y2="14"/><path d="M3 14 Q3 17 12 17 Q21 17 21 14"/></svg>,

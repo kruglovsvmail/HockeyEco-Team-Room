@@ -87,17 +87,44 @@ export const isPuckInReach = (positions, objId, puckId, rinkType) => {
   return Math.hypot(px - ox, py - oy) <= PUCK_REACH_M;
 };
 
-// Типы фишек. Игроки намеренно абстрактные, без привязки к составу: упражнение живёт
-// в личной библиотеке тренера и уезжает к другим тренерам и в другие команды — ссылка
-// на конкретного игрока сломалась бы у первого же получателя.
+// Фишки игроков. Раньше их было две — «свой» и «соперник», — но упражнение почти никогда
+// не делится на две стороны: тройка и защита, работающая группа и очередь, атака в три
+// волны разными цветами. Поэтому цветов четыре, а что означает каждый, решает сам тренер
+// на своём упражнении.
 //
-// Отдельного вратаря нет: это такой же игрок, и отличает его номер, а не тип фишки.
-export const OBJECT_TYPES = [
-  { id: 'own',  label: 'Свой',     defaultLabel: '1' },
-  { id: 'opp',  label: 'Соперник', defaultLabel: '1' },
-  { id: 'puck', label: 'Шайба',    defaultLabel: '' },
-  { id: 'cone', label: 'Конус',    defaultLabel: '1' },
+// Игроки намеренно абстрактные, без привязки к составу: упражнение живёт в личной
+// библиотеке тренера и уезжает к другим тренерам и в другие команды — ссылка на
+// конкретного игрока сломалась бы у первого же получателя. Отдельного вратаря нет:
+// это такой же игрок, и отличает его номер, а не тип фишки.
+//
+// ink — цвет номера на фишке, stroke — её обводка. У всех четырёх они белые: фишки должны
+// читаться как один набор, а не как три одинаковых и одна особенная. Жёлтая поэтому взята
+// приглушённой — на светлой она белый номер не держит.
+export const PLAYER_TYPES = [
+  { id: 'red',    label: 'Красный', fill: '#c92a2a', ink: '#ffffff', stroke: 'rgba(255,255,255,0.85)' },
+  { id: 'green',  label: 'Зелёный', fill: '#2f9e44', ink: '#ffffff', stroke: 'rgba(255,255,255,0.85)' },
+  { id: 'yellow', label: 'Жёлтый',  fill: '#d1a000', ink: '#ffffff', stroke: 'rgba(255,255,255,0.85)' },
+  { id: 'blue',   label: 'Синий',   fill: '#1864ab', ink: '#ffffff', stroke: 'rgba(255,255,255,0.85)' },
 ];
+
+export const OBJECT_TYPES = [
+  ...PLAYER_TYPES.map(player => ({ ...player, defaultLabel: '1' })),
+  { id: 'puck', label: 'Шайба', defaultLabel: '' },
+  { id: 'cone', label: 'Конус', defaultLabel: '1' },
+];
+
+export const playerStyle = (type) => PLAYER_TYPES.find(p => p.id === type) || null;
+export const isPlayerType = (type) => !!playerStyle(type);
+
+// Ранние сцены знали только «своего» и «соперника». Читаем их зелёной и красной — ровно
+// теми, которыми они и рисовались, поэтому старое упражнение открывается в точности
+// таким, каким его нарисовали.
+const LEGACY_OBJECT_TYPES = { own: 'green', opp: 'red' };
+
+const normalizeObjectType = (type) => {
+  const mapped = LEGACY_OBJECT_TYPES[type] || type;
+  return OBJECT_TYPES.some(t => t.id === mapped) ? mapped : 'green';
+};
 
 // Длительность перехода между кадрами и паузы на кадре при проигрывании
 export const FRAME_TRANSITION_MS = 1400;
@@ -138,7 +165,7 @@ export const normalizeScene = (raw) => {
   return {
     objects: objects.map(o => ({
       id: o.id || nextId('o'),
-      type: OBJECT_TYPES.some(t => t.id === o.type) ? o.type : 'own',
+      type: normalizeObjectType(o.type),
       label: typeof o.label === 'string' ? o.label : '',
     })),
     frames: frames.map(f => ({

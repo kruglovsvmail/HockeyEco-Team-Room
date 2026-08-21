@@ -1,13 +1,21 @@
 import React, { useId } from 'react';
 import { RinkSvg } from './RinkSvg';
-import { outerViewBox, RINK_ROTATION, percentToRink, pointsToPath, PUCK_REACH_M } from './boardModel';
+import {
+  outerViewBox,
+  RINK_ROTATION,
+  percentToRink,
+  pointsToPath,
+  playerStyle,
+  PUCK_REACH_M,
+} from './boardModel';
 
 // Отрисовка сцены на катке: фишки в заданных позициях плюс линии текущего кадра.
 // Один и тот же компонент обслуживает редактор, проигрыватель и миниатюру в плане —
 // разница только в том, кто передаёт позиции: перетаскивание, анимация или кадр как есть.
+//
+// Цвета игроков живут в модели рядом со списком типов (PLAYER_TYPES): их знает и площадка,
+// и чип в интерфейсе, и разъезжаться этим двум нельзя.
 
-const OWN_FILL = '#2f9e44';
-const OPP_FILL = '#c92a2a';
 const CONE_FILL = '#f2a13b';
 const PUCK_FILL = '#111418';
 
@@ -38,6 +46,8 @@ const UPRIGHT_DEG = 90;
  * цветами и формами, что и на площадке: тренер должен узнавать её без подписи.
  */
 export function ObjectChip({ type, label, size = 30 }) {
+  const player = playerStyle(type);
+
   return (
     <svg width={size} height={size} viewBox="0 0 10 10" style={{ display: 'block', flexShrink: 0 }}>
       {type === 'puck' && <circle cx="5" cy="5" r="2.2" fill={PUCK_FILL} />}
@@ -46,12 +56,8 @@ export function ObjectChip({ type, label, size = 30 }) {
         <polygon points="5,0.9 9.2,8.6 0.8,8.6" fill={CONE_FILL} stroke="#b0741f" strokeWidth="0.5" />
       )}
 
-      {(type === 'own' || type === 'opp') && (
-        <circle
-          cx="5" cy="5" r="4.4"
-          fill={type === 'own' ? OWN_FILL : OPP_FILL}
-          stroke="rgba(255,255,255,0.85)" strokeWidth="0.6"
-        />
+      {player && (
+        <circle cx="5" cy="5" r="4.4" fill={player.fill} stroke={player.stroke} strokeWidth="0.6" />
       )}
 
       {/* У конуса метка мельче и ниже центра: вверху треугольник слишком узкий */}
@@ -60,7 +66,7 @@ export function ObjectChip({ type, label, size = 30 }) {
           x="5" y={type === 'cone' ? 6.6 : 5}
           textAnchor="middle" dominantBaseline="central"
           fontSize={type === 'cone' ? 3.2 : 5} fontWeight="800"
-          fill={type === 'cone' ? '#5a3a0c' : '#ffffff'}
+          fill={player ? player.ink : '#5a3a0c'}
         >
           {label}
         </text>
@@ -71,6 +77,7 @@ export function ObjectChip({ type, label, size = 30 }) {
 
 function BoardObject({ obj, pos, rinkType, isSelected, upright }) {
   const [cx, cy] = percentToRink(rinkType, pos[0], pos[1]);
+  const player = playerStyle(obj.type);
 
   // Фишки не ловят события сами: выбор считает планшет, по расстоянию до центров.
   // Иначе в куче побеждала бы верхняя по порядку отрисовки, а не ближайшая к пальцу.
@@ -78,7 +85,7 @@ function BoardObject({ obj, pos, rinkType, isSelected, upright }) {
 
   // Ареол выделенной фишки — это не украшение, а зона, в которой шайба считается её:
   // именно по нему система решает, кто владеет шайбой, и какие действия ей доступны.
-  const showHalo = isSelected && obj.type !== 'puck' && obj.type !== 'cone';
+  const showHalo = isSelected && !!player;
 
   return (
     <g {...common}>
@@ -110,11 +117,11 @@ function BoardObject({ obj, pos, rinkType, isSelected, upright }) {
         />
       )}
 
-      {(obj.type === 'own' || obj.type === 'opp') && (
+      {player && (
         <circle
           cx={cx} cy={cy} r={PLAYER_R}
-          fill={obj.type === 'own' ? OWN_FILL : OPP_FILL}
-          stroke="rgba(255,255,255,0.85)"
+          fill={player.fill}
+          stroke={player.stroke}
           strokeWidth="0.18"
         />
       )}
@@ -129,7 +136,7 @@ function BoardObject({ obj, pos, rinkType, isSelected, upright }) {
           dominantBaseline="central"
           fontSize={obj.type === 'cone' ? 0.78 : 1.15}
           fontWeight="800"
-          fill={obj.type === 'cone' ? '#5a3a0c' : '#ffffff'}
+          fill={player ? player.ink : '#5a3a0c'}
           transform={upright ? `rotate(${UPRIGHT_DEG} ${cx} ${cy})` : undefined}
           style={{ pointerEvents: 'none', userSelect: 'none' }}
         >

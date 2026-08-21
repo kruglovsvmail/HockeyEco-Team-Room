@@ -6,6 +6,7 @@ import { getPortalRoot } from '../../utils/helpers';
 import { BoardScene, ObjectChip } from './BoardScene';
 import {
   OBJECT_TYPES,
+  isPlayerType,
   normalizeScene,
   resolvePositions,
   isPuckInReach,
@@ -130,7 +131,7 @@ export function BoardEditor({ scene: rawScene, rinkType = 'full', onChange }) {
   const selectedObject = scene.objects.find(o => o.id === selectedId) || null;
   const selectedPuck = selectedObject ? puckInReach(selectedObject.id) : null;
   const hasPuck = !!selectedPuck;
-  const isPiecePlayable = !!selectedObject && selectedObject.type !== 'puck' && selectedObject.type !== 'cone';
+  const isPiecePlayable = isPlayerType(selectedObject?.type);
 
   const closeMenu = () => setMenuPos(null);
 
@@ -892,6 +893,18 @@ export function BoardEditor({ scene: rawScene, rinkType = 'full', onChange }) {
           </div>
         )}
 
+        {/* ── Что происходит в кадре ──
+            Сразу под расстановкой: тренер смотрит, кто где стоит, и тут же описывает
+            шаг словами. Ниже идут настройки перехода — они уже про то, как из этой
+            расстановки выходят. */}
+        <input
+          value={currentFrame.note}
+          onChange={(e) => patchFrame(safeIndex, { note: e.target.value })}
+          placeholder={`Что происходит на кадре ${safeIndex + 1}`}
+          maxLength={200}
+          className="shrink-0 w-full px-3 py-2.5 rounded-xl bg-surface-level2 text-content-main text-[14px] outline-none border border-surface-border placeholder:text-content-subtle"
+        />
+
         {/* Почему фишка не двигается — объясняем ровно в тот момент, когда тренер
             пробует её потащить не на первом кадре */}
         {selectedObject && safeIndex > 0 && !armed && (
@@ -961,24 +974,20 @@ export function BoardEditor({ scene: rawScene, rinkType = 'full', onChange }) {
           </div>
         </div>
 
-        {/* ── Подпись кадра ── */}
-        <input
-          value={currentFrame.note}
-          onChange={(e) => patchFrame(safeIndex, { note: e.target.value })}
-          placeholder={`Что происходит на кадре ${safeIndex + 1}`}
-          maxLength={200}
-          className="shrink-0 w-full px-3 py-2.5 rounded-xl bg-surface-level2 text-content-main text-[14px] outline-none border border-surface-border placeholder:text-content-subtle"
-        />
-
-        {/* ── Фишки ── */}
+        {/* ── Фишки ──
+            Кнопка показывает саму фишку, а не её название: цвет на площадке и цвет в
+            кнопке — это одно и то же, и подпись «Зелёный» рядом с зелёным кружком уже
+            ничего не добавляет. Заодно шесть кнопок помещаются в строку без прокрутки. */}
         <div className="shrink-0 flex items-center gap-2 overflow-x-auto scrollbar-hide pb-1">
           {OBJECT_TYPES.map(type => (
             <button
               key={type.id}
               onClick={() => addObject(type.id)}
-              className="shrink-0 px-3 py-2 rounded-xl bg-surface-level2 text-content-main text-[12px] font-bold uppercase tracking-wider active:scale-95 transition-transform outline-none"
+              className="shrink-0 flex items-center gap-0.5 pl-1.5 pr-2 py-1.5 rounded-xl bg-surface-level2 text-content-main active:scale-95 transition-transform outline-none"
+              aria-label={`Добавить: ${type.label}`}
             >
-              + {type.label}
+              <Icon name="plus" className="w-3.5 h-3.5 shrink-0" strokeWidth={2.5} />
+              <ObjectChip type={type.id} size={24} />
             </button>
           ))}
         </div>

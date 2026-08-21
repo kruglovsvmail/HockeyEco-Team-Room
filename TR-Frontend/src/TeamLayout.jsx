@@ -26,7 +26,7 @@ const EditEventPanel = lazy(() =>
   import('./components/EventDetails/EditEventPanel').then(m => ({ default: m.EditEventPanel }))
 );
 
-// Панели Кабинета тренера. Ленивые: тактическая доска тянет за собой сцену и
+// Панели Тренерской. Ленивые: тактическая доска тянет за собой сцену и
 // проигрыватель, а большинству пользователей раздел вообще недоступен.
 const DrillEditor = lazy(() =>
   import('./components/CoachCabinet/DrillEditor').then(m => ({ default: m.DrillEditor }))

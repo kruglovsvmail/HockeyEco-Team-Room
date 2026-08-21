@@ -9,7 +9,7 @@ import { getAuthHeaders } from '../utils/helpers';
 import { ShareDrillSheet } from '../components/CoachCabinet/ShareDrillSheet';
 import { RINK_TYPES } from '../components/TacticalBoard/boardModel';
 
-// Кабинет тренера — личная библиотека упражнений.
+// Тренерская — личная библиотека упражнений.
 //
 // Раздел намеренно не привязан ни к команде, ни к клубу: тренер работает с разными
 // составами и меняет клубы, а методика остаётся его собственной. Поэтому здесь нет

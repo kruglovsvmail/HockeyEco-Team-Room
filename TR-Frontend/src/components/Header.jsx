@@ -51,7 +51,7 @@ export function Header({
       return 'Настройки';
     }
     if (path.startsWith('/coach')) {
-      return 'Кабинет тренера';
+      return 'Тренерская';
     }
     if (path.includes('profile')) {
       return 'Мой профиль';
@@ -110,7 +110,7 @@ export function Header({
     if (path.includes('settings'))
       return 'bg-surface-base';
 
-    // Кабинет тренера
+    // Тренерская
     if (path.startsWith('/coach'))
       return 'bg-surface-base';
 

@@ -9,6 +9,7 @@ import { ButtonLP } from '../../../ui/Button-LP';
 import { getAuthHeaders } from '../../../utils/helpers';
 import { BoardPlayer } from '../../TacticalBoard/BoardPlayer';
 import { RINK_TYPES } from '../../TacticalBoard/boardModel';
+import { AdhocDrillSheet } from './AdhocDrillSheet';
 
 // Вкладка «План» карточки тренировки.
 //
@@ -20,8 +21,16 @@ import { RINK_TYPES } from '../../TacticalBoard/boardModel';
 //   • черновик — план собран, но не опубликован: виден только тренерскому составу;
 //   • прошедшая тренировка — остаётся список названий, детали закрываются. Упражнение
 //     с тех пор могли переделать, и показывать новую версию под старой датой нельзя.
+//
+// Рядом с библиотечными в плане живут разовые упражнения — придуманные под эту одну
+// тренировку. Они правятся прямо отсюда (пока тренировка не прошла) и отсюда же
+// забираются в библиотеку, если оказались удачными.
 
 const API = import.meta.env.VITE_API_URL || '';
+
+// Длительность выезда формы разового упражнения. Обязана совпадать с duration-300
+// у слоя — по этому таймеру он выносится из дерева.
+const SHEET_ANIM_MS = 300;
 
 const rinkLabel = (rinkType) => RINK_TYPES.find(t => t.id === rinkType)?.label || 'Площадка';
 
@@ -53,6 +62,7 @@ export function TrainingPlan({ event }) {
 
   const [items, setItems] = useState([]);
   const [isPublished, setIsPublished] = useState(false);
+  const [isPast, setIsPast] = useState(false);
   const [canManage, setCanManage] = useState(false);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -65,6 +75,13 @@ export function TrainingPlan({ event }) {
   const [library, setLibrary] = useState([]);
   const [librarySearch, setLibrarySearch] = useState('');
   const [libraryLoading, setLibraryLoading] = useState(false);
+
+  // Форма разового упражнения: adhoc — что правим, isAdhocShown — где сейчас слой.
+  // Два состояния, а не одно: слой должен успеть уехать за экран прежде, чем его
+  // вынесут из дерева, иначе он просто мигнёт и исчезнет.
+  const [adhoc, setAdhoc] = useState(null);
+  const [isAdhocShown, setIsAdhocShown] = useState(false);
+  const [copyingId, setCopyingId] = useState(null);
 
   const itemRefs = useRef(new Map());
   const pressTimer = useRef(null);
@@ -87,6 +104,7 @@ export function TrainingPlan({ event }) {
 
       setItems(json.items || []);
       setIsPublished(json.plan_published);
+      setIsPast(json.is_past);
       setCanManage(json.can_manage);
     } catch {
       notify('Не удалось загрузить план', 'danger');
@@ -262,6 +280,76 @@ export function TrainingPlan({ event }) {
     persist(next);
   };
 
+  // ── Разовое упражнение ───────────────────────────────────────────────────
+  //
+  // Форма выезжает справа — как переходы между экранами приложения. Два кадра
+  // ожидания: за один браузер не успевает применить стартовую позицию, и слой
+  // появлялся бы рывком, уже на месте.
+  const openAdhoc = (mode, item = null) => {
+    setIsLibraryOpen(false);
+    setAdhoc({ mode, item });
+    requestAnimationFrame(() => requestAnimationFrame(() => setIsAdhocShown(true)));
+  };
+
+  const closeAdhoc = useCallback(() => {
+    setIsAdhocShown(false);
+    setTimeout(() => setAdhoc(null), SHEET_ANIM_MS);
+  }, []);
+
+  // Возвращает, получилось ли сохранить: форма закрывается только на успехе, иначе
+  // набранное пропало бы вместе с сообщением об ошибке.
+  const submitAdhoc = async (payload) => {
+    const isEdit = adhoc?.mode === 'edit';
+    const url = isEdit
+      ? `${API}/api/trainings/${event.event_id}/plan/${adhoc.item.id}/adhoc`
+      : `${API}/api/trainings/${event.event_id}/plan/adhoc`;
+
+    try {
+      const res = await fetch(url, {
+        method: isEdit ? 'PUT' : 'POST',
+        headers: { ...getAuthHeaders(), 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ...scopeBody, ...payload }),
+      });
+      const json = await res.json();
+
+      if (!json.success) {
+        notify(json.error || 'Не удалось сохранить упражнение', 'danger');
+        return false;
+      }
+
+      await loadPlan();
+      notify(isEdit ? 'Упражнение изменено' : 'Упражнение добавлено в план');
+      return true;
+    } catch {
+      notify('Не удалось сохранить упражнение', 'danger');
+      return false;
+    }
+  };
+
+  // Копия уходит в библиотеку того, кто нажал, и с планом больше не связана: пункт
+  // остаётся тем, что команда отрабатывала, а копия дальше живёт своей жизнью.
+  const copyToLibrary = async (item) => {
+    setCopyingId(item.id);
+    try {
+      const res = await fetch(`${API}/api/trainings/${event.event_id}/plan/${item.id}/library`, {
+        method: 'POST',
+        headers: { ...getAuthHeaders(), 'Content-Type': 'application/json' },
+        body: JSON.stringify(scopeBody),
+      });
+      const json = await res.json();
+
+      if (!json.success) {
+        notify(json.error || 'Не удалось сохранить в библиотеку', 'danger');
+        return;
+      }
+      notify('Упражнение сохранено в вашей библиотеке');
+    } catch {
+      notify('Не удалось сохранить в библиотеку', 'danger');
+    } finally {
+      setCopyingId(null);
+    }
+  };
+
   if (loading) return <PageLoader />;
 
   // Игрок до публикации вообще ничего не видит: сервер в этом случае отдаёт пустой план
@@ -386,11 +474,16 @@ export function TrainingPlan({ event }) {
             const isDragging = draggingId === item.id;
             const frames = item.board_json?.frames?.length || 0;
 
-            const meta = !item.details_available
+            const details = !item.details_available
               ? 'Детали недоступны'
               : frames > 0
                 ? `${rinkLabel(item.rink_type)} · ${framesLabel(frames)}`
                 : 'Без планшета';
+
+            // Разовое отмечаем в той же строке, а не отдельным значком: строка и так
+            // отвечает на вопрос «что это за упражнение», а лишний элемент в карточке
+            // спорил бы за внимание с названием.
+            const meta = item.is_adhoc ? `Разовое · ${details}` : details;
 
             return (
               <div
@@ -501,6 +594,34 @@ export function TrainingPlan({ event }) {
                           <BoardPlayer scene={item.board_json} rinkType={item.rink_type} />
                         </div>
                       )}
+
+                      {/* Разовое упражнение правится и забирается в библиотеку только
+                          отсюда: в Тренерской его нет. Правка закрывается после
+                          тренировки — план проведённой показывает отработанное. А вот
+                          забрать удачное можно и потом: обычно это как раз и понимаешь
+                          уже после льда. */}
+                      {item.is_adhoc && canManage && (
+                        <div className="flex items-center gap-2 pt-1">
+                          {!isPast && item.edit_content && (
+                            <button
+                              onClick={() => openAdhoc('edit', item)}
+                              className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-surface-level2 text-content-main text-[12px] font-semibold outline-none active:scale-95 transition-transform"
+                            >
+                              <Icon name="edit" className="w-3.5 h-3.5 shrink-0" />
+                              Изменить
+                            </button>
+                          )}
+
+                          <button
+                            onClick={() => copyToLibrary(item)}
+                            disabled={copyingId === item.id}
+                            className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-surface-level2 text-content-main text-[12px] font-semibold outline-none active:scale-95 transition-transform disabled:opacity-50 disabled:active:scale-100"
+                          >
+                            <Icon name="handbook" className="w-3.5 h-3.5 shrink-0" />
+                            В библиотеку
+                          </button>
+                        </div>
+                      )}
                     </div>
                   </div>
                 </div>
@@ -514,6 +635,32 @@ export function TrainingPlan({ event }) {
       <BottomSheet isOpen={isLibraryOpen} onClose={() => setIsLibraryOpen(false)}>
         <div className="flex flex-col gap-4">
           <h3 className="text-[18px] font-black text-content-main mb-1">Добавить упражнение</h3>
+
+          {/* Разовое стоит над библиотекой и поиском: придуманное под эту тренировку
+              искать негде, а начинать с него — обычное дело.
+              После тренировки вход убираем — придумывать задним числом нечего, и
+              сервер такой пункт всё равно не примет. */}
+          {!isPast && (
+            <button
+              onClick={() => openAdhoc('create')}
+              className="flex items-center gap-3 p-3 rounded-xl bg-surface-level2 border border-dashed border-surface-border text-left outline-none transition-transform active:scale-[0.99]"
+            >
+              <div
+                className="shrink-0 w-9 h-9 rounded-lg bg-surface-level1 flex items-center justify-center"
+                style={{ color: activeBrandColor }}
+              >
+                <Icon name="plus" className="w-4 h-4" />
+              </div>
+              <div className="flex flex-col min-w-0">
+                <span className="text-[14px] font-bold text-content-main leading-tight">
+                  Разовое упражнение
+                </span>
+                <span className="text-[11px] text-content-muted leading-snug mt-0.5">
+                  Придумать здесь — в библиотеку не попадёт
+                </span>
+              </div>
+            </button>
+          )}
 
           <div className="relative">
             <Icon name="search" className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-content-subtle" />
@@ -557,11 +704,23 @@ export function TrainingPlan({ event }) {
             <div className="flex justify-center items-center h-24 text-[10px] font-black text-content-muted uppercase tracking-widest text-center py-4 px-6">
               {librarySearch
                 ? 'По этому запросу ничего не нашлось'
-                : 'Библиотека пуста. Упражнения создаются в Кабинете тренера'}
+                : 'Библиотека пуста. Упражнения создаются в Тренерской'}
             </div>
           )}
         </div>
       </BottomSheet>
+
+      {adhoc && (
+        <AdhocDrillSheet
+          isShown={isAdhocShown}
+          title={adhoc.mode === 'edit' ? 'Разовое упражнение' : 'Новое упражнение'}
+          initial={adhoc.mode === 'edit' ? adhoc.item?.edit_content : null}
+          submitLabel={adhoc.mode === 'edit' ? 'Сохранить' : 'Добавить в план'}
+          onSubmit={submitAdhoc}
+          onClose={closeAdhoc}
+          onNotify={notify}
+        />
+      )}
 
       <Toast
         isOpen={toast.isOpen}

@@ -12,7 +12,14 @@ import {
   deleteTraining,
 } from '../controllers/TrainingController.js';
 import { getTrainingLines, saveTrainingLines } from '../controllers/TrainingLinesController.js';
-import { getTrainingPlan, saveTrainingPlan, setPlanPublished } from '../controllers/TrainingPlanController.js';
+import {
+  getTrainingPlan,
+  saveTrainingPlan,
+  setPlanPublished,
+  createAdhocDrill,
+  updateAdhocDrill,
+  copyAdhocToLibrary,
+} from '../controllers/TrainingPlanController.js';
 import { uploadTrainingFormationImage } from '../controllers/FormationImageController.js';
 import upload from '../config/upload.js';
 import { verifyToken, requireEventPermission } from '../middleware/auth.js';
@@ -73,6 +80,15 @@ router.post('/:eventId/lines', verifyToken, requireEventPermission('TRAINING_LIN
 router.get('/:eventId/plan', verifyToken, requireEventPermission('INTERNAL_VIEW', 'INTERNAL_VIEW'), getTrainingPlan);
 router.post('/:eventId/plan', verifyToken, requireEventPermission('TRAINING_PLAN_MANAGE', 'CLUB_TRAINING_PLAN_MANAGE'), saveTrainingPlan);
 router.put('/:eventId/plan/published', verifyToken, requireEventPermission('TRAINING_PLAN_MANAGE', 'CLUB_TRAINING_PLAN_MANAGE'), setPlanPublished);
+
+// Разовое упражнение — придуманное под одну тренировку и в библиотеку не попавшее.
+// Права те же, что у всего плана: кто собирает тренировку, тот и придумывает.
+router.post('/:eventId/plan/adhoc', verifyToken, requireEventPermission('TRAINING_PLAN_MANAGE', 'CLUB_TRAINING_PLAN_MANAGE'), createAdhocDrill);
+router.put('/:eventId/plan/:itemId/adhoc', verifyToken, requireEventPermission('TRAINING_PLAN_MANAGE', 'CLUB_TRAINING_PLAN_MANAGE'), updateAdhocDrill);
+
+// Забрать разовое упражнение в свою библиотеку. Каждый тренер забирает в собственную,
+// поэтому на общей тренировке это могут сделать оба — копии независимы.
+router.post('/:eventId/plan/:itemId/library', verifyToken, requireEventPermission('TRAINING_PLAN_MANAGE', 'CLUB_TRAINING_PLAN_MANAGE'), copyAdhocToLibrary);
 
 // Загрузить/перезаписать картинку расстановки в S3 (генерируется на клиенте после сохранения).
 // eventType и контекст приходят в query — тело здесь multipart и до multer недоступно.

@@ -1,7 +1,8 @@
 import pool from '../config/db.js';
 import { isCoachAnywhere } from '../utils/checkPermission.js';
+import { normalizeDrillInput } from '../utils/drillContent.js';
 
-// Библиотека упражнений Кабинета тренера.
+// Библиотека упражнений Тренерской.
 //
 // Упражнение принадлежит человеку, а не команде и не клубу: тренер работает с разными
 // составами, меняет клубы, и его методика уходит вместе с ним. Поэтому во всех ручках
@@ -10,54 +11,8 @@ import { isCoachAnywhere } from '../utils/checkPermission.js';
 // Единственная механика обмена — копирование: «поделиться» создаёт получателю
 // независимую копию. Ничего общего и изменяемого между тренерами не существует.
 
-const RINK_TYPES = ['full', 'top', 'bottom'];
-
-// Названия площадок сменились вместе с разворотом катка на вертикаль. Старые значения
-// принимаем и переводим на месте: упражнение не должно ломаться из-за переименования.
-const LEGACY_RINK_TYPES = { half: 'top', zone: 'top' };
-
-// Пустая сцена для упражнения, у которого включили доску, но ещё ничего не расставили.
-// Кадр всегда есть хотя бы один — на нём стоит вся отрисовка и проигрывание.
-const EMPTY_BOARD = { objects: [], frames: [{ id: 'f1', note: '', positions: {}, shapes: [] }] };
-
-/**
- * Приводит присланные клиентом поля к тому, что можно писать в БД.
- * Возвращает { error } при некорректных данных — вызывающий сам решает, как ответить.
- */
-const normalizeDrillInput = (body) => {
-  const name = String(body?.name || '').trim();
-  if (!name) return { error: 'Название упражнения обязательно' };
-  if (name.length > 255) return { error: 'Название слишком длинное' };
-
-  const description = body?.description ? String(body.description).trim() : null;
-
-  // Планшет есть у упражнения всегда: в него можно зайти и сохранить схему, даже если
-  // показывать её в упражнении тренер не собирается. За показ отвечает отдельный флаг
-  // board_enabled — иначе выключение планшета стирало бы нарисованное.
-  let rinkType = body?.rink_type || 'full';
-  rinkType = LEGACY_RINK_TYPES[rinkType] || rinkType;
-  if (!RINK_TYPES.includes(rinkType)) {
-    return { error: 'Некорректный тип площадки' };
-  }
-
-  let boardJson = body?.board_json && typeof body.board_json === 'object' ? body.board_json : EMPTY_BOARD;
-  if (!Array.isArray(boardJson.frames) || boardJson.frames.length === 0) {
-    boardJson = { ...boardJson, frames: EMPTY_BOARD.frames };
-  }
-  if (!Array.isArray(boardJson.objects)) {
-    boardJson = { ...boardJson, objects: [] };
-  }
-
-  const boardEnabled = body?.board_enabled !== false;
-
-  // Теги свободные, но храним их нормализованными: обрезанными, без пустых и дублей.
-  const rawTags = Array.isArray(body?.tags) ? body.tags : [];
-  const tags = [...new Set(
-    rawTags.map(t => String(t).trim()).filter(t => t.length > 0 && t.length <= 40)
-  )].slice(0, 20);
-
-  return { name, description, rinkType, boardJson, boardEnabled, tags };
-};
+// Разбор и проверка присланного содержимого упражнения живут в utils/drillContent.js:
+// теми же правилами пользуется разовое упражнение в плане тренировки.
 
 /**
  * Заморозка упражнения в планах тренировок.
@@ -131,6 +86,30 @@ const removeFuturePlanItems = async (client, drillId) => {
         AND t.id = p.${eventColumn}
         AND t.training_date >= now()
     `, [drillId]);
+  }
+};
+
+/**
+ * Перенос нового названия в планы предстоящих тренировок.
+ *
+ * Пункт плана хранит копию названия, снятую в момент добавления, и показывает её с того
+ * дня, как тренировка стала прошедшей. До этого дня он показывает живое название из
+ * библиотеки — а значит, переименование между добавлением и льдом разводило бы две
+ * версии: команда готовилась по одному названию, а в истории осталось бы то, что было
+ * в день добавления. Копию двигаем следом за библиотекой, пока тренировка впереди.
+ *
+ * Прошедшие не трогаем: там копия и есть история.
+ */
+const syncFuturePlanNames = async (client, drillId, name) => {
+  for (const [planTable, eventColumn, eventTable] of PLAN_SCOPES) {
+    await client.query(`
+      UPDATE ${planTable} p
+      SET drill_name = $2
+      FROM ${eventTable} t
+      WHERE p.drill_id = $1
+        AND t.id = p.${eventColumn}
+        AND t.training_date >= now()
+    `, [drillId, name]);
   }
 };
 
@@ -299,7 +278,7 @@ export const updateDrill = async (req, res) => {
     }
 
     const current = await client.query(
-      'SELECT description, rink_type, board_json, board_enabled FROM drills WHERE id = $1 AND author_user_id = $2',
+      'SELECT name, description, rink_type, board_json, board_enabled FROM drills WHERE id = $1 AND author_user_id = $2',
       [drillId, userId]
     );
     if (current.rows.length === 0) {
@@ -307,6 +286,7 @@ export const updateDrill = async (req, res) => {
     }
 
     const contentChanged = isContentChanged(current.rows[0], input);
+    const nameChanged = current.rows[0].name !== input.name;
 
     await client.query('BEGIN');
 
@@ -338,6 +318,8 @@ export const updateDrill = async (req, res) => {
       JSON.stringify(input.tags),
       contentChanged,
     ]);
+
+    if (nameChanged) await syncFuturePlanNames(client, drillId, input.name);
 
     await client.query('COMMIT');
     res.json({ success: true, drill: rows[0] });

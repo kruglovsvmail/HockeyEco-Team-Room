@@ -239,8 +239,27 @@ export const deleteTraining = async (req, res) => {
       return res.status(400).json({ success: false, error: 'Некорректный формат идентификатора тренировки' });
     }
 
+    if (eventType !== 'team_training' && eventType !== 'club_training') {
+      return res.status(400).json({ success: false, error: 'Неизвестный тип тренировки' });
+    }
+
     // Сохраняем детали ДО удаления для текста уведомления
     const eventInfo = await getTrainingInfo(numericId, eventType);
+
+    // Разовые упражнения плана держат содержимое в drill_snapshots, а сами пункты плана
+    // уходят каскадом вместе с тренировкой. Слепок каскад не заденет — он не привязан к
+    // событию, — поэтому чистим его здесь, пока пункты ещё на месте. Слепки библиотечных
+    // упражнений не трогаем: они общие для всех тренировок, замороженных одной правкой.
+    const isClub = eventType === 'club_training';
+    const planTable = isClub ? 'club_training_plan' : 'team_training_plan';
+    const planColumn = isClub ? 'club_training_id' : 'team_training_id';
+
+    await pool.query(`
+      DELETE FROM drill_snapshots WHERE id IN (
+        SELECT drill_snapshot_id FROM "public"."${planTable}"
+        WHERE ${planColumn} = $1 AND is_adhoc AND drill_snapshot_id IS NOT NULL
+      )
+    `, [numericId]);
 
     if (eventType === 'team_training') {
       const check = await pool.query(

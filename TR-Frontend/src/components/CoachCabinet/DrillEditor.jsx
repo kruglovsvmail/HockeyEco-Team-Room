@@ -19,6 +19,11 @@ import { RINK_TYPES, createEmptyScene, normalizeScene } from '../TacticalBoard/b
 // Тумблер решает только одно — показывать ли эту схему в упражнении. Поэтому его
 // выключение ничего не стирает, и сам планшет здесь не отображается: на этой странице
 // нужны параметры, а не сцена.
+//
+// Форма обслуживает и разовое упражнение из плана тренировки: поля у него ровно те же,
+// а вот адресат другой — в библиотеку оно не пишется. Такой вызов передаёт содержимое
+// готовым (initial) и забирает сохранение себе (onSubmit); своей загрузки и своего
+// запроса в /api/drills в этом случае нет.
 
 const API = import.meta.env.VITE_API_URL || '';
 
@@ -38,17 +43,21 @@ const FormBlock = ({ title, icon, children }) => (
   </div>
 );
 
-export function DrillEditor({ drillId, onClose, onSaved, onNotify }) {
+export function DrillEditor({ drillId, initial, onSubmit, submitLabel, onClose, onSaved, onNotify }) {
   const isNew = !drillId;
 
   const [loading, setLoading] = useState(!isNew);
   const [saving, setSaving] = useState(false);
 
-  const [name, setName] = useState('');
-  const [description, setDescription] = useState('');
-  const [rinkType, setRinkType] = useState('full');
-  const [boardEnabled, setBoardEnabled] = useState(true);
-  const [scene, setScene] = useState(() => createEmptyScene());
+  const [name, setName] = useState(initial?.name || '');
+  const [description, setDescription] = useState(initial?.description || '');
+  const [rinkType, setRinkType] = useState(
+    RINK_TYPES.some(t => t.id === initial?.rink_type) ? initial.rink_type : 'full'
+  );
+  const [boardEnabled, setBoardEnabled] = useState(initial?.board_enabled !== false);
+  const [scene, setScene] = useState(
+    () => initial?.board_json ? normalizeScene(initial.board_json) : createEmptyScene()
+  );
   // Теги из формы убраны, но существующие сохраняем как есть: молча стирать данные
   // упражнения из-за того, что поле временно не показывается, нельзя
   const [tags, setTags] = useState([]);
@@ -108,19 +117,28 @@ export function DrillEditor({ drillId, onClose, onSaved, onNotify }) {
       return;
     }
 
+    const payload = {
+      name: name.trim(),
+      description: description.trim() || null,
+      rink_type: rinkType,
+      board_json: scene,
+      board_enabled: boardEnabled,
+    };
+
     setSaving(true);
     try {
+      // Разовое упражнение сохраняет вызывающая сторона — в план тренировки, а не в
+      // библиотеку. Форма закрывается только на успехе: иначе набранное пропадёт
+      // вместе с сообщением об ошибке.
+      if (onSubmit) {
+        if (await onSubmit(payload)) onClose?.();
+        return;
+      }
+
       const res = await fetch(`${API}/api/drills${isNew ? '' : `/${drillId}`}`, {
         method: isNew ? 'POST' : 'PUT',
         headers: { ...getAuthHeaders(), 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          name: name.trim(),
-          description: description.trim() || null,
-          rink_type: rinkType,
-          board_json: scene,
-          board_enabled: boardEnabled,
-          tags,
-        }),
+        body: JSON.stringify({ ...payload, tags }),
       });
 
       const json = await res.json();
@@ -199,7 +217,7 @@ export function DrillEditor({ drillId, onClose, onSaved, onNotify }) {
 
       <div className="pt-2 pb-8">
         <ButtonLP onClick={handleSave} isLoading={saving} disabled={saving}>
-          Сохранить
+          {submitLabel || 'Сохранить'}
         </ButtonLP>
       </div>
 

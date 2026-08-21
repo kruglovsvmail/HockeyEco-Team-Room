@@ -16,21 +16,23 @@ import {
 
 // Настройки просмотра общие для всех упражнений и запоминаются: тренеру, который
 // разбирает связку, и игроку, который смотрит её в раздевалке, удобно разное.
+// Обе выключены по умолчанию: сначала показываем движение как есть, а линии поверх него
+// и остановки на каждом кадре — это уже разбор, и включает его тот, кому он нужен.
 const PATHS_KEY = 'tr_board_show_paths';
-const CONTINUOUS_KEY = 'tr_board_continuous';
+const PAUSES_KEY = 'tr_board_pauses';
 
 export function BoardPlayer({ scene: rawScene, rinkType = 'full', autoPlay = false, className = '' }) {
   const scene = useMemo(() => normalizeScene(rawScene), [rawScene]);
   const frameCount = scene.frames.length;
 
   // Показывать ли нарисованные траектории во время проигрывания
-  const [showPaths, setShowPaths] = useState(() => localStorage.getItem(PATHS_KEY) !== 'false');
-  // Непрерывное проигрывание — без остановки на каждом кадре
-  const [continuous, setContinuous] = useState(() => localStorage.getItem(CONTINUOUS_KEY) === 'true');
+  const [showPaths, setShowPaths] = useState(() => localStorage.getItem(PATHS_KEY) === 'true');
+  // Останавливаться ли на каждом кадре
+  const [pauses, setPauses] = useState(() => localStorage.getItem(PAUSES_KEY) === 'true');
 
   const boardRatio = useMemo(() => outerViewBox(rinkType), [rinkType]);
 
-  const holdMs = continuous ? 0 : FRAME_HOLD_MS;
+  const holdMs = pauses ? FRAME_HOLD_MS : 0;
 
   // Переходы у кадров разной длительности, поэтому позицию во времени считаем по
   // накопленным началам отрезков, а не делением на общий шаг.
@@ -133,17 +135,17 @@ export function BoardPlayer({ scene: rawScene, rinkType = 'full', autoPlay = fal
     setShowPaths(next);
   };
 
-  const toggleContinuous = () => {
-    const next = !continuous;
-    localStorage.setItem(CONTINUOUS_KEY, String(next));
+  const togglePauses = () => {
+    const next = !pauses;
+    localStorage.setItem(PAUSES_KEY, String(next));
 
     // Перематываем на начало текущего кадра: паузы исчезают или возвращаются, и старое
     // время в новой шкале указывало бы на другое место упражнения
-    const nextHold = next ? 0 : FRAME_HOLD_MS;
+    const nextHold = next ? FRAME_HOLD_MS : 0;
     let start = 0;
     for (let i = 0; i < frameIndex; i++) start += nextHold + frameTransitionMs(scene.frames[i]);
 
-    setContinuous(next);
+    setPauses(next);
     setTime(start);
   };
 
@@ -188,7 +190,7 @@ export function BoardPlayer({ scene: rawScene, rinkType = 'full', autoPlay = fal
   // Подпись показываем от кадра, к которому идёт движение: пока фишки едут, читать
   // нужно уже про новый шаг, а не про тот, который закончился.
   const noteIndex = t > 0.35 ? Math.min(frameIndex + 1, frameCount - 1) : frameIndex;
-  const note = scene.frames[noteIndex]?.note || '';
+  const hasNotes = scene.frames.some(frame => frame.note);
 
   return (
     <div className={clsx('flex flex-col gap-2', className)}>
@@ -207,6 +209,30 @@ export function BoardPlayer({ scene: rawScene, rinkType = 'full', autoPlay = fal
       >
         <BoardScene rinkType={rinkType} scene={scene} positions={positions} shapeLayers={shapeLayers} />
       </div>
+
+      {/* ── Что происходит в кадре ──
+          Стоит сразу под площадкой: читают подпись, не отрывая глаз от движения.
+
+          Все подписи лежат в одной ячейке грида, видна только текущая. Высота блока
+          получается по самой длинной из них и больше не меняется — иначе кадр с
+          подписью в две строки на каждом перелистывании дёргал бы вверх-вниз всё,
+          что ниже, а во время проигрывания интерфейс просто трясло бы. */}
+      {hasNotes && (
+        <div className="grid px-1">
+          {scene.frames.map((frame, index) => (
+            <p
+              key={frame.id}
+              aria-hidden={index !== noteIndex}
+              className={clsx(
+                'col-start-1 row-start-1 text-[14px] text-content-main leading-snug transition-opacity duration-200',
+                index === noteIndex ? 'opacity-100' : 'opacity-0'
+              )}
+            >
+              {frame.note}
+            </p>
+          ))}
+        </div>
+      )}
 
       {/* Управление появляется только там, где есть что проигрывать */}
       {frameCount > 1 && (
@@ -252,21 +278,15 @@ export function BoardPlayer({ scene: rawScene, rinkType = 'full', autoPlay = fal
             Траектории
           </button>
           <button
-            onClick={toggleContinuous}
+            onClick={togglePauses}
             className={clsx(
               'px-3 py-1.5 rounded-full text-[11px] font-bold uppercase tracking-wider transition-colors outline-none',
-              continuous ? 'bg-brand-opacity text-brand' : 'bg-surface-level2 text-content-muted'
+              pauses ? 'bg-brand-opacity text-brand' : 'bg-surface-level2 text-content-muted'
             )}
           >
-            Без пауз
+            Паузы
           </button>
         </div>
-      )}
-
-      {note && (
-        <p className="text-[14px] text-content-main leading-snug px-1">
-          {note}
-        </p>
       )}
     </div>
   );

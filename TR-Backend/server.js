@@ -68,7 +68,7 @@ app.use('/api/push', pushRoutes);
 app.use('/api/analytics', analyticsRoutes);
 app.use('/api/subscription', subscriptionRoutes);
 app.use('/api/policy', policyRoutes);
-// Кабинет тренера — личная библиотека упражнений
+// Тренерская — личная библиотека упражнений
 app.use('/api/drills', drillRoutes);
 app.use(profileRouter);
 
