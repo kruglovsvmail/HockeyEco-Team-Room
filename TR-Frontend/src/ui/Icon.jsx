@@ -51,6 +51,7 @@ export function Icon({ name, className = "w-6 h-6", style, strokeWidth }) {
     edit: <svg {...baseProps}><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path></svg>,
     delete: <svg {...baseProps}><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>,
     save: <svg {...baseProps} strokeWidth="3"><path d="M5 13l4 4L19 7"></path></svg>,
+    check: <svg {...baseProps} strokeWidth="3"><path d="M5 13l4 4L19 7"></path></svg>,
     plus: <svg {...baseProps} strokeWidth="3"><path d="M12 4v16m8-8H4"></path></svg>,
     minus: <svg {...baseProps} strokeWidth="3"><path d="M20 12H4"></path></svg>,
     close: <svg {...baseProps} strokeWidth="3"><path d="M18 6L6 18M6 6l12 12"></path></svg>,

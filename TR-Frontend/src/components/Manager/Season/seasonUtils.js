@@ -31,13 +31,35 @@ export const POSITION_OPTIONS_SHORT = [
 ];
 export const POSITION_LABELS_SHORT = Object.fromEntries(POSITION_OPTIONS_SHORT.map(o => [o.value, o.label]));
 
-// Используется в шторке редактирования игрока — там показываем содержательный статус целиком.
-// В таблице состава (см. SeasonRosterDetails.jsx) применяется упрощённая бинарная пилюля Допущен/Не допущен.
+// Допуск игрока в заявке. Текстом (label + className) статус показывается в шторке
+// редактирования игрока. В таблице состава подписи нет вообще — только красная обводка
+// аватара у недопущенных (см. rosterColumns).
+//
+// Отдельной колонки под допуск в таблице быть не может: её ширину задаёт заголовок, а не
+// содержимое, и любой столбец — хоть со значком, хоть с полоской в 2px — отъедал ~45px
+// и заставлял таблицу скроллиться вбок. Поэтому признак живёт в ячейке фото, которая в
+// строке есть и так, и стоит ноль дополнительной ширины.
+//
+// Обводка — метка проблемы, а не статуса: она есть, только пока игрок не допущен, и
+// пропадает, когда лига его допустила. У допущенного строка выглядит обычно, поэтому
+// глазом ищется именно то, с чем надо разбираться.
+//
+// В черновике («Формируется») вердикта нет вообще — ни обводки, ни подписи в шторке игрока:
+// заявка ещё не отправлена, лига её не видела и допускать никого не могла.
 export const ROSTER_VERDICT_META = {
   draft:    { label: 'Не допущен', className: 'text-danger' },
   pending:  { label: 'Не допущен', className: 'text-danger' },
-  approved: { label: 'Допущен',         className: 'text-success' },
-  declined: { label: 'Отклонён',        className: 'text-danger' },
+  approved: { label: 'Допущен',    className: 'text-success' },
+  declined: { label: 'Недопущен',  className: 'text-danger' },
+};
+
+// Подпись квалификации игрока: полное название, а не сокращение — «МС» рядом с фамилией
+// ни о чём не говорит. Расхождение с допуском дивизиона дописываем в ту же строку.
+// Квалификация лиговая, её могли сменить уже после того, как игрока заявили: из турнира
+// это никого не выкидывает, но команда должна видеть несоответствие.
+export const qualFullLabel = (name, conflict) => {
+  const base = name || 'Квалификации нет';
+  return conflict ? `${base} — не допускается` : base;
 };
 
 export function getDocsSummary(player, division) {
@@ -68,10 +90,15 @@ export function getDocsSummary(player, division) {
     }
   });
 
-  if (hasExpired) return { label: 'Просрочен', dot: 'bg-danger', className: 'bg-danger/10 text-danger' };
-  if (hasExpiring) return { label: 'Истекает', dot: 'bg-danger', className: 'bg-danger/10 text-danger' };
-  if (filled === required.length) return { label: `${filled}/${required.length}`, dot: 'bg-success', className: 'bg-success text-white' };
-  return { label: `${filled}/${required.length}`, dot: 'bg-content-muted', className: 'bg-surface-level2 text-content-muted' };
+  // Подпись всегда одна и та же — сколько документов из требуемых загружено. Срок годности
+  // меняет только цвет: истёкший или истекающий на днях документ красит бейдж красным.
+  // Слова «Просрочен»/«Истекает» вместо счётчика тут не годятся — в строке заявки на них нет
+  // места, и они прятали бы главное: сколько документов вообще собрано.
+  const label = `${filled}/${required.length}`;
+
+  if (hasExpired || hasExpiring) return { label, className: 'bg-danger text-white' };
+  if (filled === required.length) return { label, className: 'bg-success text-white' };
+  return { label, className: 'bg-surface-level2 text-content-muted' };
 }
 
 // Дивизион считается прошедшим, если у него уже наступила дата окончания турнира

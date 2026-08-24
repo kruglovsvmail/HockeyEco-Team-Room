@@ -156,11 +156,30 @@ const APPLICATION_SELECT_SQL = `
                  'medical_expires_at', tr.medical_expires_at, 'insurance_expires_at', tr.insurance_expires_at, 'consent_expires_at', tr.consent_expires_at,
                  'first_name', u.first_name, 'last_name', u.last_name,
                  'user_avatar_url', u.avatar_url,
-                 'team_member_photo_url', tm.photo_url
+                 'team_member_photo_url', tm.photo_url,
+
+                 -- Квалификация лиговая (одна на человека во всей лиге), заявка её не хранит.
+                 -- qualification_conflict — действующая квалификация не входит в список допущенных
+                 -- дивизионом: из турнира это никого не выкидывает (правила проверяются в момент
+                 -- заявки), но команда должна видеть расхождение у себя в составе.
+                 'qualification_id', uq.qualification_id,
+                 'qualification_name', lq.name,
+                 'qualification_short_name', lq.short_name,
+                 'qualification_conflict', (
+                     EXISTS (SELECT 1 FROM division_qualifications dq WHERE dq.division_id = d.id)
+                     AND NOT EXISTS (
+                         SELECT 1 FROM division_qualifications dq
+                         WHERE dq.division_id = d.id
+                           AND dq.qualification_id IS NOT DISTINCT FROM uq.qualification_id
+                     )
+                 )
              ) ORDER BY u.last_name ASC)
              FROM tournament_rosters tr
              JOIN users u ON tr.player_id = u.id
              LEFT JOIN team_members tm ON tm.user_id = u.id AND tm.team_id = tt.team_id
+             LEFT JOIN user_qualifications uq
+                    ON uq.user_id = u.id AND uq.league_id = s.league_id AND uq.ended_at IS NULL
+             LEFT JOIN league_qualifications lq ON lq.id = uq.qualification_id
              WHERE tr.tournament_team_id = tt.id AND tr.period_end IS NULL),
          '[]'::json) as roster,
 
@@ -249,7 +268,7 @@ export const getTeamRosterForPicker = async (req, res) => {
     const playersRes = await pool.query(`
       SELECT tm.user_id as id, u.first_name, u.last_name, u.avatar_url, tm.photo_url,
              tr.position, tr.jersey_number,
-             uq.qualification_id, lq.short_name as qualification_short_name
+             uq.qualification_id, lq.name as qualification_name, lq.short_name as qualification_short_name
       FROM team_rosters tr
       JOIN team_members tm ON tr.member_id = tm.id
       JOIN users u ON tm.user_id = u.id
@@ -281,7 +300,8 @@ export const getTeamRosterForPicker = async (req, res) => {
     `, [teamId, exclusionAppId, roleFilter]);
 
     // qual_block_reason — почему игрока нельзя добавить в эту заявку. null у всех, если
-    // контроль в дивизионе выключен или дивизион неизвестен.
+    // контроль в дивизионе выключен или дивизион неизвестен. Квалификацию в шторке подписываем
+    // полным названием, поэтому и в отказе стоит оно, а не сокращение.
     const allowedQualIds = new Set((qualRules?.allowed || []).map(q => q.id));
     const players = playersRes.rows.map(player => {
       if (!qualRules?.enabled) return { ...player, qual_block_reason: null };
@@ -294,7 +314,7 @@ export const getTeamRosterForPicker = async (req, res) => {
         ...player,
         qual_block_reason: isAllowed
           ? null
-          : `${player.qualification_short_name || 'Без квалификации'} — не допущены в этот дивизион`,
+          : `${player.qualification_name || 'Квалификации нет'} — не допускается`,
       };
     });
 
@@ -311,7 +331,7 @@ export const createApplication = async (req, res) => {
   try {
     await client.query('BEGIN');
     const { teamId } = req.params;
-    let { divisionId, players, staff } = req.body;
+    let { divisionId, players, staff, asDraft } = req.body;
 
     if (!divisionId) {
       const err = new Error('Не выбран дивизион для подачи заявки');
@@ -319,9 +339,17 @@ export const createApplication = async (req, res) => {
       throw err;
     }
 
-    // Черновиков нет: фронт собирает заявку локально (виртуальный режим SeasonRosterDetails)
-    // и отправляет одним запросом — заявка создаётся сразу в статусе pending.
+    // Фронт собирает заявку локально (виртуальный режим SeasonRosterDetails) и отправляет одним
+    // запросом. asDraft выбирает, чем этот запрос заканчивается:
+    //   false — заявка сразу улетает в лигу (pending), как раньше;
+    //   true  — остаётся черновиком (draft), команда дособирает состав и, главное, догружает
+    //           документы игроков — они принимаются только в статусах draft/revision
+    //           (см. assertApplicationEditable), а до появления записи в БД грузить их некуда.
+    // Требования к полноте заявки черновика не касаются: их проверяет sendApplicationForReview
+    // в момент отправки. Единственное, что проверяется всегда, — допуск по квалификации:
+    // непроходного игрока не пускаем в заявку вообще, даже в черновую.
     // players: [{ player_id, position, jersey_number, is_captain, is_assistant }], staff: [{ user_id, role }]
+    const isDraft = asDraft === true || asDraft === 'true';
     if (typeof players === 'string') { try { players = JSON.parse(players); } catch (e) { players = []; } }
     if (!Array.isArray(players)) players = [];
     if (typeof staff === 'string') { try { staff = JSON.parse(staff); } catch (e) { staff = []; } }
@@ -352,12 +380,12 @@ export const createApplication = async (req, res) => {
     }
     const isDigital = divRes.rows[0].digital_applications_only;
 
-    if (!isDigital && !req.file) {
+    if (!isDraft && !isDigital && !req.file) {
       const err = new Error('Сначала загрузите скан заявочного листа');
       err.status = 400;
       throw err;
     }
-    if (isDigital && staffRows.length === 0) {
+    if (!isDraft && isDigital && staffRows.length === 0) {
       const err = new Error('Нельзя отправить заявку: необходимо добавить хотя бы одного представителя команды (тренера или руководителя)');
       err.status = 400;
       throw err;
@@ -368,8 +396,8 @@ export const createApplication = async (req, res) => {
     }
 
     const appRes = await client.query(
-      `INSERT INTO tournament_teams (division_id, team_id, status) VALUES ($1, $2, 'pending') RETURNING id`,
-      [divisionId, teamId]
+      `INSERT INTO tournament_teams (division_id, team_id, status) VALUES ($1, $2, $3) RETURNING id`,
+      [divisionId, teamId, isDraft ? 'draft' : 'pending']
     );
     const appId = appRes.rows[0].id;
 

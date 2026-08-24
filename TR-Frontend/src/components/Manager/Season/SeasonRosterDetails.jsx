@@ -11,24 +11,31 @@ import { SegmentedControl } from '../../../ui/SegmentedControl';
 import { BottomSheet } from '../../../ui/BottomSheet';
 import { ConfirmSheet } from '../../../ui/ConfirmSheet';
 import { PaperDocTile } from '../../../ui/PaperDocTile';
+import { HintPopover } from '../../../ui/HintPopover';
 import { Toast } from '../../../ui/Toast';
 import { PageLoader } from '../../../ui/Loader';
 import { getAuthHeaders, getImageUrl } from '../../../utils/helpers';
 import {
   STATUS_META, ROLE_OPTIONS, ROLE_LABELS,
   POSITION_OPTIONS_SHORT, POSITION_LABELS_SHORT,
-  ROSTER_VERDICT_META, getDocsSummary, apiCall
+  ROSTER_VERDICT_META, qualFullLabel, getDocsSummary, apiCall
 } from './seasonUtils';
 
-// Общая "пилюльная" геометрия для колонок Док-ты и Допуск в таблице состава — единый визуальный стиль
-// (радиус, высота, шрифт, тень), цвет/заливка и ширина настраиваются отдельно в каждой колонке.
-const PILL_CLASS = "inline-flex items-center justify-center px-3 py-1.5 rounded-full text-[12px] font-bold shadow-sm";
+// "Пилюльная" геометрия колонки Док-ты: ширину ей задаёт содержимое (счётчик документов),
+// цвет — состояние. Строка узкая: колонок четыре, и на телефоне на всё про всё ~330px.
+const PILL_CLASS = "inline-flex items-center justify-center px-2 py-1 rounded-full text-[11px] font-bold shadow-sm";
+
+// Бейдж квалификации — фиксированной ширины, а не по содержимому: сокращения в справочнике
+// лиги до 5 символов («СПШНК»), и если пустить пилюлю по тексту, колонка на каждой строке
+// будет разной ширины и начнёт прыгать. Ширина посчитана под 5 заглавных символов.
+const QUAL_BADGE_CLASS = "inline-flex items-center justify-center w-[48px] py-1 rounded-full text-[10px] font-bold shadow-sm overflow-hidden whitespace-nowrap";
+
 
 // Нижняя шторка редактирования игрока внутри заявки: амплуа, номер, капитанство, удаление.
 // Документы допуска редактируются отдельно — из таблицы состава, правой панелью (см. handleOpenDocs).
 // canRemove отдельно от canEdit: полное удаление из заявки запрещено, как только в дивизионе
 // сыгран хотя бы один матч (см. division_has_games на бэке) — кнопка в этом случае не рендерится.
-function PlayerEditSheet({ isOpen, onClose, player, roster = [], canEdit, canRemove, activeBrandColor, onSave, onRemove }) {
+function PlayerEditSheet({ isOpen, onClose, player, roster = [], canEdit, canRemove, showVerdict, activeBrandColor, onSave, onRemove }) {
   const [position, setPosition] = useState('forward');
   const [jersey, setJersey] = useState('');
   const [isCaptain, setIsCaptain] = useState(false);
@@ -87,7 +94,10 @@ function PlayerEditSheet({ isOpen, onClose, player, roster = [], canEdit, canRem
     onClose();
   };
 
-  const verdict = displayedPlayer ? (ROSTER_VERDICT_META[displayedPlayer.application_status] || ROSTER_VERDICT_META.draft) : null;
+  // В черновике вердикта нет: лига заявку ещё не видела и никого не допускала (showVerdict)
+  const verdict = showVerdict && displayedPlayer
+    ? (ROSTER_VERDICT_META[displayedPlayer.application_status] || ROSTER_VERDICT_META.draft)
+    : null;
 
   return (
     <BottomSheet isOpen={isOpen} onClose={onClose}>
@@ -98,7 +108,7 @@ function PlayerEditSheet({ isOpen, onClose, player, roster = [], canEdit, canRem
             <div className="flex flex-col min-w-0">
               <span className="text-[18px] font-black text-content-main leading-tight truncate">{displayedPlayer.last_name}</span>
               <span className="text-[14px] text-content-muted font-bold truncate">{displayedPlayer.first_name}</span>
-              <span className={clsx("text-[10px] font-black uppercase tracking-wider mt-1", verdict.className)}>{verdict.label}</span>
+              {verdict && <span className={clsx("text-[10px] font-black uppercase tracking-wider mt-1", verdict.className)}>{verdict.label}</span>}
             </div>
           </div>
 
@@ -220,10 +230,10 @@ function StaffEditSheet({ isOpen, onClose, person, canEdit, activeBrandColor, on
 }
 
 // Нижняя шторка добавления игрока в заявку из активного состава команды.
-// appId может быть null (виртуальная заявка): пикер тогда грузится по 'new' (без серверных
-// исключений, уже выбранные скрываются через excludeIds), а выбор возвращается родителю
-// через onAddLocal — заявка в БД при этом не создаётся.
-function AddPlayerSheet({ isOpen, onClose, teamId, appId, divisionId, targetPosition, excludeIds, onAddLocal, activeBrandColor, onSuccess }) {
+// appId может быть null — заявки в БД ещё нет: пикер тогда грузится по 'new' (дивизион
+// приходит параметром), а выбранные уходят в onCreateDraft, который создаёт заявку черновиком
+// сразу с ними. Дальше экран переезжает на реальную заявку и шторка закрывается вместе с ним.
+function AddPlayerSheet({ isOpen, onClose, teamId, appId, divisionId, targetPosition, onCreateDraft, activeBrandColor, onSuccess }) {
   const [isLoading, setIsLoading] = useState(false);
   const [players, setPlayers] = useState([]);
   const [search, setSearch] = useState('');
@@ -248,8 +258,7 @@ function AddPlayerSheet({ isOpen, onClose, teamId, appId, divisionId, targetPosi
       .finally(() => setIsLoading(false));
   }, [isOpen, teamId, appId, divisionId]);
 
-  const available = excludeIds ? players.filter(p => !excludeIds.has(p.id)) : players;
-  const filtered = available.filter(p => `${p.last_name} ${p.first_name}`.toLowerCase().includes(search.trim().toLowerCase()));
+  const filtered = players.filter(p => `${p.last_name} ${p.first_name}`.toLowerCase().includes(search.trim().toLowerCase()));
 
   const toggle = (id) => setSelectedIds(prev => {
     // Недопущенных по квалификации не выбираем: сервер их всё равно не примет
@@ -262,16 +271,17 @@ function AddPlayerSheet({ isOpen, onClose, teamId, appId, divisionId, targetPosi
   const handleSubmit = async () => {
     if (selectedIds.size === 0 || isSaving) return;
 
-    // Виртуальная заявка: просто отдаём выбранных игроков родителю
-    if (!appId) {
-      onAddLocal(available.filter(p => selectedIds.has(p.id)));
-      onClose();
-      return;
-    }
-
     setIsSaving(true);
     setSheetError('');
     try {
+      // Заявки ещё нет — эти игроки её и создадут (черновиком)
+      if (!appId) {
+        const json = await onCreateDraft(players.filter(p => selectedIds.has(p.id)));
+        if (json?.success) onClose();
+        else setSheetError(json?.error || 'Не удалось создать заявку');
+        return;
+      }
+
       const json = await apiCall(`${import.meta.env.VITE_API_URL}/api/manager/seasons/${teamId}/applications/${appId}/roster`, {
         method: 'POST', body: JSON.stringify({ playerIds: Array.from(selectedIds), position: targetPosition })
       });
@@ -295,7 +305,7 @@ function AddPlayerSheet({ isOpen, onClose, teamId, appId, divisionId, targetPosi
           <div className="py-8"><PageLoader /></div>
         ) : filtered.length === 0 ? (
           <div className="text-center py-6 text-[14px] font-bold text-content-muted opacity-60">
-            {available.length === 0 ? 'Все игроки состава уже добавлены в эту заявку' : 'Ничего не найдено'}
+            {players.length === 0 ? 'Все игроки состава уже добавлены в эту заявку' : 'Ничего не найдено'}
           </div>
         ) : (
           <div className="flex flex-col gap-2 max-h-[45vh] overflow-y-auto scrollbar-hide">
@@ -311,11 +321,16 @@ function AddPlayerSheet({ isOpen, onClose, teamId, appId, divisionId, targetPosi
                   <Avatar photoUrl={player.photo_url || player.avatar_url} firstName={player.first_name} lastName={player.last_name} className="w-10 h-10 rounded-xl" />
                   <div className="flex flex-col min-w-0 text-left">
                     <span className="text-[14px] font-bold text-content-main truncate">{player.last_name} {player.first_name}</span>
-                    {player.qual_block_reason ? (
-                      <span className="text-[10px] text-danger font-bold tracking-wider mt-0.5 leading-tight">{player.qual_block_reason}</span>
-                    ) : (
-                      <span className="text-[10px] text-content-muted uppercase font-bold tracking-wider mt-0.5">{player.jersey_number ? `№${player.jersey_number}` : '—'}</span>
-                    )}
+                    {/* Квалификация полным названием: в пикере нет колонки-легенды, и сокращение
+                        рядом с фамилией ничего не объясняет. Недопущенным сервер присылает
+                        готовый qual_block_reason («Мастер — не допускается»). */}
+                    <span className={clsx(
+                      "text-[11px] mt-0.5 leading-tight truncate",
+                      player.qual_block_reason ? "text-danger font-bold" : "text-content-muted font-medium"
+                    )}>
+                      {player.jersey_number ? `№${player.jersey_number} · ` : ''}
+                      {player.qual_block_reason || qualFullLabel(player.qualification_name, false)}
+                    </span>
                   </div>
                 </div>
                 {!player.qual_block_reason && (
@@ -469,19 +484,21 @@ export function SeasonRosterDetails({ app, teamId, onClose, activeBrandColor, op
   const appsBaseUrl = `${import.meta.env.VITE_API_URL}/api/manager/seasons/${teamId}/applications`;
   const baseUrl = `${appsBaseUrl}/${app.id}`;
 
-  // Виртуальный режим: заявки в БД нет вообще. Состав и штаб собираются локально
-  // (localRoster/localStaff), скан — локальным файлом (pendingPaperFile), а запись создаётся
-  // единственным запросом в handleSendReview — сразу в статусе pending («улетает в лигу»).
+  // Виртуальный режим — короткий: заявки в БД ещё нет, но живёт это состояние только пока
+  // заявка пуста. Первый же добавленный человек создаёт её черновиком (createApplication),
+  // после чего экран переезжает на /application/:id и работает обычным серверным путём.
+  // Так и задумано: документы игрока грузятся в существующую строку состава, поэтому
+  // возможность их прикрепить должна появляться сразу после добавления игрока.
+  //
+  // Локально до создания держится только скан бумажной заявки (pendingPaperFile): состав в
+  // бумажном дивизионе всё равно закрыт, пока лигу не проверит заявочный лист.
   const isVirtual = !app.id;
-  const [localRoster, setLocalRoster] = useState([]);
-  const [localStaff, setLocalStaff] = useState([]);
 
-  const roster = isVirtual ? localRoster : (app.roster || []);
-  const staffList = isVirtual ? localStaff : (app.staff || []);
+  const roster = app.roster || [];
+  const staffList = app.staff || [];
 
-  // Виртуальная заявка ещё не в БД — играть в дивизионе не могли, удаление всегда полное и без ограничений.
-  // Для существующей заявки полное удаление запрещено, если в дивизионе уже сыгран хоть один матч.
-  const canRemovePlayer = isVirtual || !app.division_has_games;
+  // Полное удаление игрока запрещено, если в дивизионе уже сыгран хоть один матч
+  const canRemovePlayer = !app.division_has_games;
 
   const statusMeta = STATUS_META[app.status] || STATUS_META.draft;
   const isPaperBlocked = !app.digital_applications_only && !app.paper_roster_league_url;
@@ -492,47 +509,57 @@ export function SeasonRosterDetails({ app, teamId, onClose, activeBrandColor, op
   const canEditPaper = isEditableStatus;
   // Отправка: виртуальная бумажная — когда прикреплён скан; виртуальная цифровая — когда есть
   // кто отправлять (состав/штаб); существующая заявка — по прежним правилам.
+  // В цифровом дивизионе виртуальная заявка всегда пуста — отправлять из неё нечего,
+  // кнопка появится уже на созданном черновике. Бумажную отправляют прямо отсюда, сканом.
   const canSend = isVirtual
-    ? (app.digital_applications_only ? (localRoster.length > 0 || localStaff.length > 0) : !!pendingPaperFile)
+    ? (!app.digital_applications_only && !!pendingPaperFile)
     : isEditableStatus && (!isPaperBlocked || !!app.paper_roster_team_url);
   const canDeleteApp = !isVirtual && ['draft', 'rejected'].includes(app.status);
 
+  // Пока заявка «Формируется», лига её ещё не видела и никого не допускала — показывать
+  // допуск не по чему. Метка появляется с момента отправки (см. rosterColumns).
+  const showAdmission = app.status !== 'draft';
+
+  // Момент, когда виртуальная заявка становится записью в БД.
+  //   asDraft: true  — автосохранение при первом добавленном человеке. Заявка остаётся
+  //                    черновиком, лига её не видит, зато состав уже реальный и в него можно
+  //                    грузить документы (они принимаются только в draft/revision).
+  //   asDraft: false — бумажный дивизион отправляет заявку сканом прямо из виртуального
+  //                    режима, состава там ещё нет по определению.
+  // Возвращает ответ сервера: шторки показывают ошибку у себя, а не тостом поверх.
+  const createApplication = async ({ asDraft, players = [], staff = [] }) => {
+    const formData = new FormData();
+    formData.append('divisionId', app.division_id);
+    if (asDraft) formData.append('asDraft', 'true');
+
+    if (!app.digital_applications_only) {
+      if (pendingPaperFile) formData.append('file', pendingPaperFile);
+    } else {
+      formData.append('players', JSON.stringify(players));
+      formData.append('staff', JSON.stringify(staff));
+    }
+
+    const json = await apiCall(appsBaseUrl, { method: 'POST', body: formData });
+    // Экран переезжает на реальную заявку и перемонтируется — тост здесь показывать бесполезно
+    if (json.success) onAppCreated?.(json.applicationId);
+    return json;
+  };
+
   const handleSendReview = async () => {
     if (isSubmitting) return;
+    if (isVirtual) {
+      setIsSubmitting(true);
+      try {
+        const json = await createApplication({ asDraft: false });
+        if (!json.success) notifyError(json.error || 'Не удалось отправить заявку');
+      } finally {
+        setIsSubmitting(false);
+      }
+      return;
+    }
+
     setIsSubmitting(true);
     try {
-      // Виртуальная заявка: единственный момент, когда она создаётся в БД, — и сразу
-      // в статусе pending (улетает в лигу). Бумажная — со сканом, цифровая — с локально
-      // собранным составом и штабом. Никаких черновиков.
-      if (isVirtual) {
-        const formData = new FormData();
-        formData.append('divisionId', app.division_id);
-        if (!app.digital_applications_only) {
-          formData.append('file', pendingPaperFile);
-        } else {
-          formData.append('players', JSON.stringify(localRoster.map(p => ({
-            player_id: p.player_id,
-            position: p.position,
-            jersey_number: p.jersey_number,
-            is_captain: p.is_captain,
-            is_assistant: p.is_assistant,
-          }))));
-          formData.append('staff', JSON.stringify(localStaff.map(s => ({
-            user_id: s.user_id,
-            role: s.role,
-          }))));
-        }
-
-        const json = await apiCall(appsBaseUrl, { method: 'POST', body: formData });
-        if (json.success) {
-          triggerToast('Заявка отправлена на проверку', 'success');
-          onAppCreated?.(json.applicationId);
-        } else {
-          notifyError(json.error || 'Не удалось отправить заявку');
-        }
-        return;
-      }
-
       const json = await apiCall(`${baseUrl}/send-review`, { method: 'POST' });
       if (json.success) {
         await loadData();
@@ -545,27 +572,19 @@ export function SeasonRosterDetails({ app, teamId, onClose, activeBrandColor, op
     }
   };
 
-  // Добавление выбранных в пикере игроков в локальный (виртуальный) состав.
+  // Первые игроки в пустой ещё не существующей заявке: создаём её черновиком сразу с ними.
   // Амплуа берётся из блока, чьим плюсом открыт пикер (addPlayerPosition), а не из состава
   // команды — вратаря можно заявить нападающим и наоборот.
-  const handleAddLocalPlayers = (picked) => {
-    setLocalRoster(prev => [
-      ...prev,
-      ...picked.filter(p => !prev.some(x => x.player_id === p.id)).map(p => ({
-        id: `local-${p.id}`,
-        player_id: p.id,
-        first_name: p.first_name,
-        last_name: p.last_name,
-        user_avatar_url: p.avatar_url,
-        team_member_photo_url: p.photo_url,
-        position: addPlayerPosition,
-        jersey_number: p.jersey_number ?? null,
-        is_captain: false,
-        is_assistant: false,
-        application_status: 'draft',
-      }))
-    ]);
-  };
+  const handleCreateWithPlayers = (picked) => createApplication({
+    asDraft: true,
+    players: picked.map(p => ({
+      player_id: p.id,
+      position: addPlayerPosition,
+      jersey_number: p.jersey_number ?? null,
+      is_captain: false,
+      is_assistant: false,
+    })),
+  });
 
   // Все роли человека в заявке. API штаба принимает ПОЛНЫЙ набор ролей, поэтому добавление
   // роли — это отправка «старые роли + новая», а снятие — «старые роли минус эта».
@@ -575,24 +594,12 @@ export function SeasonRosterDetails({ app, teamId, onClose, activeBrandColor, op
 
   // Добавление выбранных в пикере сотрудников в одну роль (в блок, из которого открыт пикер)
   const handleAddStaff = async (picked, role) => {
+    // Заявки ещё нет — создаём черновиком сразу с этими людьми
     if (isVirtual) {
-      setLocalStaff(prev => [
-        ...prev,
-        ...picked
-          .filter(person => !prev.some(x => String(x.user_id) === String(person.id) && x.role === role))
-          .map(person => ({
-            // Ключ строки таблицы: у серверных записей это ttr.id, у локальных — синтетический,
-            // обязательно с ролью, иначе строки одного человека в разных блоках схлопнутся
-            id: `local-${person.id}-${role}`,
-            user_id: person.id,
-            first_name: person.first_name,
-            last_name: person.last_name,
-            user_avatar_url: person.avatar_url,
-            team_member_photo_url: person.photo_url,
-            role,
-          }))
-      ]);
-      return { success: true };
+      return createApplication({
+        asDraft: true,
+        staff: picked.map(person => ({ user_id: person.id, role })),
+      });
     }
 
     const results = await Promise.all(picked.map(person =>
@@ -608,28 +615,11 @@ export function SeasonRosterDetails({ app, teamId, onClose, activeBrandColor, op
   };
 
   const handleSavePlayer = async (rosterId, patch) => {
-    if (isVirtual) {
-      if (patch.jersey_number != null && localRoster.some(p => p.id !== rosterId && p.jersey_number === patch.jersey_number)) {
-        notifyError(`Номер ${patch.jersey_number} уже занят другим игроком в этой заявке`);
-        return;
-      }
-      setLocalRoster(prev => prev.map(p => {
-        if (p.id === rosterId) return { ...p, ...patch };
-        // Капитан в заявке один: назначение нового снимает флаг с остальных
-        if (patch.is_captain === true) return { ...p, is_captain: false };
-        return p;
-      }));
-      return;
-    }
     const json = await apiCall(`${baseUrl}/roster/${rosterId}`, { method: 'PATCH', body: JSON.stringify(patch) });
     if (json.success) { await loadData(); } else notifyError(json.error || 'Не удалось сохранить изменения');
   };
 
   const handleRemovePlayer = async (rosterId) => {
-    if (isVirtual) {
-      setLocalRoster(prev => prev.filter(p => p.id !== rosterId));
-      return;
-    }
     const json = await apiCall(`${baseUrl}/roster/${rosterId}`, { method: 'DELETE' });
     if (json.success) { await loadData(); } else notifyError(json.error || 'Не удалось убрать игрока из заявки');
   };
@@ -637,18 +627,6 @@ export function SeasonRosterDetails({ app, teamId, onClose, activeBrandColor, op
   // Перенос сотрудника из одной роли в другую: старая роль снимается, новая добавляется.
   // Остальные его роли в заявке не трогаем.
   const handleSaveStaff = async (userId, oldRole, newRole) => {
-    if (isVirtual) {
-      setLocalStaff(prev => {
-        // Уже есть в целевой роли — просто убираем дублирующую строку старой роли
-        if (prev.some(s => String(s.user_id) === String(userId) && s.role === newRole)) {
-          return prev.filter(s => !(String(s.user_id) === String(userId) && s.role === oldRole));
-        }
-        return prev.map(s => (String(s.user_id) === String(userId) && s.role === oldRole)
-          ? { ...s, role: newRole, id: `local-${s.user_id}-${newRole}` }
-          : s);
-      });
-      return;
-    }
     const nextRoles = [...new Set([...rolesOfUser(userId).filter(r => r !== oldRole), newRole])];
     const json = await apiCall(`${baseUrl}/staff`, { method: 'POST', body: JSON.stringify({ userId, roles: nextRoles }) });
     if (json.success) { await loadData(); } else notifyError(json.error || 'Не удалось изменить роль сотрудника');
@@ -656,10 +634,6 @@ export function SeasonRosterDetails({ app, teamId, onClose, activeBrandColor, op
 
   // Снимает одну роль. Человек остаётся в заявке, если занимает и другие роли.
   const handleRemoveStaff = async (userId, role) => {
-    if (isVirtual) {
-      setLocalStaff(prev => prev.filter(s => !(String(s.user_id) === String(userId) && s.role === role)));
-      return;
-    }
     const json = await apiCall(`${baseUrl}/staff/${userId}/${role}`, { method: 'DELETE' });
     if (json.success) { await loadData(); } else notifyError(json.error || 'Не удалось убрать сотрудника из заявки');
   };
@@ -717,17 +691,36 @@ export function SeasonRosterDetails({ app, teamId, onClose, activeBrandColor, op
     openRightPanel('playerDocs', { teamId, appId: app.id, player, division: app, editable: canEdit, loadData, activeBrandColor }, 'Документы игрока');
   };
 
+  // Лига может не пользоваться квалификациями вовсе — тогда столбец не нужен.
+  // Считаем по всей заявке, а не по одной группе: таблицы вратарей/защитников/нападающих
+  // должны иметь одинаковый набор колонок.
+  const hasQualifications = roster.some(p => p.qualification_id || p.qualification_conflict);
+
+  // Дивизион может не требовать ни одного документа — тогда колонка была бы столбцом прочерков.
+  // Условие то же, по которому getDocsSummary возвращает null.
+  //
+  // У виртуальной заявки этих настроек нет вовсе (available-divisions их не отдаёт), и колонка
+  // прячется всегда — так и надо: документы грузятся в существующую запись, до создания заявки
+  // открывать их всё равно некуда.
+  const requiresDocs = !!(app.req_med_cert || app.req_insurance || app.req_consent);
+
   const rosterColumns = [
     {
       key: 'photo', title: '№', width: '48px', align: 'center', sortable: true,
       sortValue: (p) => p.jersey_number,
-      render: (p) => (
-        <div className="relative w-9 h-9 shrink-0 mx-auto">
+      render: (p) => {
+        // Красная обводка = игрок ещё не допущен. У допущенного её нет — см. ROSTER_VERDICT_META.
+        // Кольцо рисуется тенью, наружу от аватара: ширину ячейки оно не меняет.
+        // В черновике обводки нет ни у кого: лига заявку ещё не видела, допускать было некому,
+        // и красный ряд означал бы проблему там, где её нет.
+        const pending = showAdmission && p.application_status !== 'approved';
+        return (
+        <div className="relative w-9 h-9 shrink-0 mx-auto" title={pending ? (ROSTER_VERDICT_META[p.application_status] || ROSTER_VERDICT_META.draft).label : undefined}>
           <Avatar
             photoUrl={p.team_member_photo_url || p.user_avatar_url}
             firstName={p.first_name}
             lastName={p.last_name}
-            className="w-10 h-10 rounded-lg bg-surface-level2"
+            className={clsx("w-10 h-10 rounded-lg bg-surface-level2", pending && "ring-2 ring-danger")}
           />
           {p.jersey_number != null && (
             <span className="absolute -bottom-2 -left-1 min-w-[22px] min-h-[15px] p-0.5 rounded-full bg-content-main text-content-dark text-[10px] font-black flex items-center justify-center border border-surface-level1 leading-none tabular-nums z-10">
@@ -743,7 +736,8 @@ export function SeasonRosterDetails({ app, teamId, onClose, activeBrandColor, op
             </span>
           )}
         </div>
-      )
+        );
+      }
     },
     {
       key: 'name', title: 'Игрок', sortable: true,
@@ -755,35 +749,49 @@ export function SeasonRosterDetails({ app, teamId, onClose, activeBrandColor, op
         </div>
       )
     },
-    {
-      key: 'docs', title: 'Док-ты', width: '68px', align: 'center',
+    // Колонку показываем, только если квалификации в этой лиге вообще в ходу: иначе во всей
+    // заявке будет столбец прочерков, а ширины строки и без него впритык.
+    ...(hasQualifications ? [{
+      key: 'qual', title: 'Квал.', width: '56px', align: 'center',
+      render: (p) => {
+        const conflict = !!p.qualification_conflict;
+        return (
+          <HintPopover customContent={
+            <div className={clsx("text-[13px] font-bold text-center", conflict ? "text-danger" : "text-content-main")}>
+              {qualFullLabel(p.qualification_name, conflict)}
+            </div>
+          }>
+            <span className={clsx(
+              QUAL_BADGE_CLASS,
+              conflict ? "bg-danger/15 text-danger"
+                : p.qualification_short_name ? "bg-surface-level2 text-content-main" : "bg-surface-level2 text-content-subtle"
+            )}>
+              {p.qualification_short_name || '—'}
+            </span>
+          </HintPopover>
+        );
+      }
+    }] : []),
+    ...(requiresDocs ? [{
+      // Заголовок в span с nowrap: дефис в «Док-ты» — это разрешённое место переноса, и когда
+      // колонки квалификации нет, гибкая колонка с именем забирает свободное место, дожимает
+      // эту до заявленной ширины, и браузер честно ломает заголовок на две строки.
+      key: 'docs', title: <span className="whitespace-nowrap">Док-ты</span>, width: '64px', align: 'center',
       render: (p) => {
         const summary = getDocsSummary(p, app);
-        if (!summary) return <span className="text-content-subtle">—</span>;
+        if (!summary) return null;
         return (
           <button
             type="button"
             onClick={(e) => handleOpenDocs(p, e)}
-            className={clsx(PILL_CLASS, "gap-1.5 active:scale-95 transition-transform", summary.className)}
+            className={clsx(PILL_CLASS, "gap-1 active:scale-95 transition-transform", summary.className)}
           >
-            <Icon name="file" className="w-5.5 h-5.5" />
+            <Icon name="file" className="w-3.5 h-3.5 shrink-0" />
             {summary.label}
           </button>
         );
       }
-    },
-    {
-      key: 'status', title: 'Допуск', width: '76px', align: 'center', sortable: true,
-      sortValue: (p) => (p.application_status === 'approved' ? 0 : 1),
-      render: (p) => {
-        const admitted = p.application_status === 'approved';
-        return (
-          <span className={clsx(PILL_CLASS, "w-[74px]", admitted ? "bg-success text-white" : "bg-surface-level2 text-content-muted")}>
-            {admitted ? 'Доп.' : 'Не доп.'}
-          </span>
-        );
-      }
-    },
+    }] : []),
   ];
 
   const staffColumns = [
@@ -913,13 +921,15 @@ export function SeasonRosterDetails({ app, teamId, onClose, activeBrandColor, op
       })}
 
       <div className="flex flex-col gap-2">
+        {/* Отдельной кнопки «сохранить» нет: заявка сохраняется черновиком сама, как только
+            в неё добавили первого человека. Здесь остаётся только отправка в лигу. */}
         {canSend && (
           <ButtonLP onClick={handleSendReview} isLoading={isSubmitting} disabled={isSubmitting} activeColor={activeBrandColor} className="py-4 mt-6">
             Отправить на проверку
           </ButtonLP>
         )}
         {canDeleteApp && (
-          <ButtonLP variant="outline" onClick={() => setDeleteConfirmOpen(true)} className="!text-danger">
+          <ButtonLP variant="outline" onClick={() => setDeleteConfirmOpen(true)} disabled={isSubmitting} className="!text-danger">
             Удалить заявку
           </ButtonLP>
         )}
@@ -932,6 +942,7 @@ export function SeasonRosterDetails({ app, teamId, onClose, activeBrandColor, op
         roster={roster}
         canEdit={canEdit}
         canRemove={canRemovePlayer}
+        showVerdict={showAdmission}
         activeBrandColor={activeBrandColor}
         onSave={handleSavePlayer}
         onRemove={handleRemovePlayer}
@@ -954,8 +965,7 @@ export function SeasonRosterDetails({ app, teamId, onClose, activeBrandColor, op
         appId={app.id}
         divisionId={app.division_id}
         targetPosition={addPlayerPosition}
-        excludeIds={isVirtual ? new Set(localRoster.map(p => p.player_id)) : null}
-        onAddLocal={handleAddLocalPlayers}
+        onCreateDraft={handleCreateWithPlayers}
         activeBrandColor={activeBrandColor}
         onSuccess={loadData}
       />

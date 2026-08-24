@@ -8,10 +8,11 @@ import { SeasonRosterDetails } from '../components/Manager/Season/SeasonRosterDe
 // Тонкая страница-обёртка (шапка + загрузка/статусы) по образцу EventPage.jsx —
 // вся содержательная часть экрана вынесена в components/Manager/Season/SeasonRosterDetails.jsx
 //
-// Маршрут /application/new — «виртуальная» заявка: записи в БД нет, данные дивизиона приходят
-// через route state (draftDivision) из CreateApplicationPanel. Состав/штаб/скан собираются
-// локально внутри SeasonRosterDetails, а запись создаётся сразу в статусе pending по кнопке
-// «Отправить на проверку», после чего onAppCreated переключает URL на /application/:id.
+// Маршрут /application/new — «виртуальная» заявка: записи в БД ещё нет, данные дивизиона
+// приходят через route state (draftDivision) из CreateApplicationPanel. Живёт это состояние
+// недолго: первый же добавленный в заявку человек создаёт её черновиком, и onAppCreated
+// переключает URL на /application/:id. Бумажный дивизион вместо этого держит скан локально
+// и создаёт заявку сразу отправкой на проверку.
 export function SeasonRostersDetailsPage({ appId, teamId, teamColor, onClose, openRightPanel }) {
   const location = useLocation();
   const navigate = useNavigate();

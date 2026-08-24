@@ -6,9 +6,9 @@ import { HintPopover } from '../../../ui/HintPopover';
 import { getAuthHeaders, getImageUrl } from '../../../utils/helpers';
 
 // Панель создания заявки на сезон: единственный шаг — выбор открытого дивизиона.
-// Выбор НЕ создаёт запись в БД — открывается «виртуальная» шторка заявки (/application/new),
-// где состав/штаб/скан собираются локально, а заявка создаётся сразу в статусе pending
-// по кнопке «Отправить на проверку» (см. SeasonRosterDetails, handleSendReview).
+// Выбор НЕ создаёт запись в БД — открывается пустая «виртуальная» заявка (/application/new).
+// Запись появляется там же, как только в заявку добавят первого игрока или сотрудника: она
+// сохраняется черновиком автоматически (см. SeasonRosterDetails, createApplication).
 export function CreateApplicationPanel({ data, onClose }) {
   const { teamId } = data || {};
   const navigate = useNavigate();
