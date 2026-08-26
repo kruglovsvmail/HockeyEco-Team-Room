@@ -126,11 +126,11 @@ export const TRAINING_TYPE_LABELS = Object.fromEntries(TRAINING_TYPES.map(t => [
  */
 export const TRAINING_TYPE_ICONS = {
   general:   'training_activity',
-  shooting:  'puck',
-  fitness:   'training_running',
+  shooting:  'training_shot',
+  fitness:   'training_fitness',
   dribbling: 'training_stick_puck',
   tactics:   'training_tactics',
-  skating:   'training_cone',
+  skating:   'training_skate',
   game:      'training_sticks',
   strength:  'training_weights',
 };
@@ -152,6 +152,48 @@ export const isOwnTeam = (team, userId) => {
  */
 export const hasTeamInClub = (teams = [], userId) =>
   teams.some(t => !!t?.club_id && isOwnTeam(t, userId));
+
+/* ==========================================================================
+   АКЦЕНТНЫЙ ЦВЕТ: ЛИЧНЫЙ (ПОЛЬЗОВАТЕЛЬ) И КОМАНДНЫЙ
+   ========================================================================== */
+
+/** Ключ личного акцента в хранилище устройства. Настройка не уезжает на сервер:
+ *  цвет интерфейса — вкус конкретного экрана, а не свойство аккаунта. */
+export const BRAND_COLOR_KEY = 'tr_brand_color';
+
+/** Заводской акцент приложения. Совпадает с --color-brand-base из global.css. */
+export const DEFAULT_BRAND_COLOR = '#1794dd';
+
+const HEX_RE = /^#[0-9a-fA-F]{6}$/;
+
+/** Личный цвет пользователя или null, если он не выбирал свой (значит — заводской). */
+export const getUserBrandColor = () => {
+  const saved = typeof window !== 'undefined' ? localStorage.getItem(BRAND_COLOR_KEY) : null;
+  return saved && HEX_RE.test(saved) ? saved : null;
+};
+
+/**
+ * Применяет личный цвет ко всему приложению разом: --color-brand-base сидит инлайном
+ * на <html>, поэтому перебивает и светлую, и тёмную тему (цвет один на обе), а весь
+ * набор оттенков бренда пересчитывается от него автоматически.
+ * hex === null снимает инлайн и возвращает заводской цвет из global.css.
+ */
+export const applyUserBrandColor = (hex) => {
+  const root = document.documentElement;
+  if (hex && HEX_RE.test(hex)) {
+    localStorage.setItem(BRAND_COLOR_KEY, hex);
+    root.style.setProperty('--color-brand-base', hex);
+  } else {
+    localStorage.removeItem(BRAND_COLOR_KEY);
+    root.style.removeProperty('--color-brand-base');
+  }
+};
+
+/**
+ * Цвет интерфейса команды. Отдельное поле ui_color задаётся в шторке правки команды;
+ * пока его не заполнили, работает прежнее правило — акцентный цвет домашней формы.
+ */
+export const getTeamUiColor = (team) => team?.ui_color || team?.color_home_1 || null;
 
 /**
  * Математический расчет контраста YIQ (W3C Стандарт).

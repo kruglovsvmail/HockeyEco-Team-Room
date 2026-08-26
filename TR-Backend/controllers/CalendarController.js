@@ -151,7 +151,7 @@ export const getEvents = async (req, res) => {
           my_team.name::varchar AS my_team_name,
           my_team.logo_url::varchar AS my_team_logo_url,
           
-          my_team.color_home_1::varchar AS team_color,
+          COALESCE(my_team.ui_color, my_team.color_home_1)::varchar AS team_color,
           
           (CASE WHEN g.home_team_id = ut.team_id THEN g.away_team_id ELSE g.home_team_id END)::int AS opponent_team_id,
           COALESCE(opp_team.name, ext_opp.name)::varchar AS opponent_name,
@@ -293,7 +293,7 @@ export const getEvents = async (req, res) => {
           my_team.name::varchar AS my_team_name,
           my_team.logo_url::varchar AS my_team_logo_url,
           
-          my_team.color_home_1::varchar AS team_color,
+          COALESCE(my_team.ui_color, my_team.color_home_1)::varchar AS team_color,
           
           NULL::int AS opponent_team_id, 
           NULL::varchar AS opponent_name,
@@ -388,7 +388,7 @@ export const getEvents = async (req, res) => {
           my_team.name::varchar AS my_team_name,
           my_team.logo_url::varchar AS my_team_logo_url,
           
-          my_team.color_home_1::varchar AS team_color,
+          COALESCE(my_team.ui_color, my_team.color_home_1)::varchar AS team_color,
           
           NULL::int AS opponent_team_id, 
           NULL::varchar AS opponent_name,

@@ -2,7 +2,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { Header } from '../components/Header';
 import { PageLoader } from '../ui/Loader';
-import { getAuthHeaders } from '../utils/helpers';
+import { getAuthHeaders, getTeamUiColor } from '../utils/helpers';
 import { SeasonRosterDetails } from '../components/Manager/Season/SeasonRosterDetails';
 
 // Тонкая страница-обёртка (шапка + загрузка/статусы) по образцу EventPage.jsx —
@@ -28,7 +28,7 @@ export function SeasonRostersDetailsPage({ appId, teamId, teamColor, onClose, op
   const cachedTeamData = teamCacheKey ? localStorage.getItem(teamCacheKey) : null;
   const cachedDetails = cachedTeamData ? JSON.parse(cachedTeamData)?.fullDetails : null;
   const isColorsEnabled = localStorage.getItem('tr_use_team_colors') !== 'false';
-  const teamColorSource = cachedDetails?.color_home_1 || teamColor;
+  const teamColorSource = getTeamUiColor(cachedDetails) || teamColor;
   const hasTeamColor = isColorsEnabled && !!teamColorSource;
   const activeBrandColor = hasTeamColor ? teamColorSource : null;
 

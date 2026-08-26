@@ -5,7 +5,7 @@ import { useRegisterSW } from 'virtual:pwa-register/react';
 import { TeamLayout } from './TeamLayout';
 import { UpdatePromptModal } from './components/UpdatePromptModal';
 import { Toast } from './ui/Toast'; // Импортируем наш переиспользуемый компонент тостов
-import { getPortalRoot } from './utils/helpers';
+import { getPortalRoot, applyUserBrandColor, getUserBrandColor } from './utils/helpers';
 
 // ============================================================================
 // ГЛОБАЛЬНЫЙ СЕТЕВОЙ ИНТЕРЦЕПТОР (СТРАТЕГИЯ №1)
@@ -332,6 +332,13 @@ export default function App() {
   useEffect(() => {
     const savedScale = localStorage.getItem('tr_ui_scale') || '1';
     document.documentElement.style.setProperty('--ui-scale', savedScale);
+  }, []);
+
+  // Личный акцентный цвет. Первым его ставит скрипт в index.html (до первой отрисовки),
+  // здесь повторяем на случай, когда страница отдана из кэша Service Worker со старым
+  // index.html: в этой ситуации инлайн на <html> проставить некому.
+  useEffect(() => {
+    applyUserBrandColor(getUserBrandColor());
   }, []);
 
   // Инициализируем менеджер жизненного цикла Service Worker

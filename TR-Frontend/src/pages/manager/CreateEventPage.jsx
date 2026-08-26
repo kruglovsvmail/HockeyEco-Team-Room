@@ -11,7 +11,7 @@ import { ButtonLP } from '../../ui/Button-LP';
 import { FadeIn } from '../../ui/FadeIn';
 import { Icon } from '../../ui/Icon';
 import { ChipTabs } from '../../ui/ChipTabs';
-import { getImageUrl, getAuthHeaders, TRAINING_TYPES } from '../../utils/helpers';
+import { getImageUrl, getAuthHeaders, TRAINING_TYPES, getTeamUiColor } from '../../utils/helpers';
 import { TeamPageHeader, TeamPageHeaderSpacer } from '../../components/TeamPageHeader';
 
 export function CreateEventPage() {
@@ -72,7 +72,7 @@ export function CreateEventPage() {
 
   const teamColorSource = isClubScope
     ? selectedClub?.color_1
-    : (cachedDetails?.color_home_1 || selectedTeam?.color_home_1);
+    : (getTeamUiColor(cachedDetails) || getTeamUiColor(selectedTeam));
   const hasTeamColor = isColorsEnabled && !!teamColorSource;
   const activeBrandColor = hasTeamColor ? teamColorSource : 'var(--color-brand)';
 

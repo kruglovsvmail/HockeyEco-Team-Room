@@ -107,7 +107,7 @@ export function CoachCabinetPage() {
   };
 
   return (
-    <FadeIn className="flex flex-col h-full overflow-hidden">
+    <FadeIn className="brand-personal flex flex-col h-full overflow-hidden">
 
       {/* Полоса подраздела — тот же слот, что у сегментного переключателя в Настройках */}
       <div className="px-4 pb-3 shrink-0 shadow-lg bg-surface-base">

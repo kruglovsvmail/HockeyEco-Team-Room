@@ -149,7 +149,7 @@ export const getClubDetails = async (req, res) => {
     // Команды клуба с числом активных участников — карточки на вкладке «Команды»
     const teamsQuery = `
       SELECT
-        t.id, t.name, t.short_name, t.logo_url, t.city, t.color_home_1,
+        t.id, t.name, t.short_name, t.logo_url, t.city, t.color_home_1, t.ui_color,
         (SELECT COUNT(*) FROM team_members tm WHERE tm.team_id = t.id AND tm.left_at IS NULL)::int AS members_count
       FROM teams t
       WHERE t.club_id = $1

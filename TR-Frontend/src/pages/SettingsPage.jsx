@@ -2,7 +2,10 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { useOutletContext } from 'react-router-dom';
 import { useFocusRevalidate } from '../hooks/useFocusRevalidate';
 import { usePushSubscription } from '../hooks/usePushSubscription';
-import { getAuthHeaders, getImageUrl, hasTeamInClub } from '../utils/helpers';
+import {
+  getAuthHeaders, getImageUrl, hasTeamInClub,
+  DEFAULT_BRAND_COLOR, getUserBrandColor, applyUserBrandColor
+} from '../utils/helpers';
 import { SegmentedControl } from '../ui/SegmentedControl';
 import { FadeIn, StaggerContainer } from '../ui/FadeIn';
 import { Icon } from '../ui/Icon';
@@ -45,6 +48,10 @@ export function SettingsPage() {
     return localStorage.getItem('tr_use_team_colors') !== 'false';
   });
 
+  // Личный акцентный цвет. null означает «своего нет, работает заводской»:
+  // храним именно null, чтобы кнопка сброса знала, есть ли что сбрасывать.
+  const [brandColor, setBrandColor] = useState(() => getUserBrandColor());
+
   // Инициализируем стейт темной темы напрямую из хранилища смартфона
   const [isDarkMode, setIsDarkMode] = useState(() => {
     return localStorage.getItem('tr_theme') === 'dark';
@@ -74,6 +81,19 @@ export function SettingsPage() {
     localStorage.setItem('tr_use_team_colors', checked ? 'true' : 'false');
   };
 
+  // Красим приложение прямо во время перетаскивания ползунка в системной палитре:
+  // input[type=color] шлёт события на каждое движение, и человек сразу видит результат
+  // на этом же экране, а не после закрытия палитры.
+  const handleChangeBrandColor = (value) => {
+    setBrandColor(value);
+    applyUserBrandColor(value);
+  };
+
+  const handleResetBrandColor = () => {
+    setBrandColor(null);
+    applyUserBrandColor(null);
+  };
+
   const handleToggleClubTeams = (checked) => {
     setShowAllClubTeams(checked);
     localStorage.setItem('tr_sidebar_all_club_teams', checked ? 'true' : 'false');
@@ -99,7 +119,7 @@ export function SettingsPage() {
   });
 
   return (
-    <FadeIn className="flex flex-col h-full overflow-hidden">
+    <FadeIn className="brand-personal flex flex-col h-full overflow-hidden">
       
       {/* Верхний сегментный переключатель разделов настроек */}
       <div className="px-4 pb-3 shrink-0 shadow-lg bg-surface-base">
@@ -132,6 +152,35 @@ export function SettingsPage() {
                   </div>
                   <Toggle checked={useTeamColors} onChange={handleToggleColors} />
                 </div>
+
+                {/* Личный акцент. Командное кодирование выше него по приоритету: внутри
+                    команды акцентом остаётся её цвет, а личный работает там, куда команда
+                    не дотягивается — боковое меню, профиль, настройки, тренерская. */}
+                <div className="flex items-center justify-between border-t border-surface-border mt-3 pt-3">
+                  <div className="flex flex-col flex-1 min-w-0">
+                    <span className="text-[18px] font-bold text-content-main">Цвет интерфейса</span>
+                    <span className="text-[12px] text-content-muted pr-4 mt-0.5">
+                      Свой акцентный цвет приложения
+                    </span>
+                  </div>
+                  <input
+                    type="color"
+                    value={brandColor || DEFAULT_BRAND_COLOR}
+                    onChange={e => handleChangeBrandColor(e.target.value)}
+                    aria-label="Акцентный цвет приложения"
+                    className="w-10 h-10 shrink-0 rounded-full cursor-pointer border border-surface-border bg-transparent p-0 overflow-hidden appearance-none [&::-webkit-color-swatch-wrapper]:p-0 [&::-webkit-color-swatch]:border-0 [&::-webkit-color-swatch]:rounded-full transition-transform active:scale-90"
+                  />
+                </div>
+
+                {brandColor && (
+                  <button
+                    type="button"
+                    onClick={handleResetBrandColor}
+                    className="self-start mt-3 text-[12px] font-bold text-content-muted hover:text-brand underline underline-offset-4 outline-none cursor-pointer transition-colors"
+                  >
+                    Вернуть цвет приложения
+                  </button>
+                )}
               </SettingsBlock>
 
               {/* БЛОК 2: НАСТРОЙКА ТЕМЫ ОФОРМЛЕНИЯ ПРИЛОЖЕНИЯ */}
@@ -164,10 +213,12 @@ export function SettingsPage() {
               </SettingsBlock>
               )}
 
-              {/* БЛОК 4: НАСТРОЙКА МАСШТАБА ИНТЕРФЕЙСА (РАЗМЕР ШРИФТА) */}
-              <SettingsBlock title="Размер шрифта" icon="text_size">
+              {/* БЛОК 4: НАСТРОЙКА МАСШТАБА ИНТЕРФЕЙСА.
+                  --ui-scale тянет transform: scale() на всей оболочке приложения,
+                  а не размер шрифта — крупнее становятся и кнопки, и отступы. */}
+              <SettingsBlock title="Масштаб интерфейса" icon="text_size">
                 <div className="flex flex-col">
-                  <span className="text-[18px] font-bold text-content-main">Масштаб интерфейса</span>
+                  <span className="text-[18px] font-bold text-content-main">Размер элементов</span>
                   <span className="text-[12px] text-content-muted mt-0.5 mb-3">
                     Увеличивает текст и элементы во всём приложении
                   </span>

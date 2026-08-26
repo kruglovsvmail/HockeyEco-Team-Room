@@ -5,7 +5,7 @@ import clsx from 'clsx';
 import { FadeIn } from '../ui/FadeIn';
 import { Icon } from '../ui/Icon';
 import { TournamentPageHeader } from '../components/Tournaments/TournamentPageHeader';
-import { getAuthHeaders, getPlayoffStageDisplayLabel } from '../utils/helpers';
+import { getAuthHeaders, getPlayoffStageDisplayLabel, getTeamUiColor } from '../utils/helpers';
 import { PageLoader } from '../ui/Loader';
 import { TournamentCardGame } from '../components/Tournaments/TournamentCardGame';
 import { TournamentTable } from '../components/Tournaments/TournamentTable';
@@ -61,7 +61,7 @@ export function TournamentsPage() {
   }, [selectedTeamId, cacheKey]);
 
   const isColorsEnabled = localStorage.getItem('tr_use_team_colors') !== 'false';
-  const teamColorSource = activeTeamDetails?.color_home_1 || selectedTeam?.color_home_1;
+  const teamColorSource = getTeamUiColor(activeTeamDetails) || getTeamUiColor(selectedTeam);
   const hasTeamColor = isColorsEnabled && !!teamColorSource;
   const activeBrandColor = hasTeamColor ? teamColorSource : 'var(--color-brand)';
 

@@ -52,6 +52,11 @@ const EventCard = ({
   const isHome = isMatch ? event.my_team_id === event.home_team_id : false;
   const isInitiator = isMatch ? Number(event.initiator_team_id) === Number(event.my_team_id) : false;
 
+  // Событие уже состоялось: либо время начала позади, либо матч закрыт результатом.
+  // Тип события в таких карточках зачёркиваем — в общей ленте календаря это самый
+  // быстрый способ отличить прошедшее от предстоящего, не вчитываясь в дату.
+  const isPastEvent = gameDatePassed || isFinished;
+
   let eventTitle = '';
   if (isMatch) eventTitle = 'МАТЧ';
   else if (event.event_type.includes('training')) eventTitle = 'ТРЕНИРОВКА';
@@ -228,7 +233,10 @@ const EventCard = ({
       {/* 2. ЦЕНТР: Тип события и Время */}
       <div className="flex justify-between items-end px-5 mt-4">
         <div className="flex items-center gap-2 min-w-0">
-          <h2 className="font-bold text-content-main leading-none uppercase tracking-wide truncate" style={{ fontSize: uiFixed(30) }}>
+          <h2
+            className={`font-bold text-content-main leading-none uppercase tracking-wide truncate ${isPastEvent ? 'line-through decoration-2' : ''}`}
+            style={{ fontSize: uiFixed(30) }}
+          >
             {eventTitle}
           </h2>
           {renderMatchIcon()}

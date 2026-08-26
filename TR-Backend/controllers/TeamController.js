@@ -84,7 +84,8 @@ export const getMyTeams = async (req, res) => {
         // 1. Р‘Р°Р·РѕРІС‹Р№ СЃРїРёСЃРѕРє РєРѕРјР°РЅРґ РїРѕР»СЊР·РѕРІР°С‚РµР»СЏ
         const teamsQuery = `
             SELECT DISTINCT t.id, t.name, t.short_name, t.logo_url, t.city, t.description,
-                            t.jersey_dark_url, t.jersey_light_url, t.color_home_1, t.color_home_2,
+                            t.jersey_dark_url, t.jersey_light_url, t.ui_color,
+                            t.color_home_1, t.color_home_2,
                             t.color_away_1, t.color_away_2, t.owner_id
             FROM teams t
             LEFT JOIN team_members tm ON tm.team_id = t.id AND tm.left_at IS NULL
@@ -794,7 +795,7 @@ export const updateTeamProfile = async (req, res) => {
     const teamId = req.params.id;
     const { 
       name, short_name, city, description, 
-      color_home_1, color_home_2, color_away_1, color_away_2,
+      ui_color, color_home_1, color_home_2, color_away_1, color_away_2,
       delete_logo, delete_jersey_dark, delete_jersey_light
     } = req.body;
 
@@ -848,6 +849,9 @@ export const updateTeamProfile = async (req, res) => {
     pushField('short_name', short_name);
     pushField('city', city);
     pushField('description', description);
+    // Пустая строка из формы — это «цвет интерфейса не задан»: в базе такому
+    // состоянию соответствует NULL, при котором команда берёт цвет домашней формы.
+    pushField('ui_color', ui_color === '' ? null : ui_color);
     pushField('color_home_1', color_home_1);
     pushField('color_home_2', color_home_2);
     pushField('color_away_1', color_away_1);

@@ -343,7 +343,7 @@ export function ProfilePage() {
   const displayAvatarUrl = avatarUrl ? `${avatarUrl}?v=${cacheBuster}` : '';
 
   return (
-    <FadeIn className="flex flex-col h-full overflow-hidden ">
+    <FadeIn className="brand-personal flex flex-col h-full overflow-hidden ">
       
       {/* Навигационные вкладки */}
       <div className="px-4 pb-3 shrink-0 shadow-lg bg-surface-base">

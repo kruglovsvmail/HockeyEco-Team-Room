@@ -2,12 +2,14 @@ import React, { useState, useEffect } from 'react';
 import { ImageUploaderLP } from '../../ui/ImageUploaderLP';
 import { ButtonLP } from '../../ui/Button-LP';
 import { TextInputLP } from '../../ui/Input-LP'; 
-import { getAuthHeaders } from '../../utils/helpers';
+import { getAuthHeaders, getTeamUiColor, DEFAULT_BRAND_COLOR } from '../../utils/helpers';
 
 export function EditTeamProfilePanel({ teamId, onRefresh, activeBrandColor, onClose }) {
   // Расширенный стейт формы, включающий существующие URL-адреса медиафайлов из БД
   const [formData, setFormData] = useState({
     name: '', short_name: '', city: '', description: '',
+    // Пустая строка = цвет интерфейса не задан, команда живёт на цвете домашней формы
+    ui_color: '',
     color_home_1: '#ffffff', color_home_2: '#ffffff',
     color_away_1: '#ffffff', color_away_2: '#ffffff',
     logo_url: null, jersey_dark_url: null, jersey_light_url: null
@@ -23,8 +25,12 @@ export function EditTeamProfilePanel({ teamId, onRefresh, activeBrandColor, onCl
   // Логика динамического определения флага включения цветов из localStorage
   const isColorsEnabled = localStorage.getItem('tr_use_team_colors') !== 'false';
   // Считываем цвет прямо из стейта формы, чтобы перекрашивание происходило "на лету" при интерактивном выборе в палитре
-  const hasTeamColor = isColorsEnabled && !!formData.color_home_1 && formData.color_home_1.toLowerCase() !== '#ffffff';
-  const dynamicBrandColor = hasTeamColor ? formData.color_home_1 : (activeBrandColor || 'var(--color-brand)');
+  const teamUiColor = getTeamUiColor(formData);
+  const hasTeamColor = isColorsEnabled && !!teamUiColor && teamUiColor.toLowerCase() !== '#ffffff';
+  const dynamicBrandColor = hasTeamColor ? teamUiColor : (activeBrandColor || 'var(--color-brand)');
+
+  // Цвет в палитре: свой, если задан, иначе тот, который команда получит по умолчанию
+  const uiColorSwatch = teamUiColor && teamUiColor.toLowerCase() !== '#ffffff' ? teamUiColor : DEFAULT_BRAND_COLOR;
 
   // Фоновый запрос полных параметров команды из БД при открытии панели
   useEffect(() => {
@@ -44,6 +50,7 @@ export function EditTeamProfilePanel({ teamId, onRefresh, activeBrandColor, onCl
                 short_name: dbTeam.short_name || '',
                 city: dbTeam.city || '',
                 description: dbTeam.description || '',
+                ui_color: dbTeam.ui_color || '',
                 color_home_1: dbTeam.color_home_1 || '#ffffff',
                 color_home_2: dbTeam.color_home_2 || '#ffffff',
                 color_away_1: dbTeam.color_away_1 || '#ffffff',
@@ -79,6 +86,7 @@ export function EditTeamProfilePanel({ teamId, onRefresh, activeBrandColor, onCl
     bodyData.append('short_name', formData.short_name);
     bodyData.append('city', formData.city);
     bodyData.append('description', formData.description);
+    bodyData.append('ui_color', formData.ui_color);
     bodyData.append('color_home_1', formData.color_home_1);
     bodyData.append('color_home_2', formData.color_home_2);
     bodyData.append('color_away_1', formData.color_away_1);
@@ -183,6 +191,40 @@ export function EditTeamProfilePanel({ teamId, onRefresh, activeBrandColor, onCl
           />
         </div>
 
+        {/* ЦВЕТ ИНТЕРФЕЙСА КОМАНДЫ — отдельная настройка, не связанная с джерси:
+            в цвет формы попадать интерфейсом не обязательно (белая или чёрная форма
+            в интерфейсе нечитаема), поэтому команда выбирает акцент самостоятельно. */}
+        <div className="w-full bg-surface-level1 p-4 rounded-2xl border border-surface-border shadow-sm">
+          <div className="flex items-center gap-3">
+            <input
+              type="color"
+              value={uiColorSwatch}
+              onChange={e => setFormData(prev => ({ ...prev, ui_color: e.target.value }))}
+              aria-label="Цвет интерфейса команды"
+              className="w-10 h-10 shrink-0 rounded-full cursor-pointer border border-surface-border bg-transparent p-0 overflow-hidden appearance-none [&::-webkit-color-swatch-wrapper]:p-0 [&::-webkit-color-swatch]:border-0 [&::-webkit-color-swatch]:rounded-full transition-transform active:scale-90"
+            />
+            <div className="flex flex-col flex-1 min-w-0 leading-tight">
+              <span className="text-[10px] font-black text-content-muted uppercase tracking-widest select-none">
+                Цвет интерфейса
+              </span>
+              <span className="text-[11px] font-medium text-content-subtle mt-0.5">
+                {formData.ui_color
+                  ? 'Этим цветом окрашены экраны команды'
+                  : 'Не задан — берётся акцентный цвет домашней формы'}
+              </span>
+            </div>
+            {formData.ui_color && (
+              <button
+                type="button"
+                onClick={() => setFormData(prev => ({ ...prev, ui_color: '' }))}
+                className="shrink-0 text-[11px] font-bold text-content-muted hover:text-brand underline underline-offset-4 outline-none cursor-pointer transition-colors"
+              >
+                Сбросить
+              </button>
+            )}
+          </div>
+        </div>
+
         {/* БЛОК ФОРМ И ЦВЕТОВ — вертикально: домашняя сверху, гостевая снизу */}
         <div className="flex flex-col gap-2 w-full">
 
@@ -209,8 +251,8 @@ export function EditTeamProfilePanel({ teamId, onRefresh, activeBrandColor, onCl
                     className="w-8 h-8 rounded-full cursor-pointer border border-surface-border bg-transparent p-0 overflow-hidden appearance-none [&::-webkit-color-swatch-wrapper]:p-0 [&::-webkit-color-swatch]:border-0 [&::-webkit-color-swatch]:rounded-full transition-transform active:scale-90" 
                   />
                   <div className="flex flex-col items-center leading-none">
-                    <span className="text-[10px] font-black text-brand uppercase tracking-tight select-none mb-1">Акцентный</span>
-                    <span className="text-[10px] font-medium text-content-subtle select-none">(интерфейса)</span>
+                    <span className="text-[10px] font-black text-content-muted uppercase tracking-tight select-none mb-1">Акцентный</span>
+                    <span className="text-[10px] font-medium text-content-subtle select-none">на джерси</span>
                   </div>
                 </div>
                 <div className="flex flex-col items-center gap-1">

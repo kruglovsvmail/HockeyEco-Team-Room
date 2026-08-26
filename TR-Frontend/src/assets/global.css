@@ -4,12 +4,26 @@
 
 @layer base {
   :root {
-    /* --- АКЦЕНТНЫЕ ЦВЕТА (БРЕНД) --- */
-    --color-brand: #1794dd;
-    --color-brand-hover: #1e679b;
-    --color-brand-dark: #267ec2;
+    /* --- АКЦЕНТНЫЕ ЦВЕТА (БРЕНД) ---
+       --color-brand-base — личный акцент пользователя. Значение здесь это заводской
+       цвет приложения; если человек выбрал свой цвет в Настройках, тот же токен
+       переопределяется инлайном на <html> (см. index.html и applyUserBrandColor)
+       и потому одинаков в светлой и тёмной теме.
+       --color-brand — рабочий акцент текущего поддерева. По умолчанию равен личному,
+       но внутри команды его перекрывают цветом команды (TeamLayout и страницы команды).
+       Производные (-hover/-dark/-opacity, тень) считаются от --color-brand в правиле
+       `*` ниже: объявленные в :root они бы посчитались один раз на <html> и за
+       командной подменой не следовали. */
+    --color-brand-base: #1794dd;
+    --color-brand: var(--color-brand-base);
     --color-brand-glow: #ffffff00;
-    --color-brand-opacity: color-mix(in srgb, var(--color-brand) 10%, transparent);
+
+    /* Доли подмеса для производных оттенков бренда — задаются темой, применяются в `*` */
+    --brand-hover-mix: 75%;   /* насколько тёмный вариант для ссылок в состоянии hover */
+    --brand-dark-mix: 82%;    /* тёмный край градиента кнопок */
+    --brand-tint-mix: 10%;    /* прозрачная подложка (bg-brand-opacity) */
+    --brand-glow-alpha: 25%;  /* прозрачность свечения под кнопкой */
+    --brand-glow-blur: 30px;
     
     /* --- СТАТИЧНЫЕ ПОВЕРХНОСТИ (ГЛОБАЛЬНЫЕ) --- */
     --color-surface-base: #f3f4f6ff; /* Фон разных плашек */
@@ -48,7 +62,6 @@
     --backdrop-blur-sheet: 24px;
 
     /* --- ТЕHИ --- */
-    --shadow-brand-glow: 0 8px 30px rgba(74, 176, 197, 0.25);
     --shadow-sheet-top: 0 -8px 32px rgba(0, 0, 0, 0.08);
     
     --shadow-sm: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
@@ -74,11 +87,12 @@
 
   /* --- ТЕМHАЯ ТЕМА --- */
   html.dark {
-    --color-brand: #60a5fa;
-    --color-brand-hover: #3b82f6;
-    --color-brand-dark: #2563eb;
+    --color-brand-base: #60a5fa;
     --color-brand-glow: #6464648a;
-    --color-brand-opacity: color-mix(in srgb, var(--color-brand) 15%, transparent);
+
+    --brand-tint-mix: 15%;
+    --brand-glow-alpha: 12%;
+    --brand-glow-blur: 32px;
 
     /* Нейтрально-тёплые серые — без синевы */
     --color-surface-base: #242424;       /* почти чёрный, чуть тёплый */
@@ -104,9 +118,30 @@
     --color-success: #519b60;
     --color-success-muted: #063d2e;
 
-    --shadow-brand-glow: 0 8px 32px rgba(96, 165, 250, 0.12);
     --shadow-sheet-top: 0 -8px 32px rgba(0, 0, 0, 0.45);
   }
+
+  /* --- ПРОИЗВОДНЫЕ ОТТЕНКИ БРЕНДА ---
+     Объявлены на `*`, а не в :root, намеренно: значение пользовательского свойства
+     подставляется на том элементе, где оно объявлено. Стой эти строки в :root,
+     var(--color-brand) внутри них подставился бы один раз на <html> и подмена
+     --color-brand на цвет команды (инлайн-стиль на контейнере страницы) производные
+     не задела бы. Правило `*` пересчитывает их на каждом элементе, поэтому цвет
+     команды и личный цвет тянут за собой весь набор оттенков. */
+  * {
+    --color-brand-hover: color-mix(in srgb, var(--color-brand) var(--brand-hover-mix), #000);
+    --color-brand-dark: color-mix(in srgb, var(--color-brand) var(--brand-dark-mix), #000);
+    --color-brand-opacity: color-mix(in srgb, var(--color-brand) var(--brand-tint-mix), transparent);
+    --shadow-brand-glow: 0 8px var(--brand-glow-blur) color-mix(in srgb, var(--color-brand) var(--brand-glow-alpha), transparent);
+  }
+
+  /* Нейтральные зоны приложения: сайдбар, профиль, настройки, тренерская, подписка.
+     Они общие для всех команд, поэтому командный акцент сюда не распространяем —
+     возвращаем личный цвет пользователя. */
+  .brand-personal {
+    --color-brand: var(--color-brand-base);
+  }
+
 }
 
 /* --- ГЛОБАЛЬНЫЕ ПРАВИЛА ОТОБРАЖЕНИЯ --- */

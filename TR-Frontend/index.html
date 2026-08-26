@@ -27,6 +27,14 @@
           document.documentElement.classList.remove('dark');
           document.querySelector('#theme-meta')?.setAttribute('content', '#f3f4f6');
         }
+
+        /* Личный акцентный цвет пользователя (Настройки → Персонализация).
+           Ставим до отрисовки, иначе на холодном старте успевает мелькнуть
+           заводской синий — в логотипе сайдбара и на кнопках. */
+        const savedBrand = localStorage.getItem('tr_brand_color');
+        if (savedBrand && /^#[0-9a-fA-F]{6}$/.test(savedBrand)) {
+          document.documentElement.style.setProperty('--color-brand-base', savedBrand);
+        }
       })();
     </script>
 

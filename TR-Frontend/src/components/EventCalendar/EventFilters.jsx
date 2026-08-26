@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { Icon } from '../../ui/Icon';
 import { CheckboxLP } from '../../ui/Checkbox-LP';
-import { getImageUrl } from '../../utils/helpers';
+import { getImageUrl, getTeamUiColor } from '../../utils/helpers';
 
 export function EventFilters({ user, teams = [], onClose }) {
   // Локальное состояние фильтров
@@ -166,7 +166,7 @@ export function EventFilters({ user, teams = [], onClose }) {
                         checked={isChecked}
                         onChange={() => {}}
                         label=""
-                        activeColor={team.color_home_1 || null}
+                        activeColor={getTeamUiColor(team)}
                       />
                     </div>
                   </div>

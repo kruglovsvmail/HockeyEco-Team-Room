@@ -9,7 +9,7 @@ import { ConfirmSheet } from '../../ui/ConfirmSheet';
 import { FadeIn } from '../../ui/FadeIn';
 import { Icon } from '../../ui/Icon';
 import { PageLoader } from '../../ui/Loader';
-import { getAuthHeaders } from '../../utils/helpers';
+import { getAuthHeaders, getTeamUiColor } from '../../utils/helpers';
 import { TeamPageHeader, TeamPageHeaderSpacer } from '../../components/TeamPageHeader';
 
 export function HandbooksPage() {
@@ -39,7 +39,7 @@ export function HandbooksPage() {
   const cachedTeamData = teamCacheKey ? localStorage.getItem(teamCacheKey) : null;
   const cachedDetails = cachedTeamData ? JSON.parse(cachedTeamData)?.fullDetails : null;
 
-  const teamColorSource = cachedDetails?.color_home_1 || selectedTeam?.color_home_1;
+  const teamColorSource = getTeamUiColor(cachedDetails) || getTeamUiColor(selectedTeam);
   const hasTeamColor = isColorsEnabled && !!teamColorSource;
   const activeBrandColor = hasTeamColor ? teamColorSource : 'var(--color-brand)';
 

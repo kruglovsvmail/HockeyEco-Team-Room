@@ -9,7 +9,7 @@ import { FadeIn } from '../../ui/FadeIn';
 import { ApplicationCard } from '../../components/Manager/Season/ApplicationCard';
 import { isDivisionPast } from '../../components/Manager/Season/seasonUtils';
 import { TeamPageHeader, TeamPageHeaderSpacer } from '../../components/TeamPageHeader';
-import { getAuthHeaders } from '../../utils/helpers';
+import { getAuthHeaders, getTeamUiColor } from '../../utils/helpers';
 
 const FILTER_OPTIONS = [
   { value: 'all', label: 'Все' },
@@ -33,7 +33,7 @@ export function SeasonRostersPage() {
   const teamCacheKey = selectedTeam?.id ? `tr_cached_team_${selectedTeam.id}` : null;
   const cachedTeamData = teamCacheKey ? localStorage.getItem(teamCacheKey) : null;
   const cachedDetails = cachedTeamData ? JSON.parse(cachedTeamData)?.fullDetails : null;
-  const teamColorSource = cachedDetails?.color_home_1 || selectedTeam?.color_home_1;
+  const teamColorSource = getTeamUiColor(cachedDetails) || getTeamUiColor(selectedTeam);
   const hasTeamColor = isColorsEnabled && !!teamColorSource;
   const activeBrandColor = hasTeamColor ? teamColorSource : 'var(--color-brand)';
 

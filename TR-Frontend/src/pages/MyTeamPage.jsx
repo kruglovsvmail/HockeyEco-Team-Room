@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef, Suspense, lazy, useCallback } from 'react';
 import { useOutletContext } from 'react-router-dom';
 import clsx from 'clsx';
-import { getAuthHeaders, getImageUrl } from '../utils/helpers';
+import { getAuthHeaders, getImageUrl, getTeamUiColor } from '../utils/helpers';
 import { SegmentedControl } from '../ui/SegmentedControl';
 import { useAccess } from '../hooks/useAccess';
 import { BottomSheet } from '../ui/BottomSheet';
@@ -62,7 +62,7 @@ export const MyTeamPage = () => {
   });
 
   const isColorsEnabled = localStorage.getItem('tr_use_team_colors') !== 'false';
-  const teamColorSource = activeTeamDetails?.color_home_1 || selectedTeam?.color_home_1;
+  const teamColorSource = getTeamUiColor(activeTeamDetails) || getTeamUiColor(selectedTeam);
   const hasTeamColor = isColorsEnabled && !!teamColorSource;
   const activeBrandColor = hasTeamColor ? teamColorSource : 'var(--color-brand)';
 

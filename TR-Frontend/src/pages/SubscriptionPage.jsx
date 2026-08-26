@@ -166,7 +166,7 @@ export function SubscriptionPage() {
   }, []);
 
   return (
-    <FadeIn className="flex flex-col h-full overflow-hidden">
+    <FadeIn className="brand-personal flex flex-col h-full overflow-hidden">
       <div className="flex-1 overflow-y-auto scrollbar-hide px-3 pt-2 pb-24 bg-surface-base transition-colors duration-300">
 
         {/* Индикатор ожидания подтверждения платежа */}

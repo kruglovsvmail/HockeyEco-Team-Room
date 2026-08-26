@@ -7,7 +7,7 @@ import utc from 'dayjs/plugin/utc';
 import timezone from 'dayjs/plugin/timezone';
 import 'dayjs/locale/ru';
 
-import { getToken, removeToken, getAuthHeaders, uiFixed } from './utils/helpers';
+import { getToken, removeToken, getAuthHeaders, uiFixed, getTeamUiColor } from './utils/helpers';
 import { Sidebar } from './components/Sidebar';
 import { Header } from './components/Header';
 import { ConsentModal } from './components/ConsentModal';
@@ -557,23 +557,27 @@ function TeamLayoutContent() {
   // из-за отсутствия кэша команды), а также правая панель и оверлеи (playerDocs, eventEdit и т.д.,
   // рендерящиеся вне поддерева Outlet) остаются на глобальном цвете бренда вместо цвета команды.
   const isColorsEnabled = localStorage.getItem('tr_use_team_colors') !== 'false';
-  const hasTeamColor = isColorsEnabled && !!selectedTeam?.color_home_1;
+  const teamUiColor = getTeamUiColor(selectedTeam);
+  const hasTeamColor = isColorsEnabled && !!teamUiColor;
 
-  // Цвет клуба здесь намеренно НЕ подмешиваем: этот переопределитель накрывает и
-  // сайдбар, а он общий для всех команд и клубов — красить его в цвет одного клуба
-  // некорректно. Клубный цвет живёт локально на странице клуба (ClubPage) и в её
-  // панелях, которые красят себя сами.
+  // Цвет клуба здесь намеренно НЕ подмешиваем: он живёт локально на странице клуба
+  // (ClubPage) и в её панелях, которые красят себя сами.
+  // Сайдбар из-под этого переопределителя выведен классом brand-personal — он общий
+  // для всех команд и клубов и остаётся в личном цвете пользователя.
 
   return (
     <div
       className="flex flex-col w-full h-full overflow-hidden relative"
-      style={hasTeamColor ? { '--color-brand': selectedTeam.color_home_1 } : {}}
+      style={hasTeamColor ? { '--color-brand': teamUiColor } : {}}
     >
 
       {/* Сайдбар: выезжает слева внутри 800px-контейнера */}
+      {/* brand-personal: сайдбар общий для всех команд и клубов, красить его в цвет
+          одной выбранной команды неверно — здесь акцентом остаётся личный цвет
+          пользователя, включая логотип HOCKEYECO. */}
       <aside
         className={clsx(
-          "absolute inset-y-0 left-0 z-40 h-full bg-surface-level1 flex-shrink-0",
+          "brand-personal absolute inset-y-0 left-0 z-40 h-full bg-surface-level1 flex-shrink-0",
           "transition-transform duration-300 ease-[cubic-bezier(0.32,0.72,0,1)]",
           isSidebarOpen ? "translate-x-0" : "-translate-x-full"
         )}
@@ -806,7 +810,7 @@ function TeamLayoutContent() {
             <SeasonRostersDetailsPage
               appId={applicationMatch.params.appId}
               teamId={selectedTeam?.id}
-              teamColor={selectedTeam?.color_home_1}
+              teamColor={teamUiColor}
               onClose={handleCloseApplication}
               openRightPanel={openRightPanel}
             />
