@@ -120,11 +120,9 @@ export function ProfilePage() {
   const [draftContacts, setDraftContacts] = useState({ email: '', phone: '' });
 
   // Состояние подтверждения нового номера звонком.
-  // phoneVerify не null — блок контактов показывает шаг ввода кода вместо обычного просмотра.
-  const [phoneVerify, setPhoneVerify] = useState(null); // { phone, expiresAt }
-  const [verifyCode, setVerifyCode] = useState('');
+  // phoneVerify не null — блок контактов показывает экран ожидания звонка вместо просмотра.
+  const [phoneVerify, setPhoneVerify] = useState(null); // { phone, callPhone, expiresAt }
   const [verifySeconds, setVerifySeconds] = useState(0);
-  const [verifyLoading, setVerifyLoading] = useState(false);
 
   // Ref-флаги режимов редактирования — всегда актуальны внутри async-функций (нет stale closure).
   const editingRef = useRef({ personal: false, hockey: false, contacts: false });
@@ -190,6 +188,15 @@ export function ProfilePage() {
         }
         if (!editingRef.current.contacts) {
           setDraftContacts({ email: serverEmail, phone: serverPhone });
+        }
+
+        // Восстановление экрана ожидания звонка. Нужно потому, что во время звонка PWA
+        // уходит в фон, а iOS в standalone-режиме нередко перезагружает его целиком —
+        // React-состояние при этом теряется, а заявка на сервере продолжает жить.
+        const pendingCall = json.pendingPhoneVerification;
+        if (pendingCall) {
+          setVerifySeconds(Math.max(0, Math.round((new Date(pendingCall.expiresAt) - Date.now()) / 1000)));
+          setPhoneVerify(pendingCall);
         }
       }
     } catch (err) {
@@ -287,14 +294,17 @@ export function ProfilePage() {
       if (json.success) {
         editingRef.current.contacts = false;
         setIsEditContacts(false);
-        setVerifyCode('');
         // Счётчик выставляем сразу, не дожидаясь первого тика таймера, иначе на один
-        // кадр отрисуется «срок действия кода истёк» с заблокированной кнопкой
+        // кадр отрисуется «время вышло» с заблокированной кнопкой
         setVerifySeconds(Math.max(0, Math.round((new Date(json.expiresAt) - Date.now()) / 1000)));
-        setPhoneVerify({ phone: json.phone || targetPhone, expiresAt: json.expiresAt });
-        triggerToast('Ожидайте входящий звонок', 'success');
+        setPhoneVerify({
+          phone: json.phone || targetPhone,
+          callPhone: json.callPhone,
+          callPhonePretty: json.callPhonePretty,
+          expiresAt: json.expiresAt
+        });
       } else {
-        triggerToast(json.error || 'Не удалось заказать звонок', 'danger');
+        triggerToast(json.error || 'Не удалось начать подтверждение', 'danger');
       }
     } catch (err) {
       console.error(err);
@@ -304,54 +314,37 @@ export function ProfilePage() {
     }
   };
 
-  // Сверка кода: на этом шаге номер и записывается в базу как новый логин
-  const handleConfirmPhoneCode = async () => {
-    setVerifyLoading(true);
+  // Гашение заявки на сервере. Без этого getProfile при следующей загрузке профиля
+  // честно вернёт незакрытую заявку и экран ожидания воскреснет сам собой.
+  const dropPhoneVerify = async () => {
     try {
-      const res = await fetch(`${import.meta.env.VITE_API_URL}/api/profile/phone/confirm`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          ...getAuthHeaders(),
-        },
-        body: JSON.stringify({ code: verifyCode }),
+      await fetch(`${import.meta.env.VITE_API_URL}/api/profile/phone`, {
+        method: 'DELETE',
+        headers: getAuthHeaders(),
       });
-      const json = await res.json();
-      if (json.success) {
-        setPhoneVerify(null);
-        setVerifyCode('');
-        triggerToast('Номер телефона подтверждён', 'success');
-        await loadProfileData();
-      } else {
-        setVerifyCode('');
-        triggerToast(json.error || 'Неверный код', 'danger');
-      }
     } catch (err) {
-      console.error(err);
-      triggerToast('Ошибка соединения с базой', 'danger');
-    } finally {
-      setVerifyLoading(false);
+      console.error('Не удалось отменить подтверждение номера:', err);
     }
   };
 
-  // Отказ от смены номера: заявка на сервере догорит сама по expires_at
-  const cancelPhoneVerify = () => {
+  // Отказ от смены номера
+  const cancelPhoneVerify = async () => {
     setPhoneVerify(null);
-    setVerifyCode('');
+    await dropPhoneVerify();
   };
 
-  // Код истёк — возвращаем в редактирование с уже подставленным номером,
-  // чтобы заказать звонок заново можно было одним нажатием на галочку
-  const restartPhoneVerify = () => {
+  // Время вышло — возвращаем в редактирование с уже подставленным номером,
+  // чтобы повторить попытку можно было одним нажатием на галочку
+  const restartPhoneVerify = async () => {
     const pendingPhone = phoneVerify?.phone;
     setPhoneVerify(null);
-    setVerifyCode('');
+    await dropPhoneVerify();
     setDraftContacts({ email, phone: normalizePhoneForInput(pendingPhone) });
     editingRef.current.contacts = true;
     setIsEditContacts(true);
   };
 
-  // Обратный отсчёт жизни кода. Сервер всё равно проверит expires_at сам,
+  // Обратный отсчёт окна подтверждения. Сервер всё равно проверит expires_at сам,
   // но пользователю нужно видеть, сколько осталось, и вовремя получить кнопку повтора.
   useEffect(() => {
     if (!phoneVerify?.expiresAt) return;
@@ -365,6 +358,47 @@ export function ProfilePage() {
     const timerId = setInterval(tick, 1000);
     return () => clearInterval(timerId);
   }, [phoneVerify]);
+
+  // Опрос статуса подтверждения.
+  //
+  // Пока экран открыт — раз в 3 секунды. Плюс немедленная проверка при возврате в
+  // приложение: во время звонка PWA уходит в фон, а фоновые таймеры браузер замораживает,
+  // поэтому интервал в этот момент не работает. Событие app-global-refresh рассылает
+  // TeamLayout при возвращении фокуса — тем же механизмом обновляются остальные экраны.
+  useEffect(() => {
+    if (!phoneVerify) return;
+
+    let stopped = false;
+
+    const checkStatus = async () => {
+      if (stopped) return;
+      try {
+        const res = await fetch(`${import.meta.env.VITE_API_URL}/api/profile/phone/status`, {
+          headers: getAuthHeaders(),
+        });
+        const json = await res.json();
+        if (stopped || !json.success || !json.confirmed) return;
+
+        stopped = true;
+        setPhoneVerify(null);
+        triggerToast('Номер телефона подтверждён', 'success');
+        await loadProfileData();
+      } catch (err) {
+        // Сеть могла моргнуть на переключении в звонилку — молча ждём следующего круга
+        console.error('Ошибка проверки статуса подтверждения:', err);
+      }
+    };
+
+    checkStatus();
+    const pollId = setInterval(checkStatus, 3000);
+    window.addEventListener('app-global-refresh', checkStatus);
+
+    return () => {
+      stopped = true;
+      clearInterval(pollId);
+      window.removeEventListener('app-global-refresh', checkStatus);
+    };
+  }, [phoneVerify]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Мгновенная загрузка аватарки в S3 при изменении медиа
   const handleAvatarChange = async (file) => {
@@ -623,7 +657,7 @@ export function ProfilePage() {
                 icon="users"
                 isEditing={isEditContacts}
                 isSaving={savingBlock === 'contacts'}
-                // Во время ожидания кода карандашик убираем: пока номер не подтверждён,
+                // Во время ожидания звонка карандашик убираем: пока номер не подтверждён,
                 // возвращаться в редактирование полей нельзя — заявка уже создана на сервере
                 onAction={phoneVerify ? null : () => {
                   if (isEditContacts) {
@@ -638,37 +672,32 @@ export function ProfilePage() {
                 {phoneVerify ? (
                   <div className="space-y-3 pt-1">
                     <div className="text-[12px] font-semibold text-content-muted leading-relaxed">
-                      На номер <span className="font-black text-content-main">{formatPhoneNumber(phoneVerify.phone)}</span> поступит звонок.
-                      Отвечать не нужно — введите <span className="font-black text-brand">последние 4 цифры</span> номера, с которого звонили.
+                      Позвоните на номер ниже <span className="font-black text-brand">с телефона {formatPhoneNumber(phoneVerify.phone)}</span>.
+                      Звонок бесплатный, вызов сбросится сам — отвечать никто не будет. Так мы убедимся, что номер действительно ваш.
                     </div>
 
-                    <TextInputLP
-                      label="Код подтверждения"
-                      value={verifyCode}
-                      onChange={(v) => setVerifyCode(v.replace(/\D/g, '').slice(0, 4))}
-                      placeholder="0000"
-                      textAlign="center"
-                      maxLength={4}
-                    />
-
-                    <div className="text-[10px] font-bold uppercase tracking-wider text-center text-content-subtle">
-                      {verifySeconds > 0
-                        ? `Код действует ещё ${Math.floor(verifySeconds / 60)}:${String(verifySeconds % 60).padStart(2, '0')}`
-                        : 'Срок действия кода истёк'}
-                    </div>
-
-                    <ButtonLP
-                      variant="primary"
-                      className="!py-2.5 !h-11 text-[14px]"
-                      isLoading={verifyLoading}
-                      disabled={verifyCode.length !== 4 || verifySeconds === 0}
-                      onClick={handleConfirmPhoneCode}
+                    <a
+                      href={`tel:${phoneVerify.callPhone}`}
+                      className="block w-full py-3 text-center rounded-2xl bg-surface-level2 border border-surface-border text-[20px] font-black tracking-wide text-content-main active:scale-[0.98] transition-transform"
                     >
-                      Подтвердить номер
-                    </ButtonLP>
+                      {phoneVerify.callPhonePretty || formatPhoneNumber(phoneVerify.callPhone)}
+                    </a>
+
+                    {verifySeconds > 0 ? (
+                      <div className="flex items-center justify-center gap-2 text-[10px] font-bold uppercase tracking-wider text-content-subtle">
+                        <div className="w-3 h-3 border-2 border-brand border-t-transparent rounded-full animate-spin" />
+                        <span>
+                          Ожидаем звонок · {Math.floor(verifySeconds / 60)}:{String(verifySeconds % 60).padStart(2, '0')}
+                        </span>
+                      </div>
+                    ) : (
+                      <div className="text-[10px] font-bold uppercase tracking-wider text-center text-content-subtle">
+                        Время подтверждения истекло
+                      </div>
+                    )}
 
                     <ButtonLP variant="text" onClick={verifySeconds > 0 ? cancelPhoneVerify : restartPhoneVerify}>
-                      {verifySeconds > 0 ? 'Отменить смену номера' : 'Заказать звонок заново'}
+                      {verifySeconds > 0 ? 'Отменить смену номера' : 'Попробовать заново'}
                     </ButtonLP>
                   </div>
                 ) : isEditContacts ? (
@@ -676,7 +705,7 @@ export function ProfilePage() {
                     <TextInputLP label="Почта" value={draftContacts.email} onChange={(v) => setDraftContacts(p => ({ ...p, email: v }))} placeholder="example@mail.ru" />
                     <PhoneInputLP label="Телефон" value={draftContacts.phone} onChange={(v) => setDraftContacts(p => ({ ...p, phone: v }))} placeholder="900 000 00 00" />
                     <div className="text-[10px] font-semibold text-content-subtle leading-relaxed">
-                      Телефон — это логин для входа. При смене номера на новый поступит звонок с кодом подтверждения.
+                      Телефон — это логин для входа. Чтобы сменить номер, нужно будет позвонить с нового телефона на короткий номер — звонок бесплатный.
                     </div>
                   </div>
                 ) : (
