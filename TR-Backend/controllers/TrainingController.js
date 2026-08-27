@@ -1,6 +1,7 @@
 import pool from '../config/db.js';
 import { getTeamIdFromRequest, getClubIdFromRequest } from '../utils/checkPermission.js';
-import { sendPushToEventScopeExcept, cancelScheduledNotifications, getTrainingInfo, formatFeeChange } from '../services/pushService.js';
+import { sendPushToEventScopeExcept, cancelScheduledNotifications, getTrainingInfo, formatFeeChange, formatSplitCostChange } from '../services/pushService.js';
+import { parseFeeSettings, buildFeeUpdate } from '../utils/eventFees.js';
 
 // =============================================================================
 // ОБНОВЛЕНИЕ РАСПИСАНИЯ ТРЕНИРОВКИ (дата, время, локация)
@@ -116,7 +117,7 @@ export const updateTrainingSchedule = async (req, res) => {
 export const updateTrainingFinances = async (req, res) => {
   try {
     const { eventId } = req.params;
-    const { eventType, player_fee } = req.body;
+    const { eventType } = req.body;
     const teamId = getTeamIdFromRequest(req);
     const clubId = getClubIdFromRequest(req);
 
@@ -127,31 +128,48 @@ export const updateTrainingFinances = async (req, res) => {
       return res.status(400).json({ success: false, error: 'Параметр eventType обязателен' });
     }
 
-    // player_fee: null = не назначен, 0 = бесплатно, N = сумма
-    // Явный null или undefined → NULL в БД (взнос не назначен)
-    const fee = (player_fee === null || player_fee === undefined || player_fee === '') ? null : Number(player_fee);
-
+    // player_fee: null = не назначен, 0 = бесплатно, N = сумма (режим per_person).
+    // В режиме split сумма живёт в total_cost, а cost не используется — но обе
+    // колонки сохраняются, чтобы переключение режима туда-обратно не теряло цифры.
     const table = eventType === 'team_training' ? 'team_training' : 'club_training';
+    const patch = parseFeeSettings(req.body, { goalieAware: true });
 
     const check = await pool.query(
-      `SELECT id, cost FROM "public"."${table}" WHERE id = $1`,
+      `SELECT id, cost, cost_mode, total_cost FROM "public"."${table}" WHERE id = $1`,
       [eventId]
     );
     if (check.rowCount === 0) {
       return res.status(404).json({ success: false, error: 'Тренировка не найдена' });
     }
-    const oldFee = check.rows[0].cost;
+    const prev = check.rows[0];
 
-    await pool.query(
-      `UPDATE "public"."${table}" SET cost = $1 WHERE id = $2`,
-      [fee, eventId]
-    );
+    const upd = buildFeeUpdate(patch, 1);
+    if (!upd.isEmpty) {
+      await pool.query(
+        `UPDATE "public"."${table}" SET ${upd.clause} WHERE id = $${upd.values.length + 1}`,
+        [...upd.values, eventId]
+      );
+    }
 
-    if (oldFee !== fee) {
+    // Какой push слать, решает НОВЫЙ режим: при переходе на долевой оповещаем об
+    // общей сумме, при фиксированном — о взносе с игрока, как было раньше.
+    const nextMode = patch.cost_mode ?? prev.cost_mode;
+    const nextFee = 'cost' in patch ? patch.cost : (prev.cost === null ? null : Number(prev.cost));
+    const nextTotal = 'total_cost' in patch ? patch.total_cost : (prev.total_cost === null ? null : Number(prev.total_cost));
+    const oldFee = prev.cost === null ? null : Number(prev.cost);
+    const oldTotal = prev.total_cost === null ? null : Number(prev.total_cost);
+
+    const feeChanged = nextMode === 'split'
+      ? (oldTotal !== nextTotal || prev.cost_mode !== nextMode)
+      : (oldFee !== nextFee || prev.cost_mode !== nextMode);
+
+    if (feeChanged) {
       getTrainingInfo(eventId, eventType).then(info => {
         sendPushToEventScopeExcept({ teamId, clubId }, req.user.id, 'schedule', {
           title: 'Изменение стоимости',
-          body: formatFeeChange(oldFee, fee, `тренировки ${info.text}`),
+          body: nextMode === 'split'
+            ? formatSplitCostChange(oldTotal, nextTotal, `тренировки ${info.text}`)
+            : formatFeeChange(oldFee, nextFee, `тренировки ${info.text}`),
           url: `/event/${eventType}/${eventId}`,
           tag: `fee-${eventId}`,
         });

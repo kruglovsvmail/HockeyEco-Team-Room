@@ -336,6 +336,42 @@ function TeamLayoutContent() {
     navigate(location.pathname, { replace: true, state: { event: updated } });
   }, [eventMatch, location.pathname, location.state, navigate]);
 
+  // Перечитывание открытой карточки события с сервера.
+  // Долевая стоимость считается из числа отметившихся, поэтому после любой
+  // отметки её нельзя пропатчить локально — цифру знает только сервер. Экраны
+  // отметок дёргают 'tr-event-refresh', а результат уезжает через handleEventUpdate,
+  // который чинит и sessionStorage, и history.state сразу.
+  useEffect(() => {
+    if (!eventMatch) return;
+    const { eventType, eventId } = eventMatch.params;
+
+    const onRefresh = async () => {
+      if (!getToken() || !navigator.onLine) return;
+      try {
+        const res = await fetch(
+          `${import.meta.env.VITE_API_URL}/api/calendar?eventId=${encodeURIComponent(eventId)}&eventType=${encodeURIComponent(eventType)}`,
+          { headers: getAuthHeaders() }
+        );
+        const data = await res.json();
+        const card = (data?.cards || []).find(
+          c => String(c.event_id) === String(eventId) && routeTypeOfEvent(c.event_type) === eventType
+        );
+        if (!card) return;
+        handleEventUpdate(card);
+        // Экраны деталей держат свою копию события и перечитывают её из
+        // sessionStorage по 'tr-events-updated'. Свежая карточка попадает туда
+        // только сейчас, после ответа сервера, — поэтому сигналим ещё раз:
+        // тот, что летел вместе с 'tr-event-refresh', застал ещё старые данные.
+        window.dispatchEvent(new CustomEvent('tr-events-updated'));
+      } catch (err) {
+        console.error('Не удалось обновить карточку события:', err);
+      }
+    };
+
+    window.addEventListener('tr-event-refresh', onRefresh);
+    return () => window.removeEventListener('tr-event-refresh', onRefresh);
+  }, [eventMatch, handleEventUpdate]);
+
   // Доступ к редактированию текущего события — для отображения карандашика в шапке.
   // Клуб события берём из самого события (my_club_id), а не из выбранного в сайдбаре:
   // человек мог зайти в клубное событие, стоя в контексте команды.

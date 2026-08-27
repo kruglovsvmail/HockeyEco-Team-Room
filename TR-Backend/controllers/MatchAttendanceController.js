@@ -1,6 +1,7 @@
 import pool from '../config/db.js';
 import { checkPermissionInternal, getTeamIdFromRequest } from '../utils/checkPermission.js';
 import { sendPushToTeamExcept, getMatchInfo, getUserName } from '../services/pushService.js';
+import { resolvePayRole, getFeeContext, isAfterWithdrawDeadline, describeSplitFee } from '../utils/eventFees.js';
 
 // =============================================================================
 // ДОСТУПНЫЙ СОСТАВ НА МАТЧ (с учетом регламентов и дисквалификаций)
@@ -105,7 +106,7 @@ export const toggleMatchAttendance = async (req, res) => {
   try {
     const initiatorId = req.user.id;
     const { eventId } = req.params;
-    const { isAttending, teamId, targetUserId } = req.body;
+    const { isAttending, teamId, targetUserId, purge } = req.body;
 
     if (!teamId) {
       return res.status(400).json({ success: false, error: 'teamId обязателен для матча' });
@@ -113,8 +114,12 @@ export const toggleMatchAttendance = async (req, res) => {
 
     const targetId = targetUserId || initiatorId;
 
+    // purge — полное удаление отметки, в том числе снятой после дедлайна. Это
+    // право руководителя, поэтому даже на самого себя идёт через ветку управления.
+    const isPurge = purge === true;
+
     // Проверка прав: самоотметка или управление менеджером
-    if (targetId === initiatorId) {
+    if (targetId === initiatorId && !isPurge) {
       const hasAccess = await checkPermissionInternal(initiatorId, teamId, 'EVENT_SELF_ATTENDANCE');
       if (!hasAccess) {
         return res.status(403).json({ success: false, error: 'Доступ ограничен. Для самостоятельной отметки явки требуется продлить подписку' });
@@ -125,6 +130,11 @@ export const toggleMatchAttendance = async (req, res) => {
         return res.status(403).json({ success: false, error: 'Недостаточно прав доступа или требуется продление подписки руководителя' });
       }
     }
+
+    // Дедлайн снятия отметки берётся со своей стороны матча: у хозяев и гостей
+    // свои деньги и свой дедлайн. После него отметка не удаляется, а помечается.
+    const feeCtx = await getFeeContext('match', eventId, teamId);
+    const lateWithdraw = !isAttending && !isPurge && isAfterWithdrawDeadline(feeCtx);
 
     if (isAttending) {
       const gameCheck = await pool.query(`SELECT game_type, division_id FROM games WHERE id = $1`, [eventId]);
@@ -145,8 +155,20 @@ export const toggleMatchAttendance = async (req, res) => {
         }
       }
 
+      // pay_role — снимок амплуа на момент отметки: оно может смениться после
+      // матча, а расчёт взноса меняться не должен.
+      const payRole = await resolvePayRole(targetId, 'match', { teamId, gameId: eventId });
       await pool.query(
-        `INSERT INTO team_game_attendance (game_id, user_id, team_id) VALUES ($1, $2, $3) ON CONFLICT ON CONSTRAINT team_game_att_unique DO NOTHING`,
+        `INSERT INTO team_game_attendance (game_id, user_id, team_id, pay_role) VALUES ($1, $2, $3, $4)
+         ON CONFLICT ON CONSTRAINT team_game_att_unique DO UPDATE SET withdrawn_at = NULL`,
+        [eventId, targetId, teamId, payRole]
+      );
+    } else if (lateWithdraw) {
+      // После дедлайна отметка не исчезает: игрок остаётся плательщиком и в
+      // делителе, но в посещаемость матч ему не идёт (она считается по протоколу).
+      await pool.query(
+        `UPDATE team_game_attendance SET withdrawn_at = NOW()
+         WHERE game_id = $1 AND user_id = $2 AND team_id = $3 AND withdrawn_at IS NULL`,
         [eventId, targetId, teamId]
       );
     } else {
@@ -157,18 +179,22 @@ export const toggleMatchAttendance = async (req, res) => {
     }
 
     (async () => {
-      const [name, info] = await Promise.all([getUserName(targetId), getMatchInfo(eventId, teamId)]);
+      const [name, info, feeText] = await Promise.all([
+        getUserName(targetId),
+        getMatchInfo(eventId, teamId),
+        lateWithdraw ? Promise.resolve('') : describeSplitFee('match', eventId, teamId),
+      ]);
       sendPushToTeamExcept(teamId, targetId, 'attendance', {
         title: isAttending ? 'Новая отметка' : 'Снятие отметки',
         body: isAttending
-          ? `${name} отметился на матч: ${info.text}`
-          : `${name} снял отметку с матча: ${info.text}`,
+          ? `${name} отметился на матч: ${info.text}${feeText}`
+          : `${name} снял отметку с матча: ${info.text}${feeText}`,
         url: `/event/match/${eventId}`,
         tag: `attend-${eventId}-${targetId}`,
       });
     })().catch(() => {});
 
-    res.json({ success: true });
+    res.json({ success: true, withdrawnLate: lateWithdraw });
   } catch (err) {
     console.error('Ошибка переключения присутствия на матче:', err);
     res.status(500).json({ success: false, error: 'Ошибка сервера' });
@@ -200,7 +226,8 @@ export const getMatchAttendance = async (req, res) => {
 
     if (gameType === 'official' && divisionId) {
       query = `
-        SELECT u.id, u.first_name, u.last_name, tm.photo_url AS team_photo, u.avatar_url, tr.position, tga.has_pay_tag
+        SELECT u.id, u.first_name, u.last_name, tm.photo_url AS team_photo, u.avatar_url, tr.position,
+               tga.has_pay_tag, tga.pay_role, tga.withdrawn_at, tga.final_fee
         FROM team_game_attendance tga
         JOIN users u ON tga.user_id = u.id
         LEFT JOIN team_members tm ON tm.user_id = u.id AND tm.team_id = $2 AND tm.left_at IS NULL
@@ -212,7 +239,8 @@ export const getMatchAttendance = async (req, res) => {
       params = [eventId, teamId, divisionId];
     } else {
       query = `
-        SELECT u.id, u.first_name, u.last_name, tm.photo_url AS team_photo, u.avatar_url, tr.position, tga.has_pay_tag
+        SELECT u.id, u.first_name, u.last_name, tm.photo_url AS team_photo, u.avatar_url, tr.position,
+               tga.has_pay_tag, tga.pay_role, tga.withdrawn_at, tga.final_fee
         FROM team_game_attendance tga
         JOIN users u ON tga.user_id = u.id
         LEFT JOIN team_members tm ON tm.user_id = u.id AND tm.team_id = $2 AND tm.left_at IS NULL

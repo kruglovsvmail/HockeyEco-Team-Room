@@ -6,7 +6,7 @@ import { SubscriptionStub } from '../../ui/SubscriptionStub';
 import { SegmentedControl } from '../../ui/SegmentedControl';
 import { ContainerContent } from '../../ui/ContainerContent';
 import { TextInputLP, NativeDateInputLP, NativeTimeInputLP } from '../../ui/Input-LP';
-import { CheckboxLP } from '../../ui/Checkbox-LP';
+import { FeeSettingsFields } from '../../ui/FeeSettingsFields';
 import { ButtonLP } from '../../ui/Button-LP';
 import { FadeIn } from '../../ui/FadeIn';
 import { Icon } from '../../ui/Icon';
@@ -29,10 +29,21 @@ export function CreateEventPage() {
 
   const [eventDate, setEventDate] = useState('');
   const [eventTime, setEventTime] = useState('');
-  const [selectedArena, setSelectedArena] = useState(null); 
-  const [feeAmount, setFeeAmount] = useState('');
-  const [isFree, setIsFree] = useState(false);
+  const [selectedArena, setSelectedArena] = useState(null);
   const [isLoading, setIsLoading] = useState(false);
+
+  // Параметры взноса держим одним объектом — его целиком принимает FeeSettingsFields.
+  // Дедлайн снятия отметки по умолчанию 4 часа, «вратари бесплатно» включено:
+  // те же значения стоят дефолтами в БД.
+  const [feeSettings, setFeeSettings] = useState({
+    costMode: 'per_person',
+    playerFee: '',
+    totalCost: '',
+    isFree: false,
+    goaliesFree: true,
+    minParticipants: 1,
+    deadlineHours: 4,
+  });
 
   const [eventTitle, setEventTitle] = useState('');
   // Тип тренировки — выбор из закрытого списка, свободного ввода нет.
@@ -128,20 +139,6 @@ export function CreateEventPage() {
 
   const playoffPresets = ['1/8 финала', '1/4 финала', '1/2 финала', 'Финал', 'За 3-е место', 'Другое'];
 
-  const getFeeLabel = () => eventType === 'meeting' ? 'Взнос участника' : 'Взнос игрока';
-
-  const handleToggleFree = (checked) => {
-    setIsFree(checked);
-    setFeeAmount(checked ? '0' : '');
-  };
-
-  const handleFeeChange = (val) => {
-    const cleanNum = val.replace(/\D/g, '');
-    setFeeAmount(cleanNum);
-    if (cleanNum !== '0' && isFree) setIsFree(false);
-    if (cleanNum === '0' && !isFree) setIsFree(true);
-  };
-
   const handleSelectArenaClick = () => {
     openRightPanel('arenaSelector', {
       teamId: isClubScope ? null : selectedTeam?.id,
@@ -194,7 +191,17 @@ export function CreateEventPage() {
           teamId: isClubScope ? null : selectedTeam.id,
           clubId: isClubScope ? selectedClub.id : null,
           eventType, matchType, eventDate, eventTime,
-          selectedArena, feeAmount, isFree, eventTitle, trainingType, videoYtUrl, videoVkUrl,
+          selectedArena,
+          // Взнос: feeAmount/isFree остались как были (режим «с человека»),
+          // остальные поля описывают долевой режим и правила показа цены.
+          feeAmount: feeSettings.playerFee,
+          isFree: feeSettings.isFree,
+          costMode: feeSettings.costMode,
+          totalCost: feeSettings.totalCost,
+          goaliesFree: feeSettings.goaliesFree,
+          costMinParticipants: feeSettings.minParticipants,
+          attendanceDeadlineHours: feeSettings.deadlineHours,
+          eventTitle, trainingType, videoYtUrl, videoVkUrl,
           myJerseyType, selectedOpponent, deadlineDate, deadlineTime,
           selectedExtTournament, selectedExtOpponent, stageType, seriesNumber,
           regularRound, selectedPlayoffOption, customStageLabel
@@ -290,9 +297,13 @@ export function CreateEventPage() {
                     <Icon name="chevron_right" className="w-4 h-4 text-content-subtle" />
                   </button>
                 </div>
-                <div className="grid grid-cols-2 gap-3 items-end pt-1">
-                  <TextInputLP label={getFeeLabel()} placeholder="Не указан" value={feeAmount} onChange={handleFeeChange} disabled={isFree} activeColor={hasTeamColor ? activeBrandColor : null} />
-                  <div className="pb-3.5 pl-1"><CheckboxLP checked={isFree} onChange={handleToggleFree} label="Бесплатно" activeColor={hasTeamColor ? activeBrandColor : null} /></div>
+                <div className="pt-1">
+                  <FeeSettingsFields
+                    value={feeSettings}
+                    onChange={setFeeSettings}
+                    isMeeting={eventType === 'meeting'}
+                    activeColor={hasTeamColor ? activeBrandColor : null}
+                  />
                 </div>
               </div>
             </ContainerContent>

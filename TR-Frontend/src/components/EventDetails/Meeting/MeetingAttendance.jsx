@@ -10,6 +10,7 @@ import { ContainerContent } from '../../../ui/ContainerContent';
 import { HintPopover } from '../../../ui/HintPopover';
 import { FadeIn } from '../../../ui/FadeIn';
 import clsx from 'clsx';
+import { notifyAttendanceChanged, isAfterWithdrawDeadline } from '../../../utils/eventFee';
 
 const getSafeUserFromToken = () => {
   try {
@@ -138,6 +139,18 @@ export const MeetingAttendance = ({
     player => !attendees.some(att => String(att.id) === String(player.user_id))
   ), [teamRoster, attendees]);
 
+  // Снявшиеся после дедлайна (withdrawn_at) уходят из основного списка в свой
+  // блок: на собрании их не будет, но взнос за него сохраняется.
+  const isWithdrawn = (a) => !!a.withdrawn_at;
+  const withdrawn = useMemo(() => attendees.filter(isWithdrawn), [attendees]);
+
+  // Шторка подтверждения объясняет последствия: убрать снявшегося из расчёта —
+  // это снять с него взнос, а снять отметку после дедлайна — наоборот, взнос
+  // сохранить. Молча делать ни то, ни другое нельзя.
+  const removeIsPurge = !!userToRemove?.withdrawn_at;
+  const removeIsLate  = !removeIsPurge && isAfterWithdrawDeadline(event);
+  const presentAttendees = useMemo(() => attendees.filter(a => !isWithdrawn(a)), [attendees]);
+
   // ── Отметить участника ───────────────────────────────────────────────────
   const handleMarkUser = async (playerObj) => {
     setSavingPlayerId(playerObj.user_id);
@@ -170,6 +183,7 @@ export const MeetingAttendance = ({
       setTimeout(() => setAnimatingInId(null), 300);
       setIsSheetOpen(false);
       refreshData();
+      notifyAttendanceChanged();
     } catch (err) {
       console.error('Ошибка при отметке участника:', err);
       refreshData();
@@ -238,9 +252,13 @@ export const MeetingAttendance = ({
             teamId:       isClubEvent ? null : event.my_team_id,
             clubId:       eventClubId,
             targetUserId: targetUserId,
+            // Снявшегося после дедлайна обычным снятием не убрать — строка уже
+            // помечена. purge удаляет её целиком, снимая и взнос.
+            purge:        !!userToRemove.withdrawn_at,
           }),
         });
         refreshData();
+        notifyAttendanceChanged();
       } catch (err) {
         console.error('Ошибка при удалении отметки:', err);
         refreshData();
@@ -301,7 +319,11 @@ export const MeetingAttendance = ({
   // ── Рендер карточки участника ────────────────────────────────────────────
   const renderAttendeeCard = (attendeeUser, index) => {
     const photoUrl  = attendeeUser.team_photo || attendeeUser.avatar_url;
-    const canRemove = hasManageAccess || String(activeUserId) === String(attendeeUser.id);
+    // Из списка снявшихся после дедлайна убирать может только руководитель:
+    // сам игрок оттуда уйти не должен, иначе дедлайн ничего не значит.
+    const canRemove = attendeeUser.withdrawn_at
+      ? hasManageAccess
+      : (hasManageAccess || String(activeUserId) === String(attendeeUser.id));
     const isOut     = attendeeUser.id === animatingOutId;
     const isIn      = attendeeUser.id === animatingInId;
 
@@ -455,10 +477,10 @@ export const MeetingAttendance = ({
           .animate-slot-exit  { animation: slotExit  0.2s  cubic-bezier(0.6, -0.28, 0.735, 0.045) both; will-change: transform, opacity; }
         `}</style>
 
-        <ContainerContent title="Участники собрания" count={attendees.length} action={addButton}>
-          {attendees.length > 0 ? (
+        <ContainerContent title="Участники собрания" count={presentAttendees.length} action={addButton}>
+          {presentAttendees.length > 0 ? (
             <div className="grid grid-cols-[repeat(auto-fill,minmax(94px,1fr))] gap-y-5 gap-x-2 justify-items-center mt-2">
-              {attendees.map((a, i) => renderAttendeeCard(a, i))}
+              {presentAttendees.map((a, i) => renderAttendeeCard(a, i))}
             </div>
           ) : (
             <div className="text-center py-6 text-[10px] font-bold uppercase tracking-widest text-content-subtle opacity-50 select-none">
@@ -466,6 +488,19 @@ export const MeetingAttendance = ({
             </div>
           )}
         </ContainerContent>
+
+        {/* Снявшиеся после дедлайна. Блока нет, пока таких нет вовсе. */}
+        {withdrawn.length > 0 && (
+          <ContainerContent title="Снялись после деадлайна" count={withdrawn.length}>
+            <div className="grid grid-cols-[repeat(auto-fill,minmax(94px,1fr))] gap-y-5 gap-x-2 justify-items-center mt-2 opacity-70">
+              {withdrawn.map((a, i) => renderAttendeeCard(a, i))}
+            </div>
+            <div className="text-[10px] text-content-muted leading-tight mt-4 px-1">
+              Отметка снята после дедлайна: собрание не идёт им в посещаемость,
+              но взнос за него сохраняется — они остаются в расчёте стоимости.
+            </div>
+          </ContainerContent>
+        )}
 
         {/* ── ШТОРКА ДОБАВЛЕНИЯ УЧАСТНИКА ─────────────────────────────────── */}
         <BottomSheet isOpen={isSheetOpen} onClose={() => setIsSheetOpen(false)}>
@@ -532,11 +567,28 @@ export const MeetingAttendance = ({
                 <path strokeLinecap="round" strokeLinejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
               </svg>
             </div>
-            <h3 className="text-[18px] font-black text-content-main leading-tight">Удалить отметку?</h3>
+            <h3 className="text-[18px] font-black text-content-main leading-tight">
+              {removeIsPurge ? 'Убрать из списка снявшихся?' : removeIsLate ? 'Дедлайн уже прошёл' : 'Удалить отметку?'}
+            </h3>
             <p className="text-[14px] text-content-muted max-w-[280px]">
-              Вы уверены, что хотите убрать{' '}
-              <span className="font-bold text-content-main">{userToRemove?.last_name}</span>{' '}
-              из списка присутствующих?
+              {removeIsPurge ? (
+                <>
+                  <span className="font-bold text-content-main">{userToRemove?.last_name}</span>{' '}
+                  перестанет числиться в расчёте стоимости — взнос за собрание с него снимется.
+                </>
+              ) : removeIsLate ? (
+                <>
+                  Отметка снимется, но взнос сохранится:{' '}
+                  <span className="font-bold text-content-main">{userToRemove?.last_name}</span>{' '}
+                  останется в расчёте стоимости и попадёт в список после деадлайна.
+                </>
+              ) : (
+                <>
+                  Вы уверены, что хотите убрать{' '}
+                  <span className="font-bold text-content-main">{userToRemove?.last_name}</span>{' '}
+                  из списка присутствующих?
+                </>
+              )}
             </p>
             <div className="flex gap-3 w-full">
               <ButtonLP

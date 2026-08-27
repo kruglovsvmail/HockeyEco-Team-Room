@@ -1,6 +1,7 @@
 import pool from '../config/db.js';
 import { checkPermissionInternal, checkClubPermissionInternal } from '../utils/checkPermission.js';
 import { sendPushToEventScopeExcept, getTrainingInfo, getUserName } from '../services/pushService.js';
+import { resolvePayRole, getFeeContext, isAfterWithdrawDeadline, describeSplitFee } from '../utils/eventFees.js';
 
 // =============================================================================
 // ПЕРЕКЛЮЧЕНИЕ СТАТУСА ПРИСУТСТВИЯ НА ТРЕНИРОВКЕ
@@ -9,7 +10,7 @@ export const toggleTrainingAttendance = async (req, res) => {
   try {
     const initiatorId = req.user.id;
     const { eventId } = req.params;
-    const { isAttending, eventType, teamId, clubId, targetUserId } = req.body;
+    const { isAttending, eventType, teamId, clubId, targetUserId, purge } = req.body;
 
     if (!eventType) {
       return res.status(400).json({ success: false, error: 'eventType обязателен' });
@@ -17,9 +18,16 @@ export const toggleTrainingAttendance = async (req, res) => {
 
     const targetId = targetUserId || initiatorId;
 
+    // purge — полное удаление отметки, в том числе снятой после дедлайна.
+    // Это право руководителя: обычное снятие после дедлайна оставляет строку,
+    // чтобы человек остался плательщиком, а убрать его оттуда может только тот,
+    // кто распоряжается отметками. Поэтому и на самого себя purge идёт через
+    // ветку управления, а не самоотметки.
+    const isPurge = purge === true;
+
     // Проверка прав: самоотметка или управление руководителем.
     // Клубная тренировка живёт в контексте клуба, командная — в контексте команды.
-    if (targetId === initiatorId) {
+    if (targetId === initiatorId && !isPurge) {
       if (clubId) {
         const hasAccess = await checkClubPermissionInternal(initiatorId, clubId, 'EVENT_SELF_ATTENDANCE');
         if (!hasAccess) {
@@ -45,40 +53,60 @@ export const toggleTrainingAttendance = async (req, res) => {
       }
     }
 
-    switch (eventType) {
-      case 'team_training':
-        if (isAttending) {
-          await pool.query(`INSERT INTO team_training_attendance (team_training_id, user_id) VALUES ($1, $2) ON CONFLICT ON CONSTRAINT team_train_att_unique DO NOTHING`, [eventId, targetId]);
-        } else {
-          await pool.query(`DELETE FROM team_training_attendance WHERE team_training_id = $1 AND user_id = $2`, [eventId, targetId]);
-        }
-        break;
+    if (eventType !== 'team_training' && eventType !== 'club_training') {
+      return res.status(400).json({ success: false, error: 'Неизвестный тип тренировки' });
+    }
 
-      case 'club_training':
-        if (isAttending) {
-          await pool.query(`INSERT INTO club_training_attendance (club_training_id, user_id) VALUES ($1, $2) ON CONFLICT ON CONSTRAINT club_train_att_unique DO NOTHING`, [eventId, targetId]);
-        } else {
-          await pool.query(`DELETE FROM club_training_attendance WHERE club_training_id = $1 AND user_id = $2`, [eventId, targetId]);
-        }
-        break;
+    const isClub = eventType === 'club_training';
+    const table = isClub ? 'club_training_attendance' : 'team_training_attendance';
+    const fk = isClub ? 'club_training_id' : 'team_training_id';
+    const uniq = isClub ? 'club_train_att_unique' : 'team_train_att_unique';
 
-      default:
-        return res.status(400).json({ success: false, error: 'Неизвестный тип тренировки' });
+    // Дедлайн снятия отметки: до него отметка просто удаляется, после — остаётся
+    // со штампом withdrawn_at. Такой участник продолжает считаться плательщиком
+    // и не выпадает из делителя, иначе позднее снятие дорожало бы всем остальным.
+    const feeCtx = await getFeeContext(eventType, eventId, teamId);
+    const lateWithdraw = !isAttending && !isPurge && isAfterWithdrawDeadline(feeCtx);
+
+    if (isAttending) {
+      // pay_role пишем снимком только при первой отметке. При возврате после
+      // позднего снятия роль не трогаем: ручное освобождение (free), выставленное
+      // руководителем, повторная отметка перетереть не должна.
+      const payRole = await resolvePayRole(targetId, eventType, { teamId, clubId });
+      await pool.query(
+        `INSERT INTO ${table} (${fk}, user_id, pay_role) VALUES ($1, $2, $3)
+         ON CONFLICT ON CONSTRAINT ${uniq} DO UPDATE SET withdrawn_at = NULL`,
+        [eventId, targetId, payRole]
+      );
+    } else if (lateWithdraw) {
+      await pool.query(
+        `UPDATE ${table} SET withdrawn_at = NOW() WHERE ${fk} = $1 AND user_id = $2 AND withdrawn_at IS NULL`,
+        [eventId, targetId]
+      );
+    } else {
+      await pool.query(`DELETE FROM ${table} WHERE ${fk} = $1 AND user_id = $2`, [eventId, targetId]);
     }
 
     (async () => {
-      const [name, info] = await Promise.all([getUserName(targetId), getTrainingInfo(eventId, eventType)]);
+      // Стоимость дописываем в текст только когда она долевая и уже видима:
+      // при позднем снятии цена не меняется (участник остался плательщиком),
+      // поэтому там суммы нет вовсе.
+      const [name, info, feeText] = await Promise.all([
+        getUserName(targetId),
+        getTrainingInfo(eventId, eventType),
+        lateWithdraw ? Promise.resolve('') : describeSplitFee(eventType, eventId, teamId),
+      ]);
       sendPushToEventScopeExcept({ teamId, clubId }, targetId, 'attendance', {
         title: isAttending ? 'Новая отметка' : 'Снятие отметки',
         body: isAttending
-          ? `${name} отметился на тренировку: ${info.text}`
-          : `${name} снял отметку с тренировки: ${info.text}`,
+          ? `${name} отметился на тренировку: ${info.text}${feeText}`
+          : `${name} снял отметку с тренировки: ${info.text}${feeText}`,
         url: `/event/${eventType}/${eventId}`,
         tag: `attend-${eventId}-${targetId}`,
       });
     })().catch(() => {});
 
-    res.json({ success: true });
+    res.json({ success: true, withdrawnLate: lateWithdraw });
   } catch (err) {
     console.error('Ошибка переключения присутствия на тренировке:', err);
     res.status(500).json({ success: false, error: 'Ошибка сервера' });
@@ -108,7 +136,10 @@ export const getTrainingAttendance = async (req, res) => {
             u.id, u.first_name, u.last_name, u.avatar_url,
             tm.photo_url AS team_photo,
             tr.position,
-            tta.has_pay_tag
+            tta.has_pay_tag,
+            tta.pay_role,
+            tta.withdrawn_at,
+            tta.final_fee
           FROM team_training_attendance tta
           JOIN users u ON tta.user_id = u.id
           JOIN team_training tt ON tt.id = tta.team_training_id
@@ -130,7 +161,10 @@ export const getTrainingAttendance = async (req, res) => {
             u.avatar_url,
             u.avatar_url AS team_photo,
             tr.position,
-            cta.has_pay_tag
+            cta.has_pay_tag,
+            cta.pay_role,
+            cta.withdrawn_at,
+            cta.final_fee
           FROM club_training_attendance cta
           JOIN users u ON cta.user_id = u.id
           LEFT JOIN team_members tm ON tm.user_id = u.id AND tm.left_at IS NULL

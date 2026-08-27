@@ -584,7 +584,7 @@ export const getClubMemberStats = async (req, res) => {
       FROM club_training ct
       JOIN period p ON true
       LEFT JOIN club_training_attendance cta
-        ON cta.club_training_id = ct.id AND cta.user_id = $2
+        ON cta.club_training_id = ct.id AND cta.user_id = $2 AND cta.withdrawn_at IS NULL
       WHERE ct.club_id = $1
         AND ct.training_date < NOW()
         AND ct.training_date >= p.joined_at
@@ -602,7 +602,7 @@ export const getClubMemberStats = async (req, res) => {
       FROM club_meeting cm
       JOIN period p ON true
       LEFT JOIN club_meeting_attendance cma
-        ON cma.club_meeting_id = cm.id AND cma.user_id = $2
+        ON cma.club_meeting_id = cm.id AND cma.user_id = $2 AND cma.withdrawn_at IS NULL
       WHERE cm.club_id = $1
         AND cm.meeting_date < NOW()
         AND cm.meeting_date >= p.joined_at

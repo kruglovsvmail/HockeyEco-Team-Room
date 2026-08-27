@@ -379,8 +379,11 @@ export const getMemberTeamStats = async (req, res) => {
         tt.training_date,
         tt.training_type,
         EXISTS (
+          -- withdrawn_at — снятие отметки после дедлайна. Такой участник платит
+          -- за тренировку (остаётся в делителе стоимости), но посещением она
+          -- ему не засчитывается: на льду его не было.
           SELECT 1 FROM team_training_attendance ta
-          WHERE ta.team_training_id = tt.id AND ta.user_id = $2
+          WHERE ta.team_training_id = tt.id AND ta.user_id = $2 AND ta.withdrawn_at IS NULL
         ) AS attended
       FROM team_training tt
       WHERE tt.team_id = $1

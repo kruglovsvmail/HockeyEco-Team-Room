@@ -1,6 +1,7 @@
 import pool from '../config/db.js';
 import { getTeamIdFromRequest, getClubIdFromRequest } from '../utils/checkPermission.js';
-import { sendPushToEventScopeExcept, cancelScheduledNotifications, getMeetingInfo, formatFeeChange } from '../services/pushService.js';
+import { sendPushToEventScopeExcept, cancelScheduledNotifications, getMeetingInfo, formatFeeChange, formatSplitCostChange } from '../services/pushService.js';
+import { parseFeeSettings, buildFeeUpdate } from '../utils/eventFees.js';
 
 // =============================================================================
 // ОБНОВЛЕНИЕ РАСПИСАНИЯ СОБРАНИЯ (дата, время, локация)
@@ -103,7 +104,7 @@ export const updateMeetingSchedule = async (req, res) => {
 export const updateMeetingFinances = async (req, res) => {
   try {
     const { eventId } = req.params;
-    const { eventType, player_fee } = req.body;
+    const { eventType } = req.body;
     const teamId = getTeamIdFromRequest(req);
     const clubId = getClubIdFromRequest(req);
 
@@ -114,28 +115,45 @@ export const updateMeetingFinances = async (req, res) => {
       return res.status(400).json({ success: false, error: 'Параметр eventType обязателен' });
     }
 
-    const fee = (player_fee === null || player_fee === undefined || player_fee === '') ? null : Number(player_fee);
+    // goalieAware: false — на собрании нет деления на вратарей и полевых,
+    // колонки goalies_free у этих таблиц не существует.
     const table = eventType === 'team_meeting' ? 'team_meeting' : 'club_meeting';
+    const patch = parseFeeSettings(req.body, { goalieAware: false });
 
     const check = await pool.query(
-      `SELECT id, cost FROM "public"."${table}" WHERE id = $1`,
+      `SELECT id, cost, cost_mode, total_cost FROM "public"."${table}" WHERE id = $1`,
       [eventId]
     );
     if (check.rowCount === 0) {
       return res.status(404).json({ success: false, error: 'Собрание не найдено' });
     }
-    const oldFee = check.rows[0].cost;
+    const prev = check.rows[0];
 
-    await pool.query(
-      `UPDATE "public"."${table}" SET cost = $1 WHERE id = $2`,
-      [fee, eventId]
-    );
+    const upd = buildFeeUpdate(patch, 1);
+    if (!upd.isEmpty) {
+      await pool.query(
+        `UPDATE "public"."${table}" SET ${upd.clause} WHERE id = $${upd.values.length + 1}`,
+        [...upd.values, eventId]
+      );
+    }
 
-    if (oldFee !== fee) {
+    const nextMode = patch.cost_mode ?? prev.cost_mode;
+    const nextFee = 'cost' in patch ? patch.cost : (prev.cost === null ? null : Number(prev.cost));
+    const nextTotal = 'total_cost' in patch ? patch.total_cost : (prev.total_cost === null ? null : Number(prev.total_cost));
+    const oldFee = prev.cost === null ? null : Number(prev.cost);
+    const oldTotal = prev.total_cost === null ? null : Number(prev.total_cost);
+
+    const feeChanged = nextMode === 'split'
+      ? (oldTotal !== nextTotal || prev.cost_mode !== nextMode)
+      : (oldFee !== nextFee || prev.cost_mode !== nextMode);
+
+    if (feeChanged) {
       getMeetingInfo(eventId, eventType).then(info => {
         sendPushToEventScopeExcept({ teamId, clubId }, req.user.id, 'schedule', {
           title: 'Изменение стоимости',
-          body: formatFeeChange(oldFee, fee, `собрания ${info.text}`),
+          body: nextMode === 'split'
+            ? formatSplitCostChange(oldTotal, nextTotal, `собрания ${info.text}`)
+            : formatFeeChange(oldFee, nextFee, `собрания ${info.text}`),
           url: `/event/${eventType}/${eventId}`,
           tag: `fee-${eventId}`,
         });

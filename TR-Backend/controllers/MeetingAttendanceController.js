@@ -1,6 +1,7 @@
 import pool from '../config/db.js';
 import { checkPermissionInternal, checkClubPermissionInternal } from '../utils/checkPermission.js';
 import { sendPushToEventScopeExcept, getMeetingInfo, getUserName } from '../services/pushService.js';
+import { getFeeContext, isAfterWithdrawDeadline, describeSplitFee } from '../utils/eventFees.js';
 
 // =============================================================================
 // ПЕРЕКЛЮЧЕНИЕ СТАТУСА ПРИСУТСТВИЯ НА СОБРАНИИ
@@ -9,7 +10,7 @@ export const toggleMeetingAttendance = async (req, res) => {
   try {
     const initiatorId = req.user.id;
     const { eventId } = req.params;
-    const { isAttending, eventType, teamId, clubId, targetUserId } = req.body;
+    const { isAttending, eventType, teamId, clubId, targetUserId, purge } = req.body;
 
     if (!eventType) {
       return res.status(400).json({ success: false, error: 'eventType обязателен' });
@@ -17,9 +18,13 @@ export const toggleMeetingAttendance = async (req, res) => {
 
     const targetId = targetUserId || initiatorId;
 
+    // purge — полное удаление отметки, в том числе снятой после дедлайна. Это
+    // право руководителя, поэтому даже на самого себя идёт через ветку управления.
+    const isPurge = purge === true;
+
     // Проверка прав: самоотметка или управление руководителем.
     // Клубное собрание живёт в контексте клуба, командное — в контексте команды.
-    if (targetId === initiatorId) {
+    if (targetId === initiatorId && !isPurge) {
       if (clubId) {
         const hasAccess = await checkClubPermissionInternal(initiatorId, clubId, 'EVENT_SELF_ATTENDANCE');
         if (!hasAccess) {
@@ -45,40 +50,54 @@ export const toggleMeetingAttendance = async (req, res) => {
       }
     }
 
-    switch (eventType) {
-      case 'team_meeting':
-        if (isAttending) {
-          await pool.query(`INSERT INTO team_meeting_attendance (team_meeting_id, user_id) VALUES ($1, $2) ON CONFLICT ON CONSTRAINT team_meet_att_unique DO NOTHING`, [eventId, targetId]);
-        } else {
-          await pool.query(`DELETE FROM team_meeting_attendance WHERE team_meeting_id = $1 AND user_id = $2`, [eventId, targetId]);
-        }
-        break;
+    if (eventType !== 'team_meeting' && eventType !== 'club_meeting') {
+      return res.status(400).json({ success: false, error: 'Неизвестный тип собрания' });
+    }
 
-      case 'club_meeting':
-        if (isAttending) {
-          await pool.query(`INSERT INTO club_meeting_attendance (club_meeting_id, user_id) VALUES ($1, $2) ON CONFLICT ON CONSTRAINT club_meet_att_unique DO NOTHING`, [eventId, targetId]);
-        } else {
-          await pool.query(`DELETE FROM club_meeting_attendance WHERE club_meeting_id = $1 AND user_id = $2`, [eventId, targetId]);
-        }
-        break;
+    const isClub = eventType === 'club_meeting';
+    const table = isClub ? 'club_meeting_attendance' : 'team_meeting_attendance';
+    const fk = isClub ? 'club_meeting_id' : 'team_meeting_id';
+    const uniq = isClub ? 'club_meet_att_unique' : 'team_meet_att_unique';
 
-      default:
-        return res.status(400).json({ success: false, error: 'Неизвестный тип собрания' });
+    // Дедлайн снятия отметки — как у тренировок: после него отметка не удаляется,
+    // а помечается withdrawn_at, и участник остаётся в делителе стоимости.
+    // Амплуа на собрании не спрашиваем: список плоский, все участники платят
+    // одинаково, освободить конкретного человека можно только вручную (free).
+    const feeCtx = await getFeeContext(eventType, eventId, teamId);
+    const lateWithdraw = !isAttending && !isPurge && isAfterWithdrawDeadline(feeCtx);
+
+    if (isAttending) {
+      await pool.query(
+        `INSERT INTO ${table} (${fk}, user_id) VALUES ($1, $2)
+         ON CONFLICT ON CONSTRAINT ${uniq} DO UPDATE SET withdrawn_at = NULL`,
+        [eventId, targetId]
+      );
+    } else if (lateWithdraw) {
+      await pool.query(
+        `UPDATE ${table} SET withdrawn_at = NOW() WHERE ${fk} = $1 AND user_id = $2 AND withdrawn_at IS NULL`,
+        [eventId, targetId]
+      );
+    } else {
+      await pool.query(`DELETE FROM ${table} WHERE ${fk} = $1 AND user_id = $2`, [eventId, targetId]);
     }
 
     (async () => {
-      const [name, info] = await Promise.all([getUserName(targetId), getMeetingInfo(eventId, eventType)]);
+      const [name, info, feeText] = await Promise.all([
+        getUserName(targetId),
+        getMeetingInfo(eventId, eventType),
+        lateWithdraw ? Promise.resolve('') : describeSplitFee(eventType, eventId, teamId),
+      ]);
       sendPushToEventScopeExcept({ teamId, clubId }, targetId, 'attendance', {
         title: isAttending ? 'Новая отметка' : 'Снятие отметки',
         body: isAttending
-          ? `${name} отметился на собрание: ${info.text}`
-          : `${name} снял отметку с собрания: ${info.text}`,
+          ? `${name} отметился на собрание: ${info.text}${feeText}`
+          : `${name} снял отметку с собрания: ${info.text}${feeText}`,
         url: `/event/${eventType}/${eventId}`,
         tag: `attend-${eventId}-${targetId}`,
       });
     })().catch(() => {});
 
-    res.json({ success: true });
+    res.json({ success: true, withdrawnLate: lateWithdraw });
   } catch (err) {
     console.error('Ошибка переключения присутствия на собрании:', err);
     res.status(500).json({ success: false, error: 'Ошибка сервера' });
@@ -108,7 +127,10 @@ export const getMeetingAttendance = async (req, res) => {
             u.id, u.first_name, u.last_name, u.avatar_url,
             tm.photo_url AS team_photo,
             tr.position,
-            tma.has_pay_tag
+            tma.has_pay_tag,
+            tma.pay_role,
+            tma.withdrawn_at,
+            tma.final_fee
           FROM team_meeting_attendance tma
           JOIN users u ON tma.user_id = u.id
           JOIN team_meeting tmtg ON tmtg.id = tma.team_meeting_id
@@ -128,7 +150,10 @@ export const getMeetingAttendance = async (req, res) => {
             u.avatar_url,
             u.avatar_url AS team_photo,
             tr.position,
-            cma.has_pay_tag
+            cma.has_pay_tag,
+            cma.pay_role,
+            cma.withdrawn_at,
+            cma.final_fee
           FROM club_meeting_attendance cma
           JOIN users u ON cma.user_id = u.id
           LEFT JOIN team_members tm ON tm.user_id = u.id AND tm.left_at IS NULL

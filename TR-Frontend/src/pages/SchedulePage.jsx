@@ -18,7 +18,6 @@ import { useFocusRevalidate } from '../hooks/useFocusRevalidate';
 import { usePullToRefresh } from '../hooks/usePullToRefresh';
 import { usePageVisit } from '../hooks/usePageVisit';
 import { PageLoader } from '../ui/Loader';
-import { PullToRefreshIndicator } from '../ui/PullToRefreshIndicator';
 import { FadeIn } from '../ui/FadeIn';
 
 dayjs.extend(isoWeek);
@@ -232,6 +231,12 @@ export function SchedulePage() {
       if (!response.ok || !data.success) {
         throw new Error(data?.message || data?.error || 'Ошибка сохранения');
       }
+
+      // Долевая стоимость зависит от числа отметившихся, поэтому одной локальной
+      // правкой is_attending не обойтись: цену пересчитывает сервер, и после
+      // каждой отметки календарь надо перечитать. Своя отметка меняет цену и
+      // соседям — их карточки тоже приедут свежими.
+      fetchEvents();
     } catch (err) {
       console.error('Ошибка переключения тумблера:', err);
       const rolledBackEvents = events.map(event => 
@@ -384,7 +389,7 @@ export function SchedulePage() {
   // Жест «потяни — обнови» живёт на центральном (видимом) слайде недели. resetKey
   // нужен потому, что при перелистывании слайды пересоздаются и элемент меняется;
   // во время анимации перелистывания жест выключен, чтобы не спорить со свайпом.
-  const { pullDistance, isRefreshing, threshold: pullThreshold } = usePullToRefresh(
+  usePullToRefresh(
     activeSlideRef,
     fetchEvents,
     {
@@ -399,7 +404,6 @@ export function SchedulePage() {
 
   return (
     <FadeIn className="w-full h-full">
-      <PullToRefreshIndicator distance={pullDistance} isRefreshing={isRefreshing} threshold={pullThreshold} />
 
       <div
         className="flex flex-col w-full h-full overflow-hidden relative"

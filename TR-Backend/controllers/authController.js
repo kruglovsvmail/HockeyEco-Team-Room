@@ -453,7 +453,7 @@ export const regVerifyCode = async (req, res) => {
 };
 
 // Длительность пробного периода, выдаваемого в момент активации аккаунта
-const TRIAL_PERIOD_DAYS = 15;
+const TRIAL_PERIOD_DAYS = 30;
 
 export const register = async (req, res) => {
   const client = await pool.connect();

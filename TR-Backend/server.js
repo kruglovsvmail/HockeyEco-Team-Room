@@ -21,6 +21,7 @@ import subscriptionRoutes from './routes/subscriptionRoutes.js';
 import policyRoutes from './routes/policyRoutes.js';
 import drillRoutes from './routes/drillRoutes.js';
 import { processScheduledNotifications, processBirthdays, pollLmsGames } from './services/pushService.js';
+import { lockPastEventFees } from './utils/eventFees.js';
 
 // Импорт новых роутов управления командой
 import mgrEventRoutes from './routes/manager/mgrEventRoutes.js';
@@ -123,6 +124,15 @@ app.listen(PORT, '0.0.0.0', () => {
   setInterval(() => {
     pollLmsGames().catch(err =>
       console.error('Ошибка поллинга LMS-матчей:', err.message)
+    );
+  }, 5 * 60_000);
+
+  // Крон: фиксация долевой стоимости прошедших событий каждые 5 минут.
+  // После начала события цена перестаёт зависеть от состава отметок —
+  // доли раскладываются по отметкам в final_fee и больше не пересчитываются.
+  setInterval(() => {
+    lockPastEventFees().catch(err =>
+      console.error('Ошибка фиксации стоимости прошедших событий:', err.message)
     );
   }, 5 * 60_000);
 });

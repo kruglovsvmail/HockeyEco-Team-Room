@@ -157,7 +157,7 @@ export const getEvents = async (req, res) => {
           COALESCE(opp_team.name, ext_opp.name)::varchar AS opponent_name,
           COALESCE(opp_team.logo_url, ext_opp.logo_url)::varchar AS opponent_logo_url,
           
-          (CASE WHEN g.home_team_id = ut.team_id THEN g.home_player_fee ELSE g.away_player_fee END)::numeric AS my_fee,
+          (CASE WHEN g.home_team_id = ut.team_id THEN g.home_player_fee ELSE g.away_player_fee END)::numeric AS fixed_fee,
           g.home_score::int AS home_score,
           g.away_score::int AS away_score,
           
@@ -201,7 +201,7 @@ export const getEvents = async (req, res) => {
             ELSE true 
           END)::boolean AS show_team_context,
 
-          (EXISTS (SELECT 1 FROM team_game_attendance tga WHERE tga.game_id = g.id AND tga.user_id = $1 AND tga.team_id = ut.team_id))::boolean AS is_attending,
+          (EXISTS (SELECT 1 FROM team_game_attendance tga WHERE tga.game_id = g.id AND tga.user_id = $1 AND tga.team_id = ut.team_id AND tga.withdrawn_at IS NULL))::boolean AS is_attending,
           
           (CASE 
             WHEN g.game_type = 'official' THEN
@@ -248,7 +248,52 @@ export const getEvents = async (req, res) => {
           -- Тип тренировки нужен панели редактирования события. У матчей и собраний
           -- его нет, но колонка обязана быть во всех ветвях UNION ALL — иначе склейка
           -- ниже (SELECT * FROM ..._cte) не сойдётся по числу колонок.
-          NULL::varchar AS training_type
+          NULL::varchar AS training_type,
+
+          -- ── ГИБКАЯ СТОИМОСТЬ ─────────────────────────────────────────────
+          -- Матч хранит обе команды в одной строке, поэтому каждый параметр
+          -- берётся со своей стороны. Итоговый my_fee считается не здесь, а
+          -- один раз после UNION ALL — иначе одну и ту же формулу пришлось бы
+          -- держать в пяти ветках синхронно.
+          (CASE WHEN g.home_team_id = ut.team_id THEN g.home_cost_mode ELSE g.away_cost_mode END)::varchar AS cost_mode,
+          (CASE WHEN g.home_team_id = ut.team_id THEN g.home_total_cost ELSE g.away_total_cost END)::numeric AS total_cost,
+          (CASE WHEN g.home_team_id = ut.team_id THEN g.home_goalies_free ELSE g.away_goalies_free END)::boolean AS goalies_free,
+          (CASE WHEN g.home_team_id = ut.team_id THEN g.home_cost_min_participants ELSE g.away_cost_min_participants END)::int AS cost_min_participants,
+          (CASE WHEN g.home_team_id = ut.team_id THEN g.home_attendance_deadline_hours ELSE g.away_attendance_deadline_hours END)::int AS attendance_deadline_hours,
+          g.cost_locked_at::timestamptz AS cost_locked_at,
+
+          -- Делитель: снявшиеся после дедлайна (withdrawn_at) остаются здесь —
+          -- они продолжают платить, иначе позднее снятие дорожало бы остальным.
+          (SELECT count(*) FROM team_game_attendance att
+            WHERE att.game_id = g.id AND att.team_id = ut.team_id
+              AND att.pay_role <> 'free'
+              AND NOT ((CASE WHEN g.home_team_id = ut.team_id THEN g.home_goalies_free ELSE g.away_goalies_free END)
+                       AND att.pay_role = 'goalie')
+          )::int AS paying_count,
+
+          -- Своя платёжная роль: у отметившегося — из его же отметки (снимок),
+          -- у остальных выводится из заявки на турнир либо из базового состава.
+          COALESCE(
+            (SELECT att.pay_role FROM team_game_attendance att
+             WHERE att.game_id = g.id AND att.user_id = $1 AND att.team_id = ut.team_id),
+            (SELECT CASE WHEN tr.position = 'goalie' THEN 'goalie' ELSE 'skater' END
+             FROM tournament_rosters tr
+             JOIN tournament_teams tt2 ON tr.tournament_team_id = tt2.id
+             WHERE tt2.division_id = g.division_id AND tt2.team_id = ut.team_id
+               AND tr.player_id = $1 AND tr.period_end IS NULL LIMIT 1),
+            (SELECT CASE WHEN tr.position = 'goalie' THEN 'goalie' ELSE 'skater' END
+             FROM team_rosters tr JOIN team_members tmem ON tr.member_id = tmem.id
+             WHERE tmem.user_id = $1 AND tmem.team_id = ut.team_id
+               AND tmem.left_at IS NULL AND tr.left_at IS NULL LIMIT 1),
+            'skater'
+          )::varchar AS my_pay_role,
+
+          (SELECT att.final_fee FROM team_game_attendance att
+           WHERE att.game_id = g.id AND att.user_id = $1 AND att.team_id = ut.team_id)::numeric AS my_final_fee,
+
+          (EXISTS (SELECT 1 FROM team_game_attendance att
+                   WHERE att.game_id = g.id AND att.user_id = $1 AND att.team_id = ut.team_id
+                     AND att.withdrawn_at IS NOT NULL))::boolean AS withdrawn
 
         FROM user_teams ut
         JOIN games g ON (g.home_team_id = ut.team_id OR g.away_team_id = ut.team_id)
@@ -299,7 +344,7 @@ export const getEvents = async (req, res) => {
           NULL::varchar AS opponent_name,
           NULL::varchar AS opponent_logo_url,
           
-          tt.cost::numeric AS my_fee,
+          tt.cost::numeric AS fixed_fee,
           NULL::int AS home_score, 
           NULL::int AS away_score, 
           false::boolean AS is_technical, 
@@ -332,7 +377,7 @@ export const getEvents = async (req, res) => {
 
           (CASE WHEN (SELECT active_clubs FROM user_context) = 0 AND (SELECT active_teams FROM user_context) = 1 THEN false ELSE true END)::boolean AS show_team_context,
 
-          (EXISTS (SELECT 1 FROM team_training_attendance tta WHERE tta.team_training_id = tt.id AND tta.user_id = $1))::boolean AS is_attending,
+          (EXISTS (SELECT 1 FROM team_training_attendance tta WHERE tta.team_training_id = tt.id AND tta.user_id = $1 AND tta.withdrawn_at IS NULL))::boolean AS is_attending,
           
           (COALESCE(
             (SELECT CASE 
@@ -353,7 +398,38 @@ export const getEvents = async (req, res) => {
           -- Тип тренировки нужен панели редактирования события. У матчей и собраний
           -- его нет, но колонка обязана быть во всех ветвях UNION ALL — иначе склейка
           -- ниже (SELECT * FROM ..._cte) не сойдётся по числу колонок.
-          tt.training_type::varchar AS training_type
+          tt.training_type::varchar AS training_type,
+
+          -- ── ГИБКАЯ СТОИМОСТЬ (см. комментарий в блоке матчей) ────────────
+          tt.cost_mode::varchar AS cost_mode,
+          tt.total_cost::numeric AS total_cost,
+          tt.goalies_free::boolean AS goalies_free,
+          tt.cost_min_participants::int AS cost_min_participants,
+          tt.attendance_deadline_hours::int AS attendance_deadline_hours,
+          tt.cost_locked_at::timestamptz AS cost_locked_at,
+
+          (SELECT count(*) FROM team_training_attendance att
+            WHERE att.team_training_id = tt.id
+              AND att.pay_role <> 'free'
+              AND NOT (tt.goalies_free AND att.pay_role = 'goalie')
+          )::int AS paying_count,
+
+          COALESCE(
+            (SELECT att.pay_role FROM team_training_attendance att
+             WHERE att.team_training_id = tt.id AND att.user_id = $1),
+            (SELECT CASE WHEN tr.position = 'goalie' THEN 'goalie' ELSE 'skater' END
+             FROM team_rosters tr JOIN team_members tmem ON tr.member_id = tmem.id
+             WHERE tmem.user_id = $1 AND tmem.team_id = ut.team_id
+               AND tmem.left_at IS NULL AND tr.left_at IS NULL LIMIT 1),
+            'skater'
+          )::varchar AS my_pay_role,
+
+          (SELECT att.final_fee FROM team_training_attendance att
+           WHERE att.team_training_id = tt.id AND att.user_id = $1)::numeric AS my_final_fee,
+
+          (EXISTS (SELECT 1 FROM team_training_attendance att
+                   WHERE att.team_training_id = tt.id AND att.user_id = $1
+                     AND att.withdrawn_at IS NOT NULL))::boolean AS withdrawn
 
         FROM user_teams ut
         JOIN team_training tt ON tt.team_id = ut.team_id
@@ -394,7 +470,7 @@ export const getEvents = async (req, res) => {
           NULL::varchar AS opponent_name,
           NULL::varchar AS opponent_logo_url,
           
-          tm.cost::numeric AS my_fee, 
+          tm.cost::numeric AS fixed_fee, 
           NULL::int AS home_score, 
           NULL::int AS away_score, 
           false::boolean AS is_technical, 
@@ -426,7 +502,7 @@ export const getEvents = async (req, res) => {
           '/default/jersey_light.webp'::varchar AS opponent_jersey_light_url,
 
           (CASE WHEN (SELECT active_clubs FROM user_context) = 0 AND (SELECT active_teams FROM user_context) = 1 THEN false ELSE true END)::boolean AS show_team_context,
-          (EXISTS (SELECT 1 FROM team_meeting_attendance tma WHERE tma.team_meeting_id = tm.id AND tma.user_id = $1))::boolean AS is_attending,
+          (EXISTS (SELECT 1 FROM team_meeting_attendance tma WHERE tma.team_meeting_id = tm.id AND tma.user_id = $1 AND tma.withdrawn_at IS NULL))::boolean AS is_attending,
           (CASE
              -- На собрание ходит вся команда, а не только заявленные, поэтому ростер
              -- здесь не проверяем. Но членство в команде нужно: самоотметку сервер
@@ -449,7 +525,35 @@ export const getEvents = async (req, res) => {
           -- Тип тренировки нужен панели редактирования события. У матчей и собраний
           -- его нет, но колонка обязана быть во всех ветвях UNION ALL — иначе склейка
           -- ниже (SELECT * FROM ..._cte) не сойдётся по числу колонок.
-          NULL::varchar AS training_type
+          NULL::varchar AS training_type,
+
+          -- ── ГИБКАЯ СТОИМОСТЬ (см. комментарий в блоке матчей) ────────────
+          -- goalies_free у собраний в БД нет: список участников плоский,
+          -- деления на вратарей и полевых здесь не существует. Колонка обязана
+          -- быть во всех ветвях UNION ALL, поэтому отдаём константу.
+          tm.cost_mode::varchar AS cost_mode,
+          tm.total_cost::numeric AS total_cost,
+          false::boolean AS goalies_free,
+          tm.cost_min_participants::int AS cost_min_participants,
+          tm.attendance_deadline_hours::int AS attendance_deadline_hours,
+          tm.cost_locked_at::timestamptz AS cost_locked_at,
+
+          (SELECT count(*) FROM team_meeting_attendance att
+            WHERE att.team_meeting_id = tm.id AND att.pay_role <> 'free'
+          )::int AS paying_count,
+
+          COALESCE(
+            (SELECT att.pay_role FROM team_meeting_attendance att
+             WHERE att.team_meeting_id = tm.id AND att.user_id = $1),
+            'skater'
+          )::varchar AS my_pay_role,
+
+          (SELECT att.final_fee FROM team_meeting_attendance att
+           WHERE att.team_meeting_id = tm.id AND att.user_id = $1)::numeric AS my_final_fee,
+
+          (EXISTS (SELECT 1 FROM team_meeting_attendance att
+                   WHERE att.team_meeting_id = tm.id AND att.user_id = $1
+                     AND att.withdrawn_at IS NOT NULL))::boolean AS withdrawn
 
         FROM user_teams ut
         JOIN team_meeting tm ON tm.team_id = ut.team_id
@@ -490,7 +594,7 @@ export const getEvents = async (req, res) => {
           NULL::varchar AS opponent_name,
           NULL::varchar AS opponent_logo_url,
           
-          ct.cost::numeric AS my_fee, 
+          ct.cost::numeric AS fixed_fee, 
           NULL::int AS home_score, 
           NULL::int AS away_score, 
           false::boolean AS is_technical, 
@@ -524,7 +628,7 @@ export const getEvents = async (req, res) => {
           -- У клубного события своего «соперника» нет, но шапку с логотипом и названием
           -- клуба показываем всегда: человек должен видеть, чей это лёд.
           true::boolean AS show_team_context,
-          (EXISTS (SELECT 1 FROM club_training_attendance cta WHERE cta.club_training_id = ct.id AND cta.user_id = $1))::boolean AS is_attending,
+          (EXISTS (SELECT 1 FROM club_training_attendance cta WHERE cta.club_training_id = ct.id AND cta.user_id = $1 AND cta.withdrawn_at IS NULL))::boolean AS is_attending,
           (CASE
                        -- Отмечаться может только тот, кто состоит в общей базе клуба.
                        -- Владелец клуба им быть не обязан: тогда тумблер закрыт, а не падает с ошибкой.
@@ -544,7 +648,40 @@ export const getEvents = async (req, res) => {
           -- Тип тренировки нужен панели редактирования события. У матчей и собраний
           -- его нет, но колонка обязана быть во всех ветвях UNION ALL — иначе склейка
           -- ниже (SELECT * FROM ..._cte) не сойдётся по числу колонок.
-          ct.training_type::varchar AS training_type
+          ct.training_type::varchar AS training_type,
+
+          -- ── ГИБКАЯ СТОИМОСТЬ (см. комментарий в блоке матчей) ────────────
+          -- Амплуа на клубной тренировке берём из любого активного ростера:
+          -- игрок может числиться в нескольких командах клуба. LIMIT 1 здесь
+          -- обязателен — без него дубли ростеров уронили бы подзапрос.
+          ct.cost_mode::varchar AS cost_mode,
+          ct.total_cost::numeric AS total_cost,
+          ct.goalies_free::boolean AS goalies_free,
+          ct.cost_min_participants::int AS cost_min_participants,
+          ct.attendance_deadline_hours::int AS attendance_deadline_hours,
+          ct.cost_locked_at::timestamptz AS cost_locked_at,
+
+          (SELECT count(*) FROM club_training_attendance att
+            WHERE att.club_training_id = ct.id
+              AND att.pay_role <> 'free'
+              AND NOT (ct.goalies_free AND att.pay_role = 'goalie')
+          )::int AS paying_count,
+
+          COALESCE(
+            (SELECT att.pay_role FROM club_training_attendance att
+             WHERE att.club_training_id = ct.id AND att.user_id = $1),
+            (SELECT CASE WHEN tr.position = 'goalie' THEN 'goalie' ELSE 'skater' END
+             FROM team_rosters tr JOIN team_members tmem ON tr.member_id = tmem.id
+             WHERE tmem.user_id = $1 AND tmem.left_at IS NULL AND tr.left_at IS NULL LIMIT 1),
+            'skater'
+          )::varchar AS my_pay_role,
+
+          (SELECT att.final_fee FROM club_training_attendance att
+           WHERE att.club_training_id = ct.id AND att.user_id = $1)::numeric AS my_final_fee,
+
+          (EXISTS (SELECT 1 FROM club_training_attendance att
+                   WHERE att.club_training_id = ct.id AND att.user_id = $1
+                     AND att.withdrawn_at IS NOT NULL))::boolean AS withdrawn
 
         FROM user_clubs uc
         JOIN club_training ct ON ct.club_id = uc.club_id
@@ -585,7 +722,7 @@ export const getEvents = async (req, res) => {
           NULL::varchar AS opponent_name,
           NULL::varchar AS opponent_logo_url,
           
-          cm.cost::numeric AS my_fee, 
+          cm.cost::numeric AS fixed_fee, 
           NULL::int AS home_score, 
           NULL::int AS away_score, 
           false::boolean AS is_technical, 
@@ -617,7 +754,7 @@ export const getEvents = async (req, res) => {
           '/default/jersey_light.webp'::varchar AS opponent_jersey_light_url,
 
           true::boolean AS show_team_context,
-          (EXISTS (SELECT 1 FROM club_meeting_attendance cma WHERE cma.club_meeting_id = cm.id AND cma.user_id = $1))::boolean AS is_attending,
+          (EXISTS (SELECT 1 FROM club_meeting_attendance cma WHERE cma.club_meeting_id = cm.id AND cma.user_id = $1 AND cma.withdrawn_at IS NULL))::boolean AS is_attending,
           (CASE
                        -- Отмечаться может только тот, кто состоит в общей базе клуба.
                        -- Владелец клуба им быть не обязан: тогда тумблер закрыт, а не падает с ошибкой.
@@ -637,7 +774,32 @@ export const getEvents = async (req, res) => {
           -- Тип тренировки нужен панели редактирования события. У матчей и собраний
           -- его нет, но колонка обязана быть во всех ветвях UNION ALL — иначе склейка
           -- ниже (SELECT * FROM ..._cte) не сойдётся по числу колонок.
-          NULL::varchar AS training_type
+          NULL::varchar AS training_type,
+
+          -- ── ГИБКАЯ СТОИМОСТЬ (см. комментарий в блоке матчей) ────────────
+          cm.cost_mode::varchar AS cost_mode,
+          cm.total_cost::numeric AS total_cost,
+          false::boolean AS goalies_free,
+          cm.cost_min_participants::int AS cost_min_participants,
+          cm.attendance_deadline_hours::int AS attendance_deadline_hours,
+          cm.cost_locked_at::timestamptz AS cost_locked_at,
+
+          (SELECT count(*) FROM club_meeting_attendance att
+            WHERE att.club_meeting_id = cm.id AND att.pay_role <> 'free'
+          )::int AS paying_count,
+
+          COALESCE(
+            (SELECT att.pay_role FROM club_meeting_attendance att
+             WHERE att.club_meeting_id = cm.id AND att.user_id = $1),
+            'skater'
+          )::varchar AS my_pay_role,
+
+          (SELECT att.final_fee FROM club_meeting_attendance att
+           WHERE att.club_meeting_id = cm.id AND att.user_id = $1)::numeric AS my_final_fee,
+
+          (EXISTS (SELECT 1 FROM club_meeting_attendance att
+                   WHERE att.club_meeting_id = cm.id AND att.user_id = $1
+                     AND att.withdrawn_at IS NOT NULL))::boolean AS withdrawn
 
         FROM user_clubs uc
         JOIN club_meeting cm ON cm.club_id = uc.club_id
@@ -648,7 +810,48 @@ export const getEvents = async (req, res) => {
       -- ==========================================
       -- ФИНАЛЬНАЯ СКЛЕЙКА (UNION ALL)
       -- ==========================================
-      SELECT * FROM (
+      -- Стоимость считается здесь, а не в каждой ветке: формула одна на все типы
+      -- событий, а ветки отдают только сырые слагаемые.
+      --
+      -- Делитель — фактическое число плательщиков (paying_count), одинаковое для
+      -- всех смотрящих. Неотметившемуся цену «как будет, если отмечусь» не
+      -- показываем: он видит то же, что и остальные, — стоимость по факту отметок.
+      SELECT
+        ev.*,
+        -- my_fee = NULL означает «сумму не показываем»: либо взнос не назначен,
+        -- либо плательщиков меньше порога. Эти случаи разводит fee_status.
+        (CASE
+           WHEN ev.cost_mode <> 'split'                            THEN ev.fixed_fee
+           WHEN ev.total_cost IS NULL                              THEN NULL
+           WHEN ev.total_cost = 0                                  THEN 0
+           WHEN ev.my_pay_role = 'free'                            THEN 0
+           WHEN ev.my_pay_role = 'goalie' AND ev.goalies_free      THEN 0
+           WHEN ev.my_final_fee IS NOT NULL                        THEN ev.my_final_fee
+           WHEN ev.paying_count < GREATEST(ev.cost_min_participants, 1) THEN NULL
+           -- Округление ВВЕРХ до рубля: недобор кассы хуже переплаты в рубль.
+           -- Деления на ноль здесь быть не может — нулевой делитель уходит
+           -- в ветку выше, порог всегда не меньше единицы.
+           ELSE ceil(ev.total_cost / ev.paying_count)
+         END)::numeric AS my_fee,
+
+        -- Как подписывать сумму в интерфейсе:
+        --   none    — взнос не назначен
+        --   fixed   — фиксированная сумма, от состава не зависит
+        --   split   — доля, будет меняться с числом отметившихся (рисуем «≈»)
+        --   pending — сумма есть, но плательщиков меньше порога, цифру прячем
+        --   locked  — событие прошло, доля зафиксирована и больше не изменится
+        --   exempt  — этот участник не платит (вратарь при «вратари бесплатно»)
+        (CASE
+           WHEN ev.cost_mode <> 'split' THEN (CASE WHEN ev.fixed_fee IS NULL THEN 'none' ELSE 'fixed' END)
+           WHEN ev.total_cost IS NULL                              THEN 'none'
+           WHEN ev.total_cost = 0                                  THEN 'fixed'
+           WHEN ev.my_pay_role = 'free'                            THEN 'exempt'
+           WHEN ev.my_pay_role = 'goalie' AND ev.goalies_free      THEN 'exempt'
+           WHEN ev.cost_locked_at IS NOT NULL                      THEN 'locked'
+           WHEN ev.paying_count < GREATEST(ev.cost_min_participants, 1) THEN 'pending'
+           ELSE 'split'
+         END)::varchar AS fee_status
+      FROM (
         SELECT * FROM games_cte
         UNION ALL
         SELECT * FROM team_trainings_cte
@@ -658,7 +861,7 @@ export const getEvents = async (req, res) => {
         SELECT * FROM club_trainings_cte
         UNION ALL
         SELECT * FROM club_meetings_cte
-      ) AS all_events
+      ) AS ev
       WHERE 1=1 ${eventFilters.join('\n      ')}
       ORDER BY event_date ASC;
     `;

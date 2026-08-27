@@ -15,10 +15,15 @@ import { useEffect, useRef, useState } from 'react';
  * прокручен (scrollTop > 0), и отменяется, как только палец уходит вверх или
  * вбок — направление фиксируется после первых AXIS_LOCK пикселей, как это уже
  * сделано у горизонтального свайпа недель в календаре.
+ *
+ * Своего индикатора у жеста нет: пока тянут — обратной связью служит сам
+ * контент, который едет за пальцем, а как только запрос ушёл, процесс показывает
+ * глобальная плашка «Обновляем данные». Отдельный спиннер дублировал её и
+ * заодно заставлял перерисовывать экран на каждом touchmove.
  */
 
 const THRESHOLD  = 70;   // сколько нужно протянуть, чтобы обновление сработало
-const MAX_PULL   = 110;  // дальше палец тянет, а индикатор уже стоит на месте
+const MAX_PULL   = 110;  // дальше палец тянет, а контент уже стоит на месте
 const RESISTANCE = 0.5;  // «тяжесть» жеста: контент идёт медленнее пальца
 const AXIS_LOCK  = 6;    // после стольких пикселей решаем, наш это жест или чужой
 
@@ -30,7 +35,6 @@ const AXIS_LOCK  = 6;    // после стольких пикселей реш�
  *                   где контейнер пересоздаётся (слайды недель в календаре)
  */
 export function usePullToRefresh(scrollRef, onRefresh, { enabled = true, resetKey = null } = {}) {
-  const [pullDistance, setPullDistance] = useState(0);
   const [isRefreshing, setIsRefreshing] = useState(false);
 
   // onRefresh пересоздаётся на каждом рендере — держим в ref, иначе слушатели
@@ -64,7 +68,6 @@ export function usePullToRefresh(scrollRef, onRefresh, { enabled = true, resetKe
       pulling = false;
       distance = 0;
       setOffset(0, animated);
-      setPullDistance(0);
     };
 
     const onTouchStart = (e) => {
@@ -103,7 +106,6 @@ export function usePullToRefresh(scrollRef, onRefresh, { enabled = true, resetKe
       if (e.cancelable) e.preventDefault();
 
       setOffset(distance);
-      setPullDistance(distance);
     };
 
     const onTouchEnd = async () => {
@@ -111,11 +113,12 @@ export function usePullToRefresh(scrollRef, onRefresh, { enabled = true, resetKe
 
       if (distance < THRESHOLD) { reset(); return; }
 
-      // Порог взят: подтягиваем индикатор на фиксированную высоту и ждём данные
+      // Порог взят: контейнер сразу возвращаем на место и грузим данные. Держать
+      // его отжатым больше незачем — в этой прорехе жил индикатор, а теперь о
+      // загрузке говорит глобальная плашка «Обновляем данные».
       isRefreshingRef.current = true;
       setIsRefreshing(true);
-      setPullDistance(THRESHOLD);
-      setOffset(THRESHOLD, true);
+      setOffset(0, true);
 
       try {
         await onRefreshRef.current?.();
@@ -143,5 +146,5 @@ export function usePullToRefresh(scrollRef, onRefresh, { enabled = true, resetKe
     };
   }, [enabled, resetKey, scrollRef]);
 
-  return { pullDistance, isRefreshing, threshold: THRESHOLD };
+  return { isRefreshing };
 }

@@ -1,10 +1,10 @@
 import React, { useState, useEffect, useRef, Suspense, lazy, useCallback } from 'react';
 import { getAuthHeaders, getImageUrl, uiFixed, getTrainingTypeIcon } from '../../../utils/helpers';
 import { Icon } from '../../../ui/Icon';
+import { FeeRow } from '../../../ui/FeeRow';
 import { ChipTabs } from '../../../ui/ChipTabs';
 import { useFocusRevalidate } from '../../../hooks/useFocusRevalidate';
 import { usePullToRefresh } from '../../../hooks/usePullToRefresh';
-import { PullToRefreshIndicator } from '../../../ui/PullToRefreshIndicator';
 import { PageLoader } from '../../../ui/Loader';
 import { FadeIn } from '../../../ui/FadeIn';
 import { useAccess } from '../../../hooks/useAccess';
@@ -44,8 +44,9 @@ const TAB_PANE_WIDTH = `${100 / TRAINING_TABS.length}%`;
 
 // Высота контейнера 1 (text-[30px]=30) = 30px
 const HEADER_1_HEIGHT = 50;
-// Высота строки бейджа «Клубная» над типом события: на неё растёт К1 у клубных событий
-const CLUB_BADGE_ROW_HEIGHT = 22;
+// Высота контекстной строки над типом события (бейдж «Клубная» + чьё событие).
+// Строка есть всегда, поэтому К1 всегда выше на эту величину.
+const CONTEXT_ROW_HEIGHT = 22;
 
 export const EventDetailsTraining = ({ event, openRightPanel }) => {
   const [activeTab, setActiveTab] = useState('attendance');
@@ -176,7 +177,10 @@ export const EventDetailsTraining = ({ event, openRightPanel }) => {
   const [customTimezone,    setCustomTimezone]    = useState(localEvent?.arena_timezone || null);
   const [locationUrl,       setLocationUrl]       = useState(localEvent?.location_url || '');
 
-  const rawFee = localEvent?.my_fee;
+  // Взнос для формы берём из fixed_fee — это сырая сумма с человека из БД.
+  // my_fee сюда брать нельзя: в долевом режиме это доля смотрящего, и сохранение
+  // записало бы её вместо общей стоимости события.
+  const rawFee = localEvent?.fixed_fee;
   const [playerFee, setPlayerFee] = useState(
     rawFee === null || rawFee === undefined ? '' : String(Math.round(Number(rawFee)))
   );
@@ -193,7 +197,7 @@ export const EventDetailsTraining = ({ event, openRightPanel }) => {
     setSelectedArenaName(localEvent?.arena_name || '');
     setCustomTimezone(localEvent?.arena_timezone || null);
     setLocationUrl(localEvent?.location_url || '');
-    const fee = localEvent?.my_fee;
+    const fee = localEvent?.fixed_fee;
     setPlayerFee(fee === null || fee === undefined ? '' : String(Math.round(Number(fee))));
   }, [isBottomSheetOpen, localEvent]);
 
@@ -258,8 +262,7 @@ export const EventDetailsTraining = ({ event, openRightPanel }) => {
 
   // «Потяни вниз — обнови»: тот же ре-фетч, что и при возврате на вкладку,
   // только руками. Жест стартует лишь когда экран прокручен в самый верх.
-  const { pullDistance, isRefreshing, threshold: pullThreshold } =
-    usePullToRefresh(scrollContainerRef, fetchAllTrainingData);
+  usePullToRefresh(scrollContainerRef, fetchAllTrainingData);
 
   // Предзагрузка картинки расстановки из S3 заранее (на уровне страницы деталей, а не вкладки «Расстановка»).
   const [formationFile, setFormationFile] = useState(null);
@@ -346,6 +349,7 @@ export const EventDetailsTraining = ({ event, openRightPanel }) => {
             location_url:    locationUrl,
           }),
           ...(canSaveFinances && {
+            fixed_fee: playerFee === '' ? null : Number(playerFee),
             my_fee: playerFee === '' ? null : Number(playerFee),
           }),
         }));
@@ -365,8 +369,15 @@ export const EventDetailsTraining = ({ event, openRightPanel }) => {
   if (!localEvent) return null;
 
   const isClub = localEvent?.event_type === 'club_training';
-  // У клубного события над типом стоит бейдж «Клубная» — шапка выше на его строку
-  const headerHeight = HEADER_1_HEIGHT + (isClub ? CLUB_BADGE_ROW_HEIGHT : 0);
+  // Шапка всегда выше на контекстную строку (бейдж «Клубная» + чьё событие)
+  const headerHeight = HEADER_1_HEIGHT + CONTEXT_ROW_HEIGHT;
+
+  // Название владельца события нужно только тому, кому есть что перепутать:
+  // при единственной команде (клубе) подпись ничего не добавляет — контекст
+  // и так один на всё приложение.
+  const showOwnerName = isClubEvent
+    ? (localUser?.clubs?.length || 0) > 1
+    : (localUser?.teams?.length || 0) > 1;
   const arenaTz = localEvent?.arena_timezone || 'UTC';
 
   const eventDateObj = targetDate ? dayjs.utc(targetDate).tz(arenaTz) : null;
@@ -388,15 +399,18 @@ export const EventDetailsTraining = ({ event, openRightPanel }) => {
       className="h-full overflow-y-auto scrollbar-hide relative z-10 event-scroll-timeline"
       style={{ overflowAnchor: 'none' }}
     >
-      <PullToRefreshIndicator distance={pullDistance} isRefreshing={isRefreshing} threshold={pullThreshold} />
 
       {/* ── К1: БЕЙДЖ «КЛУБНАЯ» + ТРЕНИРОВКА + ВРЕМЯ — sticky, всегда виден ──
           Высота задана явно и растёт на высоту строки бейджа у клубного события:
           sticky-табы ниже прилипают ровно на headerHeight, поэтому обе величины
           обязаны считаться из одного места — иначе между К1 и табами будет дыра. */}
       <div className="sticky top-0 z-30 bg-surface-base select-none flex flex-col justify-center" style={{ height: uiFixed(headerHeight) }}>
-        {isClub && (
-          <div className="flex w-full px-5" style={{ marginBottom: uiFixed(2) }}>
+        {/* Контекстная строка: чьё это событие. Название команды раньше стояло
+            подписью внутри плитки с иконкой справа — в 80 пикселях оно
+            обрезалось до нечитаемого и спорило с самой иконкой. Здесь у него
+            вся ширина, и оно читается как надзаголовок к «ТРЕНИРОВКЕ». */}
+        <div className="flex items-center gap-2 w-full px-5 min-w-0" style={{ marginBottom: uiFixed(2) }}>
+          {isClub && (
             <span
               className="font-black uppercase tracking-widest rounded-full border shrink-0 whitespace-nowrap"
               style={{
@@ -409,8 +423,16 @@ export const EventDetailsTraining = ({ event, openRightPanel }) => {
             >
               Клубная
             </span>
-          </div>
-        )}
+          )}
+          {showOwnerName && localEvent?.my_team_name && (
+            <span
+              className="font-black uppercase tracking-widest text-content-muted truncate min-w-0"
+              style={{ fontSize: uiFixed(10) }}
+            >
+              {localEvent.my_team_name}
+            </span>
+          )}
+        </div>
         <div className="flex items-center w-full px-5">
           <div className="w-[70%] pr-2 flex items-center gap-2 flex-nowrap min-w-0">
             <span
@@ -476,45 +498,20 @@ export const EventDetailsTraining = ({ event, openRightPanel }) => {
                 На карте →
               </a>
             )}
-            <div className="flex items-center gap-4 min-w-0 mt-4">
-              <Icon
-                name="currency"
-                className="w-4 h-4 shrink-0"
-                style={{
-                  color: localEvent?.my_fee === null || localEvent?.my_fee === undefined
-                    ? 'var(--color-content-subtle)' : activeBrandColor
-                }}
-              />
-              {localEvent?.my_fee !== null && localEvent?.my_fee !== undefined && Number(localEvent.my_fee) !== 0 && (
-                <span className="text-[18px] font-black leading-none truncate" style={{ color: activeBrandColor }}>
-                  {Number(localEvent.my_fee).toLocaleString('ru-RU')} ₽
-                </span>
-              )}
-              {localEvent?.my_fee !== null && localEvent?.my_fee !== undefined && Number(localEvent.my_fee) === 0 && (
-                <span className="text-[18px] font-medium leading-none truncate" style={{ color: activeBrandColor }}>
-                  Бесплатно
-                </span>
-              )}
-              {(localEvent?.my_fee === null || localEvent?.my_fee === undefined) && (
-                <span className="text-[14px] font-medium leading-none truncate text-content-subtle">
-                  Взнос не назначен
-                </span>
-              )}
-            </div>
+            {/* Стоимость. В долевом режиме сумма приходит со знаком «≈» и с
+                пояснением: она пересчитывается на каждое изменение состава. */}
+            <FeeRow event={localEvent} activeBrandColor={activeBrandColor} />
           </div>
 
           {/* Правая часть: иконка типа тренировки вместо джерси. Конкретный тип
               (Бросковая, Катание, Тактическая...) читается из training_type; у
               событий без типа падаем на «Общую» — см. getTrainingTypeIcon. */}
           <div className="shrink-0 w-[80px]">
-            <div className="w-full aspect-square rounded-xl bg-surface-border flex flex-col items-center justify-center gap-0 overflow-hidden">
+            <div className="w-full aspect-square rounded-xl bg-surface-border flex items-center justify-center overflow-hidden">
               <Icon
                 name={getTrainingTypeIcon(localEvent?.training_type)}
-                className="w-12 h-12 text-content-muted"
+                className="w-14 h-14 text-content-muted"
               />
-              <span className="text-[10px] opacity-60 text-content-muted font-normal uppercase text-center px-1.5 w-full">
-                {localEvent?.my_team_name || ''}
-              </span>
             </div>
           </div>
 

@@ -5,7 +5,8 @@ import utc from 'dayjs/plugin/utc';
 import timezone from 'dayjs/plugin/timezone';
 import Toggle from '../../ui/Toggle';
 import { Icon } from '../../ui/Icon';
-import { getImageUrl, getContrastTextColor, uiFixed } from '../../utils/helpers';
+import { getImageUrl, getContrastTextColor, uiFixed, getTrainingTypeIcon } from '../../utils/helpers';
+import { formatEventFee, isAfterWithdrawDeadline } from '../../utils/eventFee';
 import { HintPopover } from '../../ui/HintPopover';
 import { ConfirmSheet } from '../../ui/ConfirmSheet';
 
@@ -57,9 +58,11 @@ const EventCard = ({
   // быстрый способ отличить прошедшее от предстоящего, не вчитываясь в дату.
   const isPastEvent = gameDatePassed || isFinished;
 
+  const isTraining = event.event_type.includes('training');
+
   let eventTitle = '';
   if (isMatch) eventTitle = 'МАТЧ';
-  else if (event.event_type.includes('training')) eventTitle = 'ТРЕНИРОВКА';
+  else if (isTraining) eventTitle = 'ТРЕНИРОВКА';
   else if (event.event_type.includes('meeting')) eventTitle = 'СОБРАНИЕ';
 
   // Клубное событие помечаем прямо в карточке — род подписи по типу события
@@ -449,13 +452,37 @@ const EventCard = ({
                   <span className="text-[14px] font-bold">{jerseyText}</span>
                 </>
               )}
+              {/* У тренировки в этом углу подвала — её тип (Бросковая, Катание,
+                  ОФП...), тем же значком, что и в деталях события. У матча здесь
+                  стоит комплект формы, поэтому слот занят взаимоисключающе.
+                  Размер тот же, что у джерси напротив: подвал должен читаться
+                  одинаково у обоих типов событий. */}
+              {isTraining && (
+                <Icon
+                  name={getTrainingTypeIcon(event.training_type)}
+                  className="w-5 h-5 shrink-0"
+                  style={{ color: activeBrandColor }}
+                />
+              )}
             </div>
 
             <div className="w-1/3 text-center">
-              {event.my_fee != null && (
-                <span className="text-[14px] font-bold leading-none" style={{ color: activeBrandColor }}>
-                  {Number(event.my_fee) === 0 ? 'Бесплатно' : `${Number(event.my_fee).toLocaleString('ru-RU')} ₽`}
-                </span>
+              {/* Долевая стоимость приходит со знаком «≈»: она меняется вместе
+                  с числом отметившихся. Пока плательщиков меньше порога, вместо
+                  суммы стоит «Появится при N» — так первого игрока не пугает
+                  цена всего льда, делённая на него одного. */}
+              {formatEventFee(event) && (
+                event.fee_status === 'pending' ? (
+                  // Длинная подсказка вместо суммы: набирается в две-три строки,
+                  // поэтому межстрочный интервал поджат вплотную.
+                  <span className="block text-[10px] font-bold text-content-subtle leading-[1.05]">
+                    {formatEventFee(event)}
+                  </span>
+                ) : (
+                  <span className="text-[14px] font-bold leading-none" style={{ color: activeBrandColor }}>
+                    {formatEventFee(event)}
+                  </span>
+                )
               )}
             </div>
 
@@ -470,7 +497,15 @@ const EventCard = ({
                     checked={event.is_attending}
                     disabled={isFinished || gameDatePassed}
                     activeColor={activeBrandColor}
-                    onChange={(val) => onToggleAttendance(event.event_id, event.event_type, val, event.my_team_id, event.my_club_id)}
+                    onChange={(val) => {
+                      // Снятие отметки после дедлайна не бесплатное: взнос
+                      // остаётся, поэтому спрашиваем подтверждение до запроса.
+                      if (!val && isAfterWithdrawDeadline(event)) {
+                        setConfirmAction('late-withdraw');
+                        return;
+                      }
+                      onToggleAttendance(event.event_id, event.event_type, val, event.my_team_id, event.my_club_id);
+                    }}
                   />
                 ) : (
                   <HintPopover status={event.toggle_status} />
@@ -549,6 +584,35 @@ const EventCard = ({
         confirmLabel="Да"
         variant="primary"
         activeColor="#10b981"
+      />
+
+      {/* Снятие отметки после дедлайна: отметка уходит, а взнос остаётся —
+          человек должен согласиться на это осознанно, а не узнать постфактум. */}
+      <ConfirmSheet
+        isOpen={confirmAction === 'late-withdraw'}
+        onClose={() => setConfirmAction(null)}
+        isLoading={isActionLoading}
+        onConfirm={async () => {
+          setIsActionLoading(true);
+          try {
+            await onToggleAttendance(event.event_id, event.event_type, false, event.my_team_id, event.my_club_id);
+          } finally {
+            setIsActionLoading(false);
+            setConfirmAction(null);
+          }
+        }}
+        title="Дедлайн уже прошёл"
+        description={
+          <>
+            Отметку снимем, но взнос за событие останется: вы продолжите
+            учитываться в расчёте стоимости и попадёте в список снявшихся после деадлайна.
+            {event.attendance_deadline_hours ? (
+              <> Снять отметку без последствий можно было за {event.attendance_deadline_hours} ч. до начала.</>
+            ) : null}
+          </>
+        }
+        confirmLabel="Снять"
+        variant="danger"
       />
       </div>
 

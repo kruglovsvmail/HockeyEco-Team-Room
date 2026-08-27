@@ -16,6 +16,8 @@ import { Toast } from '../../ui/Toast';
 import { ConfirmSheet } from '../../ui/ConfirmSheet';
 import { ArenaSelector } from '../Manager/ArenaSelector';
 import { ChipTabs } from '../../ui/ChipTabs';
+import { FeeSettingsFields } from '../../ui/FeeSettingsFields';
+import { formatEventFee, eventFeeHint, feeSettingsFromEvent, feeSettingsToBody, feeSettingsToEventPatch } from '../../utils/eventFee';
 
 dayjs.extend(utc);
 dayjs.extend(timezone);
@@ -176,7 +178,7 @@ export const EditEventPanel = ({ data, onClose }) => {
   const [arenaSelectorOpen, setArenaSelectorOpen] = useState(false);
 
   // Finances form
-  const [playerFee, setPlayerFee] = useState('');
+  const [feeSettings, setFeeSettings] = useState(() => feeSettingsFromEvent(null));
   const [homeJersey, setHomeJersey] = useState('light');
   const [awayJersey, setAwayJersey] = useState('dark');
 
@@ -197,8 +199,10 @@ export const EditEventPanel = ({ data, onClose }) => {
     setCustomTimezone(event.arena_timezone || null);
     setLocationUrl(event.location_url || '');
 
-    const fee = event.my_fee;
-    setPlayerFee(fee === null || fee === undefined ? '' : String(Math.round(Number(fee))));
+    // ВАЖНО: в поле ввода идёт fixed_fee (сырой взнос из БД), а не my_fee —
+    // my_fee в долевом режиме это доля смотрящего, и сохранив её, руководитель
+    // записал бы 700 ₽ вместо 10 000 ₽ общей суммы.
+    setFeeSettings(feeSettingsFromEvent(event));
     setHomeJersey(event.home_jersey_type || event.home_jersey || 'light');
     setAwayJersey(event.away_jersey_type || event.away_jersey || 'dark');
 
@@ -303,14 +307,14 @@ export const EditEventPanel = ({ data, onClose }) => {
     try {
       const body = isMatch
         ? {
-            player_fee: playerFee === '' ? null : Number(playerFee),
+            ...feeSettingsToBody(feeSettings),
             home_jersey_type: homeJersey,
             away_jersey_type: awayJersey,
             teamId,
           }
         : {
             teamId, clubId, eventType,
-            player_fee: playerFee === '' ? null : Number(playerFee),
+            ...feeSettingsToBody(feeSettings),
           };
 
       const res = await fetch(`${import.meta.env.VITE_API_URL}${apiBase}/${eventId}/finances`, {
@@ -326,7 +330,7 @@ export const EditEventPanel = ({ data, onClose }) => {
       }
 
       applyPatch({
-        my_fee: playerFee === '' ? null : Number(playerFee),
+        ...feeSettingsToEventPatch(feeSettings, event),
         ...(isMatch ? { home_jersey_type: homeJersey, away_jersey_type: awayJersey } : {}),
       });
       triggerToast('Финансы сохранены', 'success');
@@ -599,12 +603,10 @@ export const EditEventPanel = ({ data, onClose }) => {
         >
           {editingBlock === 'finances' ? (
             <div className="flex flex-col gap-4 pt-1">
-              <TextInputLP
-                label="Стоимость взноса с игрока (₽)"
-                placeholder="Введите сумму..."
-                type="number"
-                value={playerFee}
-                onChange={setPlayerFee}
+              <FeeSettingsFields
+                value={feeSettings}
+                onChange={setFeeSettings}
+                isMeeting={eventType === 'team_meeting' || eventType === 'club_meeting'}
                 disabled={savingBlock === 'finances'}
                 activeColor={activeBrandColor}
               />
@@ -672,11 +674,22 @@ export const EditEventPanel = ({ data, onClose }) => {
           ) : (
             <div className="flex flex-col gap-2">
               <InfoRow
-                label="Взнос"
-                value={event.my_fee === null || event.my_fee === undefined
-                  ? 'Не назначен'
-                  : Number(event.my_fee) === 0 ? 'Бесплатно' : `${Number(event.my_fee).toLocaleString('ru-RU')} ₽`}
+                label={event.cost_mode === 'split' ? 'Взнос (доля)' : 'Взнос'}
+                value={formatEventFee(event) || 'Не назначен'}
               />
+              {event.cost_mode === 'split' && (
+                <InfoRow
+                  label="Стоимость события"
+                  value={event.total_cost === null || event.total_cost === undefined
+                    ? 'Не назначена'
+                    : `${Number(event.total_cost).toLocaleString('ru-RU')} ₽`}
+                />
+              )}
+              {eventFeeHint(event) && (
+                <span className="text-[10px] text-content-muted leading-tight mt-1">
+                  {eventFeeHint(event)}
+                </span>
+              )}
               {isMatch && (
                 <>
                   <InfoRow label="Форма хозяев" value={(event.home_jersey_type || event.home_jersey) === 'dark' ? 'Тёмная' : 'Светлая'} />

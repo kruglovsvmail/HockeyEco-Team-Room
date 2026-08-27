@@ -114,6 +114,11 @@ export const createEvent = async (req, res) => {
     selectedArena,
     feeAmount,
     isFree,
+    costMode,
+    totalCost,
+    goaliesFree,
+    costMinParticipants,
+    attendanceDeadlineHours,
     eventTitle,
     trainingType,
     videoYtUrl,
@@ -171,18 +176,37 @@ export const createEvent = async (req, res) => {
     const arenaTz = selectedArena?.timezone || selectedArena?.arena_timezone || selectedArena?.custom_timezone || 'Europe/Moscow';
     const customTz = selectedArena?.custom_timezone || null;
     
-    // isFree=true → 0 (Бесплатно).
-    // isFree=false + введена сумма → число.
-    // isFree=false + пусто → null (Взнос не указан).
+    // ── Взнос за событие ───────────────────────────────────────────────────
+    // per_person (по умолчанию): сумма с человека лежит в cost.
+    //   isFree=true → 0 (Бесплатно);
+    //   введена сумма → число;
+    //   пусто → null (Взнос не указан).
+    // split: сумма события целиком лежит в total_cost, cost при этом пустой —
+    // так любой не переученный код, читающий cost, покажет «взнос не назначен»,
+    // а не выдаст общую сумму за взнос с игрока.
+    const parseMoney = (value) => {
+      if (value === '' || value === null || value === undefined) return null;
+      const parsed = parseInt(value, 10);
+      return Number.isNaN(parsed) ? null : Math.max(parsed, 0);
+    };
+
+    const safeCostMode = costMode === 'split' ? 'split' : 'per_person';
+    const isSplit = safeCostMode === 'split';
+
     let cost;
-    if (isFree) {
-      cost = 0;
-    } else if (feeAmount === '' || feeAmount === null || feeAmount === undefined) {
-      cost = null;
-    } else {
-      const parsed = parseInt(feeAmount, 10);
-      cost = Number.isNaN(parsed) ? null : parsed;
-    }
+    if (isFree) cost = 0;
+    else if (isSplit) cost = null;
+    else cost = parseMoney(feeAmount);
+
+    const safeTotalCost = isSplit ? (isFree ? 0 : parseMoney(totalCost)) : null;
+    // Вратари бесплатно — по умолчанию включено (см. CHECK и DEFAULT в БД).
+    const safeGoaliesFree = goaliesFree === undefined || goaliesFree === null ? true : !!goaliesFree;
+    // Порог показа: минимум 1 — «показывать сразу».
+    const parsedMin = parseInt(costMinParticipants, 10);
+    const safeMinParticipants = Number.isNaN(parsedMin) || parsedMin < 1 ? 1 : parsedMin;
+    // Дедлайн снятия отметки в часах до начала; null — дедлайна нет.
+    const parsedDeadline = parseInt(attendanceDeadlineHours, 10);
+    const safeDeadlineHours = Number.isNaN(parsedDeadline) || parsedDeadline < 0 ? null : parsedDeadline;
 
     // Разделение контекста локации (Системная ледовая арена ИЛИ Кастомный зал/ОФП/кафе)
     const isManualArena = selectedArena.isManual === true;
@@ -201,10 +225,12 @@ export const createEvent = async (req, res) => {
     if (isClubEvent) {
       if (eventType === 'training') {
         const result = await pool.query(`
-          INSERT INTO "public"."club_training" (club_id, training_date, arena_id, location, location_url, title, cost, custom_timezone, training_type)
-          VALUES ($1, $2::timestamp AT TIME ZONE $3, $4, $5, $6, $7, $8, $9, $10)
+          INSERT INTO "public"."club_training" (club_id, training_date, arena_id, location, location_url, title, cost, custom_timezone, training_type,
+                                                cost_mode, total_cost, goalies_free, cost_min_participants, attendance_deadline_hours)
+          VALUES ($1, $2::timestamp AT TIME ZONE $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
           RETURNING id;
-        `, [clubId, eventTimestamp, arenaTz, arenaId, locationName, locationUrl, eventTitle || 'Клубная тренировка', cost, customTz, safeTrainingType]);
+        `, [clubId, eventTimestamp, arenaTz, arenaId, locationName, locationUrl, eventTitle || 'Клубная тренировка', cost, customTz, safeTrainingType,
+            safeCostMode, safeTotalCost, safeGoaliesFree, safeMinParticipants, safeDeadlineHours]);
 
         const newEventId = result.rows[0].id;
 
@@ -221,10 +247,12 @@ export const createEvent = async (req, res) => {
       }
 
       const result = await pool.query(`
-        INSERT INTO "public"."club_meeting" (club_id, meeting_date, arena_id, location, location_url, title, cost, custom_timezone)
-        VALUES ($1, $2::timestamp AT TIME ZONE $3, $4, $5, $6, $7, $8, $9)
+        INSERT INTO "public"."club_meeting" (club_id, meeting_date, arena_id, location, location_url, title, cost, custom_timezone,
+                                             cost_mode, total_cost, cost_min_participants, attendance_deadline_hours)
+        VALUES ($1, $2::timestamp AT TIME ZONE $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
         RETURNING id;
-      `, [clubId, eventTimestamp, arenaTz, arenaId, locationName, locationUrl, eventTitle || 'Клубное собрание', cost, customTz]);
+      `, [clubId, eventTimestamp, arenaTz, arenaId, locationName, locationUrl, eventTitle || 'Клубное собрание', cost, customTz,
+          safeCostMode, safeTotalCost, safeMinParticipants, safeDeadlineHours]);
 
       const newMeetingId = result.rows[0].id;
 
@@ -245,12 +273,14 @@ export const createEvent = async (req, res) => {
     // ==========================================
     if (eventType === 'training') {
       const insertQuery = `
-        INSERT INTO "public"."team_training" (team_id, training_date, arena_id, location, location_url, title, cost, custom_timezone, training_type)
-        VALUES ($1, $2::timestamp AT TIME ZONE $3, $4, $5, $6, $7, $8, $9, $10)
+        INSERT INTO "public"."team_training" (team_id, training_date, arena_id, location, location_url, title, cost, custom_timezone, training_type,
+                                              cost_mode, total_cost, goalies_free, cost_min_participants, attendance_deadline_hours)
+        VALUES ($1, $2::timestamp AT TIME ZONE $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
         RETURNING id, training_date;
       `;
       const result = await pool.query(insertQuery, [
-        teamId, eventTimestamp, arenaTz, arenaId, locationName, locationUrl, eventTitle || 'Командная тренировка', cost, customTz, safeTrainingType
+        teamId, eventTimestamp, arenaTz, arenaId, locationName, locationUrl, eventTitle || 'Командная тренировка', cost, customTz, safeTrainingType,
+        safeCostMode, safeTotalCost, safeGoaliesFree, safeMinParticipants, safeDeadlineHours
       ]);
       const newEventId = result.rows[0].id;
       // Берём дату обратно из БД: там она уже корректно переведена из времени арены в UTC.
@@ -284,12 +314,14 @@ export const createEvent = async (req, res) => {
     // ==========================================
     if (eventType === 'meeting') {
       const insertQuery = `
-        INSERT INTO "public"."team_meeting" (team_id, meeting_date, arena_id, location, location_url, title, cost, custom_timezone)
-        VALUES ($1, $2::timestamp AT TIME ZONE $3, $4, $5, $6, $7, $8, $9)
+        INSERT INTO "public"."team_meeting" (team_id, meeting_date, arena_id, location, location_url, title, cost, custom_timezone,
+                                             cost_mode, total_cost, cost_min_participants, attendance_deadline_hours)
+        VALUES ($1, $2::timestamp AT TIME ZONE $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
         RETURNING id, meeting_date;
       `;
       const result = await pool.query(insertQuery, [
-        teamId, eventTimestamp, arenaTz, arenaId, locationName, locationUrl, eventTitle || 'Командное собрание', cost, customTz
+        teamId, eventTimestamp, arenaTz, arenaId, locationName, locationUrl, eventTitle || 'Командное собрание', cost, customTz,
+        safeCostMode, safeTotalCost, safeMinParticipants, safeDeadlineHours
       ]);
       const newMeetingId = result.rows[0].id;
       const meetingDateUtc = result.rows[0].meeting_date;
@@ -368,8 +400,13 @@ export const createEvent = async (req, res) => {
           confirm_deadline, home_jersey_type, away_jersey_type, 
           home_player_fee, video_yt_url, video_vk_url, 
           stage_type, stage_label, series_number, initiator_team_id,
-          custom_timezone, location, location_url
-        ) VALUES ($1, $2, $3, $4, $5, $6::timestamp AT TIME ZONE $19, $7, $8, $9::timestamp AT TIME ZONE $19, $10, $11, $12, $13, $14, $15, $16, $17, $18, $20, $21, $22)
+          custom_timezone, location, location_url,
+          -- Создатель матча всегда записывается хозяином (home_team_id = teamId),
+          -- поэтому параметры взноса ложатся на его сторону. Гости настраивают
+          -- свои деньги сами, через блок «Финансы» в карточке матча.
+          home_cost_mode, home_total_cost, home_goalies_free,
+          home_cost_min_participants, home_attendance_deadline_hours
+        ) VALUES ($1, $2, $3, $4, $5, $6::timestamp AT TIME ZONE $19, $7, $8, $9::timestamp AT TIME ZONE $19, $10, $11, $12, $13, $14, $15, $16, $17, $18, $20, $21, $22, $23, $24, $25, $26, $27)
         RETURNING id, game_date, confirm_deadline;
       `;
 
@@ -402,7 +439,12 @@ export const createEvent = async (req, res) => {
         arenaTz, // $19
         customTz, // $20
         locationName, // $21
-        locationUrl   // $22
+        locationUrl,  // $22
+        safeCostMode,        // $23
+        safeTotalCost,       // $24
+        safeGoaliesFree,     // $25
+        safeMinParticipants, // $26
+        safeDeadlineHours    // $27
       ]);
 
       // ИНИЦИАЛИЗАЦИЯ ТАЙМЕРА МАТЧА

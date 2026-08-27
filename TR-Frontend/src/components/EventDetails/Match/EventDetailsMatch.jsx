@@ -1,10 +1,10 @@
 import React, { useState, useEffect, useRef, useMemo, Suspense, lazy, useCallback } from 'react';
 import { getImageUrl, getAuthHeaders, getContrastTextColor, uiFixed } from '../../../utils/helpers';
 import { Icon } from '../../../ui/Icon';
+import { FeeRow } from '../../../ui/FeeRow';
 import { ChipTabs } from '../../../ui/ChipTabs';
 import { useFocusRevalidate } from '../../../hooks/useFocusRevalidate';
 import { usePullToRefresh } from '../../../hooks/usePullToRefresh';
-import { PullToRefreshIndicator } from '../../../ui/PullToRefreshIndicator';
 import { HintPopover } from '../../../ui/HintPopover';
 import { useAccess } from '../../../hooks/useAccess';
 import { PERMISSIONS } from '../../../utils/permissions';
@@ -161,8 +161,7 @@ export const EventDetailsMatch = ({ event, user: userProp, selectedTeam: selecte
 
   // «Потяни вниз — обнови»: тот же ре-фетч, что и при возврате на вкладку,
   // только руками. Жест стартует лишь когда экран прокручен в самый верх.
-  const { pullDistance, isRefreshing, threshold: pullThreshold } =
-    usePullToRefresh(scrollContainerRef, fetchAllMatchData);
+  usePullToRefresh(scrollContainerRef, fetchAllMatchData);
   useEffect(() => () => { if (rafRef.current) cancelAnimationFrame(rafRef.current); }, []);
 
   // Предзагрузка картинки состава из S3 заранее (на уровне страницы деталей, а не вкладки «Состав»).
@@ -220,7 +219,6 @@ export const EventDetailsMatch = ({ event, user: userProp, selectedTeam: selecte
       className="h-full overflow-y-auto scrollbar-hide relative z-10 event-scroll-timeline"
       style={{ overflowAnchor: 'none' }}
     >
-      <PullToRefreshIndicator distance={pullDistance} isRefreshing={isRefreshing} threshold={pullThreshold} />
       {/* ══════════════════════════════════════════════════════════════════════
           АРХИТЕКТУРА ШАПКИ:
           
@@ -309,31 +307,9 @@ export const EventDetailsMatch = ({ event, user: userProp, selectedTeam: selecte
                 <span className="text-[18px] font-normal text-content-main leading-none truncate">{arenaDisplay}</span>
               )}
             </div>
-            <div className="flex items-center gap-4 min-w-0 mt-4">
-              <Icon
-                name="currency"
-                className="w-4 h-4 shrink-0"
-                style={{
-                  color: localEvent.my_fee === null || localEvent.my_fee === undefined
-                    ? 'var(--color-content-subtle)' : activeBrandColor
-                }}
-              />
-              {localEvent.my_fee !== null && localEvent.my_fee !== undefined && Number(localEvent.my_fee) !== 0 && (
-                <span className="text-[18px] font-black leading-none truncate" style={{ color: activeBrandColor }}>
-                  {Number(localEvent.my_fee).toLocaleString('ru-RU')} ₽
-                </span>
-              )}
-              {localEvent.my_fee !== null && localEvent.my_fee !== undefined && Number(localEvent.my_fee) === 0 && (
-                <span className="text-[18px] font-medium leading-none truncate" style={{ color: activeBrandColor }}>
-                  Бесплатно
-                </span>
-              )}
-              {(localEvent.my_fee === null || localEvent.my_fee === undefined) && (
-                <span className="text-[14px] font-medium leading-none truncate text-content-subtle">
-                  Взнос не назначен
-                </span>
-              )}
-            </div>
+            {/* Стоимость. В долевом режиме сумма приходит со знаком «≈» и с
+                пояснением: она пересчитывается на каждое изменение состава. */}
+            <FeeRow event={localEvent} activeBrandColor={activeBrandColor} />
           </div>
 
           {/* Правая часть: блок джерси */}

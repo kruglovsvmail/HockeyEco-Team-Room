@@ -85,6 +85,16 @@ export async function getUserName(userId) {
   return rows[0] ? `${rows[0].last_name} ${rows[0].first_name}` : 'Игрок';
 }
 
+// Долевой режим: в push уходит общая сумма события, а не доля конкретного
+// игрока — она у всех разная (вратарь/полевой, отметился/нет), а тело
+// уведомления одно на всю команду. Точную долю человек увидит в карточке.
+export function formatSplitCostChange(oldTotal, newTotal, eventLabel) {
+  const fmt = (v) => `${Number(v).toLocaleString('ru-RU')} ₽`;
+  if (newTotal === null || newTotal === undefined) return `Стоимость ${eventLabel} — взнос снят`;
+  if (Number(newTotal) === 0) return `Стоимость ${eventLabel} — бесплатно`;
+  return `Стоимость ${eventLabel} — ${fmt(newTotal)} на всех, делится между участниками`;
+}
+
 export function formatFeeChange(oldFee, newFee, eventLabel) {
   const fmt = (v) => `${Number(v).toLocaleString('ru-RU')} ₽`;
   if (newFee === null || newFee === undefined) return `Стоимость ${eventLabel} — взнос снят`;

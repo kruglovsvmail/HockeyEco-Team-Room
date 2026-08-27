@@ -1,7 +1,8 @@
 import pool from '../config/db.js';
 import { getTeamIdFromRequest } from '../utils/checkPermission.js';
 import { promoteExpiredMatchesToNoResult } from '../utils/matchStatus.js';
-import { sendPushToTeamExcept, cancelScheduledNotifications, getMatchInfo, formatFeeChange } from '../services/pushService.js';
+import { sendPushToTeamExcept, cancelScheduledNotifications, getMatchInfo, formatFeeChange, formatSplitCostChange } from '../services/pushService.js';
+import { parseFeeSettings, mapFeeColumnsToMatchSide, buildFeeUpdate } from '../utils/eventFees.js';
 
 // =============================================================================
 // ПОДГРУЗКА СУДЕЙ МАТЧА
@@ -332,7 +333,7 @@ export const updateMatchSchedule = async (req, res) => {
 export const updateMatchFinances = async (req, res) => {
   try {
     const { eventId } = req.params;
-    const { player_fee, home_jersey_type, away_jersey_type } = req.body;
+    const { home_jersey_type, away_jersey_type } = req.body;
     const teamId = getTeamIdFromRequest(req);
 
     if (!teamId) {
@@ -356,30 +357,64 @@ export const updateMatchFinances = async (req, res) => {
       return res.status(403).json({ success: false, error: 'Ваша команда не является участником этого матча' });
     }
 
+    // Финансовые параметры пишем только своей стороне: у хозяев и гостей свои
+    // деньги, свой режим взноса и свой дедлайн снятия отметки. parseFeeSettings
+    // отдаёт канонические имена колонок, mapFeeColumnsToMatchSide переводит их
+    // в home_*/away_*. Не присланные клиентом поля не трогаются вовсе — раньше
+    // отсутствующий player_fee молча обнулял взнос.
+    const patch = mapFeeColumnsToMatchSide(parseFeeSettings(req.body, { goalieAware: true }), isHome);
     const feeColumn = isHome ? 'home_player_fee' : 'away_player_fee';
+    const modeColumn = isHome ? 'home_cost_mode' : 'away_cost_mode';
+    const totalColumn = isHome ? 'home_total_cost' : 'away_total_cost';
 
-    // Старая стоимость для сравнения в push
-    const oldFeeRes = await pool.query(`SELECT ${feeColumn} AS old_fee FROM "public"."games" WHERE id = $1`, [eventId]);
-    const oldMatchFee = oldFeeRes.rows[0]?.old_fee;
-    const newMatchFee = (player_fee === undefined || player_fee === null || player_fee === '') ? null : Number(player_fee);
+    // Старые значения для сравнения в push
+    const prevRes = await pool.query(
+      `SELECT ${feeColumn} AS old_fee, ${modeColumn} AS old_mode, ${totalColumn} AS old_total
+       FROM "public"."games" WHERE id = $1`,
+      [eventId]
+    );
+    const prev = prevRes.rows[0] || {};
+    const oldMatchFee = prev.old_fee === null || prev.old_fee === undefined ? null : Number(prev.old_fee);
+    const oldMatchTotal = prev.old_total === null || prev.old_total === undefined ? null : Number(prev.old_total);
+    const nextMode = patch[modeColumn] ?? prev.old_mode;
+    const newMatchFee = feeColumn in patch ? patch[feeColumn] : oldMatchFee;
+    const newMatchTotal = totalColumn in patch ? patch[totalColumn] : oldMatchTotal;
 
     const sendMatchFeeNotification = () => {
-      if (oldMatchFee === newMatchFee) return;
+      const changed = nextMode === 'split'
+        ? (oldMatchTotal !== newMatchTotal || prev.old_mode !== nextMode)
+        : (oldMatchFee !== newMatchFee || prev.old_mode !== nextMode);
+      if (!changed) return;
       getMatchInfo(eventId, teamId).then(info => {
         sendPushToTeamExcept(teamId, req.user.id, 'schedule', {
           title: 'Изменение стоимости',
-          body: formatFeeChange(oldMatchFee, newMatchFee, `матча ${info.text}`),
+          body: nextMode === 'split'
+            ? formatSplitCostChange(oldMatchTotal, newMatchTotal, `матча ${info.text}`)
+            : formatFeeChange(oldMatchFee, newMatchFee, `матча ${info.text}`),
           url: `/event/match/${eventId}`,
           tag: `fee-${eventId}`,
         });
       }).catch(() => {});
     };
 
-    if (game.game_type === 'official') {
+    // Сохранение денег одинаково для всех типов матча — различается только право
+    // менять комплекты формы, поэтому джерси прицепляются к патчу отдельно.
+    const saveFinances = async (withJersey) => {
+      const full = { ...patch };
+      if (withJersey) {
+        full.home_jersey_type = home_jersey_type || null;
+        full.away_jersey_type = away_jersey_type || null;
+      }
+      const upd = buildFeeUpdate(full, 1);
+      if (upd.isEmpty) return;
       await pool.query(
-        `UPDATE "public"."games" SET ${feeColumn} = $1, updated_at = NOW() WHERE id = $2`,
-        [player_fee !== undefined ? player_fee : null, eventId]
+        `UPDATE "public"."games" SET ${upd.clause}, updated_at = NOW() WHERE id = $${upd.values.length + 1}`,
+        [...upd.values, eventId]
       );
+    };
+
+    if (game.game_type === 'official') {
+      await saveFinances(false);
       sendMatchFeeNotification();
       return res.json({ success: true, message: 'Стоимость участия для игроков вашей команды успешно обновлена' });
     }
@@ -389,45 +424,19 @@ export const updateMatchFinances = async (req, res) => {
 
       // Если редактирует команда-соперник (которую вызвали), разрешаем ей менять ТОЛЬКО свой взнос
       if (!isInitiator) {
-        await pool.query(
-          `UPDATE "public"."games" SET ${feeColumn} = $1, updated_at = NOW() WHERE id = $2`,
-          [player_fee !== undefined ? player_fee : null, eventId]
-        );
+        await saveFinances(false);
         sendMatchFeeNotification();
         return res.json({ success: true, message: 'Стоимость участия для вашей команды успешно обновлена' });
       }
 
       // Если редактирует команда-инициатор, она сохраняет право менять комплекты формы
-      if (game.status === 'pending') {
-        await pool.query(
-          `UPDATE "public"."games" 
-           SET ${feeColumn} = $1, 
-               home_jersey_type = $2, 
-               away_jersey_type = $3, 
-               updated_at = NOW() 
-           WHERE id = $4`,
-          [player_fee !== undefined ? player_fee : null, home_jersey_type || null, away_jersey_type || null, eventId]
-        );
-      } else {
-        await pool.query(
-          `UPDATE "public"."games" SET ${feeColumn} = $1, updated_at = NOW() WHERE id = $2`,
-          [player_fee !== undefined ? player_fee : null, eventId]
-        );
-      }
+      await saveFinances(game.status === 'pending');
       sendMatchFeeNotification();
       return res.json({ success: true, message: 'Финансово-экипировочные параметры успешно сохранены' });
     }
 
     if (game.game_type === 'friendly_ext' || game.game_type === 'tournament_ext') {
-      await pool.query(
-        `UPDATE "public"."games" 
-         SET ${feeColumn} = $1, 
-             home_jersey_type = $2, 
-             away_jersey_type = $3, 
-             updated_at = NOW() 
-         WHERE id = $4`,
-        [player_fee !== undefined ? player_fee : null, home_jersey_type || null, away_jersey_type || null, eventId]
-      );
+      await saveFinances(true);
       sendMatchFeeNotification();
       return res.json({ success: true, message: 'Параметры внешнего матча успешно изменены' });
     }
