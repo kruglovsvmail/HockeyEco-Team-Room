@@ -2,6 +2,33 @@ import bcrypt from 'bcrypt';
 import pool from '../config/db.js'; // Используем единый pool подключения из вашего конфига
 import s3 from '../config/s3.js';   // Используем ваш рабочий конфигурированный клиент S3
 import { processAvatar } from '../utils/imageProcessor.js';
+import { normalizePhone, isVirtualPhone } from '../utils/phone.js';
+import { requestVerificationCall } from '../services/callService.js';
+
+// Параметры подтверждения телефона звонком.
+//
+// Лимиты живут в базе, а не в памяти процесса: каждый звонок стоит 0.40 ₽, а контейнер
+// на Timeweb перезапускается — счётчики в оперативке обнулились бы вместе с ним и
+// перестали защищать баланс.
+const CODE_TTL_MINUTES = 10;        // Сколько живёт код — согласовано с текстом в интерфейсе
+const RESEND_COOLDOWN_SECONDS = 60; // Пауза между заказами звонка
+const MAX_CALLS_PER_DAY = 5;        // Суточный потолок заказов на одного пользователя
+const MAX_CODE_ATTEMPTS = 5;        // Попыток ввода кода до сгорания заявки (перебор 10 000 комбинаций)
+
+// Локальные и внутрисетевые адреса, которые нельзя отдавать в SMS.RU: при разработке
+// с домашней машины req.ip будет вида 192.168.x.x, а такой адрес сервису ни о чём не
+// говорит. У их API для этого случая есть штатное значение -1, которое подставит
+// callService, получив от нас null.
+const PRIVATE_IP_PATTERN = /^(127\.|10\.|192\.168\.|172\.(1[6-9]|2\d|3[01])\.|::1$|fe80:|fc|fd)/i;
+
+// Express отдаёт IPv4 в IPv6-обёртке (::ffff:1.2.3.4), а SMS.RU ждёт обычный адрес.
+// Осмысленное значение приходит сюда только при включённом trust proxy в server.js —
+// иначе это был бы адрес прокси Timeweb, одинаковый для всех пользователей.
+const getClientIp = (req) => {
+  const ip = String(req.ip || '').replace(/^::ffff:/, '');
+  if (!ip || PRIVATE_IP_PATTERN.test(ip)) return null;
+  return ip;
+};
 
 /**
  * Вспомогательный метод загрузки в S3-хранилище, полностью скопированный из TeamController.js
@@ -57,8 +84,11 @@ class ProfileController {
     try {
       const userId = req.user.id;
       
-      // ИСПРАВЛЕНО: Добавлено извлечение поля height
-      const { email, phone, first_name, last_name, middle_name, birth_date, height, weight, grip } = req.body;
+      // ВАЖНО: phone здесь намеренно не принимается. Телефон — это логин, и меняется он
+      // только через пару requestPhoneChange/confirmPhoneChange с подтверждением звонком.
+      // Если писать его отсюда, опечатка в номере навсегда отрезает человека от аккаунта:
+      // ни вход, ни восстановление пароля (оно тоже идёт по телефону) больше не сработают.
+      const { email, first_name, last_name, middle_name, birth_date, height, weight, grip } = req.body;
 
       if (email) {
         const emailCheck = await pool.query('SELECT id FROM users WHERE email = $1 AND id <> $2', [email, userId]);
@@ -71,21 +101,19 @@ class ProfileController {
       const query = `
         UPDATE users
         SET email       = COALESCE($1, email),
-            phone       = COALESCE($2, phone),
-            first_name  = COALESCE($3, first_name),
-            last_name   = COALESCE($4, last_name),
-            middle_name = COALESCE($5, middle_name),
-            birth_date  = COALESCE($6, birth_date),
-            height      = COALESCE($7, height),
-            weight      = COALESCE($8, weight),
-            grip        = COALESCE($9, grip),
+            first_name  = COALESCE($2, first_name),
+            last_name   = COALESCE($3, last_name),
+            middle_name = COALESCE($4, middle_name),
+            birth_date  = COALESCE($5, birth_date),
+            height      = COALESCE($6, height),
+            weight      = COALESCE($7, weight),
+            grip        = COALESCE($8, grip),
             updated_at  = NOW()
-        WHERE id = $10
+        WHERE id = $9
       `;
 
       await pool.query(query, [
         email       ?? null,
-        phone       ?? null,
         first_name  ?? null,
         last_name   ?? null,
         middle_name ?? null,
@@ -100,6 +128,165 @@ class ProfileController {
     } catch (err) {
       console.error('Ошибка в ProfileController.updateProfile:', err);
       return res.status(500).json({ success: false, error: 'Не удалось сохранить изменения' });
+    }
+  }
+
+  // Шаг 1 смены телефона: заказ звонка с кодом на НОВЫЙ номер.
+  // Сам номер в users на этом шаге не пишется — он ждёт подтверждения в phone_verifications.
+  async requestPhoneChange(req, res) {
+    try {
+      const userId = req.user.id;
+      const phone = normalizePhone(req.body.phone);
+
+      if (!phone) {
+        return res.status(400).json({ success: false, error: 'Введите корректный номер телефона' });
+      }
+      if (isVirtualPhone(phone)) {
+        return res.status(400).json({ success: false, error: 'Этот номер служебный и не может быть привязан к аккаунту' });
+      }
+
+      const currentRes = await pool.query('SELECT phone FROM users WHERE id = $1', [userId]);
+      if (currentRes.rows.length === 0) {
+        return res.status(404).json({ success: false, error: 'Пользователь не найден' });
+      }
+      if (normalizePhone(currentRes.rows[0].phone) === phone) {
+        return res.status(400).json({ success: false, error: 'Это ваш текущий номер телефона' });
+      }
+
+      // Занятость проверяем ДО звонка: иначе заплатим за подтверждение и всё равно
+      // упрёмся в уникальный индекс users_phone_unique на записи номера.
+      const busy = await pool.query('SELECT id FROM users WHERE phone = $1 AND id <> $2', [phone, userId]);
+      if (busy.rows.length > 0) {
+        return res.status(400).json({ success: false, error: 'Этот номер уже привязан к другому аккаунту' });
+      }
+
+      // Обе защиты считаем одним запросом: пауза между звонками и суточный потолок
+      const limits = await pool.query(`
+        SELECT
+          COUNT(*) FILTER (WHERE created_at > NOW() - make_interval(secs => $2)) AS in_cooldown,
+          COUNT(*) FILTER (WHERE created_at > NOW() - INTERVAL '1 day')          AS calls_today
+        FROM phone_verifications
+        WHERE user_id = $1 AND purpose = 'profile_change'
+      `, [userId, RESEND_COOLDOWN_SECONDS]);
+
+      if (Number(limits.rows[0].in_cooldown) > 0) {
+        return res.status(429).json({ success: false, error: 'Повторный звонок можно заказать через минуту' });
+      }
+      if (Number(limits.rows[0].calls_today) >= MAX_CALLS_PER_DAY) {
+        return res.status(429).json({ success: false, error: 'Исчерпан суточный лимит подтверждений. Попробуйте завтра.' });
+      }
+
+      // Код придумывает не сервер: SMS.RU возвращает последние 4 цифры номера,
+      // с которого совершит звонок, — именно они и есть код подтверждения.
+      let call;
+      try {
+        call = await requestVerificationCall(phone, getClientIp(req));
+      } catch (callErr) {
+        return res.status(502).json({ success: false, error: callErr.message });
+      }
+
+      const codeHash = await bcrypt.hash(call.code, 10);
+
+      // Гасим прошлые незакрытые заявки: активной у пользователя должна быть ровно одна,
+      // иначе старый код от предыдущего номера остался бы рабочим.
+      await pool.query(`
+        UPDATE phone_verifications SET expires_at = NOW()
+        WHERE user_id = $1 AND purpose = 'profile_change' AND confirmed_at IS NULL AND expires_at > NOW()
+      `, [userId]);
+
+      const inserted = await pool.query(`
+        INSERT INTO phone_verifications (phone, purpose, user_id, code_hash, call_id, request_ip, expires_at)
+        VALUES ($1, 'profile_change', $2, $3, $4, $5, NOW() + make_interval(mins => $6))
+        RETURNING expires_at
+      `, [phone, userId, codeHash, call.callId, getClientIp(req), CODE_TTL_MINUTES]);
+
+      return res.json({
+        success: true,
+        phone,
+        expiresAt: inserted.rows[0].expires_at,
+        message: 'Ожидайте входящий звонок'
+      });
+    } catch (err) {
+      console.error('Ошибка в ProfileController.requestPhoneChange:', err);
+      return res.status(500).json({ success: false, error: 'Не удалось заказать звонок' });
+    }
+  }
+
+  // Шаг 2 смены телефона: сверка кода и перенос номера в users.
+  async confirmPhoneChange(req, res) {
+    try {
+      const userId = req.user.id;
+      const code = String(req.body.code || '').replace(/\D/g, '');
+
+      if (code.length !== 4) {
+        return res.status(400).json({ success: false, error: 'Код состоит из четырёх цифр' });
+      }
+
+      const pending = await pool.query(`
+        SELECT id, phone, code_hash, attempts
+        FROM phone_verifications
+        WHERE user_id = $1 AND purpose = 'profile_change'
+          AND confirmed_at IS NULL AND expires_at > NOW()
+        ORDER BY created_at DESC
+        LIMIT 1
+      `, [userId]);
+
+      if (pending.rows.length === 0) {
+        return res.status(400).json({ success: false, error: 'Срок действия кода истёк. Закажите звонок заново.' });
+      }
+
+      const request = pending.rows[0];
+
+      if (request.attempts >= MAX_CODE_ATTEMPTS) {
+        await pool.query('UPDATE phone_verifications SET expires_at = NOW() WHERE id = $1', [request.id]);
+        return res.status(400).json({ success: false, error: 'Исчерпаны попытки ввода. Закажите звонок заново.' });
+      }
+
+      const isMatch = await bcrypt.compare(code, request.code_hash);
+      if (!isMatch) {
+        const updated = await pool.query(
+          'UPDATE phone_verifications SET attempts = attempts + 1 WHERE id = $1 RETURNING attempts',
+          [request.id]
+        );
+        const attemptsLeft = MAX_CODE_ATTEMPTS - updated.rows[0].attempts;
+        return res.status(400).json({
+          success: false,
+          error: attemptsLeft > 0
+            ? `Неверный код. Осталось попыток: ${attemptsLeft}`
+            : 'Исчерпаны попытки ввода. Закажите звонок заново.'
+        });
+      }
+
+      // Между заказом звонка и вводом кода номер мог занять кто-то другой,
+      // поэтому уникальность перепроверяем в одной транзакции с записью.
+      const client = await pool.connect();
+      try {
+        await client.query('BEGIN');
+
+        const busy = await client.query('SELECT id FROM users WHERE phone = $1 AND id <> $2', [request.phone, userId]);
+        if (busy.rows.length > 0) {
+          await client.query('ROLLBACK');
+          return res.status(400).json({ success: false, error: 'Этот номер уже привязан к другому аккаунту' });
+        }
+
+        await client.query(
+          'UPDATE users SET phone = $1, phone_verified_at = NOW(), updated_at = NOW() WHERE id = $2',
+          [request.phone, userId]
+        );
+        await client.query('UPDATE phone_verifications SET confirmed_at = NOW() WHERE id = $1', [request.id]);
+
+        await client.query('COMMIT');
+      } catch (txErr) {
+        await client.query('ROLLBACK');
+        throw txErr;
+      } finally {
+        client.release();
+      }
+
+      return res.json({ success: true, phone: request.phone, message: 'Номер телефона подтверждён' });
+    } catch (err) {
+      console.error('Ошибка в ProfileController.confirmPhoneChange:', err);
+      return res.status(500).json({ success: false, error: 'Не удалось подтвердить номер' });
     }
   }
 

@@ -119,6 +119,13 @@ export function ProfilePage() {
   const [draftHockey, setDraftHockey] = useState({ height: '', weight: '', grip: 'left' });
   const [draftContacts, setDraftContacts] = useState({ email: '', phone: '' });
 
+  // Состояние подтверждения нового номера звонком.
+  // phoneVerify не null — блок контактов показывает шаг ввода кода вместо обычного просмотра.
+  const [phoneVerify, setPhoneVerify] = useState(null); // { phone, expiresAt }
+  const [verifyCode, setVerifyCode] = useState('');
+  const [verifySeconds, setVerifySeconds] = useState(0);
+  const [verifyLoading, setVerifyLoading] = useState(false);
+
   // Ref-флаги режимов редактирования — всегда актуальны внутри async-функций (нет stale closure).
   const editingRef = useRef({ personal: false, hockey: false, contacts: false });
 
@@ -216,14 +223,78 @@ export function ProfilePage() {
       const json = await res.json();
       if (json.success) {
         triggerToast('Данные успешно синхронизированы', 'success');
-        
+
         if (blockKey === 'personal') setIsEditPersonal(false);
         if (blockKey === 'hockey') setIsEditHockey(false);
         if (blockKey === 'contacts') setIsEditContacts(false);
-        
+
         await loadProfileData();
+        return true;
+      }
+      triggerToast(json.error || 'Ошибка обновления полей', 'danger');
+      return false;
+    } catch (err) {
+      console.error(err);
+      triggerToast('Ошибка соединения с базой', 'danger');
+      return false;
+    } finally {
+      setSavingBlock(null);
+    }
+  };
+
+  // Сохранение блока контактов.
+  //
+  // Почта уходит обычным сохранением, а телефон — нет: он является логином, поэтому
+  // новый номер вступает в силу только после подтверждения звонком. Здесь мы лишь
+  // заказываем звонок, запись в базу произойдёт после ввода кода.
+  const handleSaveContacts = async () => {
+    const cleanPhone = draftContacts.phone.replace(/\D/g, '');
+    const currentPhone = String(phone || '').replace(/\D/g, '');
+
+    if (cleanPhone.length > 0 && cleanPhone.length !== 10) {
+      triggerToast('Введите номер телефона полностью', 'danger');
+      return;
+    }
+
+    // Почту сохраняем первой: если она занята, до платного звонка дело не дойдёт
+    if (draftContacts.email !== email) {
+      const emailSaved = await handleSaveBlock('contacts', { email: draftContacts.email });
+      if (!emailSaved) return;
+    }
+
+    if (cleanPhone.length === 10 && cleanPhone !== currentPhone) {
+      await requestPhoneCall(`+7${cleanPhone}`);
+      return;
+    }
+
+    editingRef.current.contacts = false;
+    setIsEditContacts(false);
+  };
+
+  // Заказ звонка с кодом на новый номер
+  const requestPhoneCall = async (targetPhone) => {
+    setSavingBlock('contacts');
+    try {
+      const res = await fetch(`${import.meta.env.VITE_API_URL}/api/profile/phone/request`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...getAuthHeaders(),
+        },
+        body: JSON.stringify({ phone: targetPhone }),
+      });
+      const json = await res.json();
+      if (json.success) {
+        editingRef.current.contacts = false;
+        setIsEditContacts(false);
+        setVerifyCode('');
+        // Счётчик выставляем сразу, не дожидаясь первого тика таймера, иначе на один
+        // кадр отрисуется «срок действия кода истёк» с заблокированной кнопкой
+        setVerifySeconds(Math.max(0, Math.round((new Date(json.expiresAt) - Date.now()) / 1000)));
+        setPhoneVerify({ phone: json.phone || targetPhone, expiresAt: json.expiresAt });
+        triggerToast('Ожидайте входящий звонок', 'success');
       } else {
-        triggerToast(json.error || 'Ошибка обновления полей', 'danger');
+        triggerToast(json.error || 'Не удалось заказать звонок', 'danger');
       }
     } catch (err) {
       console.error(err);
@@ -232,6 +303,68 @@ export function ProfilePage() {
       setSavingBlock(null);
     }
   };
+
+  // Сверка кода: на этом шаге номер и записывается в базу как новый логин
+  const handleConfirmPhoneCode = async () => {
+    setVerifyLoading(true);
+    try {
+      const res = await fetch(`${import.meta.env.VITE_API_URL}/api/profile/phone/confirm`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...getAuthHeaders(),
+        },
+        body: JSON.stringify({ code: verifyCode }),
+      });
+      const json = await res.json();
+      if (json.success) {
+        setPhoneVerify(null);
+        setVerifyCode('');
+        triggerToast('Номер телефона подтверждён', 'success');
+        await loadProfileData();
+      } else {
+        setVerifyCode('');
+        triggerToast(json.error || 'Неверный код', 'danger');
+      }
+    } catch (err) {
+      console.error(err);
+      triggerToast('Ошибка соединения с базой', 'danger');
+    } finally {
+      setVerifyLoading(false);
+    }
+  };
+
+  // Отказ от смены номера: заявка на сервере догорит сама по expires_at
+  const cancelPhoneVerify = () => {
+    setPhoneVerify(null);
+    setVerifyCode('');
+  };
+
+  // Код истёк — возвращаем в редактирование с уже подставленным номером,
+  // чтобы заказать звонок заново можно было одним нажатием на галочку
+  const restartPhoneVerify = () => {
+    const pendingPhone = phoneVerify?.phone;
+    setPhoneVerify(null);
+    setVerifyCode('');
+    setDraftContacts({ email, phone: normalizePhoneForInput(pendingPhone) });
+    editingRef.current.contacts = true;
+    setIsEditContacts(true);
+  };
+
+  // Обратный отсчёт жизни кода. Сервер всё равно проверит expires_at сам,
+  // но пользователю нужно видеть, сколько осталось, и вовремя получить кнопку повтора.
+  useEffect(() => {
+    if (!phoneVerify?.expiresAt) return;
+
+    const tick = () => {
+      const left = Math.max(0, Math.round((new Date(phoneVerify.expiresAt) - Date.now()) / 1000));
+      setVerifySeconds(left);
+    };
+
+    tick();
+    const timerId = setInterval(tick, 1000);
+    return () => clearInterval(timerId);
+  }, [phoneVerify]);
 
   // Мгновенная загрузка аватарки в S3 при изменении медиа
   const handleAvatarChange = async (file) => {
@@ -490,12 +623,11 @@ export function ProfilePage() {
                 icon="users"
                 isEditing={isEditContacts}
                 isSaving={savingBlock === 'contacts'}
-                onAction={() => {
+                // Во время ожидания кода карандашик убираем: пока номер не подтверждён,
+                // возвращаться в редактирование полей нельзя — заявка уже создана на сервере
+                onAction={phoneVerify ? null : () => {
                   if (isEditContacts) {
-                    // Нормализуем телефон обратно: убираем пробелы, шлём только 10 цифр с префиксом 7
-                    editingRef.current.contacts = false;
-                    const cleanPhone = draftContacts.phone.replace(/\D/g, '');
-                    handleSaveBlock('contacts', { email: draftContacts.email, phone: cleanPhone ? `+7${cleanPhone}` : undefined });
+                    handleSaveContacts();
                   } else {
                     setDraftContacts({ email, phone });
                     editingRef.current.contacts = true;
@@ -503,10 +635,49 @@ export function ProfilePage() {
                   }
                 }}
               >
-                {isEditContacts ? (
+                {phoneVerify ? (
+                  <div className="space-y-3 pt-1">
+                    <div className="text-[12px] font-semibold text-content-muted leading-relaxed">
+                      На номер <span className="font-black text-content-main">{formatPhoneNumber(phoneVerify.phone)}</span> поступит звонок.
+                      Отвечать не нужно — введите <span className="font-black text-brand">последние 4 цифры</span> номера, с которого звонили.
+                    </div>
+
+                    <TextInputLP
+                      label="Код подтверждения"
+                      value={verifyCode}
+                      onChange={(v) => setVerifyCode(v.replace(/\D/g, '').slice(0, 4))}
+                      placeholder="0000"
+                      textAlign="center"
+                      maxLength={4}
+                    />
+
+                    <div className="text-[10px] font-bold uppercase tracking-wider text-center text-content-subtle">
+                      {verifySeconds > 0
+                        ? `Код действует ещё ${Math.floor(verifySeconds / 60)}:${String(verifySeconds % 60).padStart(2, '0')}`
+                        : 'Срок действия кода истёк'}
+                    </div>
+
+                    <ButtonLP
+                      variant="primary"
+                      className="!py-2.5 !h-11 text-[14px]"
+                      isLoading={verifyLoading}
+                      disabled={verifyCode.length !== 4 || verifySeconds === 0}
+                      onClick={handleConfirmPhoneCode}
+                    >
+                      Подтвердить номер
+                    </ButtonLP>
+
+                    <ButtonLP variant="text" onClick={verifySeconds > 0 ? cancelPhoneVerify : restartPhoneVerify}>
+                      {verifySeconds > 0 ? 'Отменить смену номера' : 'Заказать звонок заново'}
+                    </ButtonLP>
+                  </div>
+                ) : isEditContacts ? (
                   <div className="space-y-3 pt-1">
                     <TextInputLP label="Почта" value={draftContacts.email} onChange={(v) => setDraftContacts(p => ({ ...p, email: v }))} placeholder="example@mail.ru" />
                     <PhoneInputLP label="Телефон" value={draftContacts.phone} onChange={(v) => setDraftContacts(p => ({ ...p, phone: v }))} placeholder="900 000 00 00" />
+                    <div className="text-[10px] font-semibold text-content-subtle leading-relaxed">
+                      Телефон — это логин для входа. При смене номера на новый поступит звонок с кодом подтверждения.
+                    </div>
                   </div>
                 ) : (
                   <div className="flex flex-col">

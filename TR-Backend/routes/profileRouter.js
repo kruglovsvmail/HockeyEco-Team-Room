@@ -40,6 +40,12 @@ router.post('/api/profile/avatar', verifyToken, (req, res, next) => {
   });
 }, profileController.updateAvatar);
 
+// Смена телефона в два шага: заказ звонка с кодом и подтверждение кода.
+// Отдельно от PUT /api/profile, потому что телефон — это логин: новый номер
+// вступает в силу только после того, как пользователь докажет, что владеет им.
+router.post('/api/profile/phone/request', verifyToken, profileController.requestPhoneChange);
+router.post('/api/profile/phone/confirm', verifyToken, profileController.confirmPhoneChange);
+
 // Эндпоинты удаления аватара, смены паролей и пин-кодов
 router.delete('/api/profile/avatar', verifyToken, profileController.deleteAvatar);
 router.put('/api/profile/password', verifyToken, profileController.changePassword);

@@ -32,6 +32,13 @@ import mgrHandbookRoutes from './routes/manager/mgrHandbookRoutes.js';
 const app = express();
 const PORT = process.env.PORT || 3002;
 
+// Приложение живёт за прокси Timeweb Cloud: HTTPS терминируется там, а в контейнер
+// приходит обычный HTTP, поэтому без этой строки req.ip отдавал бы адрес прокси —
+// один и тот же для всех пользователей. Значение 1 — доверяем ровно одному узлу
+// перед нами, то есть берём адрес, который проставил сам прокси, а не тот, что мог
+// подделать клиент в заголовке X-Forwarded-For.
+app.set('trust proxy', 1);
+
 // --- Настройка CORS ---
 const allowedOrigins = [
   process.env.FRONTEND_URL,
