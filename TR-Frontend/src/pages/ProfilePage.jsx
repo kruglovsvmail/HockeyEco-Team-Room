@@ -193,10 +193,18 @@ export function ProfilePage() {
         // Восстановление экрана ожидания звонка. Нужно потому, что во время звонка PWA
         // уходит в фон, а iOS в standalone-режиме нередко перезагружает его целиком —
         // React-состояние при этом теряется, а заявка на сервере продолжает жить.
+        // Ссылку на объект сохраняем прежней, если заявка та же самая. Иначе каждый
+        // возврат фокуса менял бы identity phoneVerify, перезапускал эффект опроса
+        // статуса и отменял уже улетевший запрос — именно так терялся ответ
+        // «номер подтверждён», и экран ожидания зависал при живой смене телефона.
         const pendingCall = json.pendingPhoneVerification;
         if (pendingCall) {
           setVerifySeconds(Math.max(0, Math.round((new Date(pendingCall.expiresAt) - Date.now()) / 1000)));
-          setPhoneVerify(pendingCall);
+          setPhoneVerify((prev) => (
+            prev && prev.phone === pendingCall.phone && prev.expiresAt === pendingCall.expiresAt
+              ? prev
+              : pendingCall
+          ));
         }
       }
     } catch (err) {
@@ -671,17 +679,29 @@ export function ProfilePage() {
               >
                 {phoneVerify ? (
                   <div className="space-y-3 pt-1">
-                    <div className="text-[12px] font-semibold text-content-muted leading-relaxed">
-                      Позвоните на номер ниже <span className="font-black text-brand">с телефона {formatPhoneNumber(phoneVerify.phone)}</span>.
-                      Звонок бесплатный, вызов сбросится сам — отвечать никто не будет. Так мы убедимся, что номер действительно ваш.
+                    <div className="space-y-2">
+                      <div className="text-[15px] font-black text-content-main leading-snug">
+                        Подтвердите новый номер
+                      </div>
+
+
+
+                      <div className="text-[15px] font-sтщкьфд text-content-muted leading-relaxed">
+                        Для подтверждения номера телефона, необходимо позвоните на номер ниже с телефона, который подтверждаете. Звонок бесплатный: робот произнесёт короткое сообщение и сам завершит вызов, отвечать не нужно.
+                      </div>
                     </div>
 
                     <a
                       href={`tel:${phoneVerify.callPhone}`}
-                      className="block w-full py-3 text-center rounded-2xl bg-surface-level2 border border-surface-border text-[20px] font-black tracking-wide text-content-main active:scale-[0.98] transition-transform"
+                      className="flex items-center justify-center gap-2.5 w-full py-3 rounded-2xl bg-surface-level2 border border-surface-border text-[20px] font-black tracking-wide text-content-main active:scale-[0.98] transition-transform"
                     >
+                      <Icon name="phone" className="w-5 h-5 text-brand shrink-0" />
                       {phoneVerify.callPhonePretty || formatPhoneNumber(phoneVerify.callPhone)}
                     </a>
+
+                    <div className="text-[13px] font-semibold text-content-muted leading-relaxed text-center">
+                      Как только звонок дойдёт, номер сменится сам и это окно закроется.
+                    </div>
 
                     {verifySeconds > 0 ? (
                       <div className="flex items-center justify-center gap-2 text-[10px] font-bold uppercase tracking-wider text-content-subtle">
@@ -704,9 +724,7 @@ export function ProfilePage() {
                   <div className="space-y-3 pt-1">
                     <TextInputLP label="Почта" value={draftContacts.email} onChange={(v) => setDraftContacts(p => ({ ...p, email: v }))} placeholder="example@mail.ru" />
                     <PhoneInputLP label="Телефон" value={draftContacts.phone} onChange={(v) => setDraftContacts(p => ({ ...p, phone: v }))} placeholder="900 000 00 00" />
-                    <div className="text-[10px] font-semibold text-content-subtle leading-relaxed">
-                      Телефон — это логин для входа. Чтобы сменить номер, нужно будет позвонить с нового телефона на короткий номер — звонок бесплатный.
-                    </div>
+
                   </div>
                 ) : (
                   <div className="flex flex-col">

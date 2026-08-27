@@ -72,14 +72,14 @@ export const FeeSettingsFields = ({
           onChange={(mode) => !disabled && patch({ costMode: mode })}
           activeColor={activeColor}
         />
-        <span className="text-[10px] text-content-muted leading-tight pl-1">
+        <span className="text-[12px] font-тщкьфд text-content-muted leading-tight pl-1">
           {isSplit
             ? `Введите стоимость всего события — она разделится между отметившимися. Чем больше ${isMeeting ? 'участников' : 'игроков'}, тем дешевле каждому.`
             : `Фиксированная сумма с каждого ${who}, от числа отметившихся не зависит.`}
         </span>
       </div>
 
-      <div className="grid grid-cols-2 gap-3 items-end">
+      <div className="grid grid-cols-2 gap-3 items-end mt-5">
         <TextInputLP
           label={isSplit ? 'Общая сумма' : `Взнос ${who}`}
           placeholder="Не указан"
@@ -101,12 +101,10 @@ export const FeeSettingsFields = ({
       {isSplit && !isFree && (
         <>
           {!isMeeting && (
-            <div className="flex items-center justify-between gap-4 px-1">
+            <div className="flex items-center justify-between gap-4 px-1 mt-6">
               <div className="min-w-0">
                 <span className="text-[14px] font-bold text-content-main block">Вратари бесплатно</span>
-                <span className="text-[10px] text-content-muted leading-tight block mt-0.5">
-                  Вратари не платят, сумма делится только между полевыми
-                </span>
+
               </div>
               <Toggle
                 checked={goaliesFree}
@@ -117,7 +115,7 @@ export const FeeSettingsFields = ({
             </div>
           )}
 
-          <div className="flex flex-col gap-1.5">
+          <div className="flex flex-col gap-1.5 mt-6">
             <StepperLP
               label="Показывать цену от"
               value={minParticipants}
@@ -128,19 +126,18 @@ export const FeeSettingsFields = ({
               disabled={disabled}
               activeColor={activeColor}
             />
-            <span className="text-[10px] text-content-muted leading-tight pl-1">
+            <span className="text-[12px] text-content-muted leading-tight pl-1">
               {/* Формулировку берём из того же места, что и карточка события,
                   чтобы руководитель видел ровно то, что увидит игрок. */}
-              Пока отметившихся меньше, вместо суммы будет «{FEE_PENDING_TEXT}» —
-              первого {who} не отпугнёт стоимость всего события.
+              Пока отметившихся меньше, взнос будет скрыт.
             </span>
           </div>
         </>
       )}
 
-      <div className="flex flex-col gap-1.5">
+      <div className="flex flex-col gap-1.5 mt-6">
         <StepperLP
-          label="Снять отметку можно до"
+          label="Деадлайн снятия отметки"
           value={deadlineHours ?? 0}
           onChange={(val) => patch({ deadlineHours: val })}
           min={0}
@@ -149,9 +146,9 @@ export const FeeSettingsFields = ({
           disabled={disabled}
           activeColor={activeColor}
         />
-        <span className="text-[10px] text-content-muted leading-tight pl-1">
+        <span className="text-[12px] text-content-muted leading-tight pl-1">
           {Number(deadlineHours) > 0
-            ? `За ${deadlineHours} ч. до начала отметки закрываются: кто снимется позже, всё равно платит и попадёт в отдельный список.`
+            ? `Кто снимет отметку позже, всё равно будет учитыается в расчете общей суммы.`
             : 'Снять отметку можно до самого начала события.'}
         </span>
       </div>

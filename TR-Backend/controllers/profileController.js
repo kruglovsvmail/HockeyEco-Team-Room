@@ -242,6 +242,24 @@ class ProfileController {
       const pending = await findPendingVerification(userId);
 
       if (!pending) {
+        // Активной заявки нет — но она могла закрыться подтверждением прямо сейчас.
+        // Фронт опрашивает статус в несколько потоков (интервал плюс возврат фокуса),
+        // и ответ на тот запрос, который реально подтвердил номер, легко теряется:
+        // приложение в этот момент возвращается из звонилки и перерисовывается.
+        // Поэтому свежее подтверждение отдаём повторно, сколько бы раз ни спросили —
+        // иначе экран ожидания зависнет навсегда, хотя телефон уже сменился.
+        const recent = await pool.query(`
+          SELECT phone FROM phone_verifications
+          WHERE user_id = $1 AND purpose = 'profile_change'
+            AND confirmed_at > NOW() - INTERVAL '10 minutes'
+          ORDER BY confirmed_at DESC
+          LIMIT 1
+        `, [userId]);
+
+        if (recent.rows.length > 0) {
+          return res.json({ success: true, confirmed: true, active: false, phone: recent.rows[0].phone });
+        }
+
         return res.json({ success: true, confirmed: false, active: false });
       }
 
