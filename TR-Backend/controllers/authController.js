@@ -252,15 +252,14 @@ export const login = async (req, res) => {
       return res.status(429).json({ success: false, error: guard.error });
     }
 
+    // Проверки членства в командах здесь больше нет. Раньше вход отклонялся, если человек
+    // не состоял ни в одной команде или клубе, — с появлением самостоятельной регистрации
+    // это стало тупиком: человек заводит аккаунт, подтверждает номер и упирается в отказ
+    // ещё до того, как руководитель успел добавить его в состав. Теперь такой пользователь
+    // входит и видит в «Моей команде» объяснение, что делать дальше. Прав это ему не даёт:
+    // все эндпоинты проверяют доступ по конкретной команде, а её у него просто нет.
     const result = await pool.query(`
-      SELECT u.id, u.password_hash, u.virtual_code,
-      (
-        EXISTS (SELECT 1 FROM team_members tm WHERE tm.user_id = u.id AND tm.left_at IS NULL)
-        OR EXISTS (SELECT 1 FROM club_members cm WHERE cm.user_id = u.id AND cm.left_at IS NULL)
-        OR EXISTS (SELECT 1 FROM tournament_team_roles ttr WHERE ttr.user_id = u.id AND ttr.left_at IS NULL)
-        OR EXISTS (SELECT 1 FROM club_roles cr JOIN club_members cm ON cm.club_id = cr.club_id AND cm.user_id = cr.user_id WHERE cr.user_id = u.id AND cr.left_at IS NULL AND cm.left_at IS NULL)
-        OR EXISTS (SELECT 1 FROM teams t WHERE t.owner_id = u.id)
-      ) as has_membership
+      SELECT u.id, u.password_hash, u.virtual_code
       FROM users u
       WHERE u.phone = $1 AND u.status = 'active'
     `, [phone]);
@@ -277,13 +276,6 @@ export const login = async (req, res) => {
         success: false, 
         error: 'ACCOUNT_RESET',
         message: 'Ваш аккаунт был создан как виртуальный или был переведен в виртуальный. Для разблокировки перейдите in «Создать аккаунт» и возьмите у руководителя команды или клуба актуальный секретный код от этого аккаунта.' 
-      });
-    }
-
-    if (!user.has_membership) {
-      return res.status(403).json({ 
-        success: false, 
-        error: 'Доступ запрещен. Вы не являетесь членом хотя бы одной активной команды или клуба. Если вы уверены в обратном, то обратитесь пожалуйста к руководителю команды или клуба для уточнения информации.' 
       });
     }
 

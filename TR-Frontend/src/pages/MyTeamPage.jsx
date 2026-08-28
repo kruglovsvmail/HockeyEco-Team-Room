@@ -391,6 +391,34 @@ export const MyTeamPage = () => {
   const tabIndex = TEAM_OPTIONS.findIndex(t => t.value === activeTab);
   const translateX = `-${tabIndex * 33.333333}%`;
 
+  // Человек в системе есть, а команды у него ещё нет. Так выглядит любой, кто
+  // зарегистрировался сам: аккаунт создан и номер подтверждён, но в состав его пока
+  // никто не добавил. Проверка обязана стоять ДО isPageReady — без выбранной команды
+  // загрузка данных не стартует, и лоадер крутился бы вечно.
+  if (!selectedTeam) {
+    return (
+      <FadeIn className="h-full flex flex-col items-center justify-center px-8 text-center">
+        <div className="flex h-16 w-16 items-center justify-center rounded-full bg-surface-level1 border border-surface-border mb-5">
+          <Icon name="team" className="w-7 h-7 text-content-subtle" />
+        </div>
+
+        <h2 className="text-[18px] font-black text-content-main mb-2">
+          Вы ещё не в команде
+        </h2>
+
+        <p className="text-[14px] font-semibold text-content-muted leading-relaxed max-w-xs">
+          Ваш аккаунт создан, но вы пока не привязаны ни к одной команде.
+          Попросите руководителя команды добавить вас — после этого здесь появится состав,
+          расписание и всё остальное.
+        </p>
+
+        <p className="text-[12px] font-semibold text-content-subtle leading-relaxed max-w-xs mt-4">
+          Руководителю понадобится ваш номер телефона — тот, который вы подтвердили при регистрации.
+        </p>
+      </FadeIn>
+    );
+  }
+
   if (!isPageReady) {
     return <PageLoader />;
   }
