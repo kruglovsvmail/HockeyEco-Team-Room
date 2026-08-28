@@ -11,6 +11,9 @@ import { ImageUploaderLP } from '../ui/ImageUploaderLP';
 import { Icon } from '../ui/Icon';
 import { Toast } from '../ui/Toast';
 
+// Минимальная длина пароля — держится в согласии с utils/password.js на бэкенде
+const MIN_PASSWORD_LENGTH = 6;
+
 // Хелпер форматирования телефонов для красивого отображения в режиме просмотра
 const formatPhoneNumber = (phoneStr) => {
   if (!phoneStr) return '—';
@@ -446,6 +449,12 @@ export function ProfilePage() {
       triggerToast('Заполните все поля паролей', 'danger');
       return;
     }
+    // Ту же длину проверяет сервер — здесь только чтобы не гонять заведомо плохой
+    // пароль по сети и сразу объяснить требование
+    if (newPassword.length < MIN_PASSWORD_LENGTH) {
+      triggerToast(`Пароль должен содержать минимум ${MIN_PASSWORD_LENGTH} символов`, 'danger');
+      return;
+    }
     setSavingBlock('password');
     try {
       const res = await fetch(`${import.meta.env.VITE_API_URL}/api/profile/password`, {
@@ -687,7 +696,7 @@ export function ProfilePage() {
 
 
                       <div className="text-[15px] font-sтщкьфд text-content-muted leading-relaxed">
-                        Для подтверждения номера телефона, необходимо позвоните на номер ниже с телефона, который подтверждаете. Звонок бесплатный: робот произнесёт короткое сообщение и сам завершит вызов, отвечать не нужно.
+                        Для подтверждения номера телефона, необходимо позвонить на номер ниже с телефона, который подтверждаете. Звонок бесплатный: робот произнесёт короткое сообщение и сам завершит вызов, отвечать не нужно.
                       </div>
                     </div>
 
@@ -750,7 +759,10 @@ export function ProfilePage() {
                   <form onSubmit={handleChangePassword} className="space-y-6 pt-2 pb-2">
                     <PasswordInputLP label="Текущий пароль" value={oldPassword} onChange={setOldPassword} placeholder="••••••••" />
                     <PasswordInputLP label="Новый пароль" value={newPassword} onChange={setNewPassword} placeholder="••••••••" />
-                    <ButtonLP type="submit" variant="primary" className="!py-2.5 !h-11 text-[14px]" disabled={!oldPassword || !newPassword}>
+                    <div className="text-[12px] font-semibold text-content-muted leading-relaxed">
+                      Минимум {MIN_PASSWORD_LENGTH} символов.
+                    </div>
+                    <ButtonLP type="submit" variant="primary" className="!py-2.5 !h-11 text-[14px]" disabled={!oldPassword || newPassword.length < MIN_PASSWORD_LENGTH}>
                       Обновить пароль
                     </ButtonLP>
                   </form>

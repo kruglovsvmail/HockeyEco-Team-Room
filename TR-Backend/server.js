@@ -13,6 +13,7 @@ import meetingRoutes from './routes/meetingRoutes.js';
 import teamRoutes from './routes/teamRoutes.js';
 import clubRoutes from './routes/clubRoutes.js';
 import profileRouter from './routes/profileRouter.js';
+import registrationRoutes from './routes/registrationRoutes.js';
 import tournamentRoutes from './routes/tournamentRoutes.js';
 import playerRoutes from './routes/playerRoutes.js';
 import pushRoutes from './routes/pushRoutes.js';
@@ -64,6 +65,10 @@ app.get('/api/health', (req, res) => res.json({ ok: true }));
 
 // Базовые системные роуты
 app.use('/api/auth', authRoutes);
+
+// Роуты самостоятельной регистрации объявляют полные пути внутри себя, поэтому
+// монтируются в корень — как profileRouter
+app.use(registrationRoutes);
 app.use('/api/calendar', calendarRoutes);
 app.use('/api/matches', matchRoutes);
 app.use('/api/trainings', trainingRoutes);

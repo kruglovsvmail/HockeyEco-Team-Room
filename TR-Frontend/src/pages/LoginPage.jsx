@@ -7,7 +7,20 @@ import { ButtonLP } from '../ui/Button-LP';
 import { CheckboxLP } from '../ui/Checkbox-LP';
 import { BottomSheet } from '../ui/BottomSheet';
 import { PolicySheet } from '../ui/PolicySheet';
-import { getToken } from '../utils/helpers';
+import { Icon } from '../ui/Icon';
+import { getToken, getImageUrl } from '../utils/helpers';
+
+// Ключ, под которым мастер регистрации переживает перезагрузку страницы во время звонка
+const REG_STORAGE_KEY = 'hockeyeco_reg_wizard';
+
+// Номер с сервера приходит в каноническом виде +79001234567 — для показа человеку
+// разбиваем его на привычные группы
+const formatPhoneNumber = (phoneStr) => {
+  const digits = String(phoneStr || '').replace(/\D/g, '');
+  const last10 = digits.length >= 10 ? digits.slice(-10) : digits;
+  if (last10.length !== 10) return phoneStr;
+  return `+7 (${last10.slice(0, 3)}) ${last10.slice(3, 6)}-${last10.slice(6, 8)}-${last10.slice(8, 10)}`;
+};
 
 export default function LoginPage() {
   const navigate = useNavigate();
@@ -28,12 +41,26 @@ export default function LoginPage() {
   const [recoveryCooldown, setRecoveryCooldown] = useState(0);
 
   // Состояния процесса регистрации
-  const [regStep, setRegStep] = useState(1); // 1: телефон, 2: код, 3: форма, 4: успех
+  // Мастер регистрации. Шаги: 1 — анкета, 2 — похожие карточки, 3 — секретный код,
+  // 4 — телефон, 5 — ожидание звонка, 6 — готово.
+  //
+  // Шаги 2 и 3 пропускает тот, кого в базе нет: для него шаг 5 создаёт нового
+  // пользователя, а не активирует существующую карточку.
+  const [regStep, setRegStep] = useState(1);
   const [regPhone, setRegPhone] = useState('');
   const [regCode, setRegCode] = useState('');
   const [regData, setRegData] = useState({ firstName: '', lastName: '', middleName: '', email: '', birthDate: '' });
   const [regError, setRegError] = useState('');
   const [isRegLoading, setIsRegLoading] = useState(false);
+
+  // Подписанный билет, которым сервер связывает шаги между собой: эндпоинты регистрации
+  // анонимные, серверной сессии для них нет.
+  const [regTicket, setRegTicket] = useState('');
+  const [regCandidates, setRegCandidates] = useState([]);
+  const [regSelected, setRegSelected] = useState(null);
+  const [regCall, setRegCall] = useState(null);     // { callPhone, callPhonePretty, expiresAt }
+  const [regSeconds, setRegSeconds] = useState(0);
+  const [regResult, setRegResult] = useState(null); // { email, isActivation, emailSent }
 
   // Согласие с политикой обработки ПД при активации аккаунта + шторка с её текстом
   const [policyChecked, setPolicyChecked] = useState(false);
@@ -87,6 +114,14 @@ export default function LoginPage() {
       setActiveSheet(null);
     }
   };
+
+  // На ПК оболочка приложения сужена до 800px, и рядом с узкой формой входа фон
+  // распадался на три вертикальные полосы разного цвета. Класс на <html> включает
+  // правила в global.css, которые красят оболочку и поля в цвет самой формы.
+  useEffect(() => {
+    document.documentElement.classList.add('page-login');
+    return () => document.documentElement.classList.remove('page-login');
+  }, []);
 
   useEffect(() => {
     if (recoveryCooldown > 0) {
@@ -261,133 +296,196 @@ export default function LoginPage() {
     setRegData({ firstName: '', lastName: '', middleName: '', email: '', birthDate: '' });
     setRegError('');
     setPolicyChecked(false);
+    setRegTicket('');
+    setRegCandidates([]);
+    setRegSelected(null);
+    setRegCall(null);
+    setRegResult(null);
+    try { sessionStorage.removeItem(REG_STORAGE_KEY); } catch { /* хранилище может быть недоступно */ }
   };
 
-  const handleRegCheckPhone = async () => {
-    setRegError('');
-    const cleanPhone = `+7${regPhone.replace(/\D/g, '')}`;
-    if (cleanPhone.length !== 12) return setRegError('Некорректный номер телефона');
-    
-    setIsRegLoading(true);
-    try {
-      const response = await fetch(`${import.meta.env.VITE_API_URL}/api/auth/reg-check-phone`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ phone: cleanPhone }),
-      });
-      const data = await response.json();
-
-      if (!response.ok || !data.success) {
-        throw new Error(data.error || 'Ошибка проверки номера');
-      }
-
-      if (data.status === 'exists') {
-        throw new Error('Этот номер телефона уже зарегистрирован.');
-      }
-
-      // Только виртуальный аккаунт — переход к вводу секретного кода
-      setRegStep(2);
-    } catch (err) {
-      setRegError(err.message);
-    } finally {
-      setIsRegLoading(false);
+  // Все эндпоинты регистрации отвечают одинаково, поэтому вызов у них общий
+  const regFetch = async (path, body) => {
+    const response = await fetch(`${import.meta.env.VITE_API_URL}/api/auth/reg/${path}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+    const data = await response.json();
+    if (!response.ok || !data.success) {
+      throw new Error(data.error || 'Не удалось выполнить запрос');
     }
+    return data;
   };
 
-  const handleRegVerifyCode = async () => {
-    setRegError('');
-    if (!regCode.trim()) return setRegError('Введите код');
-    const cleanPhone = `+7${regPhone.replace(/\D/g, '')}`;
-    setIsRegLoading(true);
-    try {
-      const response = await fetch(`${import.meta.env.VITE_API_URL}/api/auth/reg-verify-code`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ phone: cleanPhone, code: regCode }),
-      });
-      const data = await response.json();
-
-      if (!response.ok || !data.success) {
-        throw new Error(data.error || 'Неверный секретный код от руководителя команда или клуба');
-      }
-
-      let bDate = '';
-      if (data.user.birth_date) {
-        const d = new Date(data.user.birth_date);
-        if (!isNaN(d)) {
-          // Конвертируем формат базы данных в формат маски ДД.ММ.ГГГГ для UI
-          const day = String(d.getDate()).padStart(2, '0');
-          const month = String(d.getMonth() + 1).padStart(2, '0');
-          const year = d.getFullYear();
-          bDate = `${day}.${month}.${year}`;
-        }
-      }
-
-      setRegData(prev => ({
-        ...prev,
-        firstName: data.user.first_name || '',
-        lastName: data.user.last_name || '',
-        middleName: data.user.middle_name || '',
-        birthDate: bDate
-      }));
-      setRegStep(3); // Переход к заполнению формы
-
-    } catch (err) {
-      setRegError(err.message);
-    } finally {
-      setIsRegLoading(false);
-    }
-  };
-
-  const handleRegisterSubmit = async (e) => {
+  // Шаг 1 → 2: ищем, не заведён ли человек в системе заранее.
+  // Это главный барьер против дублей: почти каждый новый пользователь уже есть в базе
+  // как виртуальная карточка, заведённая руководителем.
+  const handleRegStart = async (e) => {
     e.preventDefault();
     setRegError('');
-    if (!regData.lastName || !regData.firstName || !regData.email) {
-      return setRegError('Фамилия, Имя и Email обязательны');
-    }
 
-    const cleanPhone = `+7${regPhone.replace(/\D/g, '')}`;
-    
-    // --- НОВАЯ ЛОГИКА КОНВЕРТАЦИИ ДАТЫ ДЛЯ БЭКЕНДА ---
-    let finalBirthDate = null;
-    if (regData.birthDate) {
-       // Проверяем, что нет нижних подчеркиваний (незавершенный ввод маски) и длина корректная
-       if (regData.birthDate.includes('_') || regData.birthDate.length !== 10) {
-          return setRegError('Введите полную дату рождения');
-       }
-       const [day, month, year] = regData.birthDate.split('.');
-       finalBirthDate = `${year}-${month}-${day}`; // Формат YYYY-MM-DD для PGSQL
-    }
+    if (!regData.lastName.trim() || !regData.firstName.trim()) return setRegError('Укажите фамилию и имя');
+    if (!regData.birthDate) return setRegError('Укажите дату рождения');
+    if (!regData.email.trim()) return setRegError('Укажите электронную почту');
 
     setIsRegLoading(true);
     try {
-      const response = await fetch(`${import.meta.env.VITE_API_URL}/api/auth/register`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          phone: cleanPhone,
-          virtualCode: regCode,
-          firstName: regData.firstName,
-          lastName: regData.lastName,
-          middleName: regData.middleName,
-          email: regData.email,
-          birthDate: finalBirthDate,
-          policyAccepted: policyChecked
-        }),
+      const data = await regFetch('start', {
+        lastName: regData.lastName.trim(),
+        firstName: regData.firstName.trim(),
+        middleName: regData.middleName.trim(),
+        birthDate: regData.birthDate,
+        email: regData.email.trim(),
       });
-      const data = await response.json();
 
-      if (!response.ok || !data.success) {
-        throw new Error(data.error || 'Ошибка при регистрации');
-      }
-
-      setRegStep(4); // Успех
+      setRegTicket(data.ticket);
+      setRegCandidates(data.candidates || []);
+      // Похожих не нашли — спрашивать «это вы?» не о ком, сразу к телефону
+      setRegStep(data.candidates && data.candidates.length ? 2 : 4);
     } catch (err) {
       setRegError(err.message);
     } finally {
       setIsRegLoading(false);
     }
   };
+
+  // Выбор своей карточки из списка похожих
+  const handleRegPickCandidate = (candidate) => {
+    setRegError('');
+    setRegCode('');
+    setRegSelected(candidate);
+    setRegStep(3);
+  };
+
+  // «Меня нет в списке» — регистрируем нового человека, шаг с кодом пропускаем
+  const handleRegSkipCandidates = () => {
+    setRegError('');
+    setRegSelected(null);
+    setRegStep(4);
+  };
+
+  // Шаг 3: секретный код руководителя подтверждает право на выбранную карточку
+  const handleRegClaim = async () => {
+    setRegError('');
+    if (!regCode.trim()) return setRegError('Введите секретный код');
+
+    setIsRegLoading(true);
+    try {
+      const data = await regFetch('claim', {
+        ticket: regTicket,
+        userId: regSelected.id,
+        code: regCode.trim(),
+      });
+      setRegTicket(data.ticket);
+      setRegStep(4);
+    } catch (err) {
+      setRegError(err.message);
+    } finally {
+      setIsRegLoading(false);
+    }
+  };
+
+  // Шаг 4 → 5: заказываем звонок для подтверждения номера
+  const handleRegRequestPhone = async () => {
+    setRegError('');
+    const cleanPhone = regPhone.replace(/\D/g, '');
+    if (cleanPhone.length !== 10) return setRegError('Введите номер телефона полностью');
+
+    setIsRegLoading(true);
+    try {
+      const data = await regFetch('phone/request', {
+        ticket: regTicket,
+        phone: `+7${cleanPhone}`,
+      });
+
+      setRegTicket(data.ticket);
+      const call = {
+        phone: data.phone,
+        callPhone: data.callPhone,
+        callPhonePretty: data.callPhonePretty,
+        expiresAt: data.expiresAt,
+      };
+      // Счётчик выставляем сразу, иначе на один кадр отрисуется «время истекло»
+      setRegSeconds(Math.max(0, Math.round((new Date(data.expiresAt) - Date.now()) / 1000)));
+      setRegCall(call);
+      setRegStep(5);
+
+      // Переход в звонилку уводит приложение в фон, а iOS в standalone-режиме нередко
+      // перезагружает его целиком. Билет и данные звонка кладём в sessionStorage,
+      // чтобы человек вернулся на тот же шаг, а не в начало анкеты.
+      try {
+        sessionStorage.setItem(REG_STORAGE_KEY, JSON.stringify({
+          ticket: data.ticket, data: regData, call,
+        }));
+      } catch { /* приватный режим — переживём без восстановления */ }
+    } catch (err) {
+      setRegError(err.message);
+    } finally {
+      setIsRegLoading(false);
+    }
+  };
+
+  // Восстановление мастера после перезагрузки, случившейся пока человек был в звонилке
+  useEffect(() => {
+    try {
+      const saved = sessionStorage.getItem(REG_STORAGE_KEY);
+      if (!saved) return;
+
+      const state = JSON.parse(saved);
+      if (!state.ticket || !state.call || new Date(state.call.expiresAt) <= new Date()) {
+        sessionStorage.removeItem(REG_STORAGE_KEY);
+        return;
+      }
+
+      setRegTicket(state.ticket);
+      setRegData(state.data);
+      setRegCall(state.call);
+      setRegSeconds(Math.max(0, Math.round((new Date(state.call.expiresAt) - Date.now()) / 1000)));
+      setRegStep(5);
+      setActiveSheet('reg');
+    } catch {
+      /* хранилище недоступно — мастер просто начнётся заново */
+    }
+  }, []);
+
+  // Обратный отсчёт окна подтверждения
+  useEffect(() => {
+    if (regStep !== 5 || !regCall?.expiresAt) return;
+
+    const tick = () => setRegSeconds(Math.max(0, Math.round((new Date(regCall.expiresAt) - Date.now()) / 1000)));
+    tick();
+    const timerId = setInterval(tick, 1000);
+    return () => clearInterval(timerId);
+  }, [regStep, regCall]);
+
+  // Опрос подтверждения звонком. Как только звонок засчитан, сервер тем же запросом
+  // создаёт или активирует аккаунт и высылает пароль — отдельного шага «завершить» нет.
+  useEffect(() => {
+    if (regStep !== 5 || !regTicket) return;
+
+    let stopped = false;
+
+    const checkStatus = async () => {
+      if (stopped) return;
+      try {
+        const data = await regFetch('phone/status', { ticket: regTicket });
+        if (stopped || !data.confirmed) return;
+
+        stopped = true;
+        try { sessionStorage.removeItem(REG_STORAGE_KEY); } catch { /* не критично */ }
+        setRegResult({ email: data.email, isActivation: data.isActivation, emailSent: data.emailSent });
+        setRegStep(6);
+      } catch (err) {
+        // Сеть могла моргнуть на переключении в звонилку — ждём следующего круга
+        console.error('Ошибка проверки подтверждения номера:', err);
+      }
+    };
+
+    checkStatus();
+    const pollId = setInterval(checkStatus, 3000);
+    return () => { stopped = true; clearInterval(pollId); };
+  }, [regStep, regTicket]);
 
   return (
     <div className="w-full h-full max-w-md mx-auto flex bg-surface-base flex-col flex-1 px-6 py-10 relative z-10">
@@ -551,7 +649,7 @@ export default function LoginPage() {
         )}>
           <ButtonLP variant="outline" onClick={() => setActiveSheet('reg')}
             className="tracking-widest">
-            Активировать аккаунт
+            Регистрация
           </ButtonLP>
           <ButtonLP
             variant="text"
@@ -641,98 +739,33 @@ export default function LoginPage() {
 
       {/* Шторка Регистрации и Присвоения аккаунта */}
       <BottomSheet isOpen={activeSheet === 'reg'} onClose={() => { setActiveSheet(null); setTimeout(resetReg, 300); }}>
-        
-        {/* Шаг 1: Проверка телефона */}
+
+        {/* Шаг 1: анкета. Ищем человека в базе ДО того, как заводить нового */}
         {regStep === 1 && (
-          <div>
-            <h2 className="text-[18px] font-bold text-content-main mb-2">Акктивация аккаунта</h2>
-            <p className="text-content-muted text-[14px] mb-6">Введите номер телефона, который есть в базе вашей команды.</p>
-            
-            <PhoneInputLP 
-              value={regPhone} 
-              onChange={(val) => { setRegPhone(val); setRegError(''); }} 
-              error={regError} 
-              disabled={isRegLoading} 
-            />
-            
-            <ButtonLP 
-              onClick={handleRegCheckPhone} 
-              isLoading={isRegLoading} 
-              className="mt-24 mb-12"
-            >
-              Далее
-            </ButtonLP>
-          </div>
-        )}
+          <form onSubmit={handleRegStart}>
+            <h2 className="text-[18px] font-bold text-content-main mb-2">Регистрация</h2>
 
-        {/* Шаг 2: Ввод кода виртуального игрока */}
-        {regStep === 2 && (
-          <div>
-            <h2 className="text-[18px] font-bold text-content-main mb-2">Профиль найден</h2>
-            <p className="text-content-muted text-[14px] mb-6">Введите секретный код от руководителя команды или клуба для подтверждения аккаунта.</p>
-            
-            <TextInputLP 
-              label=""
-              placeholder="Например, UGPWB"
-              value={regCode} 
-              onChange={(val) => { setRegCode(val); setRegError(''); }} 
-              error={regError} 
-              disabled={isRegLoading} 
-            />
-            
-            <p className="text-[10px] text-content-subtle leading-relaxed mt-6 mb-6">
-              Вводя секретный код, вы подтверждаете своё согласие на обработку персональных данных (ФИО, номер телефона, дата рождения) в рамках платформы <span className="font-semibold">HockeyEco</span> в соответствии с&nbsp;ФЗ&#8209;152 «О персональных данных».
-            </p>
-
-            <ButtonLP 
-              onClick={handleRegVerifyCode} 
-              isLoading={isRegLoading} 
-              className="mb-12"
-            >
-              Подтвердить
-            </ButtonLP>
-          </div>
-        )}
-
-        {/* Шаг 3: Полная форма */}
-        {regStep === 3 && (
-          <form onSubmit={handleRegisterSubmit}>
-            <h2 className="text-[18px] font-bold text-content-main mb-2">
-              Привет, {regData.firstName}!
-            </h2>
-            <p className="text-content-muted text-[14px] mb-6">
-              Проверьте и дополните ваши данные.
-            </p>
-            
             <div className="space-y-4">
-                <TextInputLP 
-                  label="" 
-                  placeholder="Фамилия"
-                  value={regData.lastName} 
-                  onChange={v => setRegData({...regData, lastName: v})} 
+              <TextInputLP label="" placeholder="Фамилия" value={regData.lastName}
+                onChange={v => { setRegData({ ...regData, lastName: v }); setRegError(''); }} disabled={isRegLoading} />
+              <TextInputLP label="" placeholder="Имя" value={regData.firstName}
+                onChange={v => { setRegData({ ...regData, firstName: v }); setRegError(''); }} disabled={isRegLoading} />
+              <TextInputLP label="" placeholder="Отчество (если есть)" value={regData.middleName}
+                onChange={v => setRegData({ ...regData, middleName: v })} disabled={isRegLoading} />
+
+              <div className="flex flex-col gap-1.5">
+                <span className="text-[10px] font-bold text-content-muted uppercase tracking-wider pl-1">Дата рождения</span>
+                <input
+                  type="date"
+                  value={regData.birthDate}
+                  onChange={(e) => { setRegData({ ...regData, birthDate: e.target.value }); setRegError(''); }}
                   disabled={isRegLoading}
+                  className="w-full p-4 bg-surface-level2 border border-surface-border rounded-xl text-[14px] font-bold text-content-main outline-none focus:border-brand/40 transition-colors"
                 />
-                <TextInputLP 
-                  label="" 
-                  placeholder="Имя"
-                  value={regData.firstName} 
-                  onChange={v => setRegData({...regData, firstName: v})} 
-                  disabled={isRegLoading}
-                />
-                <TextInputLP 
-                  label="" 
-                  placeholder="Отчество"
-                  value={regData.middleName} 
-                  onChange={v => setRegData({...regData, middleName: v})} 
-                  disabled={isRegLoading}
-                />
-                <EmailInputLP 
-                  label=""
-                  value={regData.email} 
-                  placeholder="Электронная почта"
-                  onChange={v => setRegData({...regData, email: v})} 
-                  disabled={isRegLoading}
-                />
+              </div>
+
+              <EmailInputLP label="" placeholder="Электронная почта" value={regData.email}
+                onChange={v => { setRegData({ ...regData, email: v }); setRegError(''); }} disabled={isRegLoading} />
             </div>
 
             {regError && <div className="text-danger font-medium text-[14px] mt-4">{regError}</div>}
@@ -744,36 +777,206 @@ export default function LoginPage() {
                 label="Даю согласие на обработку персональных данных"
                 className="items-start [&>span]:text-[12px] [&>span]:leading-snug"
               />
-              <button
-                type="button"
-                onClick={() => setIsPolicyOpen(true)}
-                className="text-[12px] text-brand hover:text-brand-hover font-medium text-left underline underline-offset-4 outline-none cursor-pointer pl-8"
-              >
+              <button type="button" onClick={() => setIsPolicyOpen(true)}
+                className="text-[12px] text-brand hover:text-brand-hover font-medium text-left underline underline-offset-4 outline-none cursor-pointer pl-8">
                 Политика обработки персональных данных
               </button>
             </div>
 
-            <ButtonLP
-              type="submit"
-              isLoading={isRegLoading}
-              disabled={!policyChecked}
-              className="mb-12"
-            >
-              Подтвердить аккаунт
+            <ButtonLP type="submit" isLoading={isRegLoading} disabled={!policyChecked} className="mb-12">
+              Далее
             </ButtonLP>
           </form>
         )}
 
-        {/* Шаг 4: Успех */}
+        {/* Шаг 2: похожие карточки. Команды с логотипами здесь не украшение —
+            однофамильцы одного года рождения в детском хоккее обычное дело, и именно
+            команда, а не отчество, позволяет человеку узнать себя */}
+        {regStep === 2 && (
+          <div>
+            <h2 className="text-[18px] font-bold text-content-main mb-2">Это вы?</h2>
+            <p className="text-content-muted text-[14px] mb-6">
+              Мы нашли похожие записи. Если одна из них ваша — выберите её, чтобы сохранить всю
+              статистику и команды.
+            </p>
+
+            <div className="space-y-2.5">
+              {regCandidates.map((candidate) => (
+                <button
+                  key={candidate.id}
+                  type="button"
+                  onClick={() => handleRegPickCandidate(candidate)}
+                  className="w-full text-left p-4 bg-surface-level1 border border-surface-border rounded-2xl active:scale-[0.99] transition-transform outline-none"
+                >
+                  <div className="flex items-baseline justify-between gap-3">
+                    <span className="text-[15px] font-bold text-content-main">
+                      {candidate.lastName} {candidate.firstName} {candidate.middleName || ''}
+                    </span>
+                    {candidate.birthYear && (
+                      <span className="text-[12px] font-bold text-content-subtle shrink-0">{candidate.birthYear} г.р.</span>
+                    )}
+                  </div>
+
+                  {candidate.teams.length > 0 && (
+                    <div className="flex flex-wrap items-center gap-2 mt-2.5">
+                      {candidate.teams.map((team, index) => (
+                        <span key={index} className="flex items-center gap-1.5 px-2 py-1 bg-surface-level2 rounded-lg">
+                          {team.logoUrl && (
+                            <img src={getImageUrl(team.logoUrl)} alt="" className="w-4 h-4 rounded-full object-cover" />
+                          )}
+                          <span className="text-[11px] font-bold text-content-muted">{team.name}</span>
+                        </span>
+                      ))}
+                    </div>
+                  )}
+
+                  {candidate.state === 'activated' && (
+                    <div className="text-[11px] font-bold text-brand mt-2">Аккаунт уже активирован</div>
+                  )}
+                </button>
+              ))}
+            </div>
+
+            <ButtonLP variant="outline" onClick={handleRegSkipCandidates} className="mt-6 mb-12">
+              Меня нет в списке
+            </ButtonLP>
+          </div>
+        )}
+
+        {/* Шаг 3: секретный код. Именно он, а не выбор из списка, даёт право на карточку —
+            поэтому список можно делать широким, не боясь ошибочного выбора */}
+        {regStep === 3 && regSelected && (
+          <div>
+            {regSelected.state === 'activated' ? (
+              <>
+                <h2 className="text-[18px] font-bold text-content-main mb-2">Аккаунт уже активирован</h2>
+                <p className="text-content-muted text-[14px] mb-6">
+                  Регистрироваться заново не нужно — войдите по номеру телефона или восстановите пароль на экране входа. 
+                  Если вы не можете зайти в электронную почту, которую использовали при регистрации, то напишите в поддержку платформы support@hockeyeco.ru
+                </p>
+                <ButtonLP onClick={() => { setActiveSheet(null); setTimeout(resetReg, 300); }} className="mb-3">
+                  Перейти ко входу
+                </ButtonLP>
+                <ButtonLP variant="text" onClick={() => { setRegSelected(null); setRegStep(2); }} className="mb-12">
+                  Назад к списку
+                </ButtonLP>
+              </>
+            ) : (
+              <>
+                <h2 className="text-[18px] font-bold text-content-main mb-2">Ваш аккаунт уже создан</h2>
+                <p className="text-content-muted text-[14px] mb-6">
+                  Карточка <span className="font-bold text-content-main">{regSelected.lastName} {regSelected.firstName}</span> заведена,
+                  но не активирована. Введите секретный код — его выдаёт руководитель вашей команды или клуба.
+                </p>
+
+                <TextInputLP
+                  label=""
+                  placeholder="Например, UGPWB"
+                  value={regCode}
+                  onChange={(val) => { setRegCode(val.toUpperCase()); setRegError(''); }}
+                  error={regError}
+                  disabled={isRegLoading}
+                />
+
+                <ButtonLP onClick={handleRegClaim} isLoading={isRegLoading} disabled={!regCode.trim()} className="mt-6 mb-3">
+                  Подтвердить
+                </ButtonLP>
+                <ButtonLP variant="text" onClick={() => { setRegSelected(null); setRegError(''); setRegStep(2); }} className="mb-12">
+                  Назад к списку
+                </ButtonLP>
+              </>
+            )}
+          </div>
+        )}
+
+        {/* Шаг 4: телефон. Он же логин, поэтому подтверждается звонком */}
         {regStep === 4 && (
+          <div>
+            <h2 className="text-[18px] font-bold text-content-main mb-2">Ваш номер телефона</h2>
+            <p className="text-content-muted text-[14px] mb-6">
+              По этому номеру вы будете входить в приложение. Его нужно подтвердить — мы попросим
+              позвонить с него на номер, который укажем в следющем шаге, звонок бесплатный.
+            </p>
+
+            <PhoneInputLP
+              value={regPhone}
+              onChange={(val) => { setRegPhone(val); setRegError(''); }}
+              error={regError}
+              disabled={isRegLoading}
+            />
+
+            <ButtonLP onClick={handleRegRequestPhone} isLoading={isRegLoading} className="mt-24 mb-12">
+              Далее
+            </ButtonLP>
+          </div>
+        )}
+
+        {/* Шаг 5: ожидание звонка */}
+        {regStep === 5 && regCall && (
+          <div>
+            <h2 className="text-[18px] font-bold text-content-main mb-2">Подтвердите номер</h2>
+
+            <p className="text-content-muted text-[14px] leading-relaxed mb-3">
+              Позвоните на номер ниже <span className="font-bold text-brand">с телефона {formatPhoneNumber(regCall.phone)}</span> —
+              именно с того, который подтверждаете. Звонок бесплатный: робот произнесёт короткое
+              сообщение и сам завершит вызов, отвечать не нужно.
+            </p>
+
+            <a
+              href={`tel:${regCall.callPhone}`}
+              className="flex items-center justify-center gap-2.5 w-full py-4 rounded-2xl bg-surface-level2 border border-surface-border text-[20px] font-black tracking-wide text-content-main active:scale-[0.98] transition-transform"
+            >
+              <Icon name="phone" className="w-5 h-5 text-brand shrink-0" />
+              {regCall.callPhonePretty || regCall.callPhone}
+            </a>
+
+            <p className="text-[13px] font-semibold text-content-muted leading-relaxed text-center mt-3">
+              Как только звонок дойдёт, регистрация завершится сама — обновлять страницу не нужно.
+            </p>
+
+            {regSeconds > 0 ? (
+              <div className="flex items-center justify-center gap-2 text-[10px] font-bold uppercase tracking-wider text-content-subtle mt-4">
+                <div className="w-3 h-3 border-2 border-brand border-t-transparent rounded-full animate-spin" />
+                <span>Ожидаем звонок · {Math.floor(regSeconds / 60)}:{String(regSeconds % 60).padStart(2, '0')}</span>
+              </div>
+            ) : (
+              <div className="text-[10px] font-bold uppercase tracking-wider text-center text-content-subtle mt-4">
+                Время подтверждения истекло
+              </div>
+            )}
+
+            <ButtonLP
+              variant="text"
+              onClick={() => { setRegCall(null); setRegError(''); setRegStep(4); }}
+              className="mt-2 mb-12"
+            >
+              {regSeconds > 0 ? 'Изменить номер' : 'Попробовать заново'}
+            </ButtonLP>
+          </div>
+        )}
+
+        {/* Шаг 6: готово */}
+        {regStep === 6 && regResult && (
           <div className="text-center py-4">
             <div className="mx-auto mb-6 flex h-16 w-16 items-center justify-center rounded-full bg-brand text-brand shadow-sm">
               <Check size={32} strokeWidth={3} />
             </div>
-            <h2 className="text-[28px] font-bold text-content-main mb-3">Отлично!</h2>
-            <p className="text-content-muted text-[14px] leading-relaxed mb-8 px-2">
-              Ваш аккаунт готов. Пароль для входа в приложение был отправлен на вашу почту <b className="text-content-main">{regData.email}</b>.
-            </p>
+            <h2 className="text-[28px] font-bold text-content-main mb-3">
+              {regResult.isActivation ? 'Аккаунт активирован' : 'Аккаунт создан'}
+            </h2>
+
+            {regResult.emailSent ? (
+              <p className="text-content-muted text-[14px] leading-relaxed mb-8 px-2">
+                Пароль для входа отправлен на почту <b className="text-content-main">{regResult.email}</b>.
+                Входить нужно по номеру телефона, который вы подтвердили.
+              </p>
+            ) : (
+              <p className="text-content-muted text-[14px] leading-relaxed mb-8 px-2">
+                Аккаунт готов, но письмо с паролем отправить не удалось. Воспользуйтесь
+                восстановлением пароля на экране входа — оно пришлёт новый.
+              </p>
+            )}
+
             <ButtonLP onClick={() => { setActiveSheet(null); setTimeout(resetReg, 300); }}>
               Перейти ко входу
             </ButtonLP>

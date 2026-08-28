@@ -424,16 +424,15 @@ export default function App() {
   const connectionBanner = renderedBannerKey ? BANNER_VARIANTS[renderedBannerKey] : null;
 
   // Фон полей вокруг приложения (видны только на ПК, где оболочка сужена до 800px).
-  // Задан инлайном, а не классом bg-surface-canvas: класс требует, чтобы Tailwind
-  // пересобрал конфиг, а переменная из global.css подхватывается браузером напрямую —
-  // цвет можно править без перезапуска dev-сервера.
   // Важно: этот div обязан иметь фон. Он лежит поверх body, у которого в index.html
   // цвет зашит жёстко (#f3f4f6 / #242424) — без своего фона поля показывали бы body
   // и на правку переменной не реагировали.
+  // id нужен global.css: на экране входа поля и оболочка перекрашиваются в цвет формы
+  // (правила html.page-login), чтобы на ПК фон шёл сплошняком на всю ширину экрана.
   return (
     <div
-      className="fixed inset-0 w-full h-[100dvh] flex flex-col text-content font-sans overflow-hidden overscroll-none transition-colors duration-300"
-      style={{ backgroundColor: 'var(--color-surface-canvas)' }}
+      id="app-root"
+      className="fixed inset-0 w-full h-[100dvh] flex flex-col text-content font-sans overflow-hidden overscroll-none transition-colors duration-300 bg-surface-canvas"
     >
 
       {/* Заливка системных safe-area зон (edge-to-edge, viewport-fit=cover):
@@ -460,7 +459,7 @@ export default function App() {
             Порог min-[800px] = ширина самой оболочки: ровно с этой точки экран шире
             приложения, то есть начинается «версия для ПК». Шум там убран совсем —
             на большой площади зерно читается как загрязнение, а не как текстура. */}
-        <div className="absolute top-1/4 right-[-20%] w-80 h-80 bg-brand-glow saturate-[40%] blur-ambient rounded-full pointer-events-none z-0 opacity-100"></div>
+        <div id="app-ambient-glow" className="absolute top-1/4 right-[-20%] w-80 h-80 bg-brand-glow saturate-[40%] blur-ambient rounded-full pointer-events-none z-0 opacity-100"></div>
         <div className="absolute inset-0 w-full h-full bg-noise mix-blend-overlay pointer-events-none z-0 min-[800px]:hidden"></div>
 
         {/* Масштабирующий слой: компенсированный transform-scale, управляемый переменной --ui-scale

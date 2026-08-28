@@ -4,10 +4,7 @@ import {
   getMe, 
   resetPassword, 
   updateProfile, 
-  checkPhone,
-  regCheckPhone,
-  regVerifyCode,
-  register
+  checkPhone
 } from '../controllers/authController.js';
 import { verifyToken } from '../middleware/auth.js';
 
@@ -18,9 +15,8 @@ router.get('/me', verifyToken, getMe);
 router.post('/check-phone', checkPhone);
 router.post('/reset-password', resetPassword);
 
-// НОВЫЕ МАРШРУТЫ РЕГИСТРАЦИИ:
-router.post('/reg-check-phone', regCheckPhone);
-router.post('/reg-verify-code', regVerifyCode);
-router.post('/register', register);
+// Регистрация и активация переехали в registrationRoutes.js. Прежние три роута сняты
+// намеренно: /register принимал пару телефон+код и переписывал почту с паролем БЕЗ
+// подтверждения номера звонком, то есть оставался дверью в обход новой проверки.
 
 export default router;

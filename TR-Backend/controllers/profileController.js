@@ -4,6 +4,7 @@ import s3 from '../config/s3.js';   // Используем ваш рабочи�
 import { processAvatar } from '../utils/imageProcessor.js';
 import { normalizePhone, isVirtualPhone } from '../utils/phone.js';
 import { startPhoneCheck, getPhoneCheckStatus } from '../services/callService.js';
+import { validatePassword } from '../utils/password.js';
 
 // Параметры подтверждения телефона звонком.
 //
@@ -407,6 +408,11 @@ class ProfileController {
       const isMatch = await bcrypt.compare(oldPassword, currentHash);
       if (!isMatch) {
         return res.status(400).json({ success: false, error: 'Старый пароль введен неверно' });
+      }
+
+      const passwordError = validatePassword(newPassword);
+      if (passwordError) {
+        return res.status(400).json({ success: false, error: passwordError });
       }
 
       const salt = await bcrypt.genSalt(12);

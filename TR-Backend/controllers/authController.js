@@ -4,6 +4,8 @@ import bcrypt from 'bcrypt';
 import jwt from 'jsonwebtoken';
 import { ROLES } from '../utils/permissions.js';
 import { toClubRoleName } from '../utils/checkPermission.js';
+import { generateTempPassword } from '../utils/password.js';
+import { checkLoginAllowed, recordLoginFailure, clearLoginFailures, getRequestIp } from '../utils/loginGuard.js';
 
 /**
  * Middleware для проверки JWT токена
@@ -241,6 +243,15 @@ export const login = async (req, res) => {
       return res.status(400).json({ success: false, error: 'Введите телефон и пароль' });
     }
 
+    // Лимит проверяем ДО обращения к базе и bcrypt: смысл ограничения не только в том,
+    // чтобы не дать подобрать пароль, но и в том, чтобы перебор не съедал процессор
+    // контейнера на хешировании.
+    const requestIp = getRequestIp(req);
+    const guard = await checkLoginAllowed(phone, requestIp);
+    if (!guard.allowed) {
+      return res.status(429).json({ success: false, error: guard.error });
+    }
+
     const result = await pool.query(`
       SELECT u.id, u.password_hash, u.virtual_code,
       (
@@ -278,8 +289,13 @@ export const login = async (req, res) => {
 
     const isMatch = await bcrypt.compare(password, user.password_hash || '');
     if (!isMatch) {
+      await recordLoginFailure(phone, requestIp, 'tr');
       return res.status(401).json({ success: false, error: 'Неверный пароль' });
     }
+
+    // Пароль вспомнили — счётчик неудач по этому номеру обнуляем, чтобы пара опечаток
+    // не оставляла человека с висящей блокировкой на четверть часа.
+    await clearLoginFailures(phone);
 
     // Снятие статуса "Виртуальный", если пользователь впервые логинится после claim profile.
     // Код гасится ровно один раз, поэтому rowCount = 1 и есть признак самого первого входа
@@ -372,7 +388,7 @@ export const resetPassword = async (req, res) => {
     }
 
     const user = result.rows[0];
-    const newPassword = Math.floor(1000 + Math.random() * 9000).toString();
+    const newPassword = generateTempPassword();
     const hashedPassword = await bcrypt.hash(newPassword, 10);
 
     await pool.query('UPDATE users SET password_hash = $1 WHERE id = $2', [hashedPassword, user.id]);
@@ -405,155 +421,6 @@ export const resetPassword = async (req, res) => {
   }
 };
 
-// ==========================================
-// МЕТОДЫ ДЛЯ РЕГИСТРАЦИИ И CLAIM PROFILE
-// ==========================================
-
-export const regCheckPhone = async (req, res) => {
-  try {
-    const { phone } = req.body;
-    if (!phone) return res.status(400).json({ success: false, error: 'Телефон обязателен' });
-
-    const result = await pool.query(`SELECT id, virtual_code FROM users WHERE phone = $1`, [phone]);
-    
-    // Если пользователь не найден — регистрация новых не разрешена
-    if (result.rows.length === 0) {
-      return res.status(404).json({ success: false, error: 'Пользователь с таким номером не найден. Обратитесь к руководителю команды.' });
-    }
-    
-    const user = result.rows[0];
-    if (user.virtual_code) {
-      return res.json({ success: true, status: 'virtual' });
-    } else {
-      return res.json({ success: true, status: 'exists' });
-    }
-  } catch (err) {
-    console.error('regCheckPhone error:', err);
-    res.status(500).json({ success: false, error: 'Ошибка сервера' });
-  }
-};
-
-export const regVerifyCode = async (req, res) => {
-  try {
-    const { phone, code } = req.body;
-    const result = await pool.query(
-      `SELECT first_name, last_name, middle_name, birth_date FROM users WHERE phone = $1 AND virtual_code = $2 AND status = 'active'`,
-      [phone, code]
-    );
-    
-    if (result.rows.length === 0) {
-      return res.status(400).json({ success: false, error: 'Неверный секретный код' });
-    }
-    
-    return res.json({ success: true, user: result.rows[0] });
-  } catch (err) {
-    console.error('regVerifyCode error:', err);
-    res.status(500).json({ success: false, error: 'Ошибка сервера' });
-  }
-};
-
-// Длительность пробного периода, выдаваемого в момент активации аккаунта
-const TRIAL_PERIOD_DAYS = 30;
-
-export const register = async (req, res) => {
-  const client = await pool.connect();
-  try {
-    const { phone, virtualCode, email, firstName, lastName, middleName, birthDate, policyAccepted } = req.body;
-    const newPassword = Math.floor(1000 + Math.random() * 9000).toString();
-    const passwordHash = await bcrypt.hash(newPassword, 10);
-    const finalBirthDate = birthDate ? birthDate : null;
-
-    await client.query('BEGIN');
-
-    const emailCheck = await client.query('SELECT id FROM users WHERE email = $1', [email]);
-    if (emailCheck.rows.length > 0) {
-      await client.query('ROLLBACK');
-      return res.status(400).json({ success: false, error: 'Этот Email уже привязан к другому аккаунту' });
-    }
-
-    let registeredUserId = null;
-
-    if (virtualCode) {
-       const check = await client.query('SELECT id FROM users WHERE phone = $1 AND virtual_code = $2', [phone, virtualCode]);
-       if (check.rows.length === 0) {
-          await client.query('ROLLBACK');
-          return res.status(400).json({ success: false, error: 'Неверный код или профиль не найден' });
-       }
-       registeredUserId = check.rows[0].id;
-       // Пробный период выдаётся от текущего момента, но через GREATEST — чтобы активация
-       // не урезала уже оплаченную подписку, если она у профиля есть и длиннее пробной.
-       await client.query(`
-         UPDATE users
-         SET email = $1, first_name = $2, last_name = $3, middle_name = $4, birth_date = $5, password_hash = $6, updated_at = NOW(),
-             subscription_expires_at = GREATEST(COALESCE(subscription_expires_at, NOW()), NOW() + ($9 || ' days')::interval)
-         WHERE phone = $7 AND virtual_code = $8
-       `, [email, firstName, lastName, middleName, finalBirthDate, passwordHash, phone, virtualCode, TRIAL_PERIOD_DAYS]);
-    } else {
-       const insertRes = await client.query(`
-         INSERT INTO users (phone, email, first_name, last_name, middle_name, birth_date, password_hash, status, subscription_expires_at)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, 'active', NOW() + ($8 || ' days')::interval)
-         RETURNING id
-       `, [phone, email, firstName, lastName, middleName, finalBirthDate, passwordHash, TRIAL_PERIOD_DAYS]);
-       registeredUserId = insertRes.rows[0].id;
-    }
-
-    await client.query('COMMIT');
-
-    // Фиксация согласия с политикой обработки ПД, данного чекбоксом при активации аккаунта.
-    // Best-effort: сбой записи согласия не должен ломать саму регистрацию.
-    if (policyAccepted && registeredUserId) {
-      try {
-        const versionRes = await pool.query(
-          `SELECT id FROM policy_versions WHERE is_published = true ORDER BY published_at DESC LIMIT 1`
-        );
-        if (versionRes.rows.length > 0) {
-          const forwarded = req.headers['x-forwarded-for'];
-          const clientIp = forwarded ? String(forwarded).split(',')[0].trim() : (req.ip || null);
-          await pool.query(
-            `INSERT INTO user_consents (user_id, policy_version_id, ip, user_agent, source)
-             VALUES ($1, $2, $3, $4, 'registration')
-             ON CONFLICT (user_id, policy_version_id) DO NOTHING`,
-            [registeredUserId, versionRes.rows[0].id, clientIp, (req.headers['user-agent'] || '').slice(0, 255)]
-          );
-        }
-      } catch (consentErr) {
-        console.error('Не удалось зафиксировать согласие при регистрации:', consentErr.message);
-      }
-    }
-
-    const htmlTemplate = `
-      <div style="font-family: Arial, sans-serif; background-color: #F8F9FA; padding: 40px 20px; color: #2C2C2E;">
-        <div style="max-width: 500px; margin: 0 auto; background-color: #FFFFFF; border-radius: 16px; padding: 40px 30px; border: 1px solid #E5E5EA; text-align: center;">
-          <h2 style="margin-top: 0; font-size: 26px; color: #2C2C2E;">HockeyEco <span style="color: #FF7A00;">LMS</span></h2>
-          <p style="text-align: left; margin-top: 30px;">Здравствуйте, <strong>${firstName}</strong>!</p>
-          <p style="text-align: left;">Ваш аккаунт успешно ${virtualCode ? 'подтвержден' : 'создан'}!</p>
-          <p style="text-align: left;">Ваш сгенерированный пароль для входа в приложение:</p>
-          <div style="margin: 30px 0; background-color: #FFF5EB; color: #FF7A00; font-size: 32px; font-weight: 800; padding: 15px; border-radius: 12px; border: 2px dashed #FF7A00; letter-spacing: 5px;">
-            ${newPassword}
-          </div>
-          <p style="font-size: 12px; color: #8E8E93; margin-top: 30px;">С уважением, команда HockeyEco</p>
-        </div>
-      </div>
-    `;
-    await transporter.sendMail({
-      from: '"HockeyEco Team" <kruglov.svmail@yandex.ru>',
-      to: email,
-      subject: 'Регистрация | HockeyEco Team PWA',
-      html: htmlTemplate
-    });
-
-    res.json({ success: true, message: 'Пароль отправлен на почту' });
-  } catch (err) {
-    await client.query('ROLLBACK');
-    if (err.constraint === 'users_email_key') {
-       return res.status(400).json({ success: false, error: 'Этот Email уже привязан к другому аккаунту' });
-    }
-    if (err.constraint === 'users_phone_unique') {
-       return res.status(400).json({ success: false, error: 'Этот номер телефона уже привязан к другому аккаунту' });
-    }
-    console.error('Register error:', err);
-    res.status(500).json({ success: false, error: 'Внутренняя ошибка сервера' });
-  } finally {
-    client.release();
-  }
-};
+// Регистрация и активация аккаунта живут в registrationController.js.
+// Здесь их больше нет: прежний /register по паре телефон+код переписывал почту и пароль
+// без подтверждения номера звонком и обходил новую защиту от дублей.
