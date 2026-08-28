@@ -35,11 +35,20 @@ const MAX_CANDIDATES = 10;         // Сколько карточек показ
 
 const getTicketSecret = () => process.env.JWT_SECRET || 'hockeyeco_pwa_secret_key';
 
-const issueTicket = (payload) => jwt.sign(
-  { ...payload, scope: 'registration' },
-  getTicketSecret(),
-  { expiresIn: TICKET_TTL }
-);
+const issueTicket = (payload) => {
+  // Каждый следующий шаг пересобирает билет из разобранного предыдущего, а в разобранном
+  // лежат служебные поля JWT — iat, exp и прочие. Подписать payload, в котором уже есть
+  // exp, вместе с опцией expiresIn библиотека отказывается, поэтому служебные поля
+  // отбрасываем перед каждой новой подписью. Побочный эффект полезный: отсчёт 30 минут
+  // начинается заново на каждом шаге, и человек не упирается в истёкший билет на середине.
+  const { iat, exp, nbf, aud, iss, sub, jti, ...data } = payload;
+
+  return jwt.sign(
+    { ...data, scope: 'registration' },
+    getTicketSecret(),
+    { expiresIn: TICKET_TTL }
+  );
+};
 
 const readTicket = (raw) => {
   try {
