@@ -20,7 +20,7 @@ const TOURNAMENT_TABS = [
 ];
 
 export function TournamentsPage() {
-  const { selectedTeam, openRightPanel, openPanel100 } = useOutletContext();
+  const { selectedTeam, teams, openRightPanel, openPanel100 } = useOutletContext();
   const selectedTeamId = selectedTeam?.id;
   const cacheKey = `tr_cached_team_${selectedTeamId}`;
 
@@ -65,10 +65,27 @@ export function TournamentsPage() {
   const hasTeamColor = isColorsEnabled && !!teamColorSource;
   const activeBrandColor = hasTeamColor ? teamColorSource : 'var(--color-brand)';
 
+  // Открыть панель выбора прямо в эффекте восстановления нельзя: её обработчик объявлен
+  // ниже по файлу. Поэтому отмечаем намерение флагом, а открывает отдельный эффект.
+  const [needsPicker, setNeedsPicker] = useState(false);
+
+  // Ключ теперь общий, без команды в имени: раздел стал информационным и от выбранной
+  // команды не зависит. Старый ключ читаем как запасной, чтобы у тех, кто уже смотрел
+  // турнир до этой переделки, выбор не сбросился.
   useEffect(() => {
-    const saved = localStorage.getItem(`tr_active_tournament_for_team_${selectedTeamId}`);
-    if (saved) setActiveTournament(JSON.parse(saved));
-  }, [selectedTeamId]);
+    const saved = localStorage.getItem('tr_active_tournament')
+      || (selectedTeamId ? localStorage.getItem(`tr_active_tournament_for_team_${selectedTeamId}`) : null);
+
+    if (saved) {
+      setActiveTournament(JSON.parse(saved));
+    } else {
+      // Выбирать нечего — сразу открываем панель выбора, иначе человек упирается
+      // в пустой экран и должен догадаться нажать на заголовок
+      setNeedsPicker(true);
+    }
+    // Восстанавливаем один раз при входе в раздел: дальше выбор меняет только сам
+    // пользователь, и перечитывать хранилище на смену команды больше незачем
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     if (!activeTournament?.division_id) {
@@ -170,18 +187,24 @@ export function TournamentsPage() {
 
   const handleTournamentSelect = useCallback((tournament) => {
     setActiveTournament(tournament);
-    localStorage.setItem(`tr_active_tournament_for_team_${selectedTeamId}`, JSON.stringify(tournament));
-  }, [selectedTeamId]);
+    localStorage.setItem('tr_active_tournament', JSON.stringify(tournament));
+  }, []);
 
-  const handleOpenSelector = () => {
+  const handleOpenSelector = useCallback(() => {
     openRightPanel('tournamentSelector', {
-      teamId: selectedTeamId,
-      activeTournamentId: activeTournament?.tournament_team_id,
+      teams: teams || [],
+      activeDivisionId: activeTournament?.division_id,
       onSelect: handleTournamentSelect,
       hasTeamColor,
       activeBrandColor
     }, 'Выбор турнира');
-  };
+  }, [teams, activeTournament, handleTournamentSelect, hasTeamColor, activeBrandColor, openRightPanel]);
+
+  useEffect(() => {
+    if (!needsPicker) return;
+    handleOpenSelector();
+    setNeedsPicker(false);
+  }, [needsPicker, handleOpenSelector]);
 
   const handleGameClick = (game) => {
     openPanel100('tournamentGameDetails', {

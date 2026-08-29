@@ -634,6 +634,183 @@ class TournamentController {
       });
     }
   }
+  // ==========================================
+  //   СПРАВОЧНИК ЛИГ ДЛЯ РАЗДЕЛА «ТУРНИРЫ / ЛИГИ»
+  // ==========================================
+  //
+  // Раздел информационный: посмотреть чужую турнирную таблицу, статистику игрока или
+  // расписание любой лиги может кто угодно, в том числе человек без единой команды.
+  // Поэтому список лиг не привязан к составам, а фильтруется и подгружается порциями —
+  // лиг со временем станет много, и тянуть их все разом нельзя.
+
+  // Сколько лиг отдаём за один заход бесконечной прокрутки
+  static get LEAGUES_PAGE_SIZE() { return 20; }
+
+  /**
+   * Список лиг с фильтрами и постраничной подгрузкой.
+   *
+   * Неопубликованный дивизион (is_published = false) — черновик лиги, и он скрыт от всех
+   * без исключений, включая команды, которые в нём заявлены. Пока лига не нажала
+   * «опубликовать», турнира для приложения не существует.
+   *
+   * scope = 'all' — все лиги, у которых есть хотя бы один опубликованный дивизион.
+   * scope = 'my' — только лиги, куда заявлены команды пользователя (заявка одобрена).
+   * teamId — необязательное сужение scope='my' до одной конкретной команды.
+   * search — совпадение по названию, короткому имени или городу лиги.
+   */
+  async getLeagues(req, res) {
+    try {
+      const scope = req.query.scope === 'my' ? 'my' : 'all';
+      const teamId = req.query.teamId ? Number(req.query.teamId) : null;
+      const search = String(req.query.search || '').trim();
+      const limit = Math.min(Number(req.query.limit) || TournamentController.LEAGUES_PAGE_SIZE, 50);
+      const offset = Math.max(Number(req.query.offset) || 0, 0);
+
+      // Номера подстановок раздаём по мере сборки запроса. Иначе в ветке scope='all'
+      // остаётся неиспользованный $1, а Postgres на это отвечает отказом:
+      // «could not determine data type of parameter $1».
+      const params = [];
+      const bind = (value) => {
+        params.push(value);
+        return `$${params.length}`;
+      };
+
+      let scopeCondition;
+
+      if (scope === 'my') {
+        // Команды пользователя: прямое членство плюс команды, которыми он владеет
+        const userParam = bind(req.user.id);
+        const teamParam = bind(teamId);
+        scopeCondition = `
+          EXISTS (
+            SELECT 1
+            FROM tournament_teams tt
+            JOIN divisions d2 ON d2.id = tt.division_id
+            JOIN seasons s2 ON s2.id = d2.season_id
+            WHERE s2.league_id = l.id
+              AND d2.is_published = true
+              AND tt.status = 'approved'
+              AND (${teamParam}::int IS NULL OR tt.team_id = ${teamParam}::int)
+              AND (
+                EXISTS (SELECT 1 FROM team_members tm WHERE tm.team_id = tt.team_id AND tm.user_id = ${userParam} AND tm.left_at IS NULL)
+                OR EXISTS (SELECT 1 FROM teams t WHERE t.id = tt.team_id AND t.owner_id = ${userParam})
+              )
+          )`;
+      } else {
+        scopeCondition = `
+          EXISTS (
+            SELECT 1
+            FROM divisions d2
+            JOIN seasons s2 ON s2.id = d2.season_id
+            WHERE s2.league_id = l.id AND d2.is_published = true
+          )`;
+      }
+
+      let searchCondition = '';
+      if (search) {
+        const searchParam = bind(`%${search}%`);
+        searchCondition = ` AND (l.name ILIKE ${searchParam} OR l.short_name ILIKE ${searchParam} OR l.city ILIKE ${searchParam})`;
+      }
+
+      const limitParam = bind(limit);
+      const offsetParam = bind(offset);
+
+      const { rows } = await pool.query(`
+        SELECT l.id, l.name, l.short_name, l.city, l.logo_url,
+               (
+                 SELECT COUNT(*) FROM seasons s3 WHERE s3.league_id = l.id
+               )::int AS seasons_count
+        FROM leagues l
+        WHERE ${scopeCondition}${searchCondition}
+        ORDER BY l.name
+        LIMIT ${limitParam} OFFSET ${offsetParam}
+      `, params);
+
+      return res.json({
+        success: true,
+        leagues: rows,
+        // Фронт по этому признаку понимает, есть ли смысл запрашивать следующую порцию
+        hasMore: rows.length === limit
+      });
+    } catch (err) {
+      console.error('Ошибка в TournamentController.getLeagues:', err);
+      return res.status(500).json({ success: false, error: 'Не удалось загрузить список лиг' });
+    }
+  }
+
+  /**
+   * Сезоны выбранной лиги вместе с их дивизионами.
+   *
+   * Отдельным запросом, а не вместе со списком лиг: у лиги может быть десяток сезонов и
+   * сотня дивизионов, и тащить это для каждой строки списка бессмысленно.
+   *
+   * Неопубликованные дивизионы не отдаются никому: пока лига не нажала «опубликовать»,
+   * турнира для приложения не существует — даже для заявленных в него команд.
+   */
+  async getLeagueStructure(req, res) {
+    try {
+      const { leagueId } = req.params;
+
+      const { rows } = await pool.query(`
+        SELECT s.id AS season_id, s.name AS season_name, s.is_active AS season_is_active,
+               s.start_date AS season_start,
+               d.id AS division_id, d.name AS division_name, d.short_name AS division_short_name,
+               d.logo_url AS division_logo, d.is_tournament, d.tournament_type,
+               d.start_date AS division_start, d.end_date AS division_end,
+               EXISTS (
+                 SELECT 1
+                 FROM tournament_teams tt
+                 WHERE tt.division_id = d.id AND tt.status = 'approved'
+                   AND (
+                     EXISTS (SELECT 1 FROM team_members tm WHERE tm.team_id = tt.team_id AND tm.user_id = $2 AND tm.left_at IS NULL)
+                     OR EXISTS (SELECT 1 FROM teams t WHERE t.id = tt.team_id AND t.owner_id = $2)
+                   )
+               ) AS is_mine
+        FROM seasons s
+        LEFT JOIN divisions d ON d.season_id = s.id AND d.is_published = true
+        WHERE s.league_id = $1
+        ORDER BY s.start_date DESC NULLS LAST, s.id DESC, d.name
+      `, [leagueId, req.user.id]);
+
+      // Собираем плоскую выборку в сезоны с вложенными дивизионами.
+      // LEFT JOIN оставляет сезон в ответе даже без единого видимого дивизиона —
+      // так человек видит, что сезон есть, но смотреть в нём пока нечего.
+      const seasons = [];
+      const byId = new Map();
+
+      for (const row of rows) {
+        if (!byId.has(row.season_id)) {
+          const season = {
+            id: row.season_id,
+            name: row.season_name,
+            isActive: row.season_is_active,
+            divisions: []
+          };
+          byId.set(row.season_id, season);
+          seasons.push(season);
+        }
+
+        if (row.division_id) {
+          byId.get(row.season_id).divisions.push({
+            id: row.division_id,
+            name: row.division_name,
+            shortName: row.division_short_name,
+            logoUrl: row.division_logo,
+            isTournament: row.is_tournament,
+            tournamentType: row.tournament_type,
+            startDate: row.division_start,
+            endDate: row.division_end,
+            isMine: row.is_mine
+          });
+        }
+      }
+
+      return res.json({ success: true, seasons });
+    } catch (err) {
+      console.error('Ошибка в TournamentController.getLeagueStructure:', err);
+      return res.status(500).json({ success: false, error: 'Не удалось загрузить сезоны лиги' });
+    }
+  }
 }
 
 export default new TournamentController();

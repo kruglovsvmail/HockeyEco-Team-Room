@@ -231,16 +231,6 @@ function TeamLayoutContent() {
     setPanel100({ isOpen: false, type: null, data: null, title: '' });
   }, [basePath]);
 
-  // Человека без единой команды стартовая страница встретила бы пустым расписанием
-  // без единого слова о том, что происходит. Уводим его в «Мою команду», где это
-  // объясняется. Переадресация только со стартовой: остальные разделы — профиль,
-  // настройки, подписка — должны оставаться доступными.
-  useEffect(() => {
-    if (isLoading) return;
-    if (teams.length === 0 && location.pathname === '/') {
-      navigate('/my-team', { replace: true });
-    }
-  }, [isLoading, teams.length, location.pathname, navigate]);
 
   const eventFromState = location.state?.event || null;
   const [eventStorageVersion, setEventStorageVersion] = useState(0);

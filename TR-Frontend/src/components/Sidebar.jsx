@@ -285,7 +285,24 @@ export function Sidebar({
                 <Icon name="users" className="w-5 h-5" />
                 <span className="text-[14px] tracking-wider">Мой клуб</span>
               </button>
-            ) : null
+            ) : (
+              // Ни команд, ни клубов — так выглядит любой, кто зарегистрировался сам.
+              // Пункт всё равно показываем: на странице его ждёт объяснение, что делать
+              // дальше. Раньше здесь было null, и человек оставался с одним «Календарём»,
+              // без единой подсказки о том, почему приложение пустое.
+              <button
+                onClick={() => handleSafeNavigate('/my-team')}
+                className={clsx(
+                  "flex items-center gap-4 px-4 py-3 rounded-xl transition-all outline-none text-left w-full font-bold",
+                  location.pathname === '/my-team'
+                    ? 'bg-brand-opacity text-brand font-bold'
+                    : 'text-content-main hover:text-brand'
+                )}
+              >
+                <Icon name="users" className="w-5 h-5" />
+                <span className="text-[14px] tracking-wider">Моя команда</span>
+              </button>
+            )
           ) : (
             <div className="flex flex-col w-full">
               <button
@@ -349,59 +366,23 @@ export function Sidebar({
 
           {/* НОВЫЙ РАЗДЕЛ: Турниры / Лиги с умным раскрытием под команды.
               Клуб здесь не появляется: турниры играют составы, а не организация. */}
-          {visibleTeams.length <= 1 ? (
-            visibleTeams.length === 1 ? (
-              <button
-                onClick={() => handleSafeNavigate('/tournaments', () => {
-                  if (selectedTeam?.id !== visibleTeams[0].id) {
-                    onTeamChange(visibleTeams[0]);
-                  }
-                })}
-                className={clsx(
-                  "flex items-center gap-4 px-4 py-3 rounded-xl transition-all outline-none text-left w-full font-bold",
-                  location.pathname === '/tournaments'
-                    ? 'bg-brand-opacity text-brand font-bold'
-                    : 'text-content-main hover:text-brand'
-                )}
-              >
-                <Icon name="trophy" className="w-5 h-5" />
-                <span className="text-[14px] tracking-wider">Турниры / Лиги</span>
-              </button>
-            ) : null
-          ) : (
-            <div className="flex flex-col w-full">
-              <button
-                onClick={() => toggleMenu('TOURNAMENTS')}
-                className={clsx(
-                  "flex items-center justify-between w-full px-4 py-3 rounded-xl transition-all outline-none text-content-main hover:text-brand font-bold",
-                  (location.pathname === '/tournaments' && !isTournamentsExpanded) && "bg-brand-opacity text-brand font-bold"
-                )}
-              >
-                <div className="flex items-center gap-4">
-                  <Icon name="trophy" className="w-5 h-5" />
-                  <span className="text-[14px] tracking-wider">Турниры / Лиги</span>
-                </div>
-                <div className={clsx("transition-transform duration-200", isTournamentsExpanded && "rotate-180")}>
-                  <Icon name="chevron" className="w-5 h-5" />
-                </div>
-              </button>
-
-              <div className={clsx("grid-expand-transition", isTournamentsExpanded && "expanded")}>
-                <div className="grid-expand-inner">
-                  <div className="flex flex-col gap-1 pl-3 pr-1 py-1 mt-1 ml-2">
-                    {visibleTeams.map((team) => (
-                      <TeamRow
-                        key={team.id}
-                        team={team}
-                        isActive={selectedTeam?.id === team.id && location.pathname === '/tournaments'}
-                        onClick={() => handleSafeNavigate('/tournaments', () => onTeamChange(team))}
-                      />
-                    ))}
-                  </div>
-                </div>
-              </div>
-            </div>
-          )}
+          {/* Пункт 3: Турниры и лиги — информационный раздел.
+              Раньше это был список команд: раздел показывал турниры выбранной команды.
+              Теперь он ни к какой команде не привязан — сюда заходят посмотреть чужую
+              турнирную таблицу, статистику игрока или расписание любой лиги. Поэтому
+              пункт плоский и виден всем, включая тех, у кого команды ещё нет. */}
+          <button
+            onClick={() => handleSafeNavigate('/tournaments')}
+            className={clsx(
+              "flex items-center gap-4 px-4 py-3 rounded-xl transition-all outline-none text-left w-full font-bold",
+              location.pathname === '/tournaments'
+                ? 'bg-brand-opacity text-brand font-bold'
+                : 'text-content-main hover:text-brand'
+            )}
+          >
+            <Icon name="trophy" className="w-5 h-5" />
+            <span className="text-[14px] tracking-wider">Турниры / Лиги</span>
+          </button>
 
           {/* ДИНАМИЧЕСКИЕ ПУНКТЫ УПРАВЛЕНИЯ КОМАНДАМИ И КЛУБАМИ.
               Настройка «Все команды клуба» сюда намеренно не применяется: эти списки
@@ -567,7 +548,7 @@ export function Sidebar({
             </>
           )}
 
-          {/* Пункт 3: Настройки приложения */}
+          {/* Пункт 4: Настройки приложения */}
           <button
             onClick={() => handleSafeNavigate('/settings')}
             className={clsx(

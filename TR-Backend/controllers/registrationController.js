@@ -101,6 +101,35 @@ const toPublicCandidate = (row) => ({
   state: row.is_virtual ? 'virtual' : 'activated'
 });
 
+// Фиксация согласия на обработку персональных данных.
+//
+// Галочку человек ставит на первом шаге, но записать её можно только в самом конце —
+// раньше учётной записи, к которой согласие привязывается, ещё не существует. Пишем в
+// той же транзакции, что и создание аккаунта: согласие и аккаунт должны появляться
+// вместе либо не появляться вовсе.
+//
+// Без этой записи блокирующая модалка потребует согласие ещё раз при первом же входе —
+// человек будет справедливо недоумевать, ведь галочку он уже ставил.
+const recordConsent = async (client, userId, req) => {
+  const versionRes = await client.query(
+    `SELECT id FROM policy_versions WHERE is_published = true ORDER BY published_at DESC LIMIT 1`
+  );
+  // Политика ещё не опубликована — фиксировать нечего, регистрацию из-за этого не рвём
+  if (versionRes.rows.length === 0) return;
+
+  await client.query(
+    `INSERT INTO user_consents (user_id, policy_version_id, ip, user_agent, source)
+     VALUES ($1, $2, $3, $4, 'registration')
+     ON CONFLICT (user_id, policy_version_id) DO NOTHING`,
+    [
+      userId,
+      versionRes.rows[0].id,
+      getRequestIp(req),
+      (req.headers['user-agent'] || '').slice(0, 255)
+    ]
+  );
+};
+
 // Активная заявка на подтверждение номера в рамках регистрации.
 // Ключ — сам номер: пользователя в базе может ещё не существовать.
 const findPendingVerification = async (phone) => {
@@ -411,15 +440,19 @@ class RegistrationController {
             });
           }
           isActivation = true;
+          await recordConsent(client, ticket.claimUserId, req);
         } else {
-          await client.query(`
+          const created = await client.query(`
             INSERT INTO users (phone, email, first_name, last_name, middle_name, birth_date,
                                password_hash, status, phone_verified_at, subscription_expires_at)
             VALUES ($1, $2, $3, $4, $5, $6, $7, 'active', NOW(), NOW() + make_interval(days => $8))
+            RETURNING id
           `, [
             ticket.phone, ticket.email, ticket.firstName, ticket.lastName,
             ticket.middleName || null, ticket.birthDate, passwordHash, TRIAL_PERIOD_DAYS
           ]);
+
+          await recordConsent(client, created.rows[0].id, req);
         }
 
         await client.query('UPDATE phone_verifications SET confirmed_at = NOW() WHERE id = $1', [pending.id]);
