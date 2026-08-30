@@ -1,10 +1,12 @@
-import React, { useState, useEffect, useRef, Suspense, lazy, useCallback } from 'react';
-import { useOutletContext } from 'react-router-dom';
+import React, { useState, useEffect, useRef, Suspense, lazy, useCallback, useMemo } from 'react';
+import { useOutletContext, useNavigate } from 'react-router-dom';
 import clsx from 'clsx';
 import { getAuthHeaders, getImageUrl, getTeamUiColor } from '../utils/helpers';
 import { SegmentedControl } from '../ui/SegmentedControl';
 import { useAccess } from '../hooks/useAccess';
+import { PERMISSIONS, ROLES } from '../utils/permissions';
 import { BottomSheet } from '../ui/BottomSheet';
+import { TopSheet } from '../ui/TopSheet';
 import { ConfirmSheet } from '../ui/ConfirmSheet';
 import { ButtonLP } from '../ui/Button-LP';
 import { PhoneInputLP, TextInputLP } from '../ui/Input-LP';
@@ -33,9 +35,20 @@ const VIEW_MODE_KEYS = {
   roster: 'tr_myteam_view_roster'
 };
 
+// Менеджерские разделы команды: пункты шторки «⋯» в шапке. Раньше это были отдельные
+// строки сайдбара, и каждая тянула за собой свой список команд — у менеджера с тремя
+// командами список повторялся четырежды. Здесь команда задана самой страницей, и выбирать
+// её нечем. Маршруты прежние: прямые ссылки и /application/:appId работают как работали.
+const TEAM_MENU_SECTIONS = [
+  { id: 'MGR_SEASON_ROSTERS', path: '/manager/season-rosters', label: 'Заявки', hint: 'Заявки команды на сезон', icon: 'roster' },
+  { id: 'MGR_FINANCES', path: '/manager/finances', label: 'Финансы', hint: 'Бухгалтерия и сборы', icon: 'registry' },
+  { id: 'MGR_HANDBOOKS', path: '/manager/handbooks', label: 'Вне платформы', hint: 'Соперники и турниры вне HockeyEco', icon: 'handbook' },
+];
+
 export const MyTeamPage = () => {
-  const { openRightPanel, selectedTeam, user, onTeamUpdated, registerHeaderEdit } = useOutletContext();
+  const { openRightPanel, selectedTeam, user, onTeamUpdated, registerHeaderMenu } = useOutletContext();
   const selectedTeamId = selectedTeam?.id;
+  const navigate = useNavigate();
 
   usePageVisit('my_teams');
 
@@ -369,18 +382,48 @@ export const MyTeamPage = () => {
     }, 'Команда');
   };
 
-  // Карандаш редактирования профиля команды вынесен в системную шапку (Header.jsx, справа).
-  // Право — ключ TEAM_EDIT_PROFILE. Обработчик держим в ref, чтобы вызывалась всегда
-  // актуальная версия (с текущими fetchTeamData / brand-цветом), без перерегистрации.
+  // Редактирование профиля и менеджерские разделы собраны в одну шторку «⋯» в системной
+  // шапке (Header.jsx, справа). Отдельного карандаша здесь больше нет: справа всегда одна
+  // кнопка, а все действия с командой лежат под ней.
+  // Обработчик правки держим в ref, чтобы вызывалась всегда актуальная версия
+  // (с текущими fetchTeamData / brand-цветом), без перерегистрации.
   const canEditTeamProfile = checkAccess('TEAM_EDIT_PROFILE');
   const editTeamProfileRef = useRef(null);
   editTeamProfileRef.current = handleEditTeamProfileClick;
 
+  const [isTeamMenuOpen, setIsTeamMenuOpen] = useState(false);
+
+  // Двухуровневая проверка, ровно как раньше в сайдбаре: роль решает, есть ли пункт вообще,
+  // а checkAccess — заперт ли он замком (у части ролей раздел требует подписки). Кликнуть по
+  // запертому можно: страницы разделов сами показывают SubscriptionStub.
+  const teamMenuSections = useMemo(() => {
+    const roles = selectedTeam?.user_role?.split(',').map(r => r.trim()).filter(Boolean) || [];
+    if (selectedTeam?.owner_id === user?.id) roles.push(ROLES.OWNER);
+    const isGlobalAdmin = user?.globalRole === ROLES.GLOBAL_ADMIN || user?.global_role === ROLES.GLOBAL_ADMIN;
+
+    return TEAM_MENU_SECTIONS
+      .filter(section => isGlobalAdmin || roles.some(r => PERMISSIONS[section.id]?.allowedRoles.includes(r)))
+      .map(section => ({ ...section, locked: !checkAccess(section.id) }));
+  }, [selectedTeam, user, checkAccess]);
+
+  // Кнопку «⋯» не показываем вовсе, если под ней пусто: у обычного игрока команды
+  // ни одного пункта нет, и пустая шторка выглядела бы поломкой. Ждём и isPageReady:
+  // до него страница возвращает лоадер, а сама шторка живёт в её разметке — кнопка
+  // существовала бы, но ни на что не откликалась.
+  const hasTeamMenu = isPageReady && (canEditTeamProfile || teamMenuSections.length > 0);
+
   useEffect(() => {
-    if (!registerHeaderEdit) return;
-    registerHeaderEdit(canEditTeamProfile ? () => editTeamProfileRef.current?.() : null);
-    return () => registerHeaderEdit(null);
-  }, [canEditTeamProfile, registerHeaderEdit]);
+    if (!registerHeaderMenu) return;
+    registerHeaderMenu(hasTeamMenu ? () => setIsTeamMenuOpen(true) : null);
+    return () => registerHeaderMenu(null);
+  }, [hasTeamMenu, registerHeaderMenu]);
+
+  // Шторке даём уехать наверх и только потом монтируем страницу или панель — тот же приём,
+  // что в сайдбаре: без задержки анимация закрытия дёргается на слабых телефонах.
+  const closeTeamMenuThen = useCallback((action) => {
+    setIsTeamMenuOpen(false);
+    setTimeout(action, 200);
+  }, []);
 
   const handleExcludeClick = useCallback((member) => {
     setAlsoRemoveFromClub(false);
@@ -428,13 +471,67 @@ export const MyTeamPage = () => {
       className="h-full relative overflow-hidden flex flex-col "
       style={hasTeamColor ? { '--color-brand': activeBrandColor } : {}}
     >
-      {/* Карандаш редактирования профиля перенесён в системную шапку (Header.jsx) —
-          здесь больше не передаём onEditClick, поэтому в этой карточке кнопки нет. */}
+      {/* Редактирование профиля живёт в шторке «⋯» системной шапки (Header.jsx) —
+          здесь onEditClick не передаём, поэтому в этой карточке кнопки нет. */}
       <TeamPageHeader
         selectedTeam={selectedTeam}
         activeTeamDetails={activeTeamDetails}
         activeBrandColor={activeBrandColor}
       />
+
+      {/* Шторка действий команды. Верхняя, а не нижняя: выезжает оттуда же, где нажали
+          на «⋯» в шапке. Портал выносит её из FadeIn, где переопределён --color-brand,
+          поэтому цвет команды передаём инлайном, а не классом text-brand. */}
+      <TopSheet isOpen={isTeamMenuOpen} onClose={() => setIsTeamMenuOpen(false)}>
+        <div className="flex flex-col gap-2">
+          <span className="text-[10px] font-black uppercase tracking-widest text-content-subtle px-1">
+            Управление командой
+          </span>
+
+          {canEditTeamProfile && (
+            <button
+              type="button"
+              onClick={() => closeTeamMenuThen(() => editTeamProfileRef.current?.())}
+              className="flex items-center justify-between p-3 bg-surface-level2 rounded-xl border border-transparent active:border-brand/30 transition-all cursor-pointer outline-none text-left w-full"
+            >
+              <div className="flex items-center gap-3 min-w-0">
+                <div className="w-10 h-10 rounded-xl bg-surface-base border border-surface-border flex items-center justify-center shrink-0">
+                  <Icon name="edit" className="w-5 h-5" style={{ color: activeBrandColor }} />
+                </div>
+                <div className="flex flex-col min-w-0 text-left">
+                  <span className="text-[14px] font-bold text-content-main truncate">Профиль команды</span>
+                  <span className="text-[10px] text-content-muted mt-0.5 truncate">Название, логотип, цвета</span>
+                </div>
+              </div>
+              <Icon name="chevron_right" className="w-4 h-4 text-content-subtle shrink-0" />
+            </button>
+          )}
+
+          {teamMenuSections.map(section => (
+            <button
+              key={section.id}
+              type="button"
+              onClick={() => closeTeamMenuThen(() => navigate(section.path))}
+              className="flex items-center justify-between p-3 bg-surface-level2 rounded-xl border border-transparent active:border-brand/30 transition-all cursor-pointer outline-none text-left w-full"
+            >
+              <div className="flex items-center gap-3 min-w-0">
+                <div className="w-10 h-10 rounded-xl bg-surface-base border border-surface-border flex items-center justify-center shrink-0">
+                  <Icon name={section.icon} className="w-5 h-5" style={{ color: activeBrandColor }} />
+                </div>
+                <div className="flex flex-col min-w-0 text-left">
+                  <span className={clsx("text-[14px] font-bold text-content-main truncate", section.locked && "opacity-70")}>
+                    {section.label}
+                  </span>
+                  <span className="text-[10px] text-content-muted mt-0.5 truncate">{section.hint}</span>
+                </div>
+              </div>
+              {section.locked
+                ? <Icon name="lock" className="w-4 h-4 text-content-muted/60 shrink-0" />
+                : <Icon name="chevron_right" className="w-4 h-4 text-content-subtle shrink-0" />}
+            </button>
+          ))}
+        </div>
+      </TopSheet>
 
       <div 
         ref={scrollContainerRef}

@@ -20,7 +20,7 @@ const TOURNAMENT_TABS = [
 ];
 
 export function TournamentsPage() {
-  const { selectedTeam, teams, openRightPanel, openPanel100 } = useOutletContext();
+  const { selectedTeam, teams, openRightPanel, openPanel100, registerHeaderMenu } = useOutletContext();
   const selectedTeamId = selectedTeam?.id;
   const cacheKey = `tr_cached_team_${selectedTeamId}`;
 
@@ -205,6 +205,20 @@ export function TournamentsPage() {
     handleOpenSelector();
     setNeedsPicker(false);
   }, [needsPicker, handleOpenSelector]);
+
+  // Дубль выбора турнира кнопкой справа в системной шапке. Карточка турнира сверху
+  // кликабельна и остаётся такой, но выглядит она заголовком, и нажать на неё
+  // догадывается не всякий — здесь выбор назван явно.
+  // Обработчик держим в ref: handleOpenSelector пересобирается при каждой смене турнира,
+  // и без ref кнопка перерегистрировалась бы на ровном месте.
+  const openSelectorRef = useRef(null);
+  openSelectorRef.current = handleOpenSelector;
+
+  useEffect(() => {
+    if (!registerHeaderMenu) return;
+    registerHeaderMenu(() => openSelectorRef.current?.(), { icon: 'swap', label: 'Выбрать турнир' });
+    return () => registerHeaderMenu(null);
+  }, [registerHeaderMenu]);
 
   const handleGameClick = (game) => {
     openPanel100('tournamentGameDetails', {

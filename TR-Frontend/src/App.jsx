@@ -103,9 +103,8 @@ const CoachCabinetPage = lazy(() => import('./pages/CoachCabinetPage').then(modu
 
 // Чанки страниц раздела Руководства — ИСПРАВЛЕНЫ пути импорта для сборщика Vite
 const CreateEventPage = lazy(() => import('./pages/manager/CreateEventPage').then(m => ({ default: m.CreateEventPage })));
-const SeasonRostersPage = lazy(() => import('./pages/manager/SeasonRostersPage').then(m => ({ default: m.SeasonRostersPage })));
-const FinancesPage = lazy(() => import('./pages/manager/FinancesPage').then(m => ({ default: m.FinancesPage })));
-const HandbooksPage = lazy(() => import('./pages/manager/HandbooksPage').then(m => ({ default: m.HandbooksPage })));
+// Заявки, финансы и справочники грузит TeamLayout: они рисуются оверлеем поверх
+// страницы команды, а не через Outlet.
 
 // Минималистичный индикатор загрузки для плавного перехода между экранами
 const PageLoader = () => (
@@ -497,10 +496,15 @@ export default function App() {
                   <Route path="/coach" element={<CoachCabinetPage />} />
 
                   <Route path="/manager/create-event" element={<CreateEventPage />} />
-                  <Route path="/manager/season-rosters" element={<SeasonRostersPage />} />
-                  <Route path="/application/:appId" element={<SeasonRostersPage />} />
-                  <Route path="/manager/finances" element={<FinancesPage />} />
-                  <Route path="/manager/handbooks" element={<HandbooksPage />} />
+
+                  {/* Менеджерские разделы команды и детали заявки живут оверлеями в TeamLayout,
+                      а снизу остаётся смонтированной страница команды — тот же приём, что у
+                      деталей события над календарём. Поэтому element здесь MyTeamPage:
+                      её состояние переживает переход, и она уезжает влево, а не мигает. */}
+                  <Route path="/manager/season-rosters" element={<MyTeamPage />} />
+                  <Route path="/application/:appId" element={<MyTeamPage />} />
+                  <Route path="/manager/finances" element={<MyTeamPage />} />
+                  <Route path="/manager/handbooks" element={<MyTeamPage />} />
                 </Route>
 
                 {/* Автоматический редирект для любых неописанных путей */}

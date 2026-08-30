@@ -3,8 +3,8 @@ import { NavLink, useLocation, useNavigate } from 'react-router-dom';
 import { Icon } from '../ui/Icon';
 import { Avatar } from '../ui/Avatar';
 import { getImageUrl, isOwnTeam } from '../utils/helpers';
-import { PERMISSIONS, ROLES } from '../utils/permissions';
-import { useAccess } from '../hooks/useAccess';
+import { ROLES } from '../utils/permissions';
+import { buildEventTargets } from '../utils/eventTargets';
 import { getSubscriptionStatus } from '../utils/subscription';
 import clsx from 'clsx';
 
@@ -47,7 +47,6 @@ export function Sidebar({
 
   const location = useLocation();
   const navigate = useNavigate();
-  const { checkAccess, checkClubAccess } = useAccess(user, selectedTeam, selectedClub);
 
   // Вспомогательная функция безопасного извлечения ролей с учетом динамической роли Владельца
   const getRolesForTeam = (team) => {
@@ -95,15 +94,13 @@ export function Sidebar({
   // Статус личной подписки пользователя для бейджа над профилем
   const subscriptionStatus = getSubscriptionStatus(user?.subscriptionExpiresAt || user?.subscription_expires_at);
 
-  // Конфигурация 4-х менеджерских пунктов меню со своими гранулярными правами.
-  // clubPermission заполнен только там, где у клуба есть собственный экран: заявки,
-  // финансы и справочники остаются командными, и клуб в их списках не появляется.
-  const managerSectionsConfig = [
-    { id: 'MGR_CREATE_EVENT', path: '/manager/create-event', label: 'Добавить событие', icon: 'plus', clubPermission: 'CLUB_MANAGE_EVENTS' },
-    { id: 'MGR_SEASON_ROSTERS', path: '/manager/season-rosters', label: 'Заявки', icon: 'roster' },
-    { id: 'MGR_FINANCES', path: '/manager/finances', label: 'Финансы', icon: 'registry' },
-    { id: 'MGR_HANDBOOKS', path: '/manager/handbooks', label: 'Вне платформы', icon: 'handbook' },
-  ];
+  // Есть ли вообще кому ставить события. «Заявки», «Финансы» и «Вне платформы» уехали
+  // в шторку «⋯» на странице команды, а выбор владельца события — на саму страницу
+  // создания: сайдбару остался один плоский пункт и один вопрос — показывать ли его.
+  const canCreateEvent = useMemo(
+    () => buildEventTargets(teams, clubs, user).length > 0,
+    [teams, clubs, user]
+  );
 
   // Единый переключатель для всех аккордеонов
   const toggleMenu = (menuId) => {
@@ -384,147 +381,25 @@ export function Sidebar({
             <span className="text-[14px] tracking-wider">Турниры / Лиги</span>
           </button>
 
-          {/* ДИНАМИЧЕСКИЕ ПУНКТЫ УПРАВЛЕНИЯ КОМАНДАМИ И КЛУБАМИ.
-              Настройка «Все команды клуба» сюда намеренно не применяется: эти списки
-              и так сужены правами, а для руководителя клуба сайдбар — единственный
-              вход в создание событий и заявки. Прятать оттуда команды по настройке
-              внешнего вида значило бы отрезать ему рабочий путь. */}
-          {managerSectionsConfig.map((section) => {
-            const permissionConfig = PERMISSIONS[section.id];
-            const allowedRoles = permissionConfig ? permissionConfig.allowedRoles : [];
-
-            const filteringTeams = teams.filter(team => {
-              if (isGlobalAdmin) return true;
-              const teamRoles = getRolesForTeam(team);
-              return teamRoles.some(role => allowedRoles.includes(role));
-            });
-
-            // Клубы попадают в пункт только если у него объявлено клубное правило
-            const clubPermissionConfig = section.clubPermission ? PERMISSIONS[section.clubPermission] : null;
-            const filteringClubs = clubPermissionConfig
-              ? clubs.filter(club => {
-                  if (isGlobalAdmin) return true;
-                  const clubRoles = getRolesForClub(club);
-                  return clubRoles.some(role => clubPermissionConfig.allowedRoles.includes(role));
-                })
-              : [];
-
-            const totalTargets = filteringTeams.length + filteringClubs.length;
-            if (totalTargets === 0) return null;
-
-            // Путь для клубного контекста: страница создания события читает scope из адреса
-            const clubPath = `${section.path}?scope=club`;
-
-            if (totalTargets === 1) {
-              const targetTeam = filteringTeams[0];
-              const targetClub = filteringClubs[0];
-              const isClubTarget = !targetTeam && !!targetClub;
-
-              const isUrlActive = isClubTarget
-                ? location.pathname === section.path && selectedClub?.id === targetClub.id
-                : location.pathname === section.path && selectedTeam?.id === targetTeam.id;
-
-              const hasSubAccess = isClubTarget
-                ? checkClubAccess(section.clubPermission, targetClub.id)
-                : checkAccess(section.id, targetTeam.id);
-
-              return (
-                <button
-                  key={section.id}
-                  onClick={() => {
-                    if (isClubTarget) {
-                      handleSafeNavigate(clubPath, () => onClubChange(targetClub));
-                    } else {
-                      handleSafeNavigate(section.path, () => onTeamChange(targetTeam));
-                    }
-                  }}
-                  className={clsx(
-                    "flex items-center gap-4 px-4 py-3 rounded-xl transition-all outline-none text-left w-full font-bold justify-between",
-                    isUrlActive
-                      ? 'bg-brand-opacity text-brand font-bold'
-                      : 'text-content-main hover:text-brand'
-                  )}
-                >
-                  <div className="flex items-center gap-4 min-w-0">
-                    <Icon name={section.icon} className="w-5 h-5 shrink-0" />
-                    <span className={clsx("text-[14px] tracking-wider truncate", !hasSubAccess && "opacity-70")}>
-                      {section.label}
-                    </span>
-                  </div>
-                  {!hasSubAccess && (
-                    <Icon name="lock" className="w-3 h-3 text-content-muted/60 shrink-0" />
-                  )}
-                </button>
-              );
-            }
-
-            const isMenuOpen = expandedMenuId === section.id;
-            const isAnySubRouteActive = location.pathname === section.path;
-            const sectionGroups = buildGroups(filteringTeams, filteringClubs);
-
-            return (
-              <div key={section.id} className="flex flex-col w-full">
-                <button
-                  onClick={() => toggleMenu(section.id)}
-                  className={clsx(
-                    "flex items-center justify-between w-full px-4 py-3 rounded-xl transition-all outline-none text-content-main hover:text-brand font-bold",
-                    (isAnySubRouteActive && !isMenuOpen) && "bg-brand-opacity text-brand font-bold"
-                  )}
-                >
-                  <div className="flex items-center gap-4">
-                    <Icon name={section.icon} className="w-5 h-5 shrink-0" />
-                    <span className="text-[14px] tracking-wider">{section.label}</span>
-                  </div>
-                  <div className={clsx("transition-transform duration-200", isMenuOpen && "rotate-180")}>
-                    <Icon name="chevron" className="w-5 h-5" />
-                  </div>
-                </button>
-
-                {/* Выкатывающийся список: клубы с вложенными составами, затем команды без клуба */}
-                <div className={clsx("grid-expand-transition", isMenuOpen && "expanded")}>
-                  <div className="grid-expand-inner">
-                    <div className="flex flex-col gap-1 pl-3 pr-1 py-1 mt-1 ml-2">
-                      {sectionGroups.map((group, groupIndex) => (
-                        <div key={group.club ? `club-${group.club.id}` : 'standalone'} className={clsx("flex flex-col gap-1", groupIndex > 0 && "mt-2")}>
-                          {group.club && (
-                            <ClubRow
-                              club={group.club}
-                              isActive={location.pathname === section.path && selectedClub?.id === group.club.id}
-                              hasSubAccess={checkClubAccess(section.clubPermission, group.club.id)}
-                              onClick={() => handleSafeNavigate(clubPath, () => onClubChange(group.club))}
-                            />
-                          )}
-
-                          {/* Команды клуба — под своей вертикальной линией */}
-                          {group.club ? (
-                            <div className="flex flex-col gap-1 ml-4 pl-2 border-l border-surface-border">
-                              {group.teams.map(team => (
-                                <TeamRow
-                                  key={team.id}
-                                  team={team}
-                                  isActive={location.pathname === section.path && selectedTeam?.id === team.id}
-                                  hasSubAccess={checkAccess(section.id, team.id)}
-                                  onClick={() => handleSafeNavigate(section.path, () => onTeamChange(team))}
-                                />
-                              ))}
-                            </div>
-                          ) : group.teams.map(team => (
-                            <TeamRow
-                              key={team.id}
-                              team={team}
-                              isActive={location.pathname === section.path && selectedTeam?.id === team.id}
-                              hasSubAccess={checkAccess(section.id, team.id)}
-                              onClick={() => handleSafeNavigate(section.path, () => onTeamChange(team))}
-                            />
-                          ))}
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                </div>
-              </div>
-            );
-          })}
+          {/* «Добавить событие» — плоская кнопка. Раньше здесь раскрывался список команд
+              и клубов: выбор в нём менял глобально выбранную команду и дописывал в адрес
+              ?scope=club. Теперь владельца события выбирают на самой странице создания
+              и там же запоминают, поэтому сайдбару достаточно знать, есть ли вообще
+              кому ставить события. */}
+          {canCreateEvent && (
+            <button
+              onClick={() => handleSafeNavigate('/manager/create-event')}
+              className={clsx(
+                "flex items-center gap-4 px-4 py-3 rounded-xl transition-all outline-none text-left w-full font-bold",
+                location.pathname === '/manager/create-event'
+                  ? 'bg-brand-opacity text-brand font-bold'
+                  : 'text-content-main hover:text-brand'
+              )}
+            >
+              <Icon name="plus" className="w-5 h-5" />
+              <span className="text-[14px] tracking-wider">Добавить событие</span>
+            </button>
+          )}
 
           {/* Тренерская — отделена линией и стоит ниже остальных пунктов.
               Всё меню выше работает в контексте выбранной команды или клуба, а этот

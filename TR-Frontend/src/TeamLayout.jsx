@@ -40,6 +40,8 @@ import { OpponentSelectorFriendly } from './components/Manager/OpponentSelectorF
 import { ExternalTournamentSelector } from './components/Manager/ExternalTournamentSelector';
 import { ExternalOpponentSelector } from './components/Manager/ExternalOpponentSelector';
 
+import { EventTargetSelector } from './components/Manager/EventTargetSelector';
+
 import { OpponentHandbookPanel } from './components/Manager/OpponentHandbookPanel';
 import { TournamentHandbookPanel } from './components/Manager/TournamentHandbookPanel';
 
@@ -79,6 +81,24 @@ const canGoBackInApp = () => {
   const idx = window.history.state?.idx;
   return typeof idx === 'number' ? idx > 0 : true;
 };
+
+// Менеджерские разделы команды: открываются из шторки «⋯» и наезжают на страницу команды
+// справа, как детали события на календарь. Через Outlet они не идут — снизу должна остаться
+// смонтированной сама команда, иначе уезжать влево будет нечему. Команда там уже выбрана,
+// поэтому выбирать её внутри разделов нечем и незачем, а левая кнопка шапки — стрелка назад.
+const SeasonRostersPage = lazy(() => import('./pages/manager/SeasonRostersPage').then(m => ({ default: m.SeasonRostersPage })));
+const FinancesPage = lazy(() => import('./pages/manager/FinancesPage').then(m => ({ default: m.FinancesPage })));
+const HandbooksPage = lazy(() => import('./pages/manager/HandbooksPage').then(m => ({ default: m.HandbooksPage })));
+
+const TEAM_SECTIONS = {
+  '/manager/season-rosters': { Page: SeasonRostersPage, title: 'Заявки на сезон' },
+  '/manager/finances': { Page: FinancesPage, title: 'Финансы' },
+  '/manager/handbooks': { Page: HandbooksPage, title: 'Соперники и турниры' },
+};
+
+// Панели, которые открываются только из этих разделов. Раздел лежит на z-90, поэтому
+// его панели обязаны быть выше — на общей z-40 они оказались бы под ним.
+const TEAM_SECTION_PANELS = ['createApplication', 'opponentForm', 'tournamentForm'];
 
 export function TeamLayout() {
   return <TeamLayoutContent />;
@@ -142,6 +162,25 @@ function TeamLayoutContent() {
   const registerHeaderEdit = useCallback((handler) => {
     headerEditHandlerRef.current = handler || null;
     setShowHeaderEdit(!!handler);
+  }, []);
+
+  // Действие правой кнопки «⋯» в шапке — шторка действий раздела. Устроена так же,
+  // как карандаш: страница регистрирует свой обработчик, в состоянии — только флаг видимости.
+  // Иконка и подпись настраиваются: на странице команды это «⋯» с действиями раздела,
+  // в турнирах — «swap», меняющий турнир. Сравнение с прошлым состоянием обязательно:
+  // объект пересобирается на каждый вызов, и без него регистрация гоняла бы лишний рендер.
+  const [headerMenu, setHeaderMenu] = useState({ visible: false, icon: 'more', label: 'Меню раздела' });
+  const headerMenuHandlerRef = useRef(null);
+  const registerHeaderMenu = useCallback((handler, options = {}) => {
+    headerMenuHandlerRef.current = handler || null;
+    const next = {
+      visible: !!handler,
+      icon: options.icon || 'more',
+      label: options.label || 'Меню раздела',
+    };
+    setHeaderMenu(prev => (
+      prev.visible === next.visible && prev.icon === next.icon && prev.label === next.label ? prev : next
+    ));
   }, []);
 
   useEffect(() => {
@@ -318,6 +357,16 @@ function TeamLayoutContent() {
   const handleCloseEvent = useCallback(() => goBackOrTo('/'), [goBackOrTo]);
 
   const handleCloseApplication = useCallback(() => goBackOrTo('/manager/season-rosters'), [goBackOrTo]);
+
+  // «Назад» из менеджерских разделов команды. Фолбэк — страница команды: именно оттуда
+  // их и открывают, а по прямой ссылке истории может не быть вовсе.
+  const handleBackToTeam = useCallback(() => goBackOrTo('/my-team'), [goBackOrTo]);
+
+  // Какой раздел лежит поверх команды. Детали заявки — это тот же раздел «Заявки»
+  // с ещё одним экраном сверху, поэтому на /application/:appId оверлей заявок остаётся
+  // смонтированным и просто уезжает влево, как под ним уезжает сама команда.
+  const teamSection = TEAM_SECTIONS[applicationMatch ? '/manager/season-rosters' : location.pathname] || null;
+  const TeamSectionPage = teamSection?.Page || null;
 
   // Патч события из EditEventPanel.
   // ВАЖНО: history.state.event сохраняется браузером между рефрешами, поэтому
@@ -640,7 +689,7 @@ function TeamLayoutContent() {
           isSidebarOpen && "shadow-2xl"
         )}
         style={{
-          transform: (eventMatch && eventForOverlay) || applicationMatch
+          transform: (eventMatch && eventForOverlay) || applicationMatch || teamSection
             ? 'translateX(-100%)'
             : rightPanel.isOpen
             ? `translateX(-${panelPct}%)`
@@ -661,6 +710,10 @@ function TeamLayoutContent() {
           }}
           showEditButton={showHeaderEdit}
           onEditClick={() => headerEditHandlerRef.current?.()}
+          showMenuButton={headerMenu.visible}
+          menuIcon={headerMenu.icon}
+          menuLabel={headerMenu.label}
+          onMenuClick={() => headerMenuHandlerRef.current?.()}
         />
 
         {isSidebarOpen && <div className="absolute inset-0 z-50 bg-transparent" onClick={() => setIsSidebarOpen(false)} />}
@@ -673,7 +726,7 @@ function TeamLayoutContent() {
           <Outlet context={{
             user, teams, selectedTeam, handleTeamChange,
             clubs, selectedClub, handleClubChange,
-            openRightPanel, pushRightPanel, openPanel100, closePanel100, registerHeaderEdit,
+            openRightPanel, pushRightPanel, openPanel100, closePanel100, registerHeaderEdit, registerHeaderMenu,
             onTeamUpdated: (updatedTeam) => {
               setSelectedTeam(prev => ({ ...prev, ...updatedTeam }));
               setTeams(prev => prev.map(t => t.id === updatedTeam.id ? { ...t, ...updatedTeam } : t));
@@ -689,7 +742,7 @@ function TeamLayoutContent() {
         className={clsx(
           "absolute top-0 right-0 h-full bg-surface-level2 border-l border-white/10 shadow-[-15px_0_30px_rgba(0,0,0,0.1)] flex flex-col overflow-hidden flex-shrink-0",
           "transition-transform duration-300 ease-[cubic-bezier(0.32,0.72,0,1)]",
-          (rightPanel.type === 'eventEdit' || rightPanel.type === 'playerDocs' || rightPanel.type === 'playerProfile' || rightPanel.type === 'userDetails' || rightPanel.type === 'teamStats' || rightPanel.type === 'clubStats') ? "z-[110]" : "z-[40]",
+          (rightPanel.type === 'eventEdit' || rightPanel.type === 'playerDocs' || rightPanel.type === 'playerProfile' || rightPanel.type === 'userDetails' || rightPanel.type === 'teamStats' || rightPanel.type === 'clubStats' || TEAM_SECTION_PANELS.includes(rightPanel.type)) ? "z-[110]" : "z-[40]",
           rightPanel.isOpen ? "translate-x-0" : "translate-x-full"
         )}
         style={{ width: `${panelPct}%` }}
@@ -723,6 +776,9 @@ function TeamLayoutContent() {
                     )}
                     {rightPanel.type === 'arenaSelector' && (
                       <ArenaSelector data={rightPanel.data} />
+                    )}
+                    {rightPanel.type === 'eventTarget' && (
+                      <EventTargetSelector {...rightPanel.data} onClose={closeRightPanel} />
                     )}
                     {rightPanel.type === 'opponentSelectorFriendly' && (
                       <OpponentSelectorFriendly data={rightPanel.data} />
@@ -793,6 +849,46 @@ function TeamLayoutContent() {
         </div>
       )}
 
+      {/* Overlay менеджерского раздела команды. Наезжает справа, страница команды под ним
+          уезжает влево — тот же переход, что у деталей события над календарём.
+          Уходит на -100%, когда сверху открываются детали заявки, и на ширину панели,
+          когда раздел открывает свою правую панель (новая заявка, карточка соперника). */}
+      <AnimatePresence>
+        {TeamSectionPage && (
+          <motion.div
+            key="team-section-overlay"
+            /* Фон намеренно прозрачный, как у оверлея события: за приложением лежат
+               ambient-glow и шумовая текстура (App.jsx, z-0), и сплошная заливка их
+               перекрывает. Просвечивать нечему — страница команды под оверлеем уезжает
+               на -100%, то есть за экран, теми же 350мс и той же кривой. */
+            className="absolute inset-0 z-[90] overflow-hidden"
+            initial={{ x: '100%' }}
+            animate={{ x: applicationMatch ? '-100%' : rightPanel.isOpen ? `-${panelPct}%` : 0 }}
+            exit={{ x: '100%' }}
+            transition={{ duration: 0.35, ease: [0.32, 0.72, 0, 1] }}
+          >
+            <div className="absolute top-0 bottom-0 right-full w-12 bg-gradient-to-l from-black/30 to-transparent pointer-events-none" />
+
+            {/* Шапка и отступ под неё живут здесь, а не в самих страницах: все три
+                раздела получают одинаковый вложенный экран со стрелкой назад. */}
+            <div className="w-full h-full flex flex-col overflow-hidden">
+              <Header onBack={handleBackToTeam} title={teamSection.title} />
+
+              <div className="flex-1 overflow-hidden relative" style={{ paddingTop: '60px' }}>
+                <Suspense fallback={<PageLoader />}>
+                  <TeamSectionPage
+                    user={user}
+                    selectedTeam={selectedTeam}
+                    openRightPanel={openRightPanel}
+                    onClose={handleBackToTeam}
+                  />
+                </Suspense>
+              </div>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
       {/* Overlay деталей события. Сдвигается влево при открытой панели редактирования или профиля игрока. */}
       <AnimatePresence>
         {eventMatch && eventForOverlay && (
@@ -822,7 +918,7 @@ function TeamLayoutContent() {
 
       {/* Click-zone слева для закрытия панели редактирования/профиля игрока, когда поверх лежит EventPage, SeasonRostersDetailsPage или panel100.
           z-[105] — выше оверлея (z-100) и panel100 (z-60), но ниже самой панели (z-110). */}
-      {rightPanel.isOpen && ((rightPanel.type === 'eventEdit' && eventForOverlay) || (rightPanel.type === 'playerDocs' && applicationMatch) || ((rightPanel.type === 'playerProfile' || rightPanel.type === 'userDetails' || rightPanel.type === 'teamStats') && (eventForOverlay || panel100.isOpen))) && (
+      {rightPanel.isOpen && ((rightPanel.type === 'eventEdit' && eventForOverlay) || (rightPanel.type === 'playerDocs' && applicationMatch) || (TEAM_SECTION_PANELS.includes(rightPanel.type) && teamSection) || ((rightPanel.type === 'playerProfile' || rightPanel.type === 'userDetails' || rightPanel.type === 'teamStats') && (eventForOverlay || panel100.isOpen))) && (
         <div
           className="absolute top-0 bottom-0 left-0 z-[105] cursor-pointer"
           style={{ width: `${100 - panelPct}%` }}

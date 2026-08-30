@@ -11,8 +11,11 @@ export function Header({
   // onBack — если задан, левая кнопка становится «назад» вместо тоггла сайдбара;
   // showShareButton/onShareClick — кнопка «поделиться ссылкой» слева от карандаша;
   // showEditButton/onEditClick — правая кнопка-карандаш редактирования.
+  // showMenuButton/onMenuClick — кнопка «⋯» справа: шторка действий текущего раздела
+  // (на странице команды — профиль команды и менеджерские разделы).
   onBack, showEditButton = false, onEditClick,
   showShareButton = false, onShareClick,
+  showMenuButton = false, onMenuClick, menuIcon = 'more', menuLabel = 'Меню раздела',
 }) {
   const location = useLocation();
 
@@ -169,8 +172,8 @@ export function Header({
           {getSectionTitle()}
         </div>
 
-        {/* Правая группа: «поделиться ссылкой» + «редактировать».
-            Когда обе кнопки скрыты — пустой плейсхолдер, чтобы шапка не «съезжала». */}
+        {/* Правая группа: «поделиться ссылкой» + «редактировать» + «⋯».
+            Когда все кнопки скрыты — пустой плейсхолдер, чтобы шапка не «съезжала». */}
         <div className="flex items-center gap-2 z-10">
           {showShareButton && (
             <button
@@ -192,7 +195,17 @@ export function Header({
             </button>
           )}
 
-          {!showShareButton && !showEditButton && (
+          {showMenuButton && (
+            <button
+              onClick={onMenuClick}
+              className="p-2.5 bg-white/10 rounded-xl text-content-main hover:text-brand transition-colors outline-none cursor-pointer active:scale-95 flex items-center justify-center"
+              aria-label={menuLabel}
+            >
+              <Icon name={menuIcon} className="w-4 h-4" />
+            </button>
+          )}
+
+          {!showShareButton && !showEditButton && !showMenuButton && (
             <div className="w-9 h-9 opacity-0 pointer-events-none" />
           )}
         </div>

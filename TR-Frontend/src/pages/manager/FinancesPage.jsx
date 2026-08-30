@@ -1,12 +1,11 @@
 import React from 'react';
-import { useOutletContext, useNavigate } from 'react-router-dom';
 import { useAccess } from '../../hooks/useAccess';
 import { SubscriptionStub } from '../../ui/SubscriptionStub';
 
-export function FinancesPage() {
-  const { selectedTeam, user } = useOutletContext();
+// Раздел живёт оверлеем над страницей команды (TeamLayout), а не через Outlet,
+// поэтому контекст приходит пропсами. onClose — стрелка «назад» в общей шапке.
+export function FinancesPage({ user, selectedTeam, onClose }) {
   const { checkAccess } = useAccess(user, selectedTeam);
-  const navigate = useNavigate();
 
   const hasAccess = checkAccess('MGR_FINANCES');
 
@@ -14,7 +13,7 @@ export function FinancesPage() {
     return (
       <SubscriptionStub 
         isOpen={true} 
-        onClose={() => navigate(-1)} 
+        onClose={onClose} 
         title="Доступ ограничен"
         description="Для доступа к этому разделу, необходимо оформить или продлить подписку."
       />

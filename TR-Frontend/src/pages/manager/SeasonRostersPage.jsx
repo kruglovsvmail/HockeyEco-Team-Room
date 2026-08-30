@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
-import { useOutletContext, useNavigate, useLocation } from 'react-router-dom';
+import { useNavigate, useLocation } from 'react-router-dom';
 import { useAccess } from '../../hooks/useAccess';
 import { SubscriptionStub } from '../../ui/SubscriptionStub';
 import { PageLoader } from '../../ui/Loader';
@@ -17,8 +17,10 @@ const FILTER_OPTIONS = [
   { value: 'past', label: 'Прошедшие' },
 ];
 
-export function SeasonRostersPage() {
-  const { selectedTeam, user, openRightPanel } = useOutletContext();
+// Раздел живёт оверлеем над страницей команды (TeamLayout), а не через Outlet,
+// поэтому контекст приходит пропсами. onClose — стрелка «назад» в общей шапке.
+// navigate остаётся: по карточке заявки уходим на /application/:appId.
+export function SeasonRostersPage({ user, selectedTeam, openRightPanel, onClose }) {
   const { checkAccess } = useAccess(user, selectedTeam);
   const navigate = useNavigate();
   const location = useLocation();
@@ -67,7 +69,7 @@ export function SeasonRostersPage() {
     return (
       <SubscriptionStub
         isOpen={true}
-        onClose={() => navigate(-1)}
+        onClose={onClose}
         title="Доступ ограничен"
         description="Для подачи и управления заявками команды в лиги, необходимо оформить или продлить подписку."
       />

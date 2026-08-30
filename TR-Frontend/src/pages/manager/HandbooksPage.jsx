@@ -1,5 +1,4 @@
 import React, { useState, useEffect } from 'react';
-import { useOutletContext, useNavigate } from 'react-router-dom';
 import clsx from 'clsx';
 import { useAccess } from '../../hooks/useAccess';
 import { SubscriptionStub } from '../../ui/SubscriptionStub';
@@ -12,10 +11,10 @@ import { PageLoader } from '../../ui/Loader';
 import { getAuthHeaders, getTeamUiColor } from '../../utils/helpers';
 import { TeamPageHeader, TeamPageHeaderSpacer } from '../../components/TeamPageHeader';
 
-export function HandbooksPage() {
-  const { selectedTeam, user, openRightPanel } = useOutletContext();
+// Раздел живёт оверлеем над страницей команды (TeamLayout), а не через Outlet,
+// поэтому контекст приходит пропсами. onClose — стрелка «назад» в общей шапке.
+export function HandbooksPage({ user, selectedTeam, openRightPanel, onClose }) {
   const { checkAccess } = useAccess(user, selectedTeam);
-  const navigate = useNavigate();
 
   const hasAccess = checkAccess('MGR_HANDBOOKS');
 
@@ -79,7 +78,7 @@ export function HandbooksPage() {
     return (
       <SubscriptionStub 
         isOpen={true} 
-        onClose={() => navigate(-1)} 
+        onClose={onClose} 
         title="Доступ ограничен"
         description="Для доступа к командному справочнику, необходимо оформить или продлить подписку."
       />

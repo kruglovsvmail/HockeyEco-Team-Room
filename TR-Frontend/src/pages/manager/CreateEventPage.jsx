@@ -1,5 +1,5 @@
-import React, { useState, useMemo, useEffect } from 'react';
-import { useOutletContext, useNavigate, useSearchParams } from 'react-router-dom';
+import React, { useState, useMemo, useEffect, useCallback, useRef } from 'react';
+import { useOutletContext, useNavigate } from 'react-router-dom';
 import clsx from 'clsx';
 import { useAccess } from '../../hooks/useAccess';
 import { SubscriptionStub } from '../../ui/SubscriptionStub';
@@ -13,16 +13,41 @@ import { Icon } from '../../ui/Icon';
 import { ChipTabs } from '../../ui/ChipTabs';
 import { getImageUrl, getAuthHeaders, TRAINING_TYPES, getTeamUiColor } from '../../utils/helpers';
 import { TeamPageHeader, TeamPageHeaderSpacer } from '../../components/TeamPageHeader';
+import { buildEventTargets, EVENT_TARGET_STORAGE_KEY } from '../../utils/eventTargets';
 
 export function CreateEventPage() {
-  const { selectedTeam, selectedClub, user, openRightPanel } = useOutletContext();
-  const { checkAccess, checkClubAccess } = useAccess(user, selectedTeam, selectedClub);
+  const { teams, clubs, selectedTeam, user, openRightPanel, registerHeaderMenu } = useOutletContext();
   const navigate = useNavigate();
 
-  // Клубный режим включается адресом (?scope=club) — так он переживает перезагрузку
-  // страницы и возврат назад, в отличие от флага в состоянии навигации.
-  const [searchParams] = useSearchParams();
-  const isClubScope = searchParams.get('scope') === 'club' && !!selectedClub?.id;
+  // Владелец будущего события выбирается здесь и только здесь. Глобальный контекст
+  // приложения (выбранная команда) при этом не трогается: поставить событие чужому
+  // составу — не повод перетаскивать туда весь интерфейс. Раньше этим занимался
+  // аккордеон в сайдбаре, он же менял selectedTeam и дописывал в адрес ?scope=club.
+  const targets = useMemo(() => buildEventTargets(teams, clubs, user), [teams, clubs, user]);
+
+  // Выбор запоминается на устройстве: события почти всегда ставят одному и тому же
+  // составу, и переспрашивать при каждом заходе незачем.
+  const [targetKey, setTargetKey] = useState(() => localStorage.getItem(EVENT_TARGET_STORAGE_KEY));
+
+  // Сохранённый ключ мог протухнуть — человек ушёл из команды или потерял права.
+  // Тогда откатываемся на текущую команду приложения, если она в списке, иначе на первую.
+  const activeTarget = useMemo(() => {
+    if (targets.length === 0) return null;
+    return targets.find(t => t.key === targetKey)
+      || targets.find(t => t.type === 'team' && t.id === selectedTeam?.id)
+      || targets[0];
+  }, [targets, targetKey, selectedTeam?.id]);
+
+  const handleTargetSelect = useCallback((target) => {
+    setTargetKey(target.key);
+    localStorage.setItem(EVENT_TARGET_STORAGE_KEY, target.key);
+  }, []);
+
+  const isClubScope = activeTarget?.type === 'club';
+  const targetTeam = activeTarget?.type === 'team' ? activeTarget.entity : null;
+  const targetClub = activeTarget?.type === 'club' ? activeTarget.entity : null;
+
+  const { checkAccess, checkClubAccess } = useAccess(user, targetTeam, targetClub);
 
   const [eventType, setEventType] = useState('training');
   const [matchType, setMatchType] = useState('friendly');
@@ -73,23 +98,47 @@ export function CreateEventPage() {
   }, [isClubScope, eventType]);
 
   const hasAccess = isClubScope
-    ? checkClubAccess('CLUB_MANAGE_EVENTS', selectedClub?.id)
+    ? checkClubAccess('CLUB_MANAGE_EVENTS', targetClub?.id)
     : checkAccess('MGR_CREATE_EVENT');
 
   const isColorsEnabled = localStorage.getItem('tr_use_team_colors') !== 'false';
-  const teamCacheKey = selectedTeam?.id ? `tr_cached_team_${selectedTeam.id}` : null;
+  const teamCacheKey = targetTeam?.id ? `tr_cached_team_${targetTeam.id}` : null;
   const cachedTeamData = teamCacheKey ? localStorage.getItem(teamCacheKey) : null;
   const cachedDetails = cachedTeamData ? JSON.parse(cachedTeamData)?.fullDetails : null;
 
   const teamColorSource = isClubScope
-    ? selectedClub?.color_1
-    : (getTeamUiColor(cachedDetails) || getTeamUiColor(selectedTeam));
+    ? targetClub?.color_1
+    : (getTeamUiColor(cachedDetails) || getTeamUiColor(targetTeam));
   const hasTeamColor = isColorsEnabled && !!teamColorSource;
   const activeBrandColor = hasTeamColor ? teamColorSource : 'var(--color-brand)';
 
   // В шапке страницы — владелец события: клуб либо команда
-  const headerEntity = isClubScope ? selectedClub : selectedTeam;
-  const headerDetails = isClubScope ? selectedClub : cachedDetails;
+  const headerEntity = isClubScope ? targetClub : targetTeam;
+  const headerDetails = isClubScope ? targetClub : cachedDetails;
+
+  // Кнопка «swap» справа в системной шапке — смена владельца события. Цель одна,
+  // выбирать не из чего — кнопки нет. Обработчик держим в ref: он зависит от цели
+  // и от цвета, и без ref перерегистрировался бы после каждого выбора.
+  const openTargetSelectorRef = useRef(null);
+  openTargetSelectorRef.current = () => {
+    openRightPanel('eventTarget', {
+      targets,
+      activeKey: activeTarget?.key,
+      onSelect: handleTargetSelect,
+      activeBrandColor: hasTeamColor ? activeBrandColor : null,
+    }, 'Для кого событие');
+  };
+
+  const canSwitchTarget = targets.length > 1;
+
+  useEffect(() => {
+    if (!registerHeaderMenu) return;
+    registerHeaderMenu(
+      canSwitchTarget ? () => openTargetSelectorRef.current?.() : null,
+      { icon: 'swap', label: 'Для кого событие' }
+    );
+    return () => registerHeaderMenu(null);
+  }, [canSwitchTarget, registerHeaderMenu]);
 
   const isFormValid = useMemo(() => {
     if (!eventDate || !eventTime || !selectedArena) return false;
@@ -141,8 +190,8 @@ export function CreateEventPage() {
 
   const handleSelectArenaClick = () => {
     openRightPanel('arenaSelector', {
-      teamId: isClubScope ? null : selectedTeam?.id,
-      clubId: isClubScope ? selectedClub?.id : null,
+      teamId: isClubScope ? null : targetTeam?.id,
+      clubId: isClubScope ? targetClub?.id : null,
       onSelect: (arena) => setSelectedArena(arena),
       currentTeamColor: hasTeamColor ? activeBrandColor : null
     }, 'Выбор локации');
@@ -150,7 +199,7 @@ export function CreateEventPage() {
 
   const handleSelectOpponentClick = () => {
     openRightPanel('opponentSelectorFriendly', {
-      teamId: selectedTeam?.id,
+      teamId: targetTeam?.id,
       onSelect: (opponentData) => setSelectedOpponent(opponentData),
       currentTeamColor: hasTeamColor ? activeBrandColor : null
     }, 'Выбор соперника');
@@ -158,7 +207,7 @@ export function CreateEventPage() {
 
   const handleSelectExternalTournamentClick = () => {
     openRightPanel('externalTournamentSelector', {
-      teamId: selectedTeam?.id,
+      teamId: targetTeam?.id,
       currentTeamColor: hasTeamColor ? activeBrandColor : null,
       onSelect: (tournament) => {
         setSelectedExtTournament(tournament);
@@ -170,7 +219,7 @@ export function CreateEventPage() {
   const handleSelectExtOpponentClick = () => {
     if (!selectedExtTournament) return;
     openRightPanel('externalOpponentSelector', {
-      teamId: selectedTeam?.id,
+      teamId: targetTeam?.id,
       tournamentId: selectedExtTournament.id,
       currentTeamColor: hasTeamColor ? activeBrandColor : null,
       onSelect: (opponent) => setSelectedExtOpponent(opponent)
@@ -180,7 +229,7 @@ export function CreateEventPage() {
   const handleSubmitForm = async (e) => {
     e.preventDefault();
     if (!isFormValid) return;
-    if (isClubScope ? !selectedClub?.id : !selectedTeam?.id) return;
+    if (isClubScope ? !targetClub?.id : !targetTeam?.id) return;
 
     setIsLoading(true);
     try {
@@ -188,8 +237,8 @@ export function CreateEventPage() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
         body: JSON.stringify({
-          teamId: isClubScope ? null : selectedTeam.id,
-          clubId: isClubScope ? selectedClub.id : null,
+          teamId: isClubScope ? null : targetTeam.id,
+          clubId: isClubScope ? targetClub.id : null,
           eventType, matchType, eventDate, eventTime,
           selectedArena,
           // Взнос: feeAmount/isFree остались как были (режим «с человека»),
@@ -216,7 +265,7 @@ export function CreateEventPage() {
           try {
             const prefix = isClubScope
               ? 'tr_cached_events_'
-              : `tr_cached_events_team_${selectedTeam.id}_month_`;
+              : `tr_cached_events_team_${targetTeam.id}_month_`;
             const keysToRemove = [];
             for (let i = 0; i < localStorage.length; i++) {
               const k = localStorage.key(i);
