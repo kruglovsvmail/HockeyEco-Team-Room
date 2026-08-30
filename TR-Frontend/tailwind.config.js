@@ -75,7 +75,8 @@ export default {
 
       boxShadow: {
         'brand-glow': 'var(--shadow-brand-glow)', 
-        'sheet-top': 'var(--shadow-sheet-top)',       
+        'sheet-top': 'var(--shadow-sheet-top)',
+        'sheet-bottom': 'var(--shadow-sheet-bottom)',       
         
         'sm': 'var(--shadow-sm)',
         'DEFAULT': 'var(--shadow-default)',

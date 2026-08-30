@@ -63,6 +63,7 @@
 
     /* --- ТЕHИ --- */
     --shadow-sheet-top: 0 -8px 32px rgba(0, 0, 0, 0.08);
+    --shadow-sheet-bottom: 0 8px 32px rgba(0, 0, 0, 0.08);   /* Зеркало sheet-top для верхней шторки */
     
     --shadow-sm: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
     --shadow-default: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
@@ -119,6 +120,7 @@
     --color-success-muted: #063d2e;
 
     --shadow-sheet-top: 0 -8px 32px rgba(0, 0, 0, 0.45);
+    --shadow-sheet-bottom: 0 8px 32px rgba(0, 0, 0, 0.45);   /* Зеркало sheet-top для верхней шторки */
   }
 
   /* --- ПРОИЗВОДНЫЕ ОТТЕНКИ БРЕНДА ---

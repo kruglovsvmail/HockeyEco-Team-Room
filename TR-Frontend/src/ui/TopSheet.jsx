@@ -10,12 +10,15 @@ export function TopSheet({ isOpen, onClose, children }) {
   const startY = useRef(0);
   const currentTransformY = useRef(0);
   
+  // Инлайновый transform снимаем на ЛЮБОЙ смене isOpen, а не только при открытии.
+  // Недотянутый свайп возвращает панель на место инлайном (translateY(0px)), а закрытие
+  // работает классом — инлайн сильнее, и панель оставалась на экране, пока затемнение гасло.
   useEffect(() => {
-    if (isOpen && panelRef.current) {
-      panelRef.current.style.transform = '';
-      panelRef.current.style.transition = '';
-      currentTransformY.current = 0;
-    }
+    if (!panelRef.current) return;
+    panelRef.current.style.transform = '';
+    panelRef.current.style.transition = '';
+    panelRef.current.style.willChange = '';
+    currentTransformY.current = 0;
   }, [isOpen]);
 
   // НАДЁЖНЫЙ НАТИВНЫЙ ПЕРЕХВАТ СВАЙПА ВВЕРХ
@@ -27,6 +30,11 @@ export function TopSheet({ isOpen, onClose, children }) {
       startY.current = e.touches[0].clientY;
       if (panelRef.current) {
         panelRef.current.style.transition = 'none';
+        // Поднимаем панель в отдельный слой композитора на время драга. Без этого
+        // каждый кадр перерисовывает панель вместе с её тенью на процессоре: на ПК
+        // запаса хватает, на телефоне драг заметно дёргается. Снимаем на touchend —
+        // постоянный will-change держал бы лишний слой в памяти всё время жизни шторки.
+        panelRef.current.style.willChange = 'transform';
       }
     };
 
@@ -45,6 +53,7 @@ export function TopSheet({ isOpen, onClose, children }) {
       if (!panelRef.current) return;
 
       panelRef.current.style.transition = 'transform 300ms cubic-bezier(0.32, 0.72, 0, 1)';
+      panelRef.current.style.willChange = '';
 
       if (currentTransformY.current < -80) {
         panelRef.current.style.transform = '';
@@ -85,7 +94,7 @@ export function TopSheet({ isOpen, onClose, children }) {
       <div
         ref={panelRef}
         className={clsx(
-          "absolute inset-x-0 top-0 z-[110] bg-sheet-bg rounded-b-3xl border-b border-sheet-border shadow-xl flex flex-col touch-none",
+          "absolute inset-x-0 top-0 z-[110] bg-sheet-bg rounded-b-3xl border-b border-sheet-border shadow-sheet-bottom flex flex-col touch-none",
           "transition-transform duration-220 ease-[cubic-bezier(0.32,0.72,0,1)] pt-[env(safe-area-inset-top)] outline-none",
           isOpen ? "translate-y-0 pointer-events-auto" : "-translate-y-[calc(100%+50px)] pointer-events-none"
         )}

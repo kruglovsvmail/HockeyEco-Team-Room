@@ -13,12 +13,15 @@ export function BottomSheet({ isOpen, onClose, children }) {
   const contentRef = useRef(null);
   const [contentHeight, setContentHeight] = useState('auto');
 
+  // Инлайновый transform снимаем на ЛЮБОЙ смене isOpen, а не только при открытии.
+  // Недотянутый свайп возвращает панель на место инлайном (translateY(0px)), а закрытие
+  // работает классом — инлайн сильнее, и панель оставалась на экране, пока затемнение гасло.
   useEffect(() => {
-    if (isOpen && panelRef.current) {
-      panelRef.current.style.transform = '';
-      panelRef.current.style.transition = '';
-      currentTransformY.current = 0;
-    }
+    if (!panelRef.current) return;
+    panelRef.current.style.transform = '';
+    panelRef.current.style.transition = '';
+    panelRef.current.style.willChange = '';
+    currentTransformY.current = 0;
   }, [isOpen]);
 
   useEffect(() => {
@@ -43,6 +46,11 @@ export function BottomSheet({ isOpen, onClose, children }) {
       startY.current = e.touches[0].clientY;
       if (panelRef.current) {
         panelRef.current.style.transition = 'none';
+        // Поднимаем панель в отдельный слой композитора на время драга. Без этого
+        // каждый кадр перерисовывает панель вместе с её тенью на процессоре: на ПК
+        // запаса хватает, на телефоне драг заметно дёргается. Снимаем на touchend —
+        // постоянный will-change держал бы лишний слой в памяти всё время жизни шторки.
+        panelRef.current.style.willChange = 'transform';
       }
     };
 
@@ -63,6 +71,7 @@ export function BottomSheet({ isOpen, onClose, children }) {
       if (!panelRef.current) return;
 
       panelRef.current.style.transition = 'transform 300ms cubic-bezier(0.32, 0.72, 0, 1)';
+      panelRef.current.style.willChange = '';
 
       if (currentTransformY.current > 100) {
         panelRef.current.style.transform = '';

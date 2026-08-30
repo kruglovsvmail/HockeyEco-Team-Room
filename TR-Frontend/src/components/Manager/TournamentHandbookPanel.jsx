@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import clsx from 'clsx';
 import { TextInputLP } from '../../ui/Input-LP';
 import { CheckboxLP } from '../../ui/Checkbox-LP';
@@ -73,9 +73,17 @@ export function TournamentHandbookPanel({ data, onClose }) {
   const abortControllerRef = useRef(null);
 
   const isColorsEnabled = localStorage.getItem('tr_use_team_colors') !== 'false';
+  // Кэш команды парсится один раз на ключ, а не на каждый рендер: в нём лежат состав,
+  // ростер и штаб целиком, и синхронный JSON.parse такого объёма посреди анимации
+  // перехода — это заметный фриз на телефоне.
   const teamCacheKey = selectedTeam?.id ? `tr_cached_team_${selectedTeam.id}` : null;
-  const cachedTeamData = teamCacheKey ? localStorage.getItem(teamCacheKey) : null;
-  const cachedDetails = cachedTeamData ? JSON.parse(cachedTeamData)?.fullDetails : null;
+  const cachedDetails = useMemo(() => {
+    if (!teamCacheKey) return null;
+    try {
+      const raw = localStorage.getItem(teamCacheKey);
+      return raw ? JSON.parse(raw)?.fullDetails ?? null : null;
+    } catch { return null; }
+  }, [teamCacheKey]);
 
   const teamColorSource = getTeamUiColor(cachedDetails) || getTeamUiColor(selectedTeam);
   const hasTeamColor = isColorsEnabled && !!teamColorSource;

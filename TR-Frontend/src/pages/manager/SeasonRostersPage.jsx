@@ -32,9 +32,17 @@ export function SeasonRostersPage({ user, selectedTeam, openRightPanel, onClose 
   const [filter, setFilter] = useState('all');
 
   const isColorsEnabled = localStorage.getItem('tr_use_team_colors') !== 'false';
+  // Кэш команды парсится один раз на ключ, а не на каждый рендер: в нём лежат состав,
+  // ростер и штаб целиком, и синхронный JSON.parse такого объёма посреди анимации
+  // перехода — это заметный фриз на телефоне.
   const teamCacheKey = selectedTeam?.id ? `tr_cached_team_${selectedTeam.id}` : null;
-  const cachedTeamData = teamCacheKey ? localStorage.getItem(teamCacheKey) : null;
-  const cachedDetails = cachedTeamData ? JSON.parse(cachedTeamData)?.fullDetails : null;
+  const cachedDetails = useMemo(() => {
+    if (!teamCacheKey) return null;
+    try {
+      const raw = localStorage.getItem(teamCacheKey);
+      return raw ? JSON.parse(raw)?.fullDetails ?? null : null;
+    } catch { return null; }
+  }, [teamCacheKey]);
   const teamColorSource = getTeamUiColor(cachedDetails) || getTeamUiColor(selectedTeam);
   const hasTeamColor = isColorsEnabled && !!teamColorSource;
   const activeBrandColor = hasTeamColor ? teamColorSource : 'var(--color-brand)';
