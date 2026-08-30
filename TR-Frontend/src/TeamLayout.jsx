@@ -368,6 +368,17 @@ function TeamLayoutContent() {
   const teamSection = TEAM_SECTIONS[applicationMatch ? '/manager/season-rosters' : location.pathname] || null;
   const TeamSectionPage = teamSection?.Page || null;
 
+  // Раздел доехал и полностью закрыл собой страницу команды. С этого момента она
+  // за экраном и ни в чём не участвует, но продолжает висеть отрисованным слоем —
+  // а внутри у неё карусель вкладок шириной в три экрана. На телефоне это текстура,
+  // которую композитор таскает каждый кадр, и переход «заявки → заявка» рвётся.
+  // Прячем до тех пор, пока раздел не начнёт закрываться: тогда страница снова
+  // нужна, она выезжает обратно.
+  const [isSectionSettled, setIsSectionSettled] = useState(false);
+  useEffect(() => {
+    if (!teamSection) setIsSectionSettled(false);
+  }, [teamSection]);
+
   // Патч события из EditEventPanel.
   // ВАЖНО: history.state.event сохраняется браузером между рефрешами, поэтому
   // только sessionStorage недостаточно — после refresh useEffect перетрёт его
@@ -695,7 +706,8 @@ function TeamLayoutContent() {
             ? `translateX(-${panelPct}%)`
             : isSidebarOpen
             ? `translateX(${panelPct}%)`
-            : undefined
+            : undefined,
+          visibility: isSectionSettled ? 'hidden' : undefined
         }}
       >
         <Header
@@ -866,6 +878,7 @@ function TeamLayoutContent() {
             animate={{ x: applicationMatch ? '-100%' : rightPanel.isOpen ? `-${panelPct}%` : 0 }}
             exit={{ x: '100%' }}
             transition={{ duration: 0.35, ease: [0.32, 0.72, 0, 1] }}
+            onAnimationComplete={() => setIsSectionSettled(true)}
           >
             <div className="absolute top-0 bottom-0 right-full w-12 bg-gradient-to-l from-black/30 to-transparent pointer-events-none" />
 
