@@ -13,6 +13,41 @@ export function BottomSheet({ isOpen, onClose, children }) {
   const contentRef = useRef(null);
   const [contentHeight, setContentHeight] = useState('auto');
 
+  // Портал живёт, только пока шторка открыта или доигрывает закрытие; до первого
+  // открытия в DOM нет ничего. На экране заявки таких шторок десяток, и каждая
+  // держала полноэкранное затемнение, ResizeObserver и три тач-слушателя. Всё это
+  // монтировалось разом, прямо посреди анимации перехода, и заедало её.
+  const [isMounted, setIsMounted] = useState(isOpen);
+  // Положение панели отделено от isOpen: при первом открытии портал обязан сначала
+  // отрисоваться в закрытом виде, иначе браузеру не от чего анимировать и шторка
+  // просто возникает на месте.
+  const [isRaised, setIsRaised] = useState(false);
+
+  useEffect(() => {
+    if (isOpen) {
+      setIsMounted(true);
+      return;
+    }
+    setIsRaised(false);
+    // Ждём дольше самой длинной анимации закрытия (затемнение — 300мс),
+    // иначе шторка исчезнет рывком вместо того, чтобы уехать.
+    const timer = setTimeout(() => setIsMounted(false), 400);
+    return () => clearTimeout(timer);
+  }, [isOpen]);
+
+  useEffect(() => {
+    if (!isMounted || !isOpen) return;
+    // Два кадра: первый отдаёт браузеру закрытое состояние, второй переключает на открытое.
+    let inner = null;
+    const outer = requestAnimationFrame(() => {
+      inner = requestAnimationFrame(() => setIsRaised(true));
+    });
+    return () => {
+      cancelAnimationFrame(outer);
+      if (inner !== null) cancelAnimationFrame(inner);
+    };
+  }, [isMounted, isOpen]);
+
   // Инлайновый transform снимаем на ЛЮБОЙ смене isOpen, а не только при открытии.
   // Недотянутый свайп возвращает панель на место инлайном (translateY(0px)), а закрытие
   // работает классом — инлайн сильнее, и панель оставалась на экране, пока затемнение гасло.
@@ -22,7 +57,7 @@ export function BottomSheet({ isOpen, onClose, children }) {
     panelRef.current.style.transition = '';
     panelRef.current.style.willChange = '';
     currentTransformY.current = 0;
-  }, [isOpen]);
+  }, [isOpen, isMounted]);
 
   useEffect(() => {
     if (!contentRef.current) return;
@@ -35,7 +70,7 @@ export function BottomSheet({ isOpen, onClose, children }) {
     
     resizeObserver.observe(contentRef.current);
     return () => resizeObserver.disconnect();
-  }, [children]);
+  }, [children, isMounted]);
 
   // НАДЁЖНЫЙ НАТИВНЫЙ ПЕРЕХВАТ СВАЙПА С ДЕФОЛТНЫМ СБРОСОМ ТАЧ-БУФЕРА
   useEffect(() => {
@@ -96,7 +131,9 @@ export function BottomSheet({ isOpen, onClose, children }) {
       handleNode.removeEventListener('touchmove', onTouchMove);
       handleNode.removeEventListener('touchend', onTouchEnd);
     };
-  }, [isOpen, onClose]);
+  }, [isOpen, isMounted, onClose]);
+
+  if (!isMounted) return null;
 
   return createPortal(
     <>
@@ -107,7 +144,7 @@ export function BottomSheet({ isOpen, onClose, children }) {
            с десяток шторок разом, это десять таких поверхностей. */
         className={clsx(
           "absolute inset-0 bg-overlay z-[100] transition-opacity duration-300",
-          isOpen ? "backdrop-blur-overlay opacity-100 pointer-events-auto" : "opacity-0 pointer-events-none"
+          isRaised ? "backdrop-blur-overlay opacity-100 pointer-events-auto" : "opacity-0 pointer-events-none"
         )}
         onClick={onClose}
       />
@@ -117,7 +154,7 @@ export function BottomSheet({ isOpen, onClose, children }) {
         className={clsx(
           "absolute inset-x-0 bottom-0 z-[110] bg-sheet-bg rounded-t-3xl border-t border-sheet-border shadow-sheet-top flex flex-col",
           "transition-transform duration-220 ease-[cubic-bezier(0.32,0.72,0,1)]",
-          isOpen ? "translate-y-0 pointer-events-auto" : "translate-y-[calc(100%+50px)] pointer-events-none"
+          isRaised ? "translate-y-0 pointer-events-auto" : "translate-y-[calc(100%+50px)] pointer-events-none"
         )}
       >
         {/* Верхняя шторка-индикатор (Вешаем нативный ref) */}
