@@ -101,9 +101,13 @@ export function BottomSheet({ isOpen, onClose, children }) {
   return createPortal(
     <>
       <div
+        /* Блюр включаем только на открытой шторке. Закрытая полностью прозрачна,
+           размытия на ней всё равно не видно, а backdrop-filter держит
+           полноэкранную поверхность в дереве слоёв. На экране, где смонтировано
+           с десяток шторок разом, это десять таких поверхностей. */
         className={clsx(
-          "absolute inset-0 bg-overlay backdrop-blur-overlay z-[100] transition-opacity duration-300",
-          isOpen ? "opacity-100 pointer-events-auto" : "opacity-0 pointer-events-none"
+          "absolute inset-0 bg-overlay z-[100] transition-opacity duration-300",
+          isOpen ? "backdrop-blur-overlay opacity-100 pointer-events-auto" : "opacity-0 pointer-events-none"
         )}
         onClick={onClose}
       />

@@ -84,9 +84,13 @@ export function TopSheet({ isOpen, onClose, children }) {
       <button
         type="button"
         aria-label="Закрыть шторку"
+        /* Блюр включаем только на открытой шторке. Закрытая полностью прозрачна,
+           размытия на ней всё равно не видно, а backdrop-filter держит
+           полноэкранную поверхность в дереве слоёв. На экране, где смонтировано
+           с десяток шторок разом, это десять таких поверхностей. */
         className={clsx(
-          "absolute inset-0 w-full h-full bg-overlay backdrop-blur-overlay z-[100] transition-opacity duration-300 border-none outline-none p-0 m-0",
-          isOpen ? "opacity-100 pointer-events-auto" : "opacity-0 pointer-events-none"
+          "absolute inset-0 w-full h-full bg-overlay z-[100] transition-opacity duration-300 border-none outline-none p-0 m-0",
+          isOpen ? "backdrop-blur-overlay opacity-100 pointer-events-auto" : "opacity-0 pointer-events-none"
         )}
         onClick={onClose}
       />
