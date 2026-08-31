@@ -368,6 +368,25 @@ function TeamLayoutContent() {
   const teamSection = TEAM_SECTIONS[applicationMatch ? '/manager/season-rosters' : location.pathname] || null;
   const TeamSectionPage = teamSection?.Page || null;
 
+  // Раздел доехал и полностью закрыл собой страницу команды. Дальше она за экраном и
+  // ни в чём не участвует, но остаётся отрисованным слоем — а внутри у неё карусель
+  // вкладок шириной в три экрана. На телефоне это текстура, которую композитор таскает
+  // каждый кадр, и переходы «заявки ↔ заявка» идут в три слоя вместо двух.
+  //
+  // Момент «доехал» намеренно берём таймером, а не onAnimationComplete: колбэк framer
+  // приходит из анимационного цикла, и setState из него, наложенный на выход
+  // AnimatePresence и ленивый TeamSectionPage внутри Suspense, ронял рендер
+  // с «Rendered fewer hooks than expected».
+  const [isSectionSettled, setIsSectionSettled] = useState(false);
+  useEffect(() => {
+    if (!teamSection) {
+      setIsSectionSettled(false);
+      return;
+    }
+    const timer = setTimeout(() => setIsSectionSettled(true), 400);
+    return () => clearTimeout(timer);
+  }, [teamSection]);
+
   // Патч события из EditEventPanel.
   // ВАЖНО: history.state.event сохраняется браузером между рефрешами, поэтому
   // только sessionStorage недостаточно — после refresh useEffect перетрёт его
@@ -695,7 +714,8 @@ function TeamLayoutContent() {
             ? `translateX(-${panelPct}%)`
             : isSidebarOpen
             ? `translateX(${panelPct}%)`
-            : undefined
+            : undefined,
+          visibility: isSectionSettled ? 'hidden' : undefined
         }}
       >
         <Header
