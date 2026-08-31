@@ -113,8 +113,8 @@ export const PERMISSIONS = {
 
   // Доступ к разделу заявочных кампаний в турниры (Заявки)
   MGR_SEASON_ROSTERS: {
-    allowedRoles: [ROLES.CLUB_OWNER, ROLES.OWNER],
-    requiresSubscription: []
+    allowedRoles: [ROLES.CLUB_OWNER, ROLES.OWNER, ROLES.TEAM_MANAGER],
+    requiresSubscription: [ROLES.TEAM_MANAGER]
   },
 
   // Доступ к разделу финансового контроля (Финансы)

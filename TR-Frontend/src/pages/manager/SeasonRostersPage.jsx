@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { useAccess } from '../../hooks/useAccess';
 import { SubscriptionStub } from '../../ui/SubscriptionStub';
@@ -28,8 +28,16 @@ export function SeasonRostersPage({ user, selectedTeam, openRightPanel, onClose 
   const hasAccess = checkAccess('MGR_SEASON_ROSTERS');
 
   const [applications, setApplications] = useState([]);
-  const [isLoading, setIsLoading] = useState(true);
+  // Лоадер показываем, только пока показывать нечего. Возврат из деталей заявки тоже
+  // зовёт loadData (см. эффект ниже), и раньше тот сбрасывал список в лоадер: карточки
+  // сносились и собирались заново прямо в кадре анимации перехода — на телефоне это и
+  // было видно как тормоза. Теперь список обновляется в фоне, а на экране всё это время
+  // остаются прежние карточки.
+  const [hasLoaded, setHasLoaded] = useState(false);
   const [filter, setFilter] = useState('all');
+  // Для какой команды загружен текущий список. Очистить экран имеет право только смена
+  // команды — иначе на нём на миг остались бы чужие заявки.
+  const loadedTeamRef = useRef(null);
 
   const isColorsEnabled = localStorage.getItem('tr_use_team_colors') !== 'false';
   // Кэш команды парсится один раз на ключ, а не на каждый рендер: в нём лежат состав,
@@ -49,7 +57,13 @@ export function SeasonRostersPage({ user, selectedTeam, openRightPanel, onClose 
 
   const loadData = useCallback(async () => {
     if (!selectedTeam?.id) return;
-    setIsLoading(true);
+    // Сменилась команда — прежние карточки чужие, убираем их вместе с флагом загрузки.
+    // При обычной перезагрузке (возврат из деталей, создание заявки) сюда не заходим.
+    if (loadedTeamRef.current !== selectedTeam.id) {
+      loadedTeamRef.current = selectedTeam.id;
+      setApplications([]);
+      setHasLoaded(false);
+    }
     try {
       const res = await fetch(`${import.meta.env.VITE_API_URL}/api/manager/seasons/${selectedTeam.id}/applications`, { headers: getAuthHeaders() });
       const json = await res.json();
@@ -57,7 +71,7 @@ export function SeasonRostersPage({ user, selectedTeam, openRightPanel, onClose 
     } catch (err) {
       console.error('Ошибка загрузки заявок:', err);
     } finally {
-      setIsLoading(false);
+      setHasLoaded(true);
     }
   }, [selectedTeam?.id]);
 
@@ -107,7 +121,7 @@ export function SeasonRostersPage({ user, selectedTeam, openRightPanel, onClose 
         </div>
 
         <div className="px-3 flex flex-col gap-3">
-          {isLoading ? (
+          {!hasLoaded ? (
             <div className="py-16"><PageLoader /></div>
           ) : filteredApplications.length === 0 ? (
             <div className="p-5 bg-surface-level1 rounded-3xl shadow-md text-left">

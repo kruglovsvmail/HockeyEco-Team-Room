@@ -245,5 +245,63 @@ input, textarea, [contenteditable="true"] {
 .bg-noise {
   background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noiseFilter'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.8' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noiseFilter)'/%3E%3C/svg%3E");
   opacity: 0.04;
-  pointer-events: none; 
+  pointer-events: none;
+}
+
+/* ─────────────────────────────────────────────────────────────
+   PAGELOADER (ui/Loader.jsx).
+   Правила жили в <style> внутри самого компонента. Лоадер показывается ровно
+   в момент переходов между экранами, и каждое его монтирование/размонтирование
+   вставляло и удаляло таблицу стилей — то есть инвалидировало стили документа
+   прямо посреди анимации перехода. Здесь они парсятся один раз на загрузку.
+   Геометрию по-прежнему задаёт PUCK_CONFIG инлайновыми CSS-переменными на корне
+   компонента — сюда они приходят наследованием.
+   ───────────────────────────────────────────────────────────── */
+
+/* Шайба, слой 1 — вертикальная амплитуда */
+@keyframes puckWobbleY {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(calc(-1 * var(--wobble-y-amp))); }
+}
+
+/* Шайба, слой 2 — покачивание (угол) */
+@keyframes puckRotate {
+  0%, 100% { transform: rotate(0deg); }
+  25% { transform: rotate(calc(-1 * var(--wobble-rot-amp))); }
+  75% { transform: rotate(var(--wobble-rot-amp)); }
+}
+
+/* Линии скорости: пролёт справа налево.
+   Прежние кадры анимировали left и width — оба свойства layout-ные, и каждый кадр
+   каждой из пяти линий пересчитывал раскладку на главном потоке, конкурируя с
+   анимацией перехода экранов. Теперь линия постоянной ширины (--line-max-w), а
+   кадры двигают только transform: позицию — translateX, длину — scaleX от левого
+   края (transform-origin ниже). Коэффициенты — пересчёт прежних значений:
+   left 110% → −35% от ширины контейнера, длина 0 → 40px → 70px → 0. */
+@keyframes animeSpeedLine {
+  0%   { transform: translateX(calc(var(--container-w) * 1.1))   scaleX(0);     opacity: 0; }
+  12%  { transform: translateX(calc(var(--container-w) * 0.926)) scaleX(0.571); opacity: 1; }
+  80%  { transform: translateX(calc(var(--container-w) * -0.06)) scaleX(1);     opacity: 1; }
+  100% { transform: translateX(calc(var(--container-w) * -0.35)) scaleX(0);     opacity: 0; }
+}
+
+.puck-y-layer {
+  animation: puckWobbleY var(--wobble-y-speed) ease-in-out infinite;
+  z-index: 10;
+}
+
+.puck-rot-layer {
+  animation: puckRotate var(--wobble-rot-speed) ease-in-out infinite;
+}
+
+.anime-speed-line {
+  position: absolute;
+  left: 0;
+  width: var(--line-max-w);
+  height: var(--line-stroke);
+  transform-origin: left center;
+  background-color: var(--puck-color);
+  border-radius: 9999px;
+  animation: animeSpeedLine var(--lines-speed) linear infinite;
+  opacity: 0;
 }

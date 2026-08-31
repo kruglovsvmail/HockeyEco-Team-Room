@@ -94,7 +94,7 @@ export function SeasonRostersDetailsPage({ appId, teamId, teamColor, onClose, op
   }, [navigate]);
 
   return (
-    <div className="w-full h-full flex flex-col overflow-hidden bg-surface-base" style={hasTeamColor ? { '--color-brand': activeBrandColor } : {}}>
+    <div className="w-full h-full flex flex-col overflow-hidden " style={hasTeamColor ? { '--color-brand': activeBrandColor } : {}}>
       <Header onBack={onClose} />
 
       <div className="flex-1 overflow-y-auto scrollbar-hide" style={{ paddingTop: '60px' }}>

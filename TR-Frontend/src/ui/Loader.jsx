@@ -17,6 +17,7 @@ const PUCK_CONFIG = {
   
   // Настройки скоростных линий
   speedLineStrokeWidth: 1,        // ТОЛЩИНА ЛИНИЙ СКОРОСТИ (в пикселях)
+  speedLineMaxWidth: 70,          // ДЛИНА ЛИНИИ СКОРОСТИ в её самой длинной фазе (в пикселях)
   speedLineCount: 5,              // КОЛИЧЕСТВО ЛИНИЙ СКОРОСТИ
   linesBaseSpeed: '0.3s',        // Базовая скорость пролета линий через экран
   
@@ -32,13 +33,18 @@ const PUCK_CONFIG = {
  * Полностью настраиваемый независимый компонент с плавающей шайбой по центру.
  */
 export function PageLoader({ className }) {
-  // Маппинг настроек конфигуратора в CSS-переменные для использования внутри @keyframes
+  // Маппинг настроек конфигуратора в CSS-переменные для использования внутри @keyframes.
+  // Сами правила и кадры лежат в assets/global.css (блок «PAGELOADER») — держать их в
+  // <style> внутри компонента нельзя: лоадер монтируется в момент перехода между
+  // экранами, и вставка/удаление таблицы стилей била по стилям всего документа
+  // ровно во время анимации.
   const configStyles = {
     '--container-w': PUCK_CONFIG.containerWidth,
     '--container-h': PUCK_CONFIG.containerHeight,
     '--puck-color': PUCK_CONFIG.strokeColor,
     '--puck-stroke': `${PUCK_CONFIG.puckStrokeWidth}px`,
     '--line-stroke': `${PUCK_CONFIG.speedLineStrokeWidth}px`,
+    '--line-max-w': `${PUCK_CONFIG.speedLineMaxWidth}px`,
     '--wobble-y-speed': PUCK_CONFIG.wobbleSpeedY,
     '--wobble-y-amp': PUCK_CONFIG.wobbleAmplitudeY,
     '--wobble-rot-speed': PUCK_CONFIG.wobbleSpeedRotate,
@@ -82,48 +88,6 @@ export function PageLoader({ className }) {
         className="relative flex items-center justify-center overflow-hidden"
         style={{ width: 'var(--container-w)', height: 'var(--container-h)' }}
       >
-        
-        {/* Стили анимации */}
-        <style>{`
-          /* Раздельная анимация: Слой 1 — Вертикальная амплитуда */
-          @keyframes puckWobbleY {
-            0%, 100% { transform: translateY(0); }
-            50% { transform: translateY(calc(-1 * var(--wobble-y-amp))); }
-          }
-          
-          /* Раздельная анимация: Слой 2 — Скорость покачивания (угол) */
-          @keyframes puckRotate {
-            0%, 100% { transform: rotate(0deg); }
-            25% { transform: rotate(calc(-1 * var(--wobble-rot-amp))); }
-            75% { transform: rotate(var(--wobble-rot-amp)); }
-          }
-          
-          /* Движение линий скорости слева направо (визуальный вылет влево) */
-          @keyframes animeSpeedLine {
-            0% { left: 110%; width: 0px; opacity: 0; }
-            12% { width: 40px; opacity: 1; }
-            80% { width: 70px; opacity: 1; }
-            100% { left: -35%; width: 0px; opacity: 0; }
-          }
-
-          .puck-y-layer {
-            animation: puckWobbleY var(--wobble-y-speed) ease-in-out infinite;
-            z-index: 10;
-          }
-
-          .puck-rot-layer {
-            animation: puckRotate var(--wobble-rot-speed) ease-in-out infinite;
-          }
-
-          .anime-speed-line {
-            position: absolute;
-            height: var(--line-stroke);
-            background-color: var(--puck-color);
-            border-radius: 9999px;
-            animation: animeSpeedLine var(--lines-speed) linear infinite;
-            opacity: 0;
-          }
-        `}</style>
 
         {/* Сгенерированный поток линий скорости */}
         <div className="absolute inset-0 pointer-events-none w-full h-full">
