@@ -11,6 +11,7 @@ import { Icon } from '../../ui/Icon';
 import { useAccess } from '../../hooks/useAccess';
 import { HintPopover } from '../../ui/HintPopover';
 import { Toast } from '../../ui/Toast';
+import { MessengerLinks } from '../../ui/MessengerLinks';
 
 // Форматирование телефонных номеров по маске +7 (000) 000-00-00
 const formatPhoneNumber = (phoneStr) => {
@@ -808,6 +809,9 @@ export const UserDetails = ({ data, openRightPanel, pushRightPanel }) => {
           <InfoRow label="тел." value={formatPhoneNumber(profile.phone)} />
           <InfoRow label="Дата рожд." value={profile.birth_date ? dayjs(profile.birth_date).format('DD.MM.YYYY') : null} />
           <InfoRow label="Возраст" value={age ? `${age} ${pluralizeAge(age)}` : null} />
+          {/* Телефон нужен, чтобы связаться: кнопки открывают переписку сразу,
+              без набора номера руками */}
+          <MessengerLinks phone={profile.phone} className="justify-start pt-3" />
         </CustomBlock>
 
         {/* ЗЕЛЕНЫЙ БЛОК ВИРТУАЛЬНОГО ПРОФИЛЯ РУКОВОДИТЕЛЯ */}

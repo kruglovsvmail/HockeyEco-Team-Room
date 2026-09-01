@@ -17,6 +17,7 @@ import { ConfirmSheet } from '../../ui/ConfirmSheet';
 import { ArenaSelector } from '../Manager/ArenaSelector';
 import { ChipTabs } from '../../ui/ChipTabs';
 import { FeeSettingsFields } from '../../ui/FeeSettingsFields';
+import { CheckboxLP } from '../../ui/Checkbox-LP';
 import { formatEventFee, eventFeeHint, feeSettingsFromEvent, feeSettingsToBody, feeSettingsToEventPatch } from '../../utils/eventFee';
 
 dayjs.extend(utc);
@@ -99,7 +100,7 @@ const LockedField = ({ hint, children }) => (
 // Главный компонент панели редактирования
 // =========================================================================
 export const EditEventPanel = ({ data, onClose }) => {
-  const { event: initialEvent, user, selectedTeam, selectedClub, onEventUpdate, onEventDeleted } = data || {};
+  const { event: initialEvent, user, selectedTeam, selectedClub, selectedCommunity, onEventUpdate, onEventDeleted } = data || {};
   const [event, setEvent] = useState(initialEvent);
 
   useEffect(() => { setEvent(initialEvent); }, [initialEvent?.event_id]);
@@ -108,10 +109,11 @@ export const EditEventPanel = ({ data, onClose }) => {
   const hasTeamColor = isColorsEnabled && !!event?.team_color;
   const activeBrandColor = hasTeamColor ? event.team_color : 'var(--color-brand)';
 
-  const { checkAccess, checkClubAccess } = useAccess(user, selectedTeam, selectedClub);
+  const { checkAccess, checkClubAccess, checkCommunityAccess } =
+    useAccess(user, selectedTeam, selectedClub, selectedCommunity);
   const { blocks } = useMemo(
-    () => computeEventEditAccess(event, user, selectedTeam, checkAccess, checkClubAccess),
-    [event, user, selectedTeam, checkAccess, checkClubAccess]
+    () => computeEventEditAccess(event, user, selectedTeam, checkAccess, checkClubAccess, checkCommunityAccess),
+    [event, user, selectedTeam, checkAccess, checkClubAccess, checkCommunityAccess]
   );
 
   const eventType = event?.event_type;
@@ -125,6 +127,14 @@ export const EditEventPanel = ({ data, onClose }) => {
   // Клубное событие правится в контексте клуба: команды у него нет,
   // и сервер ждёт clubId вместо teamId.
   const clubId = event?.my_club_id || null;
+
+  // Событие сообщества живёт по своему адресу: у него отдельные ручки на
+  // расписание, взнос и лимиты состава, а контекст стоит прямо в пути.
+  const communityId = event?.my_community_id || null;
+  const isCommunityEvent = !!communityId;
+  const communityBase = isCommunityEvent
+    ? `${import.meta.env.VITE_API_URL}/api/communities/${communityId}/events/${eventType}/${eventId}`
+    : null;
   const arenaTz = event?.arena_timezone || 'UTC';
   const targetDate = event?.event_date || event?.game_date;
 
@@ -212,6 +222,68 @@ export const EditEventPanel = ({ data, onClose }) => {
     setTrainingType(event.training_type || 'general');
   }, [event, targetDate, arenaTz]);
 
+  // ── Лимиты состава и группы (только события сообщества) ─────────────────
+  const [maxSkaters, setMaxSkaters] = useState('');
+  const [maxGoalies, setMaxGoalies] = useState('');
+  const [includeUngrouped, setIncludeUngrouped] = useState(true);
+  const [selectedGroupIds, setSelectedGroupIds] = useState([]);
+  const [communityGroups, setCommunityGroups] = useState([]);
+
+  useEffect(() => {
+    if (!isCommunityEvent) return;
+    setMaxSkaters(event?.max_skaters ?? '');
+    setMaxGoalies(event?.max_goalies ?? '');
+    setIncludeUngrouped(event?.include_ungrouped !== false);
+  }, [isCommunityEvent, event?.max_skaters, event?.max_goalies, event?.include_ungrouped]);
+
+  // Список групп сообщества: календарь их не отдаёт, а без них чипы адресации
+  // рисовать не из чего.
+  useEffect(() => {
+    if (!isCommunityEvent || eventType !== 'community_training') return;
+    let cancelled = false;
+    fetch(`${import.meta.env.VITE_API_URL}/api/communities/${communityId}/details`, {
+      headers: getAuthHeaders(),
+    })
+      .then(res => (res.ok ? res.json() : null))
+      .then(json => { if (!cancelled && json) setCommunityGroups(json.groups || []); })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, [isCommunityEvent, eventType, communityId]);
+
+  const saveLimits = async () => {
+    setSavingBlock('limits');
+    try {
+      const res = await fetch(`${communityBase}/limits`, {
+        method: 'PUT',
+        headers: { ...getAuthHeaders(), 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          max_skaters: maxSkaters,
+          max_goalies: maxGoalies,
+          ...(eventType === 'community_training'
+            ? { include_ungrouped: includeUngrouped, group_ids: selectedGroupIds }
+            : {}),
+        }),
+      });
+      if (!res.ok) {
+        const errData = await res.json().catch(() => ({}));
+        triggerToast(errData.error || 'Не удалось сохранить лимиты', 'danger');
+        return;
+      }
+      applyPatch({
+        max_skaters: maxSkaters === '' ? null : Number(maxSkaters),
+        max_goalies: maxGoalies === '' ? null : Number(maxGoalies),
+        include_ungrouped: includeUngrouped,
+      });
+      triggerToast('Состав сохранён', 'success');
+      setEditingBlock(null);
+    } catch (err) {
+      console.error(err);
+      triggerToast('Ошибка соединения с сервером', 'danger');
+    } finally {
+      setSavingBlock(null);
+    }
+  };
+
   // Применяем патч к event локально и сообщаем наружу (в TeamLayout/sessionStorage)
   const applyPatch = (patch) => {
     setEvent(prev => ({ ...prev, ...patch }));
@@ -244,11 +316,22 @@ export const EditEventPanel = ({ data, onClose }) => {
             custom_timezone: customTimezone || null,
           };
 
-      const res = await fetch(`${import.meta.env.VITE_API_URL}${apiBase}/${eventId}/schedule`, {
-        method: 'PUT',
-        headers: { ...getAuthHeaders(), 'Content-Type': 'application/json' },
-        body: JSON.stringify(body),
-      });
+      // Сообщество ждёт пару «дата + время» и само приводит её к таймзоне арены
+      const res = await fetch(
+        isCommunityEvent ? `${communityBase}/schedule` : `${import.meta.env.VITE_API_URL}${apiBase}/${eventId}/schedule`,
+        {
+          method: 'PUT',
+          headers: { ...getAuthHeaders(), 'Content-Type': 'application/json' },
+          body: JSON.stringify(isCommunityEvent ? {
+            eventDate: gameDate,
+            eventTime: gameTime,
+            arena_id: selectedArenaId || null,
+            location: useManualLocation ? (selectedArenaName || '') : null,
+            location_url: useManualLocation ? (locationUrl || '') : null,
+            custom_timezone: customTimezone || null,
+          } : body),
+        }
+      );
 
       if (!res.ok) {
         const errData = await res.json().catch(() => ({}));
@@ -279,11 +362,20 @@ export const EditEventPanel = ({ data, onClose }) => {
   const saveTrainingType = async () => {
     setSavingBlock('trainingType');
     try {
-      const res = await fetch(`${import.meta.env.VITE_API_URL}/api/trainings/${eventId}/type`, {
-        method: 'PUT',
-        headers: { ...getAuthHeaders(), 'Content-Type': 'application/json' },
-        body: JSON.stringify({ teamId, clubId, eventType, training_type: trainingType }),
-      });
+      // У тренировки отдельной ручки под тип нет: он правится вместе с расписанием,
+      // тем же ключом прав — тип это такой же атрибут самого события.
+      const res = await fetch(
+        isCommunityEvent ? `${communityBase}/schedule` : `${import.meta.env.VITE_API_URL}/api/trainings/${eventId}/type`,
+        {
+          method: 'PUT',
+          headers: { ...getAuthHeaders(), 'Content-Type': 'application/json' },
+          body: JSON.stringify(
+            isCommunityEvent
+              ? { training_type: trainingType }
+              : { teamId, clubId, eventType, training_type: trainingType }
+          ),
+        }
+      );
 
       if (!res.ok) {
         const errData = await res.json().catch(() => ({}));
@@ -317,11 +409,14 @@ export const EditEventPanel = ({ data, onClose }) => {
             ...feeSettingsToBody(feeSettings),
           };
 
-      const res = await fetch(`${import.meta.env.VITE_API_URL}${apiBase}/${eventId}/finances`, {
-        method: 'PUT',
-        headers: { ...getAuthHeaders(), 'Content-Type': 'application/json' },
-        body: JSON.stringify(body),
-      });
+      const res = await fetch(
+        isCommunityEvent ? `${communityBase}/finances` : `${import.meta.env.VITE_API_URL}${apiBase}/${eventId}/finances`,
+        {
+          method: 'PUT',
+          headers: { ...getAuthHeaders(), 'Content-Type': 'application/json' },
+          body: JSON.stringify(body),
+        }
+      );
 
       if (!res.ok) {
         const errData = await res.json().catch(() => ({}));
@@ -372,9 +467,11 @@ export const EditEventPanel = ({ data, onClose }) => {
     setSavingBlock('delete');
     try {
       const scopeQuery = clubId ? `clubId=${clubId}` : `teamId=${teamId}`;
-      const url = isMatch
-        ? `${import.meta.env.VITE_API_URL}${apiBase}/${eventId}?teamId=${teamId}`
-        : `${import.meta.env.VITE_API_URL}${apiBase}/${eventId}?${scopeQuery}&eventType=${eventType}`;
+      const url = isCommunityEvent
+        ? communityBase
+        : isMatch
+          ? `${import.meta.env.VITE_API_URL}${apiBase}/${eventId}?teamId=${teamId}`
+          : `${import.meta.env.VITE_API_URL}${apiBase}/${eventId}?${scopeQuery}&eventType=${eventType}`;
       const res = await fetch(url, { method: 'DELETE', headers: getAuthHeaders() });
       if (!res.ok) {
         const errData = await res.json().catch(() => ({}));
@@ -695,6 +792,114 @@ export const EditEventPanel = ({ data, onClose }) => {
                   <InfoRow label="Форма хозяев" value={(event.home_jersey_type || event.home_jersey) === 'dark' ? 'Тёмная' : 'Светлая'} />
                   <InfoRow label="Форма гостей" value={(event.away_jersey_type || event.away_jersey) === 'dark' ? 'Тёмная' : 'Светлая'} />
                 </>
+              )}
+            </div>
+          )}
+        </EventBlock>
+      )}
+
+      {/* ───────────── БЛОК: СОСТАВ И РЕЗЕРВ (только сообщества) ─────────────
+          Лимит вниз никого не выбрасывает — те, кто уже в основе, там и остаются.
+          Лимит вверх свободные места раздаёт не сразу: их разберёт очередь. */}
+      {isCommunityEvent && blocks.limits?.hasRole && (
+        <EventBlock
+          title="Состав и резерв"
+          icon="users"
+          hasRole={blocks.limits.hasRole}
+          hasSubscription={blocks.limits.hasSubscription}
+          isEditing={editingBlock === 'limits'}
+          isSaving={savingBlock === 'limits'}
+          activeBrandColor={activeBrandColor}
+          onToggleEdit={() => setEditingBlock(prev => prev === 'limits' ? null : 'limits')}
+        >
+          {editingBlock === 'limits' ? (
+            <div className="flex flex-col gap-4 pt-1">
+              <div className="grid grid-cols-2 gap-6">
+                <TextInputLP
+                  label="Полевых, максимум"
+                  value={String(maxSkaters ?? '')}
+                  onChange={setMaxSkaters}
+                  type="number"
+                  placeholder="Без лимита"
+                  size="sm"
+                  activeColor={hasTeamColor ? activeBrandColor : null}
+                />
+                <TextInputLP
+                  label="Вратарей, максимум"
+                  value={String(maxGoalies ?? '')}
+                  onChange={setMaxGoalies}
+                  type="number"
+                  placeholder="Без лимита"
+                  size="sm"
+                  activeColor={hasTeamColor ? activeBrandColor : null}
+                />
+              </div>
+
+              <span className="text-[10px] text-content-muted leading-tight">
+                Пусто — лимита нет. Ноль вратарей означает, что вратари на это
+                событие не набираются вовсе.
+              </span>
+
+              {eventType === 'community_training' && (
+                <div className="flex flex-col gap-3">
+                  {communityGroups.length > 0 && (
+                    <div className="flex flex-wrap gap-2">
+                      {communityGroups.map(group => {
+                        const isActive = selectedGroupIds.includes(group.id);
+                        return (
+                          <button
+                            key={group.id}
+                            type="button"
+                            onClick={() => setSelectedGroupIds(prev => (
+                              isActive ? prev.filter(id => id !== group.id) : [...prev, group.id]
+                            ))}
+                            className={clsx(
+                              'px-3 py-2 rounded-xl text-[11px] font-bold uppercase tracking-wider transition-all outline-none',
+                              isActive ? 'bg-brand-opacity text-brand' : 'bg-surface-level2 text-content-muted'
+                            )}
+                          >
+                            {group.name}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  )}
+                  <CheckboxLP
+                    checked={includeUngrouped}
+                    onChange={setIncludeUngrouped}
+                    label="И те, кому группа ещё не назначена"
+                    activeColor={hasTeamColor ? activeBrandColor : null}
+                  />
+                </div>
+              )}
+
+              <ButtonLP
+                variant="primary"
+                onClick={saveLimits}
+                disabled={savingBlock === 'limits'}
+                activeColor={activeBrandColor}
+                className="w-full flex items-center justify-center gap-2 py-2.5"
+              >
+                <span>Сохранить</span>
+              </ButtonLP>
+            </div>
+          ) : (
+            <div className="flex flex-col gap-2">
+              <InfoRow
+                label="Полевых"
+                value={event?.max_skaters ? `до ${event.max_skaters}` : 'Без лимита'}
+              />
+              <InfoRow
+                label="Вратарей"
+                value={Number(event?.max_goalies) === 0
+                  ? 'Не набираются'
+                  : event?.max_goalies ? `до ${event.max_goalies}` : 'Без лимита'}
+              />
+              {eventType === 'community_training' && (
+                <InfoRow
+                  label="Без группы"
+                  value={event?.include_ungrouped === false ? 'Не допускаются' : 'Допускаются'}
+                />
               )}
             </div>
           )}

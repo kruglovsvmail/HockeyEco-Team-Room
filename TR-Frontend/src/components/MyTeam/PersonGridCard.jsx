@@ -3,7 +3,12 @@ import { Avatar } from '../../ui/Avatar';
 import { getContrastTextColor } from '../../utils/helpers';
 
 // Оборачиваем в React.memo, чтобы компонент перерисовывался только при реальном изменении пропсов
-export const PersonGridCard = React.memo(({ person, onClick, showBadges = false, activeBrandColor }) => {
+export const PersonGridCard = React.memo(({
+  person, onClick, showBadges = false, activeBrandColor,
+  // Подпись должности под именем. Нужна штабу сообщества: там человек
+  // опознаётся не амплуа, а тем, чем он в сообществе занимается.
+  showTitle = false,
+}) => {
   // Определяем цвет фона для плашек нашивок (капитан/ассистент)
   const badgeBgColor = activeBrandColor || 'var(--color-brand)';
   
@@ -48,6 +53,11 @@ export const PersonGridCard = React.memo(({ person, onClick, showBadges = false,
         <span className="text-[10px] text-content-muted leading-tight whitespace-nowrap block pointer-events-none">
           {person.first_name}
         </span>
+        {showTitle && person.title_label && (
+          <span className="mt-1 inline-block max-w-full truncate px-1.5 py-0.5 rounded-md bg-surface-level2 border border-surface-border text-[10px] font-bold text-content-muted leading-tight pointer-events-none">
+            {person.title_label}
+          </span>
+        )}
       </div>
     </div>
   );

@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { useOutletContext } from 'react-router-dom';
 import { useFocusRevalidate } from '../hooks/useFocusRevalidate';
 import { usePushSubscription } from '../hooks/usePushSubscription';
@@ -7,6 +7,7 @@ import {
   DEFAULT_BRAND_COLOR, getUserBrandColor, applyUserBrandColor
 } from '../utils/helpers';
 import { SegmentedControl } from '../ui/SegmentedControl';
+import { DropdownSelect } from '../ui/DropdownSelect';
 import { FadeIn, StaggerContainer } from '../ui/FadeIn';
 import { Icon } from '../ui/Icon';
 import { PolicySheet } from '../ui/PolicySheet';
@@ -268,9 +269,152 @@ const NOTIFICATION_GROUPS = [
   { key: 'admin',       label: 'Администрирование',    icon: 'shield_alert', description: 'Дедлайны заявок, составов, подтверждений', adminOnly: true },
 ];
 
+// ── Группы уведомлений сообществ ────────────────────────────────────────
+// Отличаются от командных: у тренировок и солянок нет ни турниров, ни
+// товарищеских, ни дней рождения, зато есть своя — выход из резерва.
+const COMMUNITY_NOTIFICATION_GROUPS = [
+  { key: 'schedule',      label: 'Расписание',       icon: 'calendar',         description: 'Новые события, напоминания за 24ч, изменения, отмены' },
+  { key: 'lines',         label: 'Составы',          icon: 'swap',             description: 'Публикация и изменение расстановки и составов' },
+  { key: 'training_plan', label: 'План тренировки',  icon: 'training_tactics', description: 'Публикация плана упражнений на тренировку', skatingOnly: true },
+  { key: 'reserve',       label: 'Выход из резерва', icon: 'clock',            description: 'Освободилось место и дедлайн подтверждения' },
+];
+
+// ── Настройки уведомлений по сообществам ────────────────────────────────
+// Живут отдельным блоком, а не в списке команд: у сообществ своя таблица
+// настроек и свой набор групп, склеивать их с командными нечем.
+function CommunityNotificationSettings({ isSubscribed }) {
+  const { communities = [] } = useOutletContext() || {};
+
+  const [activeId, setActiveId] = useState(null);
+  const [settings, setSettings] = useState(null);
+  const [saving, setSaving] = useState(false);
+  const [fadeKey, setFadeKey] = useState(0);
+
+  useEffect(() => {
+    if (!activeId && communities.length > 0) setActiveId(communities[0].id);
+  }, [communities, activeId]);
+
+  const active = useMemo(
+    () => communities.find(c => String(c.id) === String(activeId)) || null,
+    [communities, activeId]
+  );
+
+  useEffect(() => {
+    if (!activeId) return;
+    let cancelled = false;
+    fetch(`${import.meta.env.VITE_API_URL}/api/communities/${activeId}/notifications`, {
+      headers: getAuthHeaders(),
+    })
+      .then(res => (res.ok ? res.json() : null))
+      .then(json => { if (!cancelled && json) setSettings(json.settings); })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, [activeId]);
+
+  const toggle = async (key, value) => {
+    if (saving || !settings) return;
+    setSaving(true);
+    const prev = settings;
+    setSettings({ ...settings, [key]: value });
+    try {
+      const res = await fetch(`${import.meta.env.VITE_API_URL}/api/communities/${activeId}/notifications`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
+        body: JSON.stringify({ [key]: value }),
+      });
+      if (!res.ok) throw new Error('failed');
+      const json = await res.json();
+      if (json.settings) setSettings(json.settings);
+    } catch {
+      setSettings(prev);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  if (!isSubscribed || communities.length === 0 || !active || !settings) return null;
+
+  const groups = COMMUNITY_NOTIFICATION_GROUPS.filter(
+    g => !g.skatingOnly || active.category === 'skating'
+  );
+
+  return (
+    <>
+      {communities.length > 1 && (
+        <div className="flex gap-2 overflow-x-auto scrollbar-hide py-4 -mx-1 px-1">
+          {communities.map(c => (
+            <button
+              key={c.id}
+              onClick={() => { setActiveId(c.id); setFadeKey(k => k + 1); }}
+              className={clsx(
+                "flex items-center gap-2 px-3 py-2 rounded-full text-[10px] font-bold uppercase tracking-wider border shrink-0 transition-all outline-none select-none",
+                String(activeId) === String(c.id)
+                  ? "border-brand text-brand bg-surface-base"
+                  : "border-surface-border text-content-muted bg-surface-base"
+              )}
+            >
+              {c.logo_url && (
+                <img
+                  src={getImageUrl(c.logo_url)}
+                  alt=""
+                  className="w-4 h-4 rounded-full object-contain shrink-0"
+                  onError={(e) => { e.target.style.display = 'none'; }}
+                />
+              )}
+              {c.name}
+            </button>
+          ))}
+        </div>
+      )}
+
+      <FadeIn key={`community-${fadeKey}`} duration={250}>
+        <SettingsBlock
+          title={communities.length === 1 ? active.name : 'Сообщества'}
+          icon="handshake"
+        >
+          <div className="flex flex-col">
+            <div className="flex items-center justify-between pt-2 border-b border-surface-border pb-6">
+              <span className="text-[18px] font-bold text-content-main">Все уведомления</span>
+              <Toggle checked={settings.enabled} onChange={(v) => toggle('enabled', v)} />
+            </div>
+
+            {groups.map(group => (
+              <div
+                key={group.key}
+                className={clsx(
+                  "flex items-center justify-between py-3 min-h-[80px] border-b border-surface-border last:border-b-0 transition-opacity",
+                  !settings.enabled && "opacity-40 pointer-events-none"
+                )}
+              >
+                <div className="flex items-center gap-3 min-w-0 flex-1">
+                  <Icon name={group.icon} className="w-4 h-4 text-content-muted shrink-0" />
+                  <div className="flex flex-col min-w-0">
+                    <span className="text-[18px] font-semibold text-content-main">{group.label}</span>
+                    <span className="text-[12px] text-content-muted leading-tight mt-0.5 pr-6">{group.description}</span>
+                  </div>
+                </div>
+                <Toggle
+                  checked={settings[group.key]}
+                  onChange={(v) => toggle(group.key, v)}
+                  disabled={!settings.enabled}
+                />
+              </div>
+            ))}
+          </div>
+        </SettingsBlock>
+      </FadeIn>
+    </>
+  );
+}
+
 // ── Компонент настроек push-уведомлений ─────────────────────────────────
 function NotificationSettings() {
   const { isSupported, isSubscribed, isLoading: pushLoading, isToggling, permission, subscribe, unsubscribe } = usePushSubscription();
+  const { communities = [] } = useOutletContext() || {};
+
+  // Командные группы и группы сообществ идут двумя длинными списками, и до
+  // нижнего можно просто не долистать. Показываем что-то одно на выбор.
+  const [scope, setScope] = useState('team');
 
   const [teams, setTeams] = useState([]);
   const [activeTeamId, setActiveTeamId] = useState(null);
@@ -297,6 +441,11 @@ function NotificationSettings() {
   }, [activeTeamId]);
 
   useEffect(() => { fetchSettings(); }, []);
+
+  // Команд может не быть вовсе — тогда открывать раздел на пустом месте незачем
+  useEffect(() => {
+    if (!loading && teams.length === 0 && communities.length > 0) setScope('community');
+  }, [loading, teams.length, communities.length]);
 
   const activeTeam = teams.find(t => t.team_id === activeTeamId);
 
@@ -398,8 +547,21 @@ function NotificationSettings() {
         </div>
       </SettingsBlock>
 
+      {/* Переключатель разделов: списки длинные, показываем один за раз */}
+      {isSubscribed && !loading && teams.length > 0 && communities.length > 0 && (
+        <DropdownSelect
+          className="mb-3"
+          value={scope}
+          onChange={setScope}
+          options={[
+            { value: 'team', label: 'Командные уведомления' },
+            { value: 'community', label: 'Уведомления сообщества' },
+          ]}
+        />
+      )}
+
       {/* Настройки по командам */}
-      {isSubscribed && !loading && teams.length > 0 && (
+      {scope === 'team' && isSubscribed && !loading && teams.length > 0 && (
         <>
           {/* Чипсы команд — только если команд больше одной */}
           {teams.length > 1 && (
@@ -474,6 +636,9 @@ function NotificationSettings() {
           )}
         </>
       )}
+
+      {/* Сообщества идут отдельным блоком: свой набор групп и своя таблица настроек */}
+      {scope === 'community' && <CommunityNotificationSettings isSubscribed={isSubscribed} />}
     </>
   );
 }

@@ -2,8 +2,64 @@ import { PERMISSIONS } from '../../utils/permissions';
 
 // Вычисляет доступы к редактированию полей события (расписание/финансы/медиа/удаление)
 // для текущего пользователя в контексте команды события.
-export function computeEventEditAccess(event, user, selectedTeam, checkAccess, checkClubAccess = null) {
+export function computeEventEditAccess(event, user, selectedTeam, checkAccess, checkClubAccess = null, checkCommunityAccess = null) {
   if (!event) return { canSee: false, blocks: {} };
+
+  // Событие сообщества: ни команды, ни клуба у него нет, а блоки разведены
+  // по отдельным ключам — расписание, взнос, лимиты состава и удаление.
+  const eventCommunityId = event.my_community_id || null;
+  if (eventCommunityId) {
+    const communityRoles = (() => {
+      const roles = [];
+      const globalRole = String(user?.global_role || user?.globalRole || '').toLowerCase();
+      if (globalRole === 'admin') roles.push('admin');
+
+      const fromUser = (user?.communities || []).find(c => String(c.id) === String(eventCommunityId));
+      if (fromUser) {
+        if (fromUser.is_owner) roles.push('community_owner');
+        if (Array.isArray(fromUser.user_roles)) {
+          fromUser.user_roles.forEach(r => roles.push(String(r).toLowerCase()));
+        } else if (fromUser.user_role) {
+          fromUser.user_role.split(',').forEach(r => roles.push(r.trim().toLowerCase()));
+        }
+      }
+
+      const matrix = user?.communityAccessMatrix || user?.community_access_matrix || {};
+      const access = matrix[eventCommunityId] || matrix[Number(eventCommunityId)];
+      if (access?.roles) access.roles.forEach(r => roles.push(String(r).toLowerCase()));
+
+      return [...new Set(roles)];
+    })();
+
+    const hasKey = (key) => {
+      const perm = PERMISSIONS[key];
+      if (!perm) return false;
+      if (communityRoles.includes('admin')) return true;
+      const allowed = perm.allowedRoles.map(ar => String(ar).toLowerCase());
+      return communityRoles.some(r => allowed.includes(r));
+    };
+
+    // Подписка в сообществах не требуется ни для одного ключа, но поле
+    // оставляем: панель редактирования читает обе половины у всех блоков.
+    const block = (key) => ({
+      hasRole: hasKey(key),
+      hasSubscription: checkCommunityAccess
+        ? checkCommunityAccess(key, eventCommunityId)
+        : hasKey(key),
+    });
+
+    const communityBlocks = {
+      schedule: block('COMMUNITY_EVENT_EDIT_SCHEDULE'),
+      finances: block('COMMUNITY_EVENT_EDIT_FINANCES'),
+      limits:   block('COMMUNITY_EVENT_EDIT_LIMITS'),
+      delete:   block('COMMUNITY_EVENT_DELETE'),
+    };
+
+    return {
+      canSee: Object.values(communityBlocks).some(b => b.hasRole),
+      blocks: communityBlocks,
+    };
+  }
 
   // Клубное событие живёт в контексте клуба: команды у него нет, а расписание,
   // взнос и удаление закрыты одним ключом CLUB_MANAGE_EVENTS.

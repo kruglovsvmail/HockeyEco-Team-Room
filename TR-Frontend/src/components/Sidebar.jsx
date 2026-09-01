@@ -2,7 +2,7 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { NavLink, useLocation, useNavigate } from 'react-router-dom';
 import { Icon } from '../ui/Icon';
 import { Avatar } from '../ui/Avatar';
-import { getImageUrl, isOwnTeam } from '../utils/helpers';
+import { getImageUrl, isOwnTeam, COMMUNITY_CATEGORY_LABELS } from '../utils/helpers';
 import { ROLES } from '../utils/permissions';
 import { buildEventTargets } from '../utils/eventTargets';
 import { getSubscriptionStatus } from '../utils/subscription';
@@ -37,8 +37,11 @@ export function Sidebar({
   clubs = [],
   selectedTeam,
   selectedClub,
+  communities = [],
+  selectedCommunity,
   onTeamChange,
   onClubChange,
+  onCommunityChange,
   onClose,
 }) {
   // Храним ID единственного открытого в данный момент меню (string или null)
@@ -86,10 +89,19 @@ export function Sidebar({
     );
     if (hasTeamCoachRole) return true;
 
-    return clubs.some(club =>
+    const hasClubCoachRole = clubs.some(club =>
       getRolesForClub(club).some(role => [ROLES.CLUB_COACH, ROLES.CLUB_OWNER].includes(role))
     );
-  }, [teams, clubs, isGlobalAdmin, user?.id]);
+    if (hasClubCoachRole) return true;
+
+    // Штаб сообщества-тренировки: план тренировки там собирается из той же личной
+    // библиотеки упражнений, что и командный. Солянки не в счёт — плана у них нет.
+    return (user?.communities || []).some(community =>
+      community.category === 'skating' && (community.user_roles || []).some(role => [
+        ROLES.COMMUNITY_OWNER, ROLES.COMMUNITY_MANAGER, ROLES.COMMUNITY_ADMIN,
+      ].includes(role))
+    );
+  }, [teams, clubs, isGlobalAdmin, user?.id, user?.communities]);
 
   // Статус личной подписки пользователя для бейджа над профилем
   const subscriptionStatus = getSubscriptionStatus(user?.subscriptionExpiresAt || user?.subscription_expires_at);
@@ -98,8 +110,8 @@ export function Sidebar({
   // в шторку «⋯» на странице команды, а выбор владельца события — на саму страницу
   // создания: сайдбару остался один плоский пункт и один вопрос — показывать ли его.
   const canCreateEvent = useMemo(
-    () => buildEventTargets(teams, clubs, user).length > 0,
-    [teams, clubs, user]
+    () => buildEventTargets(teams, clubs, communities, user).length > 0,
+    [teams, clubs, communities, user]
   );
 
   // Единый переключатель для всех аккордеонов
@@ -109,6 +121,7 @@ export function Sidebar({
 
   const isTeamsExpanded = expandedMenuId === 'TEAMS';
   const isTournamentsExpanded = expandedMenuId === 'TOURNAMENTS';
+  const isMyCommunitiesExpanded = expandedMenuId === 'MY_COMMUNITIES';
 
   // ОПТИМИЗАЦИЯ СДВИГА: Плавный отложенный переход для разгрузки мобильного процессора
   const handleSafeNavigate = (path, callbackBeforeNavigate) => {
@@ -143,6 +156,32 @@ export function Sidebar({
         </div>
       </div>
       {!hasSubAccess && <Icon name="lock" className="w-3 h-3 text-content-muted/60 shrink-0 ml-1" />}
+    </button>
+  );
+
+  // Строка сообщества. Под названием — категория: тренировки и солянки живут
+  // в одном списке, а ведут себя по-разному, и человек должен видеть, куда идёт.
+  const CommunityRow = ({ community, isActive, onClick }) => (
+    <button
+      onClick={onClick}
+      className={clsx(
+        "flex items-center gap-3 w-full px-3 py-2 rounded-xl transition-all text-left outline-none text-[14px] font-bold uppercase tracking-wider",
+        isActive
+          ? "bg-brand-opacity text-brand"
+          : "text-content-main hover:bg-surface-level2"
+      )}
+    >
+      <div className="w-6 h-6 rounded-md bg-surface-level1 p-0.5 flex items-center justify-center shrink-0 overflow-hidden">
+        {community.logo_url
+          ? <img src={getImageUrl(community.logo_url)} alt={community.name} className="w-full h-full object-contain rounded-md" />
+          : <Icon name="handshake" className="w-4 h-4 text-content-muted" />}
+      </div>
+      <div className="flex flex-col min-w-0">
+        <span className="truncate">{community.name}</span>
+        <span className="text-[10px] font-bold tracking-widest text-content-subtle normal-case">
+          {COMMUNITY_CATEGORY_LABELS[community.category] || 'Сообщество'}
+        </span>
+      </div>
     </button>
   );
 
@@ -361,6 +400,60 @@ export function Sidebar({
             </div>
           )}
 
+          {/* «Мои сообщества» — быстрый вход в своё, в отличие от каталога ниже.
+              Пункта нет вовсе, пока человек никуда не вступил и нигде не в штабе:
+              список из контекста как раз и содержит только такие сообщества.
+              Одно сообщество — прямая кнопка, несколько — раскрывающийся список. */}
+          {communities.length === 1 ? (
+            <button
+              onClick={() => handleSafeNavigate('/community', () => onCommunityChange?.(communities[0]))}
+              className={clsx(
+                "flex items-center gap-4 px-4 py-3 rounded-xl transition-all outline-none text-left w-full font-bold",
+                location.pathname === '/community'
+                  ? 'bg-brand-opacity text-brand font-bold'
+                  : 'text-content-main hover:text-brand'
+              )}
+            >
+              <Icon name="handshake" className="w-5 h-5" />
+              <span className="text-[14px] tracking-wider">Моё сообщество</span>
+            </button>
+          ) : communities.length > 1 ? (
+            <div className="flex flex-col w-full">
+              <button
+                onClick={() => toggleMenu('MY_COMMUNITIES')}
+                className={clsx(
+                  "flex items-center justify-between w-full px-4 py-3 rounded-xl transition-all outline-none text-content-main hover:text-brand font-bold",
+                  (location.pathname === '/community' && !isMyCommunitiesExpanded) && "bg-brand-opacity text-brand font-bold"
+                )}
+              >
+                <div className="flex items-center gap-4">
+                  <Icon name="handshake" className="w-5 h-5" />
+                  <span className="text-[14px] tracking-wider">Мои сообщества</span>
+                </div>
+                <div className={clsx("transition-transform duration-200", isMyCommunitiesExpanded && "rotate-180")}>
+                  <Icon name="chevron" className="w-5 h-5" />
+                </div>
+              </button>
+
+              <div className={clsx("grid-expand-transition", isMyCommunitiesExpanded && "expanded")}>
+                <div className="grid-expand-inner">
+                  <div className="flex flex-col gap-1 pl-3 pr-1 py-1 mt-1 ml-2">
+                    {communities.map(community => (
+                      <CommunityRow
+                        key={community.id}
+                        community={community}
+                        isActive={selectedCommunity?.id === community.id && location.pathname === '/community'}
+                        onClick={() => handleSafeNavigate('/community', () => onCommunityChange?.(community))}
+                      />
+                    ))}
+                  </div>
+                </div>
+              </div>
+            </div>
+          ) : null}
+
+          <div className="h-px bg-surface-border my-2 mx-2" />
+
           {/* НОВЫЙ РАЗДЕЛ: Турниры / Лиги с умным раскрытием под команды.
               Клуб здесь не появляется: турниры играют составы, а не организация. */}
           {/* Пункт 3: Турниры и лиги — информационный раздел.
@@ -380,6 +473,26 @@ export function Sidebar({
             <Icon name="trophy" className="w-5 h-5" />
             <span className="text-[14px] tracking-wider">Турниры / Лиги</span>
           </button>
+
+          {/* Каталог сообществ — плоская кнопка, а не аккордеон: своё и чужое
+              ищут в одном и том же списке.
+              Подсвечивается строго на /communities: маршрут /community принадлежит
+              пункту «Мои сообщества» выше, и подсветка обоих сразу читалась бы
+              как два активных раздела. */}
+          <button
+            onClick={() => handleSafeNavigate('/communities')}
+            className={clsx(
+              "flex items-center gap-4 px-4 py-3 rounded-xl transition-all outline-none text-left w-full font-bold",
+              location.pathname === '/communities'
+                ? 'bg-brand-opacity text-brand font-bold'
+                : 'text-content-main hover:text-brand'
+            )}
+          >
+            <Icon name="handshake" className="w-5 h-5" />
+            <span className="text-[14px] tracking-wider">Сообщества</span>
+          </button>
+
+          <div className="h-px bg-surface-border my-2 mx-2" />
 
           {/* «Добавить событие» — плоская кнопка. Раньше здесь раскрывался список команд
               и клубов: выбор в нём менял глобально выбранную команду и дописывал в адрес
@@ -405,22 +518,18 @@ export function Sidebar({
               Всё меню выше работает в контексте выбранной команды или клуба, а этот
               раздел личный: библиотека упражнений одна на все команды тренера. */}
           {isCoachAnywhere && (
-            <>
-              <div className="h-px bg-surface-border my-2 mx-2" />
-
-              <button
-                onClick={() => handleSafeNavigate('/coach')}
-                className={clsx(
-                  "flex items-center gap-4 px-4 py-3 rounded-xl transition-all outline-none text-left w-full font-bold",
-                  location.pathname === '/coach'
-                    ? 'bg-brand-opacity text-brand font-bold'
-                    : 'text-content-main hover:text-brand'
-                )}
-              >
-                <Icon name="training_tactics" className="w-5 h-5" />
-                <span className="text-[14px] tracking-wider">Тренерская</span>
-              </button>
-            </>
+            <button
+              onClick={() => handleSafeNavigate('/coach')}
+              className={clsx(
+                "flex items-center gap-4 px-4 py-3 rounded-xl transition-all outline-none text-left w-full font-bold",
+                location.pathname === '/coach'
+                  ? 'bg-brand-opacity text-brand font-bold'
+                  : 'text-content-main hover:text-brand'
+              )}
+            >
+              <Icon name="training_tactics" className="w-5 h-5" />
+              <span className="text-[14px] tracking-wider">Тренерская</span>
+            </button>
           )}
 
           {/* Пункт 4: Настройки приложения */}

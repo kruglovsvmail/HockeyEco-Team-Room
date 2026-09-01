@@ -13,7 +13,9 @@ import { ExpandedGrid } from '../components/EventCalendar/ExpandedGrid';
 import { EventFilters } from '../components/EventCalendar/EventFilters';
 import { TopSheet } from '../ui/TopSheet';
 import EventCard from '../components/EventCalendar/EventCard';
-import { getAuthHeaders } from '../utils/helpers';
+import { getAuthHeaders, COMMUNITY_EVENT_ROUTE } from '../utils/helpers';
+import { ReserveJoinSheet } from '../components/EventCalendar/ReserveJoinSheet';
+import { Toast } from '../ui/Toast';
 import { useFocusRevalidate } from '../hooks/useFocusRevalidate';
 import { usePullToRefresh } from '../hooks/usePullToRefresh';
 import { usePageVisit } from '../hooks/usePageVisit';
@@ -40,6 +42,7 @@ export function SchedulePage() {
   // Состояние active фильтров для клиентской фильтрации
   const [activeFilters, setActiveFilters] = useState({
     teams: {},
+    communities: {},
     showClub: true
   });
 
@@ -58,6 +61,7 @@ export function SchedulePage() {
     } else {
       setActiveFilters({
         teams: {},
+        communities: {},
         showClub: true
       });
     }
@@ -122,16 +126,15 @@ export function SchedulePage() {
   const processedEvents = useMemo(() => {
     return events
       .filter(event => {
-        if (event.my_team_id) {
-          if (activeFilters.teams[event.my_team_id] === false) {
-            return false;
-          }
-        } else {
-          if (!activeFilters.showClub) {
-            return false;
-          }
+        // Сообщества проверяем первыми: у их событий нет ни команды, ни клуба,
+        // и без отдельной ветки они попадали под флаг клубных событий.
+        if (event.my_community_id) {
+          return activeFilters.communities?.[event.my_community_id] !== false;
         }
-        return true;
+        if (event.my_team_id) {
+          return activeFilters.teams[event.my_team_id] !== false;
+        }
+        return !!activeFilters.showClub;
       })
       .map(event => {
         if (!event.event_date) return { ...event, _weekYearKey: null, _formattedDateStr: null };
@@ -202,19 +205,55 @@ export function SchedulePage() {
 
   // clubId приходит вместе с teamId: у клубного события команды нет, и контекст
   // проверки прав на сервере определяется именно клубом.
-  const handleToggleAttendance = async (eventId, eventType, newValue, teamId, clubId = null) => {
+  // Событие сообщества опознаётся по типу: у него своя ручка отметок и своя
+  // механика резервной очереди, которой нет ни у команд, ни у клубов.
+  const isCommunityEvent = (eventType) => String(eventType || '').startsWith('community_');
+
+  // Набрана ли дорожка, в которую попадёт человек. Оценка приблизительная:
+  // сервер считает занятыми ещё и места, придержанные под выданные предложения,
+  // а календарь их не отдаёт. Поэтому решение сервера главнее — оно приходит
+  // в slotStatus, и если мы не угадали, человек узнает про резерв из тоста.
+  const isLaneFull = (event) => {
+    if (!event || !isCommunityEvent(event.event_type)) return false;
+    const isGoalie = event.my_pay_role === 'goalie';
+    const limit = isGoalie ? event.max_goalies : event.max_skaters;
+    if (limit === null || limit === undefined) return false;
+    const occupied = (isGoalie ? event.main_goalies : event.main_skaters) || 0;
+    return occupied >= Number(limit);
+  };
+
+  const [reserveSheet, setReserveSheet] = useState(null);
+  const [scheduleToast, setScheduleToast] = useState({ isOpen: false, message: '', type: 'success' });
+
+  const handleToggleAttendance = async (eventId, eventType, newValue, teamId, clubId = null, communityId = null) => {
+    // Перед постановкой в резерв показываем шторку: обычная отметка и место
+    // в очереди — разные вещи, и человек должен понимать, на что подписывается.
+    if (newValue && isCommunityEvent(eventType)) {
+      const target = events.find(e => e.event_id === eventId && e.event_type === eventType);
+      if (target && isLaneFull(target) && !reserveSheet) {
+        setReserveSheet(target);
+        return;
+      }
+    }
+
+    // У событий сообщества нет ни команды, ни клуба, поэтому сопоставлять
+    // карточку по my_team_id нельзя: там null, и сравнение всегда ложно.
+    const matches = (event) =>
+      event.event_id === eventId
+      && event.event_type === eventType
+      && (isCommunityEvent(eventType) || event.my_team_id === teamId);
+
     const updatedEvents = events.map(event =>
-      (event.event_id === eventId && event.event_type === eventType && event.my_team_id === teamId)
-        ? { ...event, is_attending: newValue }
-        : event
+      matches(event) ? { ...event, is_attending: newValue } : event
     );
-    
+
     setEvents(updatedEvents);
     localStorage.setItem(cacheKey, JSON.stringify(updatedEvents));
 
     try {
       // Маршрутизация по типу события на соответствующий API-эндпоинт
       const apiBase = eventType === 'match' ? '/api/matches'
+        : isCommunityEvent(eventType) ? '/api/community-events'
         : (eventType === 'team_training' || eventType === 'club_training') ? '/api/trainings'
         : '/api/meetings';
 
@@ -224,12 +263,17 @@ export function SchedulePage() {
           'Content-Type': 'application/json',
           ...getAuthHeaders()
         },
-        body: JSON.stringify({ isAttending: newValue, eventType, teamId, clubId })
+        body: JSON.stringify({ isAttending: newValue, eventType, teamId, clubId, communityId })
       });
 
       const data = await response.json();
       if (!response.ok || !data.success) {
         throw new Error(data?.message || data?.error || 'Ошибка сохранения');
+      }
+
+      // Сервер мог поставить в резерв там, где мы этого не ждали
+      if (data.slotStatus === 'reserve') {
+        setScheduleToast({ isOpen: true, message: 'Состав набран — вы в резерве', type: 'success' });
       }
 
       // Долевая стоимость зависит от числа отметившихся, поэтому одной локальной
@@ -239,13 +283,66 @@ export function SchedulePage() {
       fetchEvents();
     } catch (err) {
       console.error('Ошибка переключения тумблера:', err);
-      const rolledBackEvents = events.map(event => 
-        (event.event_id === eventId && event.event_type === eventType && event.my_team_id === teamId) 
-          ? { ...event, is_attending: !newValue } 
-          : event
+      const rolledBackEvents = events.map(event =>
+        matches(event) ? { ...event, is_attending: !newValue } : event
       );
       setEvents(rolledBackEvents);
       localStorage.setItem(cacheKey, JSON.stringify(rolledBackEvents));
+    }
+  };
+
+  // Действия в резервной очереди события сообщества.
+  // «leave» — это обычное снятие отметки: резервист строкой не отличается от
+  // отметившегося, просто стоит в другом статусе, и отдельной ручки ему не нужно.
+  // Открыть событие сообщества участникам раньше срока. Кнопка есть только
+  // у штаба и только на неопубликованной карточке — гейт стоит и на сервере.
+  const handlePublishNow = async (event) => {
+    try {
+      const response = await fetch(
+        `${import.meta.env.VITE_API_URL}/api/communities/${event.my_community_id}/events/${event.event_type}/${event.event_id}/publish`,
+        { method: 'POST', headers: { 'Content-Type': 'application/json', ...getAuthHeaders() } }
+      );
+      const data = await response.json();
+      if (!response.ok || !data.success) throw new Error(data?.error || 'Ошибка');
+      setScheduleToast({ isOpen: true, message: 'Событие опубликовано', type: 'success' });
+      fetchEvents();
+    } catch (err) {
+      setScheduleToast({ isOpen: true, message: err.message || 'Не удалось опубликовать', type: 'error' });
+    }
+  };
+
+  const handleReserveAction = async (event, action) => {
+    if (action === 'leave') {
+      return handleToggleAttendance(
+        event.event_id, event.event_type, false,
+        event.my_team_id, event.my_club_id, event.my_community_id
+      );
+    }
+
+    try {
+      const response = await fetch(
+        `${import.meta.env.VITE_API_URL}/api/community-events/${event.event_id}/reserve/${action}`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
+          body: JSON.stringify({ eventType: event.event_type, communityId: event.my_community_id }),
+        }
+      );
+      const data = await response.json();
+
+      // 409 — таймер истёк между нажатием и запросом, место уже у следующего.
+      // Это не сбой, а нормальный исход гонки: показываем, что произошло.
+      if (response.status === 409) {
+        setScheduleToast({ isOpen: true, message: data?.error || 'Время истекло', type: 'error' });
+      } else if (!response.ok || !data.success) {
+        throw new Error(data?.error || 'Ошибка');
+      } else if (action === 'confirm') {
+        setScheduleToast({ isOpen: true, message: 'Место за вами', type: 'success' });
+      }
+
+      fetchEvents();
+    } catch {
+      setScheduleToast({ isOpen: true, message: 'Не удалось выполнить действие', type: 'error' });
     }
   };
 
@@ -466,11 +563,16 @@ export function SchedulePage() {
                     ) : slideEvents.length > 0 ? (
                       <FadeIn className="flex flex-col gap-0">
                         {slideEvents.map(event => {
-                          let routeType = 'match';
-                          if (event.event_type.includes('training')) {
-                            routeType = 'training';
-                          } else if (event.event_type.includes('meeting')) {
-                            routeType = 'meeting';
+                          // У событий сообщества свой маршрут: тренировка и солянка
+                          // живут в отдельных таблицах, и общий 'training' их
+                          // не откроет — бэкенд разворачивает тип по этой же карте.
+                          let routeType = COMMUNITY_EVENT_ROUTE[event.event_type] || 'match';
+                          if (!COMMUNITY_EVENT_ROUTE[event.event_type]) {
+                            if (event.event_type.includes('training')) {
+                              routeType = 'training';
+                            } else if (event.event_type.includes('meeting')) {
+                              routeType = 'meeting';
+                            }
                           }
 
                           return (
@@ -478,6 +580,8 @@ export function SchedulePage() {
                               key={`${event.event_type}-${event.event_id}-${event.my_team_id || 'club'}`}
                               event={event}
                               onToggleAttendance={handleToggleAttendance}
+                              onReserveAction={handleReserveAction}
+                              onPublishNow={handlePublishNow}
                               onConfirmFriendlyMatch={handleConfirmFriendlyMatch}
                               onCancelFriendlyMatch={handleCancelFriendlyMatch}
                               onClick={() => navigate(`/event/${routeType}/${event.event_id}`, { state: { event } })}
@@ -522,9 +626,34 @@ export function SchedulePage() {
           <EventFilters 
             user={user}
             teams={teams}
+            communities={user?.communities || []}
             onClose={() => setIsFilterOpen(false)}
           />
         </TopSheet>
+
+        {/* Постановка в резерв: подтверждение и предложение включить уведомления.
+            Шторка нижняя — открывается из тела календаря, а не из шапки. */}
+        <ReserveJoinSheet
+          isOpen={!!reserveSheet}
+          onClose={() => setReserveSheet(null)}
+          event={reserveSheet}
+          onConfirm={async () => {
+            const target = reserveSheet;
+            setReserveSheet(null);
+            if (!target) return;
+            await handleToggleAttendance(
+              target.event_id, target.event_type, true,
+              target.my_team_id, target.my_club_id, target.my_community_id
+            );
+          }}
+        />
+
+        <Toast
+          isOpen={scheduleToast.isOpen}
+          message={scheduleToast.message}
+          type={scheduleToast.type}
+          onClose={() => setScheduleToast(prev => ({ ...prev, isOpen: false }))}
+        />
       </div>
     </FadeIn>
   );

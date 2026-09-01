@@ -16,6 +16,10 @@ export function Header({
   onBack, showEditButton = false, onEditClick,
   showShareButton = false, onShareClick,
   showMenuButton = false, onMenuClick, menuIcon = 'more', menuLabel = 'Меню раздела',
+  // extraAction — готовый узел слева от остальных кнопок. Нужен там, где раздел
+  // ставит в шапку не действие приложения, а свою ссылку: у сообщества это
+  // фирменный значок мессенджера, который нельзя нарисовать общим Icon.
+  extraAction = null,
 }) {
   const location = useLocation();
 
@@ -37,6 +41,12 @@ export function Header({
     }
     if (path === '/club') {
       return 'Клуб';
+    }
+    if (path === '/communities') {
+      return 'Сообщества';
+    }
+    if (path === '/community') {
+      return 'Сообщество';
     }
     if (path.includes('handbook')) {
       return 'Соперники и турниры';
@@ -95,6 +105,10 @@ export function Header({
 
     // Клуб
     if (path === '/club')
+      return 'bg-surface-base';
+
+    // Сообщества: каталог и страница конкретного сообщества
+    if (path === '/communities' || path === '/community')
       return 'bg-surface-base';
 
     // Турниры / Лиги
@@ -175,6 +189,8 @@ export function Header({
         {/* Правая группа: «поделиться ссылкой» + «редактировать» + «⋯».
             Когда все кнопки скрыты — пустой плейсхолдер, чтобы шапка не «съезжала». */}
         <div className="flex items-center gap-2 z-10">
+          {extraAction}
+
           {showShareButton && (
             <button
               onClick={onShareClick}
@@ -205,7 +221,7 @@ export function Header({
             </button>
           )}
 
-          {!showShareButton && !showEditButton && !showMenuButton && (
+          {!extraAction && !showShareButton && !showEditButton && !showMenuButton && (
             <div className="w-9 h-9 opacity-0 pointer-events-none" />
           )}
         </div>

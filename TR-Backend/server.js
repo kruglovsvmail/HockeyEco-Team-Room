@@ -12,6 +12,8 @@ import trainingRoutes from './routes/trainingRoutes.js';
 import meetingRoutes from './routes/meetingRoutes.js';
 import teamRoutes from './routes/teamRoutes.js';
 import clubRoutes from './routes/clubRoutes.js';
+import communityRoutes from './routes/communityRoutes.js';
+import communityEventRoutes from './routes/communityEventRoutes.js';
 import profileRouter from './routes/profileRouter.js';
 import registrationRoutes from './routes/registrationRoutes.js';
 import tournamentRoutes from './routes/tournamentRoutes.js';
@@ -21,8 +23,10 @@ import analyticsRoutes from './routes/analyticsRoutes.js';
 import subscriptionRoutes from './routes/subscriptionRoutes.js';
 import policyRoutes from './routes/policyRoutes.js';
 import drillRoutes from './routes/drillRoutes.js';
-import { processScheduledNotifications, processBirthdays, pollLmsGames } from './services/pushService.js';
+import { processScheduledNotifications, processBirthdays, pollLmsGames, notifyReserveOffers } from './services/pushService.js';
 import { lockPastEventFees } from './utils/eventFees.js';
+import { rotateReserveOffers } from './utils/communityReserve.js';
+import { publishDueCommunityEvents } from './utils/communityPublish.js';
 
 // Импорт новых роутов управления командой
 import mgrEventRoutes from './routes/manager/mgrEventRoutes.js';
@@ -75,6 +79,8 @@ app.use('/api/trainings', trainingRoutes);
 app.use('/api/meetings', meetingRoutes);
 app.use('/api/teams', teamRoutes);
 app.use('/api/clubs', clubRoutes);
+app.use('/api/communities', communityRoutes);
+app.use('/api/community-events', communityEventRoutes);
 app.use('/api/tournaments', tournamentRoutes);
 app.use('/api/players', playerRoutes);
 app.use('/api/push', pushRoutes);
@@ -147,6 +153,25 @@ app.listen(PORT, '0.0.0.0', () => {
       console.error('Ошибка фиксации стоимости прошедших событий:', err.message)
     );
   }, 5 * 60_000);
+
+  // Крон: резервная очередь событий сообществ каждые 60 секунд.
+  // Снимает просроченные предложения занять место и передаёт освободившиеся слоты
+  // следующим в очереди, после чего рассылает предложения адресатам. Минуты
+  // точности хватает: самый короткий таймер в лесенке по умолчанию — час.
+  setInterval(() => {
+    rotateReserveOffers()
+      .then(offers => (offers.length ? notifyReserveOffers(offers) : null))
+      .catch(err => console.error('Ошибка обработки резервной очереди сообществ:', err.message));
+  }, 60_000);
+
+  // Крон: отложенная публикация событий сообществ каждые 60 секунд.
+  // Открывает участникам события, у которых подошёл срок «за N часов до начала»,
+  // и рассылает пуш о них. Ручную публикацию не трогает — её делает человек.
+  setInterval(() => {
+    publishDueCommunityEvents().catch(err =>
+      console.error('Ошибка публикации событий сообществ:', err.message)
+    );
+  }, 60_000);
 });
 
 // Проверка соединения с БД — фоновая, только для лога.

@@ -3,10 +3,14 @@ import { Icon } from '../../ui/Icon';
 import { CheckboxLP } from '../../ui/Checkbox-LP';
 import { getImageUrl, getTeamUiColor } from '../../utils/helpers';
 
-export function EventFilters({ user, teams = [], onClose }) {
+export function EventFilters({ user, teams = [], communities = [], onClose }) {
   // Локальное состояние фильтров
   const [filters, setFilters] = useState({
     teams: {}, // { teamId: boolean }
+    // Сообщества фильтруются отдельно от клубных событий: раньше и те и другие
+    // шли под одним флагом «клубные», потому что у них нет my_team_id, и человек,
+    // выключивший клуб, терял из календаря ещё и все подкатки.
+    communities: {}, // { communityId: boolean }
     showClub: true
   });
 
@@ -14,20 +18,21 @@ export function EventFilters({ user, teams = [], onClose }) {
 
   // Инициализация дефолтных значений, если в localStorage ничего нет
   const initializeDefaultFilters = useCallback(() => {
-    if (!teams || teams.length === 0) return;
     const defaultTeams = {};
-    teams.forEach(t => {
-      defaultTeams[t.id] = true;
-    });
+    teams.forEach(t => { defaultTeams[t.id] = true; });
+    const defaultCommunities = {};
+    communities.forEach(c => { defaultCommunities[c.id] = true; });
     setFilters({
       teams: defaultTeams,
+      communities: defaultCommunities,
       showClub: true
     });
-  }, [teams]);
+  }, [teams, communities]);
 
   // Чтение фильтров из localStorage при монтировании компонента
   useEffect(() => {
-    if (!localStorageKey || !teams || teams.length === 0) return;
+    if (!localStorageKey) return;
+    if (teams.length === 0 && communities.length === 0) return;
 
     const saved = localStorage.getItem(localStorageKey);
     if (saved) {
@@ -51,8 +56,23 @@ export function EventFilters({ user, teams = [], onClose }) {
           hasChanges = true;
         }
 
+        // Та же санитария по сообществам: вышел из сообщества — его флаг уходит
+        const updatedCommunities = {};
+        communities.forEach(c => {
+          if (parsed.communities && parsed.communities[c.id] !== undefined) {
+            updatedCommunities[c.id] = parsed.communities[c.id];
+          } else {
+            updatedCommunities[c.id] = true;
+            hasChanges = true;
+          }
+        });
+        if (parsed.communities && Object.keys(parsed.communities).length !== communities.length) {
+          hasChanges = true;
+        }
+
         const newFilters = {
           teams: updatedTeams,
+          communities: updatedCommunities,
           showClub: parsed.showClub !== undefined ? parsed.showClub : true
         };
 
@@ -71,7 +91,8 @@ export function EventFilters({ user, teams = [], onClose }) {
       initializeDefaultFilters();
     }
     // Используем строку из ID команд в качестве зависимости, чтобы не триггериться на смену ссылок массивов
-  }, [localStorageKey, JSON.stringify(teams.map(t => t.id)), initializeDefaultFilters]);
+  }, [localStorageKey, JSON.stringify(teams.map(t => t.id)),
+      JSON.stringify(communities.map(c => c.id)), initializeDefaultFilters]);
 
   // Обработчик клика по чекбоксу команды
   const handleTeamCheckboxChange = (teamId, checked) => {
@@ -83,6 +104,18 @@ export function EventFilters({ user, teams = [], onClose }) {
         ...filters.teams,
         [teamId]: checked
       }
+    };
+    setFilters(updatedFilters);
+    localStorage.setItem(localStorageKey, JSON.stringify(updatedFilters));
+    window.dispatchEvent(new Event('tr-filter-changed'));
+  };
+
+  const handleCommunityCheckboxChange = (communityId, checked) => {
+    if (!localStorageKey) return;
+
+    const updatedFilters = {
+      ...filters,
+      communities: { ...filters.communities, [communityId]: checked },
     };
     setFilters(updatedFilters);
     localStorage.setItem(localStorageKey, JSON.stringify(updatedFilters));
@@ -178,6 +211,55 @@ export function EventFilters({ user, teams = [], onClose }) {
           <p className="text-[14px] italic text-content-muted text-center py-2 select-none">
             Список доступных команд пуст
           </p>
+        )}
+
+        {/* Сообщества — тем же списком, что и команды: подкатки и солянки
+            занимают в календаре столько же места, сколько командные события */}
+        {communities.length > 0 && (
+          <div className="space-y-2">
+            <span className="block text-[10px] font-bold text-content-muted uppercase tracking-wider pl-1 select-none">
+              Мои сообщества
+            </span>
+            <div className="space-y-3">
+              {communities.map(community => {
+                const isChecked = filters.communities?.[community.id] !== false;
+                return (
+                  <div
+                    key={community.id}
+                    onClick={() => handleCommunityCheckboxChange(community.id, !isChecked)}
+                    className="flex items-center gap-3 p-3 rounded-xl bg-surface-base cursor-pointer active:scale-[0.99] transition-all select-none"
+                  >
+                    {community.logo_url ? (
+                      <img
+                        src={getImageUrl(community.logo_url)}
+                        alt={community.name}
+                        className="w-7 h-7 rounded-md object-contain img-render-smooth shrink-0"
+                      />
+                    ) : (
+                      <div className="flex items-center justify-center w-7 h-7 rounded-md bg-surface-level3 text-content-muted font-black text-[10px] uppercase tracking-wider shrink-0">
+                        {(community.name || 'С').slice(0, 1)}
+                      </div>
+                    )}
+
+                    <div className="flex-1 min-w-0">
+                      <span className="text-[14px] font-semibold text-content-main block truncate">
+                        {community.name}
+                      </span>
+                    </div>
+
+                    <div className="shrink-0 flex items-center pointer-events-none">
+                      <CheckboxLP
+                        checked={isChecked}
+                        onChange={() => {}}
+                        label=""
+                        activeColor={community.color_1 || null}
+                      />
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
         )}
       </div>
     </div>

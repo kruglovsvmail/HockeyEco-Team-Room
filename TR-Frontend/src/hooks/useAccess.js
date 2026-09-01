@@ -2,7 +2,7 @@ import { useOutletContext } from 'react-router-dom';
 import { PERMISSIONS, ROLES } from '../utils/permissions';
 import { useCallback } from 'react';
 
-export function useAccess(customUser = null, customTeam = null, customClub = null) {
+export function useAccess(customUser = null, customTeam = null, customClub = null, customCommunity = null) {
   let context = {};
   try {
     context = useOutletContext() || {};
@@ -11,6 +11,7 @@ export function useAccess(customUser = null, customTeam = null, customClub = nul
   const user = customUser || context.user || null;
   const selectedTeam = customTeam || context.selectedTeam || null;
   const selectedClub = customClub || context.selectedClub || null;
+  const selectedCommunity = customCommunity || context.selectedCommunity || null;
 
   /**
    * Гранулярная проверка прав доступа по конкретному действию и ID команды
@@ -170,5 +171,79 @@ export function useAccess(customUser = null, customTeam = null, customClub = nul
     });
   }, [user, selectedClub]);
 
-  return { user, selectedTeam, selectedClub, checkAccess, checkClubAccess };
+  /**
+   * Гранулярная проверка прав в контексте СООБЩЕСТВА (тренировки и солянки).
+   *
+   * Третья матрица рядом с командной и клубной — по той же причине: id у команд,
+   * клубов и сообществ независимы, общая матрица начала бы путать команду №5
+   * с сообществом №5. Роли здесь свои: community_owner, community_manager,
+   * community_admin, community_member.
+   *
+   * Подписку не проверяем ни для одной роли — все ключи сообществ идут с
+   * requiresSubscription: false, — но код проверки оставлен общим с остальными
+   * контекстами, чтобы включить её потом одной правкой в permissions.js.
+   *
+   * @param {string} action - Ключ правила из permissions.js
+   * @param {number|string|null} communityId - ID сообщества. Если не передан, берётся текущее выбранное
+   */
+  const checkCommunityAccess = useCallback((action, communityId = null) => {
+    if (!user) return false;
+
+    if (user.globalRole === ROLES.GLOBAL_ADMIN || user.global_role === ROLES.GLOBAL_ADMIN) {
+      return true;
+    }
+
+    const permission = PERMISSIONS[action];
+    if (!permission) return false;
+
+    const targetId = String(communityId || selectedCommunity?.id || '');
+    if (!targetId) return false;
+
+    let currentUserRoles = [];
+    let hasSubscription = true;
+
+    // --- Источник 1: communityAccessMatrix из user (заполняется при логине) ---
+    const matrix = user.communityAccessMatrix || user.community_access_matrix || {};
+    const access = matrix[targetId] || matrix[Number(targetId)];
+
+    if (access) {
+      currentUserRoles = access.roles || [];
+      hasSubscription = access.has_subscription !== false;
+    } else {
+      // --- Источник 2: сообщество из списка user.communities / текущее выбранное ---
+      const fromUser = (user.communities || []).find(c => String(c.id) === targetId);
+      const source = fromUser || (String(selectedCommunity?.id) === targetId ? selectedCommunity : null);
+
+      if (source) {
+        if (Array.isArray(source.user_roles) && source.user_roles.length > 0) {
+          currentUserRoles = source.user_roles;
+        } else if (source.user_role) {
+          currentUserRoles = source.user_role.split(',').map(r => r.trim()).filter(Boolean);
+        }
+        if (source.is_owner && !currentUserRoles.includes(ROLES.COMMUNITY_OWNER)) {
+          currentUserRoles = [ROLES.COMMUNITY_OWNER, ...currentUserRoles];
+        }
+        hasSubscription = source.has_subscription !== false;
+      }
+    }
+
+    if (currentUserRoles.length === 0) return false;
+
+    return currentUserRoles.some(role => {
+      if (!permission.allowedRoles.includes(role)) return false;
+
+      let roleRequiresSub = false;
+      if (permission.requiresSubscription === true) {
+        roleRequiresSub = true;
+      } else if (Array.isArray(permission.requiresSubscription)) {
+        roleRequiresSub = permission.requiresSubscription.includes(role);
+      }
+
+      if (roleRequiresSub && !hasSubscription) return false;
+
+      return true;
+    });
+  }, [user, selectedCommunity]);
+
+  return { user, selectedTeam, selectedClub, selectedCommunity, checkAccess, checkClubAccess, checkCommunityAccess };
 }

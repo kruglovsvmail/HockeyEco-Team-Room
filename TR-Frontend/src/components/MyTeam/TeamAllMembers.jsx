@@ -16,6 +16,11 @@ export const TeamAllMembers = ({
   hasManageAccess,
   isManager, // Новый флаг административного статуса
   onExcludeClick,
+  // Кого исключать нельзя — крестик у такого человека не рисуем совсем.
+  // Нужно штабу сообщества: владельца снять невозможно.
+  canExcludePerson,
+  // Подпись должности под именем (штаб сообщества)
+  showTitle = false,
   animatingOutId,
   onAddClick,
   activeBrandColor,
@@ -24,7 +29,10 @@ export const TeamAllMembers = ({
   // Заголовки секций вынесены в пропсы: тот же список обслуживает и состав клуба
   title = 'Общий состав',
   archivedTitle = 'Ушедшие из команды',
-  emptyLabel = 'Активные участники отсутствуют'
+  emptyLabel = 'Активные участники отсутствуют',
+  // Ушедших можно не показывать. Нужно сообществам: состав там разбит
+  // на несколько блоков, и секция повторилась бы под каждым.
+  showArchived = true
 }) => {
   const pressTimer = useRef(null);
   const pressStartPos = useRef(null);
@@ -124,6 +132,8 @@ export const TeamAllMembers = ({
         pressHandlers={isArchiveGroup ? null : pressHandlers}
         isEditMode={isEditMode && !isArchiveGroup}
         canExclude={isEditMode && isManager && !isArchiveGroup}
+        canExcludePerson={canExcludePerson}
+        showTitle={showTitle}
         hasManageAccess={hasManageAccess}
         onExcludeClick={onExcludeClick}
         animatingOutId={animatingOutId}
@@ -167,11 +177,13 @@ export const TeamAllMembers = ({
                 /* Ушедших исключать уже нечем — их карточка открывается и в режиме правки */
                 onClick={isEditMode && !isArchiveGroup ? undefined : onPersonClick}
                 showBadges={false}
+                showTitle={showTitle}
                 activeBrandColor={isArchiveGroup ? 'var(--color-content-subtle)' : activeBrandColor}
               />
               
               {/* Кнопка исключения выводится только для активных участников */}
-              {isEditMode && isManager && !isRemoving && !isArchiveGroup && (
+              {isEditMode && isManager && !isRemoving && !isArchiveGroup
+                && !(canExcludePerson && !canExcludePerson(m)) && (
                 hasManageAccess ? (
                   <button
                     onClick={(e) => {
@@ -221,7 +233,7 @@ export const TeamAllMembers = ({
 
       {/* Секция ушедших участников — left_at заполнен (скрыта, если пуста).
           Карточка такого участника открывается только для чтения (UserDetails). */}
-      {archivedMembers.length > 0 && (
+      {showArchived && archivedMembers.length > 0 && (
         <ContainerContent title={archivedTitle} count={archivedMembers.length} titleAction={viewToggle}>
           {renderList(archivedMembers, true)}
         </ContainerContent>

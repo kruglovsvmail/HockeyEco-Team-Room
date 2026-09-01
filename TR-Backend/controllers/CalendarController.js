@@ -49,6 +49,9 @@ export const getEvents = async (req, res) => {
       match:    ['match'],
       training: ['team_training', 'club_training'],
       meeting:  ['team_meeting', 'club_meeting'],
+      // Дефис, а не подчёркивание: так тип читается в URL /event/community-training/12
+      'community-training': ['community_training'],
+      'community-game':     ['community_game'],
     };
 
     const numericEventId = Number(eventId);
@@ -93,6 +96,44 @@ export const getEvents = async (req, res) => {
         -- Владелец клуба видит его тренировки и собрания, даже не числясь в общей базе
         SELECT id FROM clubs WHERE owner_id = $1
       ),
+      -- Сообщества, события которых человек должен видеть: вступивший участник,
+      -- владелец и штаб. Штаб тащим отдельно, потому что роль в сообществе, в
+      -- отличие от клубной, членства не требует — руководитель может не кататься.
+      -- Здесь же несём его группу и настройку видимости: фильтр по группам ниже
+      -- строится именно на них.
+      user_communities AS (
+        SELECT
+          c.id AS community_id,
+          c.category,
+          c.calendar_scope,
+          c.name,
+          c.logo_url,
+          c.color_1,
+          (SELECT cm.group_id FROM community_members cm
+            WHERE cm.community_id = c.id AND cm.user_id = $1 AND cm.left_at IS NULL) AS group_id,
+          EXISTS (SELECT 1 FROM community_members cm
+                  WHERE cm.community_id = c.id AND cm.user_id = $1 AND cm.left_at IS NULL) AS is_member,
+          (c.owner_id = $1 OR EXISTS (
+            SELECT 1 FROM community_roles cr
+            WHERE cr.community_id = c.id AND cr.user_id = $1 AND cr.left_at IS NULL
+          )) AS is_staff
+        FROM communities c
+        WHERE c.owner_id = $1
+          OR EXISTS (SELECT 1 FROM community_members cm
+                     WHERE cm.community_id = c.id AND cm.user_id = $1 AND cm.left_at IS NULL)
+          OR EXISTS (SELECT 1 FROM community_roles cr
+                     WHERE cr.community_id = c.id AND cr.user_id = $1 AND cr.left_at IS NULL)
+      ),
+
+      -- Роль пользователя в сообществе для карточки события
+      user_community_roles AS (
+        SELECT c.id AS community_id, 'community_owner'::varchar AS role
+        FROM communities c WHERE c.owner_id = $1
+        UNION
+        SELECT cr.community_id, cr.role::varchar FROM community_roles cr
+        WHERE cr.user_id = $1 AND cr.left_at IS NULL
+      ),
+
       -- Клубные роли пользователя: нужны, чтобы карточка клубного события знала,
       -- кто её открыл. Раньше здесь всем жёстко проставлялся 'player', и руководитель
       -- клуба не видел на своём же событии ни отметок, ни редактирования.
@@ -293,7 +334,25 @@ export const getEvents = async (req, res) => {
 
           (EXISTS (SELECT 1 FROM team_game_attendance att
                    WHERE att.game_id = g.id AND att.user_id = $1 AND att.team_id = ut.team_id
-                     AND att.withdrawn_at IS NOT NULL))::boolean AS withdrawn
+                     AND att.withdrawn_at IS NOT NULL))::boolean AS withdrawn,
+
+          -- ── Колонки событий сообществ ────────────────────────────────────
+          -- У командных и клубных событий их нет, но набор колонок обязан
+          -- совпадать во всех ветвях UNION ALL — см. комментарий у training_type.
+          NULL::int AS my_community_id,
+          NULL::varchar AS community_category,
+          NULL::int AS max_skaters,
+          NULL::int AS max_goalies,
+          NULL::int AS main_skaters,
+          NULL::int AS main_goalies,
+          NULL::int AS reserve_count,
+          NULL::varchar AS my_slot_status,
+          NULL::timestamptz AS my_offer_expires_at,
+
+          -- Публикация — только у событий сообществ, но колонки обязаны быть
+          -- во всех ветвях UNION ALL (см. комментарий у training_type).
+          NULL::timestamptz AS published_at,
+          NULL::timestamptz AS scheduled_publish_at
 
         FROM user_teams ut
         JOIN games g ON (g.home_team_id = ut.team_id OR g.away_team_id = ut.team_id)
@@ -429,7 +488,25 @@ export const getEvents = async (req, res) => {
 
           (EXISTS (SELECT 1 FROM team_training_attendance att
                    WHERE att.team_training_id = tt.id AND att.user_id = $1
-                     AND att.withdrawn_at IS NOT NULL))::boolean AS withdrawn
+                     AND att.withdrawn_at IS NOT NULL))::boolean AS withdrawn,
+
+          -- ── Колонки событий сообществ ────────────────────────────────────
+          -- У командных и клубных событий их нет, но набор колонок обязан
+          -- совпадать во всех ветвях UNION ALL — см. комментарий у training_type.
+          NULL::int AS my_community_id,
+          NULL::varchar AS community_category,
+          NULL::int AS max_skaters,
+          NULL::int AS max_goalies,
+          NULL::int AS main_skaters,
+          NULL::int AS main_goalies,
+          NULL::int AS reserve_count,
+          NULL::varchar AS my_slot_status,
+          NULL::timestamptz AS my_offer_expires_at,
+
+          -- Публикация — только у событий сообществ, но колонки обязаны быть
+          -- во всех ветвях UNION ALL (см. комментарий у training_type).
+          NULL::timestamptz AS published_at,
+          NULL::timestamptz AS scheduled_publish_at
 
         FROM user_teams ut
         JOIN team_training tt ON tt.team_id = ut.team_id
@@ -553,7 +630,25 @@ export const getEvents = async (req, res) => {
 
           (EXISTS (SELECT 1 FROM team_meeting_attendance att
                    WHERE att.team_meeting_id = tm.id AND att.user_id = $1
-                     AND att.withdrawn_at IS NOT NULL))::boolean AS withdrawn
+                     AND att.withdrawn_at IS NOT NULL))::boolean AS withdrawn,
+
+          -- ── Колонки событий сообществ ────────────────────────────────────
+          -- У командных и клубных событий их нет, но набор колонок обязан
+          -- совпадать во всех ветвях UNION ALL — см. комментарий у training_type.
+          NULL::int AS my_community_id,
+          NULL::varchar AS community_category,
+          NULL::int AS max_skaters,
+          NULL::int AS max_goalies,
+          NULL::int AS main_skaters,
+          NULL::int AS main_goalies,
+          NULL::int AS reserve_count,
+          NULL::varchar AS my_slot_status,
+          NULL::timestamptz AS my_offer_expires_at,
+
+          -- Публикация — только у событий сообществ, но колонки обязаны быть
+          -- во всех ветвях UNION ALL (см. комментарий у training_type).
+          NULL::timestamptz AS published_at,
+          NULL::timestamptz AS scheduled_publish_at
 
         FROM user_teams ut
         JOIN team_meeting tm ON tm.team_id = ut.team_id
@@ -681,7 +776,25 @@ export const getEvents = async (req, res) => {
 
           (EXISTS (SELECT 1 FROM club_training_attendance att
                    WHERE att.club_training_id = ct.id AND att.user_id = $1
-                     AND att.withdrawn_at IS NOT NULL))::boolean AS withdrawn
+                     AND att.withdrawn_at IS NOT NULL))::boolean AS withdrawn,
+
+          -- ── Колонки событий сообществ ────────────────────────────────────
+          -- У командных и клубных событий их нет, но набор колонок обязан
+          -- совпадать во всех ветвях UNION ALL — см. комментарий у training_type.
+          NULL::int AS my_community_id,
+          NULL::varchar AS community_category,
+          NULL::int AS max_skaters,
+          NULL::int AS max_goalies,
+          NULL::int AS main_skaters,
+          NULL::int AS main_goalies,
+          NULL::int AS reserve_count,
+          NULL::varchar AS my_slot_status,
+          NULL::timestamptz AS my_offer_expires_at,
+
+          -- Публикация — только у событий сообществ, но колонки обязаны быть
+          -- во всех ветвях UNION ALL (см. комментарий у training_type).
+          NULL::timestamptz AS published_at,
+          NULL::timestamptz AS scheduled_publish_at
 
         FROM user_clubs uc
         JOIN club_training ct ON ct.club_id = uc.club_id
@@ -799,12 +912,396 @@ export const getEvents = async (req, res) => {
 
           (EXISTS (SELECT 1 FROM club_meeting_attendance att
                    WHERE att.club_meeting_id = cm.id AND att.user_id = $1
-                     AND att.withdrawn_at IS NOT NULL))::boolean AS withdrawn
+                     AND att.withdrawn_at IS NOT NULL))::boolean AS withdrawn,
+
+          -- ── Колонки событий сообществ ────────────────────────────────────
+          -- У командных и клубных событий их нет, но набор колонок обязан
+          -- совпадать во всех ветвях UNION ALL — см. комментарий у training_type.
+          NULL::int AS my_community_id,
+          NULL::varchar AS community_category,
+          NULL::int AS max_skaters,
+          NULL::int AS max_goalies,
+          NULL::int AS main_skaters,
+          NULL::int AS main_goalies,
+          NULL::int AS reserve_count,
+          NULL::varchar AS my_slot_status,
+          NULL::timestamptz AS my_offer_expires_at,
+
+          -- Публикация — только у событий сообществ, но колонки обязаны быть
+          -- во всех ветвях UNION ALL (см. комментарий у training_type).
+          NULL::timestamptz AS published_at,
+          NULL::timestamptz AS scheduled_publish_at
 
         FROM user_clubs uc
         JOIN club_meeting cm ON cm.club_id = uc.club_id
         LEFT JOIN arenas a ON cm.arena_id = a.id
         LEFT JOIN clubs c ON c.id = uc.club_id
+      ),
+
+      -- ==========================================
+      -- БЛОК 6: ТРЕНИРОВКИ (community_training)
+      --
+      -- Видимость режется по тренировочным группам: при пяти группах календарь
+      -- участника иначе забивается чужим льдом. Настройка живёт в самом
+      -- сообществе (calendar_scope), штаб видит всё расписание в любом случае.
+      -- ==========================================
+      community_trainings_cte AS (
+        SELECT
+          ct.id::int AS event_id,
+          'community_training'::varchar AS event_type,
+          NULL::varchar AS game_type,
+          NULL::int AS initiator_team_id,
+          NULL::timestamptz AS confirm_deadline,
+          ct.training_date::timestamptz AS event_date,
+          (CASE WHEN ct.training_date < NOW() THEN 'finished' ELSE 'scheduled' END)::varchar AS status,
+          COALESCE(a.name, ct.location, 'Локация не указана')::varchar AS arena_name,
+          COALESCE(a.timezone, ct.custom_timezone, 'Europe/Moscow')::varchar AS arena_timezone,
+          ct.arena_id::int AS arena_id,
+          a.city::varchar AS arena_city,
+          a.address::varchar AS arena_address,
+          ct.location::varchar AS location,
+          ct.location_url::varchar AS location_url,
+
+          NULL::int AS my_team_id,
+          NULL::int AS my_club_id,
+          NULL::int AS home_team_id,
+
+          uc.name::varchar AS my_team_name,
+          uc.logo_url::varchar AS my_team_logo_url,
+          uc.color_1::varchar AS team_color,
+
+          NULL::int AS opponent_team_id,
+          NULL::varchar AS opponent_name,
+          NULL::varchar AS opponent_logo_url,
+
+          ct.cost::numeric AS fixed_fee,
+          NULL::int AS home_score,
+          NULL::int AS away_score,
+          false::boolean AS is_technical,
+          NULL::varchar AS end_type,
+
+          NULL::varchar AS division_name,
+          NULL::varchar AS division_short_name,
+          NULL::boolean AS is_tournament,
+          NULL::varchar AS league_name,
+          NULL::varchar AS league_short_name,
+          NULL::varchar AS league_logo_url,
+          NULL::varchar AS division_logo_url,
+          NULL::varchar AS season_name,
+          NULL::varchar AS stage_type,
+          NULL::varchar AS stage_label,
+          NULL::varchar AS playoff_match_type,
+          NULL::int AS series_number,
+          NULL::int AS wins_needed,
+
+          NULL::varchar AS home_jersey,
+          NULL::varchar AS away_jersey,
+
+          NULL::varchar AS video_yt_url,
+          NULL::varchar AS video_vk_url,
+
+          '/default/jersey_dark.webp'::varchar AS my_team_jersey_dark_url,
+          '/default/jersey_light.webp'::varchar AS my_team_jersey_light_url,
+          '/default/jersey_dark.webp'::varchar AS opponent_jersey_dark_url,
+          '/default/jersey_light.webp'::varchar AS opponent_jersey_light_url,
+
+          -- Логотип и название сообщества показываем всегда: человек должен
+          -- видеть, чей это лёд.
+          true::boolean AS show_team_context,
+
+          -- В резерве человек ещё не участник события: тумблер отражает основу,
+          -- а очередь показывает my_slot_status ниже.
+          (EXISTS (SELECT 1 FROM community_training_attendance att
+                   WHERE att.community_training_id = ct.id AND att.user_id = $1
+                     AND att.slot_status = 'main' AND att.withdrawn_at IS NULL))::boolean AS is_attending,
+
+          -- Подписку не проверяем: вступление и отметка в сообществах бесплатны
+          (CASE
+            WHEN NOT uc.is_member THEN 'not_in_community'
+            WHEN NOT (CASE
+            WHEN uc.group_id IS NULL THEN ct.include_ungrouped
+            ELSE (
+              NOT EXISTS (SELECT 1 FROM community_training_groups tg WHERE tg.community_training_id = ct.id)
+              OR EXISTS (SELECT 1 FROM community_training_groups tg
+                         WHERE tg.community_training_id = ct.id AND tg.group_id = uc.group_id)
+            )
+          END) THEN 'not_in_group'
+            ELSE 'allowed'
+          END)::varchar AS toggle_status,
+
+          COALESCE(
+            (SELECT role FROM user_community_roles ucr WHERE ucr.community_id = uc.community_id LIMIT 1),
+            'community_member'
+          )::varchar AS user_role,
+          (SELECT has_subscription FROM user_context)::boolean AS has_subscription,
+
+          ct.training_type::varchar AS training_type,
+
+          ct.cost_mode::varchar AS cost_mode,
+          ct.total_cost::numeric AS total_cost,
+          ct.goalies_free::boolean AS goalies_free,
+          ct.cost_min_participants::int AS cost_min_participants,
+          ct.attendance_deadline_hours::int AS attendance_deadline_hours,
+          ct.cost_locked_at::timestamptz AS cost_locked_at,
+
+          -- Делитель совпадает с тем, по которому потом фиксируется final_fee:
+          -- резерв на лёд не выходил и не платит, а слившийся с подтверждённой
+          -- заменой освобождён от оплаты (см. payerPredicate в communityReserve.js).
+          (SELECT count(*) FROM community_training_attendance att
+            WHERE att.community_training_id = ct.id
+              AND att.pay_role <> 'free'
+              AND NOT (ct.goalies_free AND att.pay_role = 'goalie')
+              AND att.slot_status = 'main' AND att.replaced_by_user_id IS NULL
+          )::int AS paying_count,
+
+          COALESCE(
+            (SELECT att.pay_role FROM community_training_attendance att
+             WHERE att.community_training_id = ct.id AND att.user_id = $1),
+            (SELECT CASE WHEN cmem.position = 'goalie' THEN 'goalie' ELSE 'skater' END
+             FROM community_members cmem
+             WHERE cmem.community_id = uc.community_id AND cmem.user_id = $1),
+            'skater'
+          )::varchar AS my_pay_role,
+
+          (SELECT att.final_fee FROM community_training_attendance att
+           WHERE att.community_training_id = ct.id AND att.user_id = $1)::numeric AS my_final_fee,
+
+          (EXISTS (SELECT 1 FROM community_training_attendance att
+                   WHERE att.community_training_id = ct.id AND att.user_id = $1
+                     AND att.withdrawn_at IS NOT NULL))::boolean AS withdrawn,
+
+          -- ── Колонки событий сообществ ────────────────────────────────────
+          uc.community_id::int AS my_community_id,
+          uc.category::varchar AS community_category,
+          ct.max_skaters::int AS max_skaters,
+          ct.max_goalies::int AS max_goalies,
+
+          -- Занятость дорожек. Амплуа берём из членства без оглядки на left_at —
+          -- ровно так же, как laneExpr в communityReserve.js, иначе счётчик на
+          -- карточке разошёлся бы с тем, что считает сама очередь.
+          (SELECT count(*) FROM community_training_attendance att
+            WHERE att.community_training_id = ct.id AND att.slot_status = 'main' AND att.withdrawn_at IS NULL
+              AND COALESCE((SELECT cmem.position FROM community_members cmem
+                            WHERE cmem.community_id = uc.community_id
+                              AND cmem.user_id = att.user_id), 'skater') <> 'goalie'
+          )::int AS main_skaters,
+
+          (SELECT count(*) FROM community_training_attendance att
+            WHERE att.community_training_id = ct.id AND att.slot_status = 'main' AND att.withdrawn_at IS NULL
+              AND COALESCE((SELECT cmem.position FROM community_members cmem
+                            WHERE cmem.community_id = uc.community_id
+                              AND cmem.user_id = att.user_id), 'skater') = 'goalie'
+          )::int AS main_goalies,
+
+          (SELECT count(*) FROM community_training_attendance att
+            WHERE att.community_training_id = ct.id AND att.slot_status IN ('reserve', 'offered')
+          )::int AS reserve_count,
+
+          (SELECT att.slot_status FROM community_training_attendance att
+           WHERE att.community_training_id = ct.id AND att.user_id = $1)::varchar AS my_slot_status,
+
+          (SELECT att.offer_expires_at FROM community_training_attendance att
+           WHERE att.community_training_id = ct.id AND att.user_id = $1)::timestamptz AS my_offer_expires_at,
+
+          -- Когда событие стало видно участникам. NULL значит «ещё не видно»:
+          -- такую карточку в выдаче получает только штаб.
+          ct.published_at::timestamptz AS published_at,
+
+          -- Момент автоматической публикации — для обратного отсчёта на карточке.
+          -- У ручного режима его нет: там ждут не срока, а решения человека.
+          (CASE
+            WHEN ct.publish_mode = 'before_event' AND ct.publish_hours_before IS NOT NULL
+              THEN ct.training_date - (ct.publish_hours_before * INTERVAL '1 hour')
+            ELSE NULL
+          END)::timestamptz AS scheduled_publish_at
+
+        FROM user_communities uc
+        JOIN community_training ct ON ct.community_id = uc.community_id
+        LEFT JOIN arenas a ON ct.arena_id = a.id
+        -- Запланированное, но ещё не опубликованное событие видит только штаб:
+        -- лёд забронирован, а запись пока закрыта.
+        WHERE (ct.published_at IS NOT NULL OR uc.is_staff)
+          AND (uc.is_staff
+           OR uc.calendar_scope = 'all'
+           OR (CASE
+            WHEN uc.group_id IS NULL THEN ct.include_ungrouped
+            ELSE (
+              NOT EXISTS (SELECT 1 FROM community_training_groups tg WHERE tg.community_training_id = ct.id)
+              OR EXISTS (SELECT 1 FROM community_training_groups tg
+                         WHERE tg.community_training_id = ct.id AND tg.group_id = uc.group_id)
+            )
+          END))
+      ),
+
+      -- ==========================================
+      -- БЛОК 7: СОЛЯНКИ (community_game)
+      --
+      -- Групп у солянок нет, поэтому фильтровать нечего: событие видит любой,
+      -- кто состоит в сообществе, плюс его штаб.
+      -- ==========================================
+      community_games_cte AS (
+        SELECT
+          ct.id::int AS event_id,
+          'community_game'::varchar AS event_type,
+          NULL::varchar AS game_type,
+          NULL::int AS initiator_team_id,
+          NULL::timestamptz AS confirm_deadline,
+          ct.game_date::timestamptz AS event_date,
+          (CASE WHEN ct.game_date < NOW() THEN 'finished' ELSE 'scheduled' END)::varchar AS status,
+          COALESCE(a.name, ct.location, 'Локация не указана')::varchar AS arena_name,
+          COALESCE(a.timezone, ct.custom_timezone, 'Europe/Moscow')::varchar AS arena_timezone,
+          ct.arena_id::int AS arena_id,
+          a.city::varchar AS arena_city,
+          a.address::varchar AS arena_address,
+          ct.location::varchar AS location,
+          ct.location_url::varchar AS location_url,
+
+          NULL::int AS my_team_id,
+          NULL::int AS my_club_id,
+          NULL::int AS home_team_id,
+
+          uc.name::varchar AS my_team_name,
+          uc.logo_url::varchar AS my_team_logo_url,
+          uc.color_1::varchar AS team_color,
+
+          NULL::int AS opponent_team_id,
+          NULL::varchar AS opponent_name,
+          NULL::varchar AS opponent_logo_url,
+
+          ct.cost::numeric AS fixed_fee,
+          NULL::int AS home_score,
+          NULL::int AS away_score,
+          false::boolean AS is_technical,
+          NULL::varchar AS end_type,
+
+          NULL::varchar AS division_name,
+          NULL::varchar AS division_short_name,
+          NULL::boolean AS is_tournament,
+          NULL::varchar AS league_name,
+          NULL::varchar AS league_short_name,
+          NULL::varchar AS league_logo_url,
+          NULL::varchar AS division_logo_url,
+          NULL::varchar AS season_name,
+          NULL::varchar AS stage_type,
+          NULL::varchar AS stage_label,
+          NULL::varchar AS playoff_match_type,
+          NULL::int AS series_number,
+          NULL::int AS wins_needed,
+
+          NULL::varchar AS home_jersey,
+          NULL::varchar AS away_jersey,
+
+          NULL::varchar AS video_yt_url,
+          NULL::varchar AS video_vk_url,
+
+          '/default/jersey_dark.webp'::varchar AS my_team_jersey_dark_url,
+          '/default/jersey_light.webp'::varchar AS my_team_jersey_light_url,
+          '/default/jersey_dark.webp'::varchar AS opponent_jersey_dark_url,
+          '/default/jersey_light.webp'::varchar AS opponent_jersey_light_url,
+
+          -- Логотип и название сообщества показываем всегда: человек должен
+          -- видеть, чей это лёд.
+          true::boolean AS show_team_context,
+
+          -- В резерве человек ещё не участник события: тумблер отражает основу,
+          -- а очередь показывает my_slot_status ниже.
+          (EXISTS (SELECT 1 FROM community_game_attendance att
+                   WHERE att.community_game_id = ct.id AND att.user_id = $1
+                     AND att.slot_status = 'main' AND att.withdrawn_at IS NULL))::boolean AS is_attending,
+
+          -- Подписку не проверяем: вступление и отметка в сообществах бесплатны
+          (CASE
+            WHEN NOT uc.is_member THEN 'not_in_community'
+            ELSE 'allowed'
+          END)::varchar AS toggle_status,
+
+          COALESCE(
+            (SELECT role FROM user_community_roles ucr WHERE ucr.community_id = uc.community_id LIMIT 1),
+            'community_member'
+          )::varchar AS user_role,
+          (SELECT has_subscription FROM user_context)::boolean AS has_subscription,
+
+          NULL::varchar AS training_type,
+
+          ct.cost_mode::varchar AS cost_mode,
+          ct.total_cost::numeric AS total_cost,
+          ct.goalies_free::boolean AS goalies_free,
+          ct.cost_min_participants::int AS cost_min_participants,
+          ct.attendance_deadline_hours::int AS attendance_deadline_hours,
+          ct.cost_locked_at::timestamptz AS cost_locked_at,
+
+          -- Делитель совпадает с тем, по которому потом фиксируется final_fee:
+          -- резерв на лёд не выходил и не платит, а слившийся с подтверждённой
+          -- заменой освобождён от оплаты (см. payerPredicate в communityReserve.js).
+          (SELECT count(*) FROM community_game_attendance att
+            WHERE att.community_game_id = ct.id
+              AND att.pay_role <> 'free'
+              AND NOT (ct.goalies_free AND att.pay_role = 'goalie')
+              AND att.slot_status = 'main' AND att.replaced_by_user_id IS NULL
+          )::int AS paying_count,
+
+          COALESCE(
+            (SELECT att.pay_role FROM community_game_attendance att
+             WHERE att.community_game_id = ct.id AND att.user_id = $1),
+            (SELECT CASE WHEN cmem.position = 'goalie' THEN 'goalie' ELSE 'skater' END
+             FROM community_members cmem
+             WHERE cmem.community_id = uc.community_id AND cmem.user_id = $1),
+            'skater'
+          )::varchar AS my_pay_role,
+
+          (SELECT att.final_fee FROM community_game_attendance att
+           WHERE att.community_game_id = ct.id AND att.user_id = $1)::numeric AS my_final_fee,
+
+          (EXISTS (SELECT 1 FROM community_game_attendance att
+                   WHERE att.community_game_id = ct.id AND att.user_id = $1
+                     AND att.withdrawn_at IS NOT NULL))::boolean AS withdrawn,
+
+          -- ── Колонки событий сообществ ────────────────────────────────────
+          uc.community_id::int AS my_community_id,
+          uc.category::varchar AS community_category,
+          ct.max_skaters::int AS max_skaters,
+          ct.max_goalies::int AS max_goalies,
+
+          -- Занятость дорожек. Амплуа берём из членства без оглядки на left_at —
+          -- ровно так же, как laneExpr в communityReserve.js, иначе счётчик на
+          -- карточке разошёлся бы с тем, что считает сама очередь.
+          (SELECT count(*) FROM community_game_attendance att
+            WHERE att.community_game_id = ct.id AND att.slot_status = 'main' AND att.withdrawn_at IS NULL
+              AND COALESCE((SELECT cmem.position FROM community_members cmem
+                            WHERE cmem.community_id = uc.community_id
+                              AND cmem.user_id = att.user_id), 'skater') <> 'goalie'
+          )::int AS main_skaters,
+
+          (SELECT count(*) FROM community_game_attendance att
+            WHERE att.community_game_id = ct.id AND att.slot_status = 'main' AND att.withdrawn_at IS NULL
+              AND COALESCE((SELECT cmem.position FROM community_members cmem
+                            WHERE cmem.community_id = uc.community_id
+                              AND cmem.user_id = att.user_id), 'skater') = 'goalie'
+          )::int AS main_goalies,
+
+          (SELECT count(*) FROM community_game_attendance att
+            WHERE att.community_game_id = ct.id AND att.slot_status IN ('reserve', 'offered')
+          )::int AS reserve_count,
+
+          (SELECT att.slot_status FROM community_game_attendance att
+           WHERE att.community_game_id = ct.id AND att.user_id = $1)::varchar AS my_slot_status,
+
+          (SELECT att.offer_expires_at FROM community_game_attendance att
+           WHERE att.community_game_id = ct.id AND att.user_id = $1)::timestamptz AS my_offer_expires_at,
+
+          -- См. комментарий в ветке тренировок сообщества
+          ct.published_at::timestamptz AS published_at,
+          (CASE
+            WHEN ct.publish_mode = 'before_event' AND ct.publish_hours_before IS NOT NULL
+              THEN ct.game_date - (ct.publish_hours_before * INTERVAL '1 hour')
+            ELSE NULL
+          END)::timestamptz AS scheduled_publish_at
+
+        FROM user_communities uc
+        JOIN community_game ct ON ct.community_id = uc.community_id
+        LEFT JOIN arenas a ON ct.arena_id = a.id
+        -- Запланированную, но ещё не опубликованную солянку видит только штаб
+        WHERE ct.published_at IS NOT NULL OR uc.is_staff
       )
 
       -- ==========================================
@@ -861,6 +1358,10 @@ export const getEvents = async (req, res) => {
         SELECT * FROM club_trainings_cte
         UNION ALL
         SELECT * FROM club_meetings_cte
+        UNION ALL
+        SELECT * FROM community_trainings_cte
+        UNION ALL
+        SELECT * FROM community_games_cte
       ) AS ev
       WHERE 1=1 ${eventFilters.join('\n      ')}
       ORDER BY event_date ASC;

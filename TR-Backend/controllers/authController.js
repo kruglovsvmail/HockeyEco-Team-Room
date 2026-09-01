@@ -144,6 +144,37 @@ const fetchPwaUserProfile = async (userId) => {
     ORDER BY c.name
   `, [user.id]);
 
+  // Сообщества пользователя: владелец, штаб или вступивший участник.
+  // Штаб тащим отдельным условием — роль в сообществе, в отличие от клубной,
+  // членства не требует. Роли те же, что считает getCommunityRoles на бэкенде.
+  const communitiesResult = await pool.query(`
+    SELECT c.id, c.name, c.category, c.logo_url, c.city, c.description,
+           c.color_1, c.color_2, c.owner_id, c.owner_title, c.calendar_scope,
+           c.chat_messenger, c.chat_url,
+      (
+        SELECT string_agg(DISTINCT role, ',') FROM (
+          SELECT cr.role FROM community_roles cr
+          WHERE cr.community_id = c.id AND cr.user_id = $1 AND cr.left_at IS NULL
+
+          UNION
+
+          SELECT 'community_member' AS role FROM community_members cm
+          WHERE cm.community_id = c.id AND cm.user_id = $1 AND cm.left_at IS NULL
+
+          UNION
+
+          SELECT 'community_owner' AS role WHERE c.owner_id = $1
+        ) AS roles
+      ) AS user_role
+    FROM communities c
+    WHERE c.owner_id = $1
+      OR EXISTS (SELECT 1 FROM community_members cm
+                 WHERE cm.community_id = c.id AND cm.user_id = $1 AND cm.left_at IS NULL)
+      OR EXISTS (SELECT 1 FROM community_roles cr
+                 WHERE cr.community_id = c.id AND cr.user_id = $1 AND cr.left_at IS NULL)
+    ORDER BY c.name
+  `, [user.id]);
+
   // Сборка оперативной In-Memory матрицы доступов для фронтенда
   const accessMatrix = {};
   teamsResult.rows.forEach(row => {
@@ -188,6 +219,33 @@ const fetchPwaUserProfile = async (userId) => {
     };
   });
 
+  // Матрица сообществ — третья, отдельно от командной и клубной: идентификаторы
+  // у всех трёх свои, склеивать их в один объект нельзя.
+  // has_subscription всегда true: ни вступление, ни отметка подписки не требуют,
+  // а useAccess проверяет это поле для любой роли из allowedRoles.
+  const communityAccessMatrix = {};
+  const communities = communitiesResult.rows.map(row => {
+    const roles = row.user_role ? row.user_role.split(',') : [];
+    const isOwner = row.owner_id === user.id;
+
+    if (isOwner && !roles.includes('community_owner')) {
+      roles.push('community_owner');
+    }
+
+    communityAccessMatrix[row.id] = {
+      is_owner: isOwner,
+      has_subscription: true,
+      roles: roles
+    };
+
+    return {
+      ...row,
+      user_roles: roles,
+      is_owner: isOwner,
+      has_subscription: true,
+    };
+  });
+
   return {
     id: user.id,
     firstName: user.first_name,
@@ -202,8 +260,10 @@ const fetchPwaUserProfile = async (userId) => {
     hasSubscription: hasSubscription,
     teams: teamsResult.rows,
     clubs: clubs,
+    communities: communities,
     accessMatrix: accessMatrix,
-    clubAccessMatrix: clubAccessMatrix
+    clubAccessMatrix: clubAccessMatrix,
+    communityAccessMatrix: communityAccessMatrix
   };
 };
 

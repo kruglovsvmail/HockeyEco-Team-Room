@@ -30,7 +30,7 @@ router.get('/arenas', verifyToken, requireEventPermission([
   'MATCH_EDIT_SCHEDULE',
   'TRAINING_EDIT_SCHEDULE',
   'MEETING_EDIT_SCHEDULE',
-], 'CLUB_MANAGE_EVENTS'), getArenas);
+], 'CLUB_MANAGE_EVENTS', 'COMMUNITY_MANAGE_EVENTS'), getArenas);
 router.get('/pwa-teams', verifyToken, requireTeamPermission('MGR_CREATE_EVENT'), getPwaTeams);
 
 router.get('/external-opponents', verifyToken, requireTeamPermission('MGR_CREATE_EVENT'), getExternalOpponents);

@@ -10,7 +10,7 @@ import { getAuthHeaders } from '../../utils/helpers';
 export function ArenaSelector({ data }) {
   // Извлекаем переданные ID и имя текущей арены для предзаполнения
   // clubId приходит вместо teamId, когда арену выбирают для клубного события
-  const { onSelect, currentTeamColor, teamId, clubId, selectedArenaId, selectedArenaName } = data || {};
+  const { onSelect, currentTeamColor, teamId, clubId, communityId, selectedArenaId, selectedArenaName } = data || {};
 
   const [arenaTab, setArenaTab] = useState('directory'); 
   const [arenaSearch, setArenaSearch] = useState('');
@@ -34,12 +34,16 @@ export function ArenaSelector({ data }) {
   }, [selectedArenaId, selectedArenaName]);
 
   useEffect(() => {
-    if (arenaTab !== 'directory' || (!teamId && !clubId)) return;
+    if (arenaTab !== 'directory' || (!teamId && !clubId && !communityId)) return;
 
     const fetchArenas = async () => {
       setIsLoading(true);
       try {
-        const scopeQuery = clubId ? `clubId=${clubId}` : `teamId=${teamId}`;
+        // Контекст решает только, чьё право проверять на сервере: сам справочник
+        // арен общий. Без него запрос сообщества уходил без scope и не проходил гейт.
+        const scopeQuery = communityId
+          ? `communityId=${communityId}`
+          : clubId ? `clubId=${clubId}` : `teamId=${teamId}`;
         const url = `${import.meta.env.VITE_API_URL}/api/manager/handbooks/arenas?${scopeQuery}&search=${encodeURIComponent(arenaSearch)}`;
         const res = await fetch(url, { headers: getAuthHeaders() });
         if (res.ok) {
@@ -60,7 +64,7 @@ export function ArenaSelector({ data }) {
     }, 300);
 
     return () => clearTimeout(delayDebounce);
-  }, [arenaSearch, arenaTab, teamId, clubId]);
+  }, [arenaSearch, arenaTab, teamId, clubId, communityId]);
 
   return (
     <div 

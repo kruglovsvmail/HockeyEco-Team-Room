@@ -18,10 +18,23 @@ export const getClubIdFromRequest = (req) => {
 };
 
 /**
+ * То же самое для контекста сообщества (тренировки, солянки, страница сообщества)
+ */
+export const getCommunityIdFromRequest = (req) => {
+  if (!req) return null;
+  return Number(req.body?.communityId || req.query?.communityId || req.params?.communityId);
+};
+
+/**
  * Событие приходит с типом: team_training / club_training / team_meeting / club_meeting.
  * Всё, что начинается с club_, живёт в клубном контексте и проверяется по клубу.
  */
 export const isClubEventType = (eventType) => String(eventType || '').startsWith('club_');
+
+/**
+ * Аналогично для сообществ: community_training (тренировка) и community_game (солянка).
+ */
+export const isCommunityEventType = (eventType) => String(eventType || '').startsWith('community_');
 
 /**
  * Сопоставление ролей пользователя с декларативным правилом из permissions.js.
@@ -196,6 +209,15 @@ export async function isCoachAnywhere(userId, client = pool) {
       SELECT 1 FROM teams WHERE owner_id = $1
       UNION ALL
       SELECT 1 FROM clubs WHERE owner_id = $1
+      UNION ALL
+      -- Штаб сообщества-тренировки. План тренировки собирается из той же личной
+      -- библиотеки упражнений, что и командный, поэтому вход в Тренерскую этим
+      -- людям нужен. Солянки не в счёт: плана тренировки у них нет.
+      SELECT 1 FROM communities WHERE category = 'skating' AND owner_id = $1
+      UNION ALL
+      SELECT 1 FROM community_roles cr
+      JOIN communities c ON c.id = cr.community_id
+      WHERE cr.user_id = $1 AND cr.left_at IS NULL AND c.category = 'skating'
     )
   `, [userId]);
 
@@ -229,6 +251,78 @@ export async function checkClubPermissionInternal(userId, clubId, permissionKey,
 
   const hasSubscription = subscription_expires_at && new Date(subscription_expires_at) > new Date();
   const userRoles = clubId ? await getClubRoles(userId, clubId, client) : [];
+
+  return matchRolesToPermission(userRoles, permission, hasSubscription);
+}
+
+/**
+ * Роли пользователя внутри сообщества.
+ *
+ * Ключевое отличие от клуба: роль штаба засчитывается БЕЗ проверки членства.
+ * В клубе строка club_roles без активного club_members прав не даёт, здесь наоборот —
+ * руководитель сообщества может сам не кататься и в участниках не числиться.
+ * Владелец (communities.owner_id) строкой в community_roles не дублируется.
+ *
+ * community_member выдаётся отдельно, при активном членстве: это право на
+ * самоотметку и на просмотр внутренней части события, а не управленческая роль.
+ */
+export async function getCommunityRoles(userId, communityId, client = pool) {
+  const userRoles = [];
+  if (!userId || !communityId) return userRoles;
+
+  const ownerRes = await client.query(
+    'SELECT owner_id FROM communities WHERE id = $1',
+    [communityId]
+  );
+  if (ownerRes.rows.length > 0 && ownerRes.rows[0].owner_id === userId) {
+    userRoles.push(ROLES.COMMUNITY_OWNER);
+  }
+
+  const rolesRes = await client.query(`
+    SELECT role FROM community_roles
+    WHERE user_id = $1 AND community_id = $2 AND left_at IS NULL
+  `, [userId, communityId]);
+  userRoles.push(...rolesRes.rows.map(r => r.role));
+
+  const memberRes = await client.query(`
+    SELECT id FROM community_members
+    WHERE user_id = $1 AND community_id = $2 AND left_at IS NULL
+  `, [userId, communityId]);
+  if (memberRes.rows.length > 0) {
+    userRoles.push(ROLES.COMMUNITY_MEMBER);
+  }
+
+  return userRoles;
+}
+
+/**
+ * Аналог checkClubPermissionInternal для сообществ: контекст — сообщество.
+ * Используется страницей сообщества, тренировками (community_training) и
+ * солянками (community_game).
+ *
+ * @param {number} userId - ID пользователя
+ * @param {number} communityId - ID сообщества контекста
+ * @param {string} permissionKey - Ключ правила из permissions.js
+ * @param {object} client - Клиент пула подключений (по умолчанию pool)
+ * @returns {boolean} true если доступ разрешён
+ */
+export async function checkCommunityPermissionInternal(userId, communityId, permissionKey, client = pool) {
+  if (!userId) return false;
+
+  const userRes = await client.query(
+    'SELECT global_role, subscription_expires_at FROM users WHERE id = $1',
+    [userId]
+  );
+  if (userRes.rows.length === 0) return false;
+  const { global_role, subscription_expires_at } = userRes.rows[0];
+
+  if (global_role === 'admin') return true;
+
+  const permission = PERMISSIONS[permissionKey];
+  if (!permission) return false;
+
+  const hasSubscription = subscription_expires_at && new Date(subscription_expires_at) > new Date();
+  const userRoles = communityId ? await getCommunityRoles(userId, communityId, client) : [];
 
   return matchRolesToPermission(userRoles, permission, hasSubscription);
 }

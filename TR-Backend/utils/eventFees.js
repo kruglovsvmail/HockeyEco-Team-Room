@@ -1,4 +1,5 @@
 import pool from '../config/db.js';
+import { payerPredicate } from './communityReserve.js';
 
 // =============================================================================
 // ГИБКАЯ СТОИМОСТЬ СОБЫТИЯ
@@ -24,7 +25,16 @@ const EVENT_MAP = {
   club_training: { table: 'club_training', att: 'club_training_attendance', fk: 'club_training_id', dateCol: 'training_date', goalieAware: true },
   team_meeting:  { table: 'team_meeting',  att: 'team_meeting_attendance',  fk: 'team_meeting_id',  dateCol: 'meeting_date',  goalieAware: false },
   club_meeting:  { table: 'club_meeting',  att: 'club_meeting_attendance',  fk: 'club_meeting_id',  dateCol: 'meeting_date',  goalieAware: false },
+  // События сообществ считаются так же, но плательщиков среди отметившихся у них
+  // меньше: резерв на лёд не вышел и не платит, а слившийся после дедлайна
+  // освобождается от оплаты, если его место занял другой (см. payerPredicate).
+  community_training: { table: 'community_training', att: 'community_training_attendance', fk: 'community_training_id', dateCol: 'training_date', goalieAware: true, payerFilter: payerPredicate },
+  community_game:     { table: 'community_game',     att: 'community_game_attendance',     fk: 'community_game_id',     dateCol: 'game_date',     goalieAware: true, payerFilter: payerPredicate },
 };
+
+// Дополнительное условие «этот отметившийся действительно платит», если у типа
+// события оно есть. Для команд и клубов пусто: там платят все отметившиеся.
+const payerFilterSql = (cfg, alias = 'a') => (cfg.payerFilter ? ` AND ${cfg.payerFilter(alias)}` : '');
 
 export const isMatchEvent = (eventType) => eventType === 'match';
 
@@ -33,9 +43,22 @@ export const isMatchEvent = (eventType) => eventType === 'match';
 // игрока может смениться после события, а расчёт взноса меняться не должен.
 // Вратарём считаем только того, у кого амплуа стоит явно; всё остальное —
 // включая людей без амплуа в общей базе клуба — платит как полевой.
-export async function resolvePayRole(userId, eventType, { teamId, clubId, gameId } = {}) {
+export async function resolvePayRole(userId, eventType, { teamId, clubId, gameId, communityId } = {}) {
   try {
     if (eventType === 'team_meeting' || eventType === 'club_meeting') return 'skater';
+
+    // В сообществе амплуа своё и в командных ростерах его искать бессмысленно:
+    // участник тренировки может вообще не состоять ни в одной команде. Амплуа не
+    // задано — считаем полевым, как и везде.
+    if ((eventType === 'community_training' || eventType === 'community_game') && communityId) {
+      const { rows } = await pool.query(
+        `SELECT 1 FROM community_members
+         WHERE user_id = $1 AND community_id = $2 AND left_at IS NULL AND position = 'goalie'
+         LIMIT 1`,
+        [userId, communityId]
+      );
+      return rows.length > 0 ? 'goalie' : 'skater';
+    }
 
     if (eventType === 'match' && gameId) {
       const { rows } = await pool.query(
@@ -210,9 +233,9 @@ export async function countPayers(eventType, eventId, teamId = null, goaliesFree
   if (!cfg) return 0;
 
   const { rows } = await pool.query(
-    `SELECT count(*)::int AS n FROM "public"."${cfg.att}"
-     WHERE ${cfg.fk} = $1 AND pay_role <> 'free'
-       AND NOT ($2::boolean AND pay_role = 'goalie')`,
+    `SELECT count(*)::int AS n FROM "public"."${cfg.att}" a
+     WHERE a.${cfg.fk} = $1 AND a.pay_role <> 'free'
+       AND NOT ($2::boolean AND a.pay_role = 'goalie')${payerFilterSql(cfg, 'a')}`,
     [eventId, cfg.goalieAware ? goaliesFree : false]
   );
   return rows[0]?.n || 0;
@@ -252,12 +275,15 @@ export async function describeSplitFee(eventType, eventId, teamId = null) {
 export async function lockPastEventFees() {
   for (const cfg of Object.values(EVENT_MAP)) {
     const goalieExpr = cfg.goalieAware ? 'e.goalies_free' : 'false';
+    // У событий сообществ часть отметившихся не платит вовсе: резерв и слившиеся
+    // с подтверждённой заменой. Им фиксируем ноль, а из делителя они уже исключены.
+    const nonPayerCase = cfg.payerFilter ? `WHEN NOT (${cfg.payerFilter('a')}) THEN 0` : '';
     await pool.query(`
       WITH due AS (
         SELECT e.id, e.total_cost, ${goalieExpr} AS goalies_free,
                (SELECT count(*) FROM "public"."${cfg.att}" a
                  WHERE a.${cfg.fk} = e.id AND a.pay_role <> 'free'
-                   AND NOT (${goalieExpr} AND a.pay_role = 'goalie'))::int AS payers
+                   AND NOT (${goalieExpr} AND a.pay_role = 'goalie')${payerFilterSql(cfg, 'a')})::int AS payers
         FROM "public"."${cfg.table}" e
         WHERE e.cost_mode = 'split'
           AND e.total_cost IS NOT NULL
@@ -268,6 +294,7 @@ export async function lockPastEventFees() {
       upd AS (
         UPDATE "public"."${cfg.att}" a
         SET final_fee = CASE
+              ${nonPayerCase}
               WHEN a.pay_role = 'free' THEN 0
               WHEN a.pay_role = 'goalie' AND d.goalies_free THEN 0
               WHEN d.payers = 0 THEN 0

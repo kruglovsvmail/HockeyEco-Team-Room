@@ -46,14 +46,16 @@ export function EventTargetSelector({ targets = [], activeKey, onSelect, onClose
           >
             <div className="w-10 h-10 rounded-xl bg-surface-base border border-surface-border flex items-center justify-center overflow-hidden shrink-0">
               {target.logoUrl
-                ? <img src={getImageUrl(target.logoUrl)} alt="" className="w-full h-full object-contain p-0.5" />
+                ? <img src={getImageUrl(target.logoUrl)} alt="" className="w-full h-full object-contain" />
                 : <Icon name="team" className="w-5 h-5 text-content-subtle" />}
             </div>
 
             <div className="flex flex-col min-w-0 flex-1">
               <span className="text-[14px] font-bold text-content-main truncate">{target.name}</span>
               <span className="text-[10px] font-black uppercase tracking-widest text-content-muted mt-0.5">
-                {target.type === 'club' ? 'Клуб' : 'Команда'}
+                {target.type === 'club' ? 'Клуб'
+                  : target.type === 'community' ? 'Сообщество'
+                  : 'Команда'}
               </span>
             </div>
 

@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import { SubscriptionStub } from '../ui/SubscriptionStub';
 import { useAccess } from '../hooks/useAccess';
 import { Header } from '../components/Header';
@@ -14,6 +14,7 @@ import 'dayjs/locale/ru';
 import { EventDetailsMatch } from '../components/EventDetails/Match/EventDetailsMatch';
 import { EventDetailsTraining } from '../components/EventDetails/Training/EventDetailsTraining';
 import { EventDetailsMeeting } from '../components/EventDetails/Meeting/EventDetailsMeeting';
+import { EventDetailsCommunity } from '../components/EventDetails/Community/EventDetailsCommunity';
 
 dayjs.extend(utc);
 dayjs.extend(timezone);
@@ -23,13 +24,22 @@ const componentMap = {
   match: EventDetailsMatch,
   training: EventDetailsTraining,
   meeting: EventDetailsMeeting,
+  // Тренировка и солянка — один компонент: набор вкладок он выбирает сам по типу
+  'community-training': EventDetailsCommunity,
+  'community-game': EventDetailsCommunity,
 };
 
 const EVENT_TITLES = {
   match: 'Матч',
   training: 'Тренировка',
   meeting: 'Собрание',
+  'community-training': 'Тренировка',
+  'community-game': 'Солянка',
 };
+
+// Маршрут события сообщества отличается дефисом — по нему же выбирается
+// и контекст проверки прав ниже
+const isCommunityRoute = (eventType) => String(eventType || '').startsWith('community-');
 
 // Текст для окна «Поделиться»: заголовок события, дата/время в таймзоне арены и место.
 // Ссылку в текст не подмешиваем — её отдаём отдельным полем url (иначе на части
@@ -54,8 +64,23 @@ function buildShareText(eventType, event) {
 }
 
 export function EventPage({ eventType, event, user, selectedTeam, onClose, showEditButton = false, onEditClick, openRightPanel }) {
-  const { checkAccess } = useAccess(user, selectedTeam);
-  const hasAccess = event ? checkAccess('INTERNAL_VIEW', event.my_team_id) : true;
+  // Контекст сообщества берём из самого события: человек мог открыть тренировку,
+  // стоя в контексте команды, и selectedCommunity указывал бы на другое сообщество.
+  const eventCommunity = useMemo(() => {
+    const id = event?.my_community_id;
+    if (!id) return null;
+    return (user?.communities || []).find(c => String(c.id) === String(id)) || null;
+  }, [event?.my_community_id, user?.communities]);
+
+  const { checkAccess, checkCommunityAccess } = useAccess(user, selectedTeam, null, eventCommunity);
+
+  // У события сообщества нет ни команды, ни клуба: INTERNAL_VIEW по my_team_id
+  // здесь всегда давал бы отказ, потому что сравнивать не с чем.
+  const hasAccess = !event
+    ? true
+    : isCommunityRoute(eventType)
+      ? checkCommunityAccess('COMMUNITY_INTERNAL_VIEW', event.my_community_id)
+      : checkAccess('INTERNAL_VIEW', event.my_team_id);
 
   const [toast, setToast] = useState({ isOpen: false, message: '', type: 'success' });
 

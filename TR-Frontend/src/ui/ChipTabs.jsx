@@ -17,7 +17,11 @@ export const ChipTabs = ({ tabs, activeTab, onChange, className = '', activeColo
       style={wrap ? undefined : { WebkitOverflowScrolling: 'touch' }}
     >
       {tabs.map((tab) => {
-        const isActive = activeTab === tab.id;
+        // Массив в activeTab означает множественный выбор: так тем же
+        // компонентом выбираются и один тип тренировки, и несколько групп.
+        const isActive = Array.isArray(activeTab)
+          ? activeTab.includes(tab.id)
+          : activeTab === tab.id;
         
         // ИСПРАВЛЕНО: Добавлен эффект объема (глянца) через линейный градиент с твоими настройками offset (40% и 70%)
         const dynamicStyle = isActive && activeColor 
@@ -31,6 +35,9 @@ export const ChipTabs = ({ tabs, activeTab, onChange, className = '', activeColo
         return (
           <button
             key={tab.id}
+            /* Внутри формы кнопка без type — это submit: выбор типа тренировки
+               отправлял форму создания события вместо переключения вкладки */
+            type="button"
             onClick={() => onChange(tab.id)}
             style={dynamicStyle}
             className={clsx(

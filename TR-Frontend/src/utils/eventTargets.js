@@ -31,11 +31,22 @@ const rolesForClub = (club, userId) => {
   return roles;
 };
 
-export function buildEventTargets(teams = [], clubs = [], user = null) {
+const rolesForCommunity = (community, userId) => {
+  const roles = [];
+  if (community?.owner_id === userId) roles.push(ROLES.COMMUNITY_OWNER);
+  if (Array.isArray(community?.user_roles)) roles.push(...community.user_roles);
+  else if (typeof community?.user_role === 'string') {
+    roles.push(...community.user_role.split(',').map(r => r.trim()).filter(Boolean));
+  }
+  return roles;
+};
+
+export function buildEventTargets(teams = [], clubs = [], communities = [], user = null) {
   const isGlobalAdmin = user?.globalRole === ROLES.GLOBAL_ADMIN || user?.global_role === ROLES.GLOBAL_ADMIN;
 
   const clubAllowed = PERMISSIONS.CLUB_MANAGE_EVENTS?.allowedRoles || [];
   const teamAllowed = PERMISSIONS.MGR_CREATE_EVENT?.allowedRoles || [];
+  const communityAllowed = PERMISSIONS.COMMUNITY_MANAGE_EVENTS?.allowedRoles || [];
 
   // Клубы идут первыми: клубное событие охватывает все составы, и в списке
   // естественно видеть сначала общее, потом частное.
@@ -61,7 +72,20 @@ export function buildEventTargets(teams = [], clubs = [], user = null) {
       entity: team,
     }));
 
-  return [...clubTargets, ...teamTargets];
+  // Сообщества идут последними: свой лёд человек ставит чаще, чем открытые
+  // тренировки и солянки, и держать их выше команд было бы неудобно.
+  const communityTargets = communities
+    .filter(c => isGlobalAdmin || rolesForCommunity(c, user?.id).some(role => communityAllowed.includes(role)))
+    .map(community => ({
+      key: `community-${community.id}`,
+      type: 'community',
+      id: community.id,
+      name: community.name,
+      logoUrl: community.logo_url,
+      entity: community,
+    }));
+
+  return [...clubTargets, ...teamTargets, ...communityTargets];
 }
 
 // Ключ последнего выбора на этом устройстве. Общий на всё приложение, без команды

@@ -60,7 +60,10 @@ const LINE_LABELS    = { LW: 'ЛН', C: 'ЦН', RW: 'ПН', LD: 'ЛЗ', RD: 'П�
 const SLOT_POSITIONS = ['S1','S2','S3','S4','S5','S6','S7','S8','S9'];
 const MIN_BLOCKS_GROUPS = 2;
 const DEFAULT_BLOCKS_LINES = 4;
-const MAX_BLOCKS = 6;
+// Потолок по умолчанию — шесть звеньев: больше на командной тренировке не бывает.
+// Солянка приходит со своим значением: там на льду делятся на много маленьких
+// составов, и шести не хватает.
+const DEFAULT_MAX_BLOCKS = 6;
 const INITIAL_GROUP_SLOTS = 4;
 const MAX_GROUP_SLOTS = 9;
 const LINE_SLOT_COUNT = 5;
@@ -150,7 +153,11 @@ function JerseyColorPicker({ blockNum, blockColors, setBlockColors, isEditMode }
 }
 
 // ── Компонент ────────────────────────────────────────────────────────────
-export const TrainingLines = ({ event, initialAttendees = [], initialStaffMembers = [], initialFormationFile = null, refreshData }) => {
+export const TrainingLines = ({
+  event, initialAttendees = [], initialStaffMembers = [], initialFormationFile = null,
+  refreshData, maxBlocks = DEFAULT_MAX_BLOCKS,
+}) => {
+  const MAX_BLOCKS = maxBlocks;
   const [attendees, setAttendees] = useState(initialAttendees);
   const [draftLines, setDraftLines] = useState([]);
   const [staffMembers, setStaffMembers] = useState(initialStaffMembers);
@@ -184,10 +191,16 @@ export const TrainingLines = ({ event, initialAttendees = [], initialStaffMember
     } catch { return null; }
   }, [localUser, event?.my_team_id]);
 
-  // Клубная тренировка: расстановка принадлежит клубу, а ставит её тренер клуба
+  // Клубная тренировка: расстановка принадлежит клубу, а ставит её тренер клуба.
+  // Тренировка сообщества — третий контекст: тренерской роли там нет вовсе,
+  // расстановкой распоряжается штаб сообщества.
   const eventClubId = event?.my_club_id || null;
+  const eventCommunityId = event?.my_community_id || null;
+  const isCommunityEvent = !!eventCommunityId;
   const isClubEvent = !!eventClubId;
-  const scopeQuery = isClubEvent ? `clubId=${eventClubId}` : `teamId=${event?.my_team_id}`;
+  const scopeQuery = isCommunityEvent
+    ? `communityId=${eventCommunityId}`
+    : isClubEvent ? `clubId=${eventClubId}` : `teamId=${event?.my_team_id}`;
 
   const localClub = useMemo(() => {
     try {
@@ -196,15 +209,27 @@ export const TrainingLines = ({ event, initialAttendees = [], initialStaffMember
     } catch { return null; }
   }, [localUser, eventClubId]);
 
-  const { user, checkAccess, checkClubAccess, selectedTeam } = useAccess(localUser, localTeam, localClub);
+  const localCommunity = useMemo(() => {
+    try {
+      if (!localUser || !eventCommunityId) return null;
+      return localUser.communities?.find(c => String(c.id) === String(eventCommunityId));
+    } catch { return null; }
+  }, [localUser, eventCommunityId]);
 
-  const linesKey = isClubEvent ? 'CLUB_TRAINING_LINES_MANAGE' : 'TRAINING_LINES_MANAGE';
-  const hasLinesManageAccess = isClubEvent
-    ? checkClubAccess(linesKey, eventClubId)
-    : checkAccess(linesKey, event?.my_team_id);
-  // Шеринг расстановки клубу отдельным ключом не разводили — им распоряжается
-  // тот же, кто может её ставить.
-  const hasShareAccess = isClubEvent
+  const { user, checkAccess, checkClubAccess, checkCommunityAccess, selectedTeam } =
+    useAccess(localUser, localTeam, localClub, localCommunity);
+
+  const linesKey = isCommunityEvent
+    ? 'COMMUNITY_LINES_MANAGE'
+    : isClubEvent ? 'CLUB_TRAINING_LINES_MANAGE' : 'TRAINING_LINES_MANAGE';
+  const hasLinesManageAccess = isCommunityEvent
+    ? checkCommunityAccess(linesKey, eventCommunityId)
+    : isClubEvent
+      ? checkClubAccess(linesKey, eventClubId)
+      : checkAccess(linesKey, event?.my_team_id);
+  // Шеринг расстановки клубу и сообществу отдельным ключом не разводили —
+  // им распоряжается тот же, кто может её ставить.
+  const hasShareAccess = (isClubEvent || isCommunityEvent)
     ? hasLinesManageAccess
     : checkAccess('TRAINING_LINES_SHARE', event?.my_team_id);
 
@@ -235,12 +260,17 @@ export const TrainingLines = ({ event, initialAttendees = [], initialStaffMember
     const rolesSet = new Set();
     if (activeGlobalRole) rolesSet.add(activeGlobalRole);
 
-    // Контекст события: клубное берёт роли из клуба, командное — из команды
-    const contextRoles = isClubEvent
-      ? (Array.isArray(localClub?.user_roles)
-          ? localClub.user_roles
-          : (localClub?.user_role?.split(',') || []))
-      : (selectedTeam?.user_role?.split(',') || []);
+    // Контекст события: клубное берёт роли из клуба, событие сообщества —
+    // из сообщества, командное — из команды
+    const rolesOf = (entity) => (Array.isArray(entity?.user_roles)
+      ? entity.user_roles
+      : (entity?.user_role?.split(',') || []));
+
+    const contextRoles = isCommunityEvent
+      ? rolesOf(localCommunity)
+      : isClubEvent
+        ? rolesOf(localClub)
+        : (selectedTeam?.user_role?.split(',') || []);
     contextRoles.forEach(r => rolesSet.add(String(r).trim().toLowerCase()));
 
     if (staffMembers.length > 0 && activeUserId) {
@@ -248,7 +278,7 @@ export const TrainingLines = ({ event, initialAttendees = [], initialStaffMember
       if (myStaff?.roles) myStaff.roles.split(',').forEach(r => rolesSet.add(r.trim().toLowerCase()));
     }
     return Array.from(rolesSet);
-  }, [activeGlobalRole, selectedTeam?.user_role, localClub, isClubEvent, staffMembers, activeUserId]);
+  }, [activeGlobalRole, selectedTeam?.user_role, localClub, localCommunity, isClubEvent, isCommunityEvent, staffMembers, activeUserId]);
 
   const hasCoachAccess = useMemo(() => {
     if (userRoles.includes('admin')) return true;
@@ -258,14 +288,14 @@ export const TrainingLines = ({ event, initialAttendees = [], initialStaffMember
 
   const hasShareRoleAccess = useMemo(() => {
     if (userRoles.includes('admin')) return true;
-    if (isClubEvent) return hasCoachAccess;
+    if (isClubEvent || isCommunityEvent) return hasCoachAccess;
     const allowed = (PERMISSIONS.TRAINING_LINES_SHARE?.allowedRoles || []).map(r => String(r).toLowerCase());
     return userRoles.some(role => allowed.includes(role));
-  }, [userRoles, isClubEvent, hasCoachAccess]);
+  }, [userRoles, isClubEvent, isCommunityEvent, hasCoachAccess]);
 
   // ── Загрузка данных ────────────────────────────────────────────────────
   useEffect(() => {
-    if (!event?.event_id || (!event?.my_team_id && !eventClubId)) { setLoading(false); return; }
+    if (!event?.event_id || (!event?.my_team_id && !eventClubId && !eventCommunityId)) { setLoading(false); return; }
     const load = async () => {
       try {
         const apiUrl = import.meta.env.VITE_API_URL || '';
@@ -312,7 +342,7 @@ export const TrainingLines = ({ event, initialAttendees = [], initialStaffMember
       }
     };
     load();
-  }, [event?.event_id, event?.my_team_id, eventClubId, scopeQuery, event?.event_type]);
+  }, [event?.event_id, event?.my_team_id, eventClubId, eventCommunityId, scopeQuery, event?.event_type]);
 
   // ── Авто-расширение слотов группы ──────────────────────────────────────
   useEffect(() => {
@@ -416,8 +446,9 @@ export const TrainingLines = ({ event, initialAttendees = [], initialStaffMember
         method: 'POST',
         headers: { ...headers, 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          teamId: isClubEvent ? null : event.my_team_id,
+          teamId: (isClubEvent || isCommunityEvent) ? null : event.my_team_id,
           clubId: eventClubId,
+          communityId: eventCommunityId,
           eventType: event.event_type,
           lines: draftLines.map(l => ({
             player_id: l.player_id || l.id,
@@ -526,7 +557,8 @@ export const TrainingLines = ({ event, initialAttendees = [], initialStaffMember
       if (!result) return;
       const apiUrl = import.meta.env.VITE_API_URL || '';
       const fd = new FormData();
-      if (isClubEvent) fd.append('clubId', eventClubId);
+      if (isCommunityEvent) fd.append('communityId', eventCommunityId);
+      else if (isClubEvent) fd.append('clubId', eventClubId);
       else fd.append('teamId', event.my_team_id);
       fd.append('image', result.file, result.file.name);
       // eventType в query обязателен: проверка прав срабатывает до multer, тела ещё нет

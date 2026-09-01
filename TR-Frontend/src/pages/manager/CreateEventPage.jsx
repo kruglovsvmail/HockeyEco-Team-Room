@@ -11,19 +11,24 @@ import { ButtonLP } from '../../ui/Button-LP';
 import { FadeIn } from '../../ui/FadeIn';
 import { Icon } from '../../ui/Icon';
 import { ChipTabs } from '../../ui/ChipTabs';
-import { getImageUrl, getAuthHeaders, TRAINING_TYPES, getTeamUiColor } from '../../utils/helpers';
+import { RadioLP } from '../../ui/Radio-LP';
+import { getImageUrl, getAuthHeaders, TRAINING_TYPES, getTeamUiColor, COMMUNITY_CATEGORIES } from '../../utils/helpers';
 import { TeamPageHeader, TeamPageHeaderSpacer } from '../../components/TeamPageHeader';
 import { buildEventTargets, EVENT_TARGET_STORAGE_KEY } from '../../utils/eventTargets';
 
+// Идентификатор чипса «Без группы». Строка, а не число: рядом стоят настоящие
+// id групп, и спутать их нельзя даже случайно.
+const UNGROUPED_CHIP = 'ungrouped';
+
 export function CreateEventPage() {
-  const { teams, clubs, selectedTeam, user, openRightPanel, registerHeaderMenu } = useOutletContext();
+  const { teams, clubs, communities, selectedTeam, user, openRightPanel, registerHeaderMenu } = useOutletContext();
   const navigate = useNavigate();
 
   // Владелец будущего события выбирается здесь и только здесь. Глобальный контекст
   // приложения (выбранная команда) при этом не трогается: поставить событие чужому
   // составу — не повод перетаскивать туда весь интерфейс. Раньше этим занимался
   // аккордеон в сайдбаре, он же менял selectedTeam и дописывал в адрес ?scope=club.
-  const targets = useMemo(() => buildEventTargets(teams, clubs, user), [teams, clubs, user]);
+  const targets = useMemo(() => buildEventTargets(teams, clubs, communities, user), [teams, clubs, communities, user]);
 
   // Выбор запоминается на устройстве: события почти всегда ставят одному и тому же
   // составу, и переспрашивать при каждом заходе незачем.
@@ -44,10 +49,17 @@ export function CreateEventPage() {
   }, []);
 
   const isClubScope = activeTarget?.type === 'club';
+  const isCommunityScope = activeTarget?.type === 'community';
   const targetTeam = activeTarget?.type === 'team' ? activeTarget.entity : null;
   const targetClub = activeTarget?.type === 'club' ? activeTarget.entity : null;
+  const targetCommunity = isCommunityScope ? activeTarget.entity : null;
 
-  const { checkAccess, checkClubAccess } = useAccess(user, targetTeam, targetClub);
+  // Категория сообщества жёстко задаёт единственный тип события: тренировки не
+  // устраивают солянок и наоборот — это же правило проверяет сервер.
+  const communityCategory = COMMUNITY_CATEGORIES.find(c => c.id === targetCommunity?.category) || null;
+  const isSkatingCommunity = targetCommunity?.category === 'skating';
+
+  const { checkAccess, checkClubAccess, checkCommunityAccess } = useAccess(user, targetTeam, targetClub, targetCommunity);
 
   const [eventType, setEventType] = useState('training');
   const [matchType, setMatchType] = useState('friendly');
@@ -97,9 +109,71 @@ export function CreateEventPage() {
     if (isClubScope && eventType === 'match') setEventType('training');
   }, [isClubScope, eventType]);
 
-  const hasAccess = isClubScope
-    ? checkClubAccess('CLUB_MANAGE_EVENTS', targetClub?.id)
-    : checkAccess('MGR_CREATE_EVENT');
+  // У сообщества тип события не выбирают — он вытекает из категории
+  useEffect(() => {
+    if (!isCommunityScope) return;
+    const forced = isSkatingCommunity ? 'training' : 'game';
+    if (eventType !== forced) setEventType(forced);
+  }, [isCommunityScope, isSkatingCommunity, eventType]);
+
+  // Лимиты состава и адресация по группам — только у событий сообщества.
+  // Пустая строка означает «без лимита»: у max_goalies ноль — это отдельный
+  // осмысленный случай («вратари не нужны»), и путать его с пустотой нельзя.
+  const [maxSkaters, setMaxSkaters] = useState('');
+  const [maxGoalies, setMaxGoalies] = useState('');
+  const [includeUngrouped, setIncludeUngrouped] = useState(true);
+  const [selectedGroupIds, setSelectedGroupIds] = useState([]);
+  const [communityGroups, setCommunityGroups] = useState([]);
+
+  // Публикация: когда участники увидят событие. Умолчание приходит из настроек
+  // сообщества — обычно оно там одно и то же для всего расписания.
+  const [publishMode, setPublishMode] = useState('immediate');
+  const [publishHours, setPublishHours] = useState('24');
+
+  useEffect(() => {
+    if (!isCommunityScope || !targetCommunity?.id) {
+      setCommunityGroups([]);
+      return;
+    }
+    let cancelled = false;
+    fetch(`${import.meta.env.VITE_API_URL}/api/communities/${targetCommunity.id}/details`, {
+      headers: getAuthHeaders(),
+    })
+      .then(res => (res.ok ? res.json() : null))
+      .then(json => {
+        if (cancelled || !json) return;
+        setCommunityGroups(json.groups || []);
+
+        // Форма открывается уже заполненной: у сообщества расписание однотипное,
+        // и вбивать один и тот же взнос с лимитами каждый раз незачем.
+        const c = json.community || {};
+        const isSplit = c.default_cost_mode === 'split';
+        const amount = isSplit ? c.default_total_cost : c.default_cost;
+        setFeeSettings({
+          costMode: c.default_cost_mode || 'per_person',
+          playerFee: !isSplit && c.default_cost != null ? String(c.default_cost) : '',
+          totalCost: isSplit && c.default_total_cost != null ? String(c.default_total_cost) : '',
+          isFree: amount === 0,
+          goaliesFree: c.default_goalies_free ?? true,
+          minParticipants: c.default_cost_min_participants ?? 1,
+          deadlineHours: c.default_attendance_deadline_hours ?? 4,
+        });
+        setMaxSkaters(c.default_max_skaters != null ? String(c.default_max_skaters) : '');
+        setMaxGoalies(c.default_max_goalies != null ? String(c.default_max_goalies) : '');
+        setPublishMode(c.default_publish_mode || 'immediate');
+        setPublishHours(
+          c.default_publish_hours_before != null ? String(c.default_publish_hours_before) : '24'
+        );
+      })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, [isCommunityScope, targetCommunity?.id]);
+
+  const hasAccess = isCommunityScope
+    ? checkCommunityAccess('COMMUNITY_MANAGE_EVENTS', targetCommunity?.id)
+    : isClubScope
+      ? checkClubAccess('CLUB_MANAGE_EVENTS', targetClub?.id)
+      : checkAccess('MGR_CREATE_EVENT');
 
   const isColorsEnabled = localStorage.getItem('tr_use_team_colors') !== 'false';
   // Кэш команды парсится один раз на ключ, а не на каждый рендер: в нём лежат состав,
@@ -114,15 +188,17 @@ export function CreateEventPage() {
     } catch { return null; }
   }, [teamCacheKey]);
 
-  const teamColorSource = isClubScope
-    ? targetClub?.color_1
-    : (getTeamUiColor(cachedDetails) || getTeamUiColor(targetTeam));
+  const teamColorSource = isCommunityScope
+    ? targetCommunity?.color_1
+    : isClubScope
+      ? targetClub?.color_1
+      : (getTeamUiColor(cachedDetails) || getTeamUiColor(targetTeam));
   const hasTeamColor = isColorsEnabled && !!teamColorSource;
   const activeBrandColor = hasTeamColor ? teamColorSource : 'var(--color-brand)';
 
   // В шапке страницы — владелец события: клуб либо команда
-  const headerEntity = isClubScope ? targetClub : targetTeam;
-  const headerDetails = isClubScope ? targetClub : cachedDetails;
+  const headerEntity = isCommunityScope ? targetCommunity : isClubScope ? targetClub : targetTeam;
+  const headerDetails = isCommunityScope ? targetCommunity : isClubScope ? targetClub : cachedDetails;
 
   // Кнопка «swap» справа в системной шапке — смена владельца события. Цель одна,
   // выбирать не из чего — кнопки нет. Обработчик держим в ref: он зависит от цели
@@ -170,16 +246,18 @@ export function CreateEventPage() {
 
   // У клуба матчей не бывает: играет всегда конкретный состав, а клуб ставит
   // общий лёд и общие собрания.
-  const eventTypeOptions = isClubScope
-    ? [
-        { value: 'training', label: 'Тренировка' },
-        { value: 'meeting', label: 'Собрание' }
-      ]
-    : [
-        { value: 'training', label: 'Тренировка' },
-        { value: 'match', label: 'Матч' },
-        { value: 'meeting', label: 'Собрание' }
-      ];
+  const eventTypeOptions = isCommunityScope
+    ? [{ value: isSkatingCommunity ? 'training' : 'game', label: communityCategory?.eventOne || 'Событие' }]
+    : isClubScope
+      ? [
+          { value: 'training', label: 'Тренировка' },
+          { value: 'meeting', label: 'Собрание' }
+        ]
+      : [
+          { value: 'training', label: 'Тренировка' },
+          { value: 'match', label: 'Матч' },
+          { value: 'meeting', label: 'Собрание' }
+        ];
 
   const matchTypeOptions = [
     { value: 'friendly', label: 'Товарищеский' },
@@ -198,8 +276,9 @@ export function CreateEventPage() {
 
   const handleSelectArenaClick = () => {
     openRightPanel('arenaSelector', {
-      teamId: isClubScope ? null : targetTeam?.id,
+      teamId: (isClubScope || isCommunityScope) ? null : targetTeam?.id,
       clubId: isClubScope ? targetClub?.id : null,
+      communityId: isCommunityScope ? targetCommunity?.id : null,
       onSelect: (arena) => setSelectedArena(arena),
       currentTeamColor: hasTeamColor ? activeBrandColor : null
     }, 'Выбор локации');
@@ -237,9 +316,70 @@ export function CreateEventPage() {
   const handleSubmitForm = async (e) => {
     e.preventDefault();
     if (!isFormValid) return;
-    if (isClubScope ? !targetClub?.id : !targetTeam?.id) return;
+    if (isCommunityScope ? !targetCommunity?.id : isClubScope ? !targetClub?.id : !targetTeam?.id) return;
 
     setIsLoading(true);
+
+    // У события сообщества своя ручка: другая таблица, лимиты состава и
+    // адресация по тренировочным группам, которых нет ни у команд, ни у клубов.
+    if (isCommunityScope) {
+      try {
+        const res = await fetch(
+          `${import.meta.env.VITE_API_URL}/api/communities/${targetCommunity.id}/events`,
+          {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
+            body: JSON.stringify({
+              eventType: communityCategory?.eventType,
+              title: eventTitle || communityCategory?.eventOne,
+              eventDate, eventTime, selectedArena,
+              training_type: trainingType,
+              player_fee: feeSettings.isFree ? 0 : feeSettings.playerFee,
+              cost_mode: feeSettings.costMode,
+              total_cost: feeSettings.totalCost,
+              goalies_free: feeSettings.goaliesFree,
+              cost_min_participants: feeSettings.minParticipants,
+              attendance_deadline_hours: feeSettings.deadlineHours,
+              max_skaters: maxSkaters,
+              max_goalies: maxGoalies,
+              include_ungrouped: includeUngrouped,
+              group_ids: selectedGroupIds,
+              publish_mode: publishMode,
+              publish_hours_before: publishMode === 'before_event'
+                ? Math.max(1, Number(publishHours) || 24)
+                : null,
+            }),
+          }
+        );
+        const json = await res.json();
+        if (!res.ok) {
+          alert(json.error || 'Не удалось запланировать событие');
+          return;
+        }
+
+        // Событие сообщества видно во всех календарях его участников —
+        // чистим кэш расписания целиком, как для клубного
+        try {
+          const keysToRemove = [];
+          for (let i = 0; i < localStorage.length; i++) {
+            const k = localStorage.key(i);
+            if (k && k.startsWith('tr_cached_events_')) keysToRemove.push(k);
+          }
+          keysToRemove.forEach(k => localStorage.removeItem(k));
+        } catch {}
+
+        window.dispatchEvent(new CustomEvent('tr-events-updated'));
+        navigate('/');
+        return;
+      } catch (err) {
+        console.error(err);
+        alert('Ошибка при связи с сервером');
+        return;
+      } finally {
+        setIsLoading(false);
+      }
+    }
+
     try {
       const res = await fetch(`${import.meta.env.VITE_API_URL}/api/manager/events/create`, {
         method: 'POST',
@@ -365,6 +505,123 @@ export function CreateEventPage() {
               </div>
             </ContainerContent>
           </FadeIn>
+
+          {/* Лимиты состава и адресация по группам — только у событий сообщества.
+              Когда лимит набран, следующие отметившиеся уходят в резервную очередь. */}
+          {isCommunityScope && (
+            <FadeIn key="community-limits" duration={250} delay={150} className="w-full flex flex-col">
+              <ContainerContent title="Состав и резерв" collapsible={true} defaultExpanded={false} activeBrandColor={hasTeamColor ? activeBrandColor : null}>
+                <div className="flex flex-col gap-6 text-left py-1 px-3">
+                  <div className="grid grid-cols-2 gap-8">
+                    <TextInputLP
+                      label="Полевых, максимум"
+                      value={maxSkaters}
+                      onChange={setMaxSkaters}
+                      type="number"
+                      placeholder="Без лимита"
+                      activeColor={hasTeamColor ? activeBrandColor : null}
+                    />
+                    <TextInputLP
+                      label="Вратарей, максимум"
+                      value={maxGoalies}
+                      onChange={setMaxGoalies}
+                      type="number"
+                      placeholder="Без лимита"
+                      activeColor={hasTeamColor ? activeBrandColor : null}
+                    />
+                  </div>
+
+                  <p className="text-[11px] text-content-subtle leading-relaxed">
+                    Пусто — лимита нет. При наборе лимита следующие отметившиеся уходят
+                    в резерв: когда место освободится, первому в очереди придёт
+                    предложение с таймером. Ноль вратарей означает, что вратари на это
+                    событие не набираются вовсе.
+                  </p>
+
+                  {isSkatingCommunity && (
+                    <div className="flex flex-col gap-3">
+                      <span className="text-[10px] font-bold text-content-muted uppercase tracking-wider pl-1">
+                        Для каких групп
+                      </span>
+
+                      {communityGroups.length > 0 ? (
+                        /* «Без группы» — такой же чипс, как остальные: новички
+                           без группы это ровно такой же адресат тренировки,
+                           и отдельный чекбокс рядом со списком только путал. */
+                        <ChipTabs
+                          wrap
+                          tabs={[
+                            { id: UNGROUPED_CHIP, label: 'Без группы' },
+                            ...communityGroups.map(g => ({ id: g.id, label: g.name })),
+                          ]}
+                          activeTab={[
+                            ...(includeUngrouped ? [UNGROUPED_CHIP] : []),
+                            ...selectedGroupIds,
+                          ]}
+                          onChange={(id) => {
+                            if (id === UNGROUPED_CHIP) {
+                              setIncludeUngrouped(prev => !prev);
+                              return;
+                            }
+                            setSelectedGroupIds(prev => (
+                              prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]
+                            ));
+                          }}
+                          activeColor={hasTeamColor ? activeBrandColor : null}
+                        />
+                      ) : (
+                        <p className="text-[11px] text-content-subtle leading-relaxed">
+                          Групп пока нет — событие будет открыто всем участникам.
+                          Группы создаются на странице сообщества.
+                        </p>
+                      )}
+                    </div>
+                  )}
+
+                  {/* Публикация. Лёд бронируют заранее, а запись открывают, когда
+                      решили, кого собирать: до публикации событие видит только штаб. */}
+                  <div className="flex flex-col gap-3 pt-2 border-t border-surface-border">
+                    <span className="text-[10px] font-bold text-content-muted uppercase tracking-wider pl-1">
+                      Когда участники увидят событие
+                    </span>
+
+                    <RadioLP
+                      name="community-publish"
+                      checked={publishMode === 'immediate'}
+                      onChange={() => setPublishMode('immediate')}
+                      label="Сразу после создания"
+                      activeColor={hasTeamColor ? activeBrandColor : null}
+                    />
+
+                    <RadioLP
+                      name="community-publish"
+                      checked={publishMode === 'manual'}
+                      onChange={() => setPublishMode('manual')}
+                      label="Вручную"
+                      description="По кнопке «Опубликовать» на карточке события"
+                      activeColor={hasTeamColor ? activeBrandColor : null}
+                    />
+                    <RadioLP
+                      name="community-publish"
+                      checked={publishMode === 'before_event'}
+                      onChange={() => setPublishMode('before_event')}
+                      label="За сколько часов до начала"
+                      activeColor={hasTeamColor ? activeBrandColor : null}
+                    />
+                    {publishMode === 'before_event' && (
+                      <TextInputLP
+                        label="За сколько часов до начала"
+                        value={publishHours}
+                        onChange={setPublishHours}
+                        type="number"
+                        activeColor={hasTeamColor ? activeBrandColor : null}
+                      />
+                    )}
+                  </div>
+                </div>
+              </ContainerContent>
+            </FadeIn>
+          )}
 
           {eventType === 'match' && matchType === 'tournament_ext' && isTournamentExtDisabled && (
             <FadeIn key="tournament-ext-stub" duration={250} delay={150} className="w-full flex flex-col">

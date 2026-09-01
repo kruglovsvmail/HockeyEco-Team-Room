@@ -51,7 +51,11 @@ export async function getMatchInfo(eventId, teamId = null) {
 }
 
 export async function getTrainingInfo(eventId, eventType) {
-  const table = eventType === 'club_training' ? 'club_training' : 'team_training';
+  // Три контекста тренировки: команда, клуб и сообщество (тренировка).
+  // Колонки у всех трёх одинаковые, различается только таблица.
+  const table = eventType === 'community_training' ? 'community_training'
+    : eventType === 'club_training' ? 'club_training'
+    : 'team_training';
   const { rows } = await pool.query(
     `SELECT t.training_date, t.custom_timezone,
             COALESCE(a.name, t.location, 'Место не указано') AS arena,
@@ -63,6 +67,29 @@ export async function getTrainingInfo(eventId, eventType) {
   const tz = rows[0].custom_timezone || rows[0].arena_tz || 'Europe/Moscow';
   const dateStr = formatDateRu(rows[0].training_date, tz);
   return { text: `${dateStr}, ${rows[0].arena}`, date: dateStr, arena: rows[0].arena };
+}
+
+// Тренировка и солянка. Колонка с датой у них разная, всё остальное совпадает.
+export async function getCommunityEventInfo(eventId, eventType) {
+  const isGame = eventType === 'community_game';
+  const table = isGame ? 'community_game' : 'community_training';
+  const dateCol = isGame ? 'game_date' : 'training_date';
+  const { rows } = await pool.query(
+    `SELECT e.${dateCol} AS event_date, e.custom_timezone, e.title,
+            COALESCE(a.name, e.location, 'Место не указано') AS arena,
+            a.timezone AS arena_tz
+     FROM "${table}" e LEFT JOIN arenas a ON a.id = e.arena_id
+     WHERE e.id = $1`, [eventId]
+  );
+  if (!rows[0]) return { text: '', date: '', arena: '', title: '' };
+  const tz = rows[0].custom_timezone || rows[0].arena_tz || 'Europe/Moscow';
+  const dateStr = formatDateRu(rows[0].event_date, tz);
+  return {
+    text: `${dateStr}, ${rows[0].arena}`,
+    date: dateStr,
+    arena: rows[0].arena,
+    title: rows[0].title,
+  };
 }
 
 export async function getMeetingInfo(eventId, eventType) {
@@ -220,12 +247,100 @@ export async function sendPushToClubExcept(clubId, excludeUserId, groupKey, payl
   });
 }
 
-// ── Единая точка оповещения по событию: команда или клуб ─────────────────
-// Контроллеры событий обслуживают оба типа, поэтому вместо ветвлений на каждом
-// вызове передаём сюда контекст целиком.
-export async function sendPushToEventScopeExcept({ teamId, clubId }, excludeUserId, groupKey, payload) {
+// ── Уведомления сообществ ────────────────────────────────────────────────
+// У сообществ своя таблица настроек: клубный обход через bool_or по командам
+// клуба здесь не работает — участник тренировки может не состоять ни в одной
+// команде, агрегировать не по чему. Групп четыре: schedule, lines, training_plan,
+// reserve. Нет строки настроек = уведомления включены по умолчанию.
+const COMMUNITY_GROUPS = ['schedule', 'lines', 'training_plan', 'reserve'];
+
+async function isCommunityPushAllowed(userId, communityId, groupKey) {
+  const { rows } = await pool.query(
+    `SELECT enabled, ${groupKey} AS allowed
+     FROM community_notification_settings
+     WHERE community_id = $1 AND user_id = $2`,
+    [communityId, userId]
+  );
+  const s = rows[0];
+  if (!s) return true;
+  return Boolean(s.enabled && s.allowed);
+}
+
+// Адресное уведомление одному участнику сообщества. Нужно предложению из резерва:
+// оно всегда персональное, очередь идёт по одному человеку.
+export async function sendPushToCommunityUser(userId, communityId, groupKey, payload) {
+  if (!COMMUNITY_GROUPS.includes(groupKey)) return;
+  if (!(await isCommunityPushAllowed(userId, communityId, groupKey))) return;
+  await sendPushToUser(userId, payload);
+}
+
+export async function sendPushToCommunity(communityId, groupKey, { title, body, url, tag, icon }, filterFn) {
+  if (!COMMUNITY_GROUPS.includes(groupKey)) return;
+
+  const { rows: members } = await pool.query(
+    `SELECT user_id FROM community_members
+     WHERE community_id = $1 AND left_at IS NULL`,
+    [communityId]
+  );
+
+  const userIds = members.map(m => m.user_id);
+  if (userIds.length === 0) return;
+
+  const { rows: settings } = await pool.query(
+    `SELECT user_id, (enabled AND ${groupKey}) AS allowed
+     FROM community_notification_settings
+     WHERE community_id = $1 AND user_id = ANY($2)`,
+    [communityId, userIds]
+  );
+
+  const allowedMap = {};
+  settings.forEach(s => { allowedMap[s.user_id] = s.allowed; });
+
+  for (const uid of userIds) {
+    if (filterFn && !filterFn(uid)) continue;
+    if (allowedMap[uid] === false) continue;
+
+    await sendPushToUser(uid, { title, body, url, tag, icon });
+  }
+}
+
+export async function sendPushToCommunityExcept(communityId, excludeUserId, groupKey, payload, filterFn) {
+  await sendPushToCommunity(communityId, groupKey, payload, (uid) => {
+    if (uid === excludeUserId) return false;
+    return filterFn ? filterFn(uid) : true;
+  });
+}
+
+// ── Единая точка оповещения по событию: команда, клуб или сообщество ─────
+// Контроллеры событий обслуживают все три типа, поэтому вместо ветвлений на
+// каждом вызове передаём сюда контекст целиком.
+export async function sendPushToEventScopeExcept({ teamId, clubId, communityId }, excludeUserId, groupKey, payload) {
+  if (communityId) return sendPushToCommunityExcept(communityId, excludeUserId, groupKey, payload);
   if (clubId) return sendPushToClubExcept(clubId, excludeUserId, groupKey, payload);
   if (teamId) return sendPushToTeamExcept(teamId, excludeUserId, groupKey, payload);
+}
+
+// ── Рассылка предложений занять освободившееся место ─────────────────────
+// Принимает то, что вернул rotateReserveOffers(): очередь молча не работает,
+// если человек не узнал, что подошла его очередь — поэтому шлём сразу после выдачи.
+export async function notifyReserveOffers(offers = []) {
+  for (const offer of offers) {
+    const route = offer.eventType === 'community_game' ? 'community-game' : 'community-training';
+    const until = new Date(offer.offerExpiresAt).toLocaleString('ru-RU', {
+      day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit'
+    });
+
+    try {
+      await sendPushToCommunityUser(offer.userId, offer.communityId, 'reserve', {
+        title: 'Освободилось место',
+        body: `${offer.title} — подтвердите участие до ${until}, иначе место уйдёт следующему`,
+        url: `/event/${route}/${offer.eventId}`,
+        tag: `reserve-offer-${offer.eventType}-${offer.eventId}`,
+      });
+    } catch (err) {
+      console.error('[Reserve Offer Push Error]:', err.message);
+    }
+  }
 }
 
 // ── Батчинг явок: откладываем на 3 минуты, агрегируем при отправке ──────
@@ -268,11 +383,14 @@ export function eventTypeLabel(eventType) {
 }
 
 // ── Создание отложенного уведомления ────────────────────────────────────
-export async function scheduleNotification({ type, targetUserId, teamId, eventId, sendAt, payload }) {
+// communityId — адресат из сообществ. Взаимоисключающ с teamId: CHECK в таблице
+// не даёт заполнить обе колонки сразу, да и настройки уведомлений у них разные.
+export async function scheduleNotification({ type, targetUserId, teamId, communityId, eventId, sendAt, payload }) {
   await pool.query(
-    `INSERT INTO scheduled_notifications (type, target_user_id, team_id, event_id, send_at, payload)
-     VALUES ($1, $2, $3, $4, $5, $6)`,
-    [type, targetUserId || null, teamId, eventId || null, sendAt, JSON.stringify(payload)]
+    `INSERT INTO scheduled_notifications (type, target_user_id, team_id, community_id, event_id, send_at, payload)
+     VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+    [type, targetUserId || null, communityId ? null : (teamId || null), communityId || null,
+     eventId || null, sendAt, JSON.stringify(payload)]
   );
 }
 
@@ -301,7 +419,22 @@ export async function processScheduledNotifications() {
         }
       }
 
-      if (n.target_user_id) {
+      // Уведомления сообществ адресуются через community_id и свою таблицу настроек.
+      // Ветка стоит первой: у таких строк team_id пустой, и старый путь на них падал бы.
+      if (n.community_id) {
+        const communityGroupMap = {
+          community_reserve_offer: 'reserve',
+          community_reserve_expiring: 'reserve',
+          event_reminder_24h: 'schedule',
+        };
+        const groupKey = communityGroupMap[n.type] || 'schedule';
+
+        if (n.target_user_id) {
+          await sendPushToCommunityUser(n.target_user_id, n.community_id, groupKey, n.payload);
+        } else {
+          await sendPushToCommunity(n.community_id, groupKey, n.payload);
+        }
+      } else if (n.target_user_id) {
         await sendPushToUser(n.target_user_id, n.payload);
       } else {
         const groupMap = {

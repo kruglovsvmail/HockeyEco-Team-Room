@@ -1,7 +1,13 @@
 import jwt from 'jsonwebtoken';
 import pool from '../config/db.js';
 import { ROLES, PERMISSIONS } from '../utils/permissions.js';
-import { checkClubPermissionInternal, isClubEventType, isCoachAnywhere } from '../utils/checkPermission.js';
+import {
+  checkClubPermissionInternal,
+  checkCommunityPermissionInternal,
+  isClubEventType,
+  isCommunityEventType,
+  isCoachAnywhere,
+} from '../utils/checkPermission.js';
 
 // Троттлинг в памяти процесса: last_seen_at обновляется не чаще раза в LAST_SEEN_THROTTLE_MS
 // на пользователя, чтобы не писать в БД на каждый авторизованный запрос подряд.
@@ -71,6 +77,21 @@ const getClubIdFromContext = (req) => {
 
   const isClubRoute = req.baseUrl?.includes('/api/clubs') || req.originalUrl?.includes('/api/clubs');
   if (req.params?.id && isClubRoute) {
+    return req.params.id;
+  }
+
+  return null;
+};
+
+// Контекст сообщества: страница сообщества, подкатки и солянки шлют communityId
+const getCommunityIdFromContext = (req) => {
+  if (req.params?.communityId) return req.params.communityId;
+  if (req.body?.communityId) return req.body.communityId;
+  if (req.query?.communityId) return req.query.communityId;
+
+  const isCommunityRoute = req.baseUrl?.includes('/api/communities')
+    || req.originalUrl?.includes('/api/communities');
+  if (req.params?.id && isCommunityRoute) {
     return req.params.id;
   }
 
@@ -241,6 +262,45 @@ export const requireClubPermission = (permissionKey) => async (req, res, next) =
 };
 
 /**
+ * Аналог requireClubPermission для сообществ.
+ * Контекст — сообщество (communityId), роли берутся из communities.owner_id и
+ * community_roles; активное членство в community_members добавляет community_member.
+ * В отличие от клуба, роль штаба здесь не требует членства.
+ */
+export const requireCommunityPermission = (permissionKey) => async (req, res, next) => {
+  try {
+    const userId = req.user?.id;
+    if (!userId) {
+      return res.status(401).json({ message: 'Пользователь не идентифицирован' });
+    }
+
+    const permissionKeys = Array.isArray(permissionKey) ? permissionKey : [permissionKey];
+    if (permissionKeys.some(k => !PERMISSIONS[k])) {
+      return res.status(403).json({ message: 'Доступ закрыт (Неизвестное правило прав)' });
+    }
+
+    const communityId = getCommunityIdFromContext(req);
+    if (!communityId) {
+      return res.status(400).json({ message: 'Невозможно определить контекст сообщества для проверки прав' });
+    }
+
+    // Доступ открыт, если ХОТЯ БЫ ОДНО из переданных правил подтверждает право пользователя
+    const checks = await Promise.all(
+      permissionKeys.map(key => checkCommunityPermissionInternal(userId, Number(communityId), key))
+    );
+
+    if (!checks.some(Boolean)) {
+      return res.status(403).json({ message: 'Недостаточно прав доступа' });
+    }
+
+    next();
+  } catch (err) {
+    console.error('[RBAC Community Error]:', err);
+    res.status(500).json({ message: 'Ошибка проверки прав' });
+  }
+};
+
+/**
  * Внеконтекстная проверка для Тренерской: библиотека упражнений личная и не
  * принадлежит ни команде, ни клубу, поэтому ни teamId, ни clubId в запросе нет и
  * requireTeamPermission/requireClubPermission здесь неприменимы. Пропускаем всех,
@@ -271,14 +331,24 @@ export const requireCoach = async (req, res, next) => {
  *   2) в запросе есть clubId и нет teamId (создание нового клубного события,
  *      где тип ещё «training» / «meeting» без приставки).
  *
+ * Сообщества подключаются той же логикой третьим контекстом: тип события
+ * community_training / community_game либо communityId без teamId и clubId.
+ * Третий аргумент необязателен — маршруты, которых события сообществ не касаются,
+ * менять не пришлось.
+ *
  * @param {string|string[]} teamPermissionKey - правило для командного контекста
  * @param {string|string[]} clubPermissionKey - правило для клубного контекста
+ * @param {string|string[]} [communityPermissionKey] - правило для контекста сообщества
  */
-export const requireEventPermission = (teamPermissionKey, clubPermissionKey) => (req, res, next) => {
+export const requireEventPermission = (teamPermissionKey, clubPermissionKey, communityPermissionKey) => (req, res, next) => {
   const eventType = req.body?.eventType || req.query?.eventType;
   const clubId = req.body?.clubId || req.query?.clubId || req.params?.clubId;
   const teamId = req.body?.teamId || req.query?.teamId || req.params?.teamId;
+  const communityId = req.body?.communityId || req.query?.communityId || req.params?.communityId;
 
+  if (communityPermissionKey && (isCommunityEventType(eventType) || (communityId && !teamId && !clubId))) {
+    return requireCommunityPermission(communityPermissionKey)(req, res, next);
+  }
   if (isClubEventType(eventType) || (clubId && !teamId)) {
     return requireClubPermission(clubPermissionKey)(req, res, next);
   }

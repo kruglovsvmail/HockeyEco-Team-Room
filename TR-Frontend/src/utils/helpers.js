@@ -119,6 +119,26 @@ export const TRAINING_TYPES = [
 export const TRAINING_TYPE_LABELS = Object.fromEntries(TRAINING_TYPES.map(t => [t.id, t.label]));
 
 /**
+ * Категории сообществ. В БД хранится код (communities.category), русская подпись
+ * живёт только здесь — как и у типов тренировки. Категория определяет, какие
+ * события внутри можно проводить и есть ли у сообщества тренировочные группы.
+ */
+export const COMMUNITY_CATEGORIES = [
+  { id: 'skating',   label: 'Тренировки', one: 'Тренировка', eventType: 'community_training', eventOne: 'Тренировка' },
+  { id: 'open_game', label: 'Солянки',  one: 'Солянка',  eventType: 'community_game',     eventOne: 'Солянка'  },
+];
+
+export const COMMUNITY_CATEGORY_LABELS = Object.fromEntries(
+  COMMUNITY_CATEGORIES.map(c => [c.id, c.label])
+);
+
+// Маршрут карточки события сообщества: в адресе дефис, в БД и API — подчёркивание
+export const COMMUNITY_EVENT_ROUTE = {
+  community_training: 'community-training',
+  community_game: 'community-game',
+};
+
+/**
  * Иконка типа тренировки (имена — из ui/Icon.jsx). Держим карту здесь, рядом с
  * подписями: тип уже показывается в шторке фильтра статистики и в шапке деталей
  * тренировки, и заводить свой набор иконок в каждом месте — верный способ

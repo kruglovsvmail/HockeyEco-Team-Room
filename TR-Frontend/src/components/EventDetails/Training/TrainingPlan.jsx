@@ -46,14 +46,21 @@ const framesLabel = (count) => {
 
 export function TrainingPlan({ event }) {
   const eventClubId = event?.my_club_id || null;
+  // Тренировка сообщества — третий контекст той же тренировки: план у неё
+  // устроен так же, различаются только адрес запроса и ключ прав на сервере.
+  const eventCommunityId = event?.my_community_id || null;
+  const isCommunityEvent = !!eventCommunityId;
   const isClubEvent = !!eventClubId;
-  const scopeQuery = isClubEvent ? `clubId=${eventClubId}` : `teamId=${event?.my_team_id}`;
+  const scopeQuery = isCommunityEvent
+    ? `communityId=${eventCommunityId}`
+    : isClubEvent ? `clubId=${eventClubId}` : `teamId=${event?.my_team_id}`;
 
   const scopeBody = useMemo(() => ({
-    teamId: isClubEvent ? null : event?.my_team_id,
+    teamId: (isClubEvent || isCommunityEvent) ? null : event?.my_team_id,
     clubId: eventClubId,
+    communityId: eventCommunityId,
     eventType: event?.event_type,
-  }), [isClubEvent, event?.my_team_id, eventClubId, event?.event_type]);
+  }), [isClubEvent, isCommunityEvent, event?.my_team_id, eventClubId, eventCommunityId, event?.event_type]);
 
   // Цвет команды — как в остальных вкладках карточки события
   const isColorsEnabled = localStorage.getItem('tr_use_team_colors') !== 'false';

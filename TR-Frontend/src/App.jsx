@@ -93,6 +93,8 @@ const LoginPage = lazy(() => import('./pages/LoginPage'));
 const SchedulePage = lazy(() => import('./pages/SchedulePage').then(module => ({ default: module.SchedulePage })));
 const MyTeamPage = lazy(() => import('./pages/MyTeamPage').then(module => ({ default: module.MyTeamPage })));
 const ClubPage = lazy(() => import('./pages/ClubPage').then(module => ({ default: module.ClubPage })));
+const CommunitiesPage = lazy(() => import('./pages/CommunitiesPage').then(module => ({ default: module.CommunitiesPage })));
+const CommunityPage = lazy(() => import('./pages/CommunityPage').then(module => ({ default: module.CommunityPage })));
 const TournamentsPage = lazy(() => import('./pages/TournamentsPage').then(module => ({ default: module.TournamentsPage })));
 const ProfilePage = lazy(() => import('./pages/ProfilePage').then(module => ({ default: module.ProfilePage })));
 const SettingsPage = lazy(() => import('./pages/SettingsPage').then(module => ({ default: module.SettingsPage })));
@@ -489,6 +491,11 @@ export default function App() {
                   <Route path="/event/:eventType/:eventId" element={<SchedulePage />} />
                   <Route path="/my-team" element={<MyTeamPage />} />
                   <Route path="/club" element={<ClubPage />} />
+                  {/* Каталог сообществ и страница конкретного сообщества.
+                      Каталог общий на всю платформу, страница работает с тем
+                      сообществом, что выбрано в сайдбаре. */}
+                  <Route path="/communities" element={<CommunitiesPage />} />
+                  <Route path="/community" element={<CommunityPage />} />
                   <Route path="/tournaments" element={<TournamentsPage />} />
                   <Route path="/profile" element={<ProfilePage />} />
                   <Route path="/settings" element={<SettingsPage />} />

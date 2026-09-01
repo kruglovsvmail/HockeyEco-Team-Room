@@ -4,11 +4,13 @@ import 'dayjs/locale/ru';
 import utc from 'dayjs/plugin/utc';
 import timezone from 'dayjs/plugin/timezone';
 import Toggle from '../../ui/Toggle';
+import { ReserveSlotControl } from './ReserveSlotControl';
 import { Icon } from '../../ui/Icon';
 import { getImageUrl, getContrastTextColor, uiFixed, getTrainingTypeIcon } from '../../utils/helpers';
 import { formatEventFee, isAfterWithdrawDeadline } from '../../utils/eventFee';
 import { HintPopover } from '../../ui/HintPopover';
 import { ConfirmSheet } from '../../ui/ConfirmSheet';
+import clsx from 'clsx';
 
 dayjs.extend(utc);
 dayjs.extend(timezone);
@@ -17,11 +19,14 @@ dayjs.locale('ru');
 const EventCard = ({ 
   event, 
   onToggleAttendance, 
+  onReserveAction,
+
   onClick, 
   onConfirmFriendlyMatch, 
   onCancelFriendlyMatch,
   userRole,
-  hasSubscription
+  hasSubscription,
+  onPublishNow
 }) => {
   const eventDate = dayjs.utc(event.event_date).tz(event.arena_timezone || 'UTC');
   const isFinished = event.status === 'finished';
@@ -63,6 +68,7 @@ const EventCard = ({
   let eventTitle = '';
   if (isMatch) eventTitle = 'МАТЧ';
   else if (isTraining) eventTitle = 'ТРЕНИРОВКА';
+  else if (event.event_type === 'community_game') eventTitle = 'СОЛЯНКА';
   else if (event.event_type.includes('meeting')) eventTitle = 'СОБРАНИЕ';
 
   // Клубное событие помечаем прямо в карточке — род подписи по типу события
@@ -89,6 +95,8 @@ const EventCard = ({
   // Локальное состояние для индикатора загрузки на кнопках
   const [isActionLoading, setIsActionLoading] = useState(false);
   const [timeLeft, setTimeLeft] = useState('');
+  const [publishLeft, setPublishLeft] = useState('');
+  const [isPublishing, setIsPublishing] = useState(false);
 
   // Активная шторка подтверждения: 'cancel' (инициатор отменяет), 'decline' (вызванный отклоняет), 'confirm' (вызванный подтверждает)
   const [confirmAction, setConfirmAction] = useState(null);
@@ -121,6 +129,43 @@ const EventCard = ({
 
     return () => clearInterval(timerId);
   }, [event.confirm_deadline, event.status, event.game_type, isMatch]);
+
+  // ── Публикация события сообщества ───────────────────────────────────────
+  // Событие может быть создано заранее, а открыто участникам позже. Пока оно
+  // не опубликовано, карточку видит только штаб — ему и нужен отсчёт с кнопкой.
+  const isCommunityEvent = !!event.my_community_id;
+  const isCommunityStaff = ['community_owner', 'community_manager', 'community_admin']
+    .includes(event.user_role);
+  const isUnpublished = isCommunityEvent && !event.published_at;
+  const showPublishBar = isUnpublished && isCommunityStaff;
+
+  useEffect(() => {
+    if (!showPublishBar || !event.scheduled_publish_at) {
+      setPublishLeft('');
+      return;
+    }
+
+    const tick = () => {
+      const diffSeconds = dayjs(event.scheduled_publish_at).diff(dayjs(), 'second');
+      if (diffSeconds <= 0) {
+        // Срок вышел, а карточка ещё не обновилась: публикацию доделает крон
+        setPublishLeft('Публикуется...');
+        return;
+      }
+      const pad = (val) => String(val).padStart(2, '0');
+      const days = Math.floor(diffSeconds / 86400);
+      const hours = Math.floor((diffSeconds % 86400) / 3600);
+      const minutes = Math.floor((diffSeconds % 3600) / 60);
+      const seconds = diffSeconds % 60;
+      setPublishLeft(days > 0
+        ? `${days} д ${pad(hours)}:${pad(minutes)}:${pad(seconds)}`
+        : `${pad(hours)}:${pad(minutes)}:${pad(seconds)}`);
+    };
+
+    tick();
+    const timerId = setInterval(tick, 1000);
+    return () => clearInterval(timerId);
+  }, [showPublishBar, event.scheduled_publish_at]);
 
   let matchStatusText = '';
   let matchStatusColor = '';
@@ -341,13 +386,51 @@ const EventCard = ({
         </div>
       )}
       
+      {/* СЕРАЯ ПОЛОСА ПУБЛИКАЦИИ: событие создано, но участникам ещё не видно.
+          Устроена как полоса подтверждения товарищеского матча — тот же отсчёт
+          слева и действие справа. */}
+      {showPublishBar && (
+        <div
+          className="w-full bg-surface-level2 px-5 py-2 mt-4 flex items-center justify-between gap-3 select-none"
+          onClick={(e) => e.stopPropagation()}
+        >
+          <div className="flex flex-col text-left min-w-0">
+            <span className="text-[10px] font-bold text-content-muted uppercase tracking-wider">
+              {event.scheduled_publish_at ? 'До публикации осталось:' : 'Ждёт публикации'}
+            </span>
+            <span className="text-[18px] font-black tracking-widest text-content-muted font-mono truncate">
+              {event.scheduled_publish_at ? (publishLeft || '--:--:--') : 'Вручную'}
+            </span>
+          </div>
+
+          {/* Без заливки: публикация необратима, и кнопка не должна выглядеть
+              как основное действие карточки — только акцентная обводка */}
+          <button
+            type="button"
+            disabled={isPublishing}
+            onClick={(e) => { e.stopPropagation(); setConfirmAction('publish'); }}
+            className="shrink-0 py-1.5 px-3 rounded-xl text-[10px] font-black uppercase tracking-wider bg-transparent border transition-all active:scale-95 outline-none cursor-pointer select-none disabled:opacity-50"
+            style={{ color: activeBrandColor, borderColor: activeBrandColor }}
+          >
+            {isPublishing ? 'Публикуем...' : 'Опубликовать'}
+          </button>
+        </div>
+      )}
+
       {/* 3. КОМАНДЫ: Логотип и Соперник */}
       {shouldRenderTeamsBlock && (
         <div className="flex w-full px-5 mt-4 items-end">
           {event.show_team_context ? (
             <>
-              <div className="w-[50%] flex items-center gap-3 text-left">
-                <div className="w-7 h-7 shrink-0 overflow-hidden drop-shadow-lg flex items-center justify-center">
+              {/* У событий сообщества справа стоит короткий счётчик состава,
+                  а слева — название, которое бывает длинным: отдаём ему место */}
+              <div className={clsx(isCommunityEvent ? 'w-[64%]' : 'w-[50%]', 'flex items-center gap-3 text-left')}>
+                {/* У сообщества логотип со скруглением: он квадратный и без
+                    скругления смотрится инородно рядом с круглыми эмблемами команд */}
+                <div className={clsx(
+                  'w-7 h-7 shrink-0 overflow-hidden drop-shadow-lg flex items-center justify-center',
+                  isCommunityEvent && 'rounded-md'
+                )}>
                   {event.my_team_logo_url ? (
                     <img src={getImageUrl(event.my_team_logo_url)} alt="Лого" className="w-full h-full object-cover" />
                   ) : (
@@ -361,7 +444,7 @@ const EventCard = ({
 
               <div className="w-[2%] shrink-0"></div>
 
-              <div className="w-[48%] flex justify-end">
+              <div className={clsx(isCommunityEvent ? 'w-[34%]' : 'w-[48%]', 'flex justify-end')}>
                 {isMatch && event.opponent_name && (
                   <div className="flex flex-col items-end justify-center text-right w-full">
                     <span className="text-[12px] italic text-content-subtle leading-tight mb-0.5">
@@ -370,6 +453,25 @@ const EventCard = ({
                     <span className="text-[14px] font-bold text-content-muted uppercase leading-tight line-clamp-2 break-words text-right ">
                       {event.opponent_name}
                     </span>
+                  </div>
+                )}
+
+                {/* Событие сообщества: сколько полевых уже набрано и сколько
+                    ещё ждут в резерве. Вратарей здесь не считаем — за место
+                    на льду конкурируют полевые, и решает картину именно их число. */}
+                {isCommunityEvent && (
+                  <div className="flex flex-col items-end justify-center text-right">
+                    <span className="text-[14px] font-bold text-content-muted uppercase leading-tight whitespace-nowrap">
+                      Основа{' '}
+                      <span style={{ color: activeBrandColor }}>
+                        {event.main_skaters ?? 0}{event.max_skaters ? `/${event.max_skaters}` : ''}
+                      </span>
+                    </span>
+                    {event.reserve_count > 0 && (
+                      <span className="text-[12px] font-bold text-content-subtle uppercase leading-tight whitespace-nowrap mt-0.5">
+                        Резерв {event.reserve_count}
+                      </span>
+                    )}
                   </div>
                 )}
 
@@ -492,7 +594,15 @@ const EventCard = ({
             >
               {/* Для отменённого матча тумблер скрыт — отмечаться некуда */}
               {event.status === 'cancelled' ? null : (
-                event.toggle_status === 'allowed' ? (
+                /* Человек в резервной очереди события сообщества: обычный тумблер
+                   ему не подходит — «отмечен или нет» тут не бинарно, состояний три. */
+                (event.my_slot_status && event.my_slot_status !== 'main') ? (
+                  <ReserveSlotControl
+                    event={event}
+                    onAction={onReserveAction}
+                    activeColor={activeBrandColor}
+                  />
+                ) : event.toggle_status === 'allowed' ? (
                   <Toggle
                     checked={event.is_attending}
                     disabled={isFinished || gameDatePassed}
@@ -504,7 +614,7 @@ const EventCard = ({
                         setConfirmAction('late-withdraw');
                         return;
                       }
-                      onToggleAttendance(event.event_id, event.event_type, val, event.my_team_id, event.my_club_id);
+                      onToggleAttendance(event.event_id, event.event_type, val, event.my_team_id, event.my_club_id, event.my_community_id);
                     }}
                   />
                 ) : (
@@ -522,6 +632,25 @@ const EventCard = ({
           иначе клик по «Подтвердить»/«Отмена» внутри шторки пробивается до
           onClick карточки и открывает детали события. */}
       <div onClick={(e) => e.stopPropagation()}>
+      <ConfirmSheet
+        isOpen={confirmAction === 'publish'}
+        onClose={() => setConfirmAction(null)}
+        isLoading={isPublishing}
+        onConfirm={async () => {
+          if (!onPublishNow) return;
+          setIsPublishing(true);
+          try {
+            await onPublishNow(event);
+          } finally {
+            setIsPublishing(false);
+            setConfirmAction(null);
+          }
+        }}
+        title="Опубликовать событие?"
+        description="Участники сразу увидят его в календаре и смогут отмечаться. Вернуть событие в непубличное состояние нельзя."
+        confirmLabel="Опубликовать"
+      />
+
       <ConfirmSheet
         isOpen={confirmAction === 'cancel'}
         onClose={() => setConfirmAction(null)}
@@ -595,7 +724,7 @@ const EventCard = ({
         onConfirm={async () => {
           setIsActionLoading(true);
           try {
-            await onToggleAttendance(event.event_id, event.event_type, false, event.my_team_id, event.my_club_id);
+            await onToggleAttendance(event.event_id, event.event_type, false, event.my_team_id, event.my_club_id, event.my_community_id);
           } finally {
             setIsActionLoading(false);
             setConfirmAction(null);

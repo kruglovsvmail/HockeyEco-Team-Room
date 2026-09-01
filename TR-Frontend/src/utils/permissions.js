@@ -18,6 +18,19 @@ export const ROLES = {
   // coach → club_coach. Схему БД это не меняет — только имена ролей в матрице.
   CLUB_OWNER: 'club_owner',        // Владелец клуба (clubs.owner_id)
   CLUB_COACH: 'club_coach',        // Тренер клуба (club_roles.role = 'coach')
+
+  // ── Роли сообществ (Тренировки и Солянки) ─────────────────────────────────
+  // Категория сообщества (skating / open_game) на роли не влияет: она говорит,
+  // какие события внутри можно проводить, а не кто чем распоряжается. Разница
+  // в правах между категориями, если понадобится, разводится ключами матрицы,
+  // как это уже сделано у матчей, тренировок и собраний.
+  COMMUNITY_OWNER: 'community_owner',     // Владелец сообщества (communities.owner_id)
+  COMMUNITY_MANAGER: 'community_manager', // Руководитель сообщества
+  COMMUNITY_ADMIN: 'community_admin',     // Администратор сообщества
+  // Вступивший участник. Намеренно НЕ переиспользуем PLAYER: участник сообщества
+  // пришёл с улицы и не должен добирать доступы по командным ключам, где эта роль
+  // перечислена (INTERNAL_VIEW, EVENT_SELF_ATTENDANCE и прочие).
+  COMMUNITY_MEMBER: 'community_member',
 };
 
 // Системные лимиты времени (в минутах до начала матча)
@@ -352,5 +365,153 @@ export const PERMISSIONS = {
   CLUB_EVENT_ATTENDANCE_MANAGE: {
     allowedRoles: [ROLES.CLUB_OWNER, ROLES.CLUB_TOP_MANAGER],
     requiresSubscription: [ROLES.CLUB_TOP_MANAGER]
+  },
+
+  // ==========================================
+  // 🧑‍🤝‍🧑 СООБЩЕСТВА (Тренировки и Солянки)
+  //
+  // Ключи проверяются не по команде и не по клубу, а по сообществу
+  // (communities.owner_id + community_roles). Отличие от клуба: роль штаба
+  // засчитывается БЕЗ членства в community_members — руководитель сообщества
+  // может не кататься сам и в участниках не числиться.
+  //
+  // Подписка нигде не требуется: сообщества задуманы как вход в приложение для
+  // людей с улицы, и платный барьер на вступлении и отметке убил бы воронку.
+  // Если сообщества станут платными для организатора, включение делается точечно —
+  // requiresSubscription: [ROLES.COMMUNITY_MANAGER, ROLES.COMMUNITY_ADMIN].
+  // ==========================================
+
+  // Профиль сообщества: название, логотип, город, описание, цвета
+  COMMUNITY_EDIT_PROFILE: {
+    allowedRoles: [ROLES.COMMUNITY_OWNER],
+    requiresSubscription: false
+  },
+
+  // Порядок информационных блоков во вкладке «Инфо». Сами блоки заводит
+  // владелец в профиле сообщества, а переставлять их может и руководитель:
+  // это не изменение содержания, а раскладка того, что уже написано.
+  COMMUNITY_INFO_REORDER: {
+    allowedRoles: [ROLES.COMMUNITY_OWNER, ROLES.COMMUNITY_MANAGER],
+    requiresSubscription: false
+  },
+
+  // Настройки сообщества: лесенка дедлайнов резерва (reserve_ladder),
+  // видимость чужих групп в календаре участника (calendar_scope)
+  COMMUNITY_MANAGE_SETTINGS: {
+    allowedRoles: [ROLES.COMMUNITY_OWNER, ROLES.COMMUNITY_MANAGER],
+    requiresSubscription: false
+  },
+
+  // Штаб: назначение и снятие ролей, ручные подписи должностей.
+  // Строго владелец — как CLUB_MANAGE_ROLES у клуба.
+  COMMUNITY_MANAGE_ROLES: {
+    allowedRoles: [ROLES.COMMUNITY_OWNER],
+    requiresSubscription: false
+  },
+
+  // Полное удаление сообщества вместе с событиями, отметками и группами.
+  // Строго владелец: у остального штаба нет способа его вернуть.
+  COMMUNITY_DELETE: {
+    allowedRoles: [ROLES.COMMUNITY_OWNER],
+    requiresSubscription: false
+  },
+
+  // Вкладка «Участники»: исключение из сообщества, амплуа (полевой/вратарь),
+  // назначение тренировочной группы
+  COMMUNITY_MANAGE_MEMBERS: {
+    allowedRoles: [ROLES.COMMUNITY_OWNER, ROLES.COMMUNITY_MANAGER],
+    requiresSubscription: false
+  },
+
+  // Создание и редактирование тренировочных групп (только категория skating)
+  COMMUNITY_MANAGE_GROUPS: {
+    allowedRoles: [ROLES.COMMUNITY_OWNER, ROLES.COMMUNITY_MANAGER],
+    requiresSubscription: false
+  },
+
+  // Создание событий сообщества (тренировки и солянки)
+  COMMUNITY_MANAGE_EVENTS: {
+    allowedRoles: [ROLES.COMMUNITY_OWNER, ROLES.COMMUNITY_MANAGER, ROLES.COMMUNITY_ADMIN],
+    requiresSubscription: false
+  },
+
+  // Просмотр внутренней части события сообщества и карточки участника.
+  // Аналог INTERNAL_VIEW в командном контексте.
+  COMMUNITY_INTERNAL_VIEW: {
+    allowedRoles: [
+      ROLES.COMMUNITY_OWNER, ROLES.COMMUNITY_MANAGER,
+      ROLES.COMMUNITY_ADMIN, ROLES.COMMUNITY_MEMBER
+    ],
+    requiresSubscription: false
+  },
+
+  // Расписание события: дата, время, выбор арены или ручной локации
+  COMMUNITY_EVENT_EDIT_SCHEDULE: {
+    allowedRoles: [ROLES.COMMUNITY_OWNER, ROLES.COMMUNITY_MANAGER, ROLES.COMMUNITY_ADMIN],
+    requiresSubscription: false
+  },
+
+  // Взнос за участие: режим (per_person/split), суммы, бесплатные вратари, порог показа
+  COMMUNITY_EVENT_EDIT_FINANCES: {
+    allowedRoles: [ROLES.COMMUNITY_OWNER, ROLES.COMMUNITY_MANAGER, ROLES.COMMUNITY_ADMIN],
+    requiresSubscription: false
+  },
+
+  // Лимиты и адресация события: max_skaters, max_goalies, допущенные группы,
+  // флаг «и те, кто без группы» (include_ungrouped)
+  COMMUNITY_EVENT_EDIT_LIMITS: {
+    allowedRoles: [ROLES.COMMUNITY_OWNER, ROLES.COMMUNITY_MANAGER, ROLES.COMMUNITY_ADMIN],
+    requiresSubscription: false
+  },
+
+  // Полное удаление карточки события сообщества из календаря. Администратор
+  // событие создаёт и ведёт, но снести его вместе с отметками не может:
+  // это необратимо и остаётся за владельцем с руководителем.
+  COMMUNITY_EVENT_DELETE: {
+    allowedRoles: [ROLES.COMMUNITY_OWNER, ROLES.COMMUNITY_MANAGER],
+    requiresSubscription: false
+  },
+
+  // Публикация события: показать его участникам раньше срока или вручную,
+  // если публикация была отложена. Кто событие ведёт, тот его и открывает.
+  COMMUNITY_EVENT_PUBLISH: {
+    allowedRoles: [ROLES.COMMUNITY_OWNER, ROLES.COMMUNITY_MANAGER, ROLES.COMMUNITY_ADMIN],
+    requiresSubscription: false
+  },
+
+  // Ручные отметки на событии: добавление и удаление участника в списке
+  // отметившихся, ручной перевод из резерва в основу
+  COMMUNITY_EVENT_ATTENDANCE_MANAGE: {
+    allowedRoles: [ROLES.COMMUNITY_OWNER, ROLES.COMMUNITY_MANAGER, ROLES.COMMUNITY_ADMIN],
+    requiresSubscription: false
+  },
+
+  // Финансовая пометка участника (₽) и перевод в 'free'. Отделено от остальных
+  // отметок: собрать состав — работа администратора, а кто заплатил — деньги,
+  // и отвечают за них владелец с руководителем.
+  COMMUNITY_EVENT_FEE_MARK: {
+    allowedRoles: [ROLES.COMMUNITY_OWNER, ROLES.COMMUNITY_MANAGER],
+    requiresSubscription: false
+  },
+
+  // План тренировки: упражнения из личной библиотеки, порядок блоков, публикация.
+  // Тренерской роли у сообществ нет — «Тренер» это ручная подпись в штабе,
+  // а не роль, поэтому право отдано управленческим ролям.
+  COMMUNITY_TRAINING_PLAN_MANAGE: {
+    allowedRoles: [ROLES.COMMUNITY_OWNER, ROLES.COMMUNITY_MANAGER, ROLES.COMMUNITY_ADMIN],
+    requiresSubscription: false
+  },
+
+  // Расстановка на тренировке и деление на составы на солянке
+  COMMUNITY_LINES_MANAGE: {
+    allowedRoles: [ROLES.COMMUNITY_OWNER, ROLES.COMMUNITY_MANAGER, ROLES.COMMUNITY_ADMIN],
+    requiresSubscription: false
+  },
+
+  // Самоотметка участника на событие сообщества, постановка в резерв и
+  // подтверждение освободившегося места
+  COMMUNITY_SELF_ATTENDANCE: {
+    allowedRoles: [ROLES.COMMUNITY_MEMBER],
+    requiresSubscription: false
   },
 };

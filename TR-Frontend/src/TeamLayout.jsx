@@ -7,7 +7,7 @@ import utc from 'dayjs/plugin/utc';
 import timezone from 'dayjs/plugin/timezone';
 import 'dayjs/locale/ru';
 
-import { getToken, removeToken, getAuthHeaders, uiFixed, getTeamUiColor } from './utils/helpers';
+import { getToken, removeToken, getAuthHeaders, uiFixed, getTeamUiColor, COMMUNITY_EVENT_ROUTE } from './utils/helpers';
 import { Sidebar } from './components/Sidebar';
 import { Header } from './components/Header';
 import { ConsentModal } from './components/ConsentModal';
@@ -48,6 +48,13 @@ import { TournamentHandbookPanel } from './components/Manager/TournamentHandbook
 
 import { EditTeamProfilePanel } from './components/MyTeam/EditTeamProfilePanel';
 import { EditClubProfilePanel } from './components/Club/EditClubProfilePanel';
+import { CommunityProfilePanel } from './components/Community/CommunityProfilePanel';
+import { CommunityInfoBlocksPanel } from './components/Community/CommunityInfoBlocksPanel';
+import { CommunitySettingsPanel } from './components/Community/CommunitySettingsPanel';
+import { CommunityGroupsPanel } from './components/Community/CommunityGroupsPanel';
+import { CommunityEventDefaultsPanel } from './components/Community/CommunityEventDefaultsPanel';
+import { CommunityDetailsPanel } from './components/Community/CommunityDetailsPanel';
+import { CommunityMemberDetails } from './components/Community/CommunityMemberDetails';
 
 import { TournamentListPanel } from './components/Tournaments/TournamentListPanel';
 
@@ -68,6 +75,9 @@ dayjs.locale('ru');
 // event_type из календаря (match / team_training / club_meeting / …) → тип в адресе
 // /event/:eventType/:eventId. Та же свёртка, что и при переходе из карточки календаря.
 const routeTypeOfEvent = (eventType = '') => {
+  // Сообщества проверяем первыми: community_training тоже содержит 'training',
+  // и общая ветка увела бы тренировку на маршрут командной тренировки.
+  if (COMMUNITY_EVENT_ROUTE[eventType]) return COMMUNITY_EVENT_ROUTE[eventType];
   if (eventType.includes('training')) return 'training';
   if (eventType.includes('meeting')) return 'meeting';
   return 'match';
@@ -100,6 +110,14 @@ const TEAM_SECTIONS = {
 // его панели обязаны быть выше — на общей z-40 они оказались бы под ним.
 const TEAM_SECTION_PANELS = ['createApplication', 'opponentForm', 'tournamentForm'];
 
+// Панели, которые открываются поверх деталей события и сдвигают их влево, а не
+// накрывают. Список один на три места — z-index панели, сдвиг оверлея и зону
+// закрытия слева: расходились бы они, панель либо ушла бы под событие, либо
+// открылась поверх него без сдвига.
+const OVER_EVENT_PANELS = [
+  'eventEdit', 'playerProfile', 'userDetails', 'teamStats', 'communityMemberDetails',
+];
+
 export function TeamLayout() {
   return <TeamLayoutContent />;
 }
@@ -112,6 +130,9 @@ function TeamLayoutContent() {
   // и создание клубных событий работают в своём контексте, всё остальное — в командном.
   const [clubs, setClubs] = useState([]);
   const [selectedClub, setSelectedClub] = useState(null);
+  // Сообщества (тренировки и солянки) — третий контекст рядом с командой и клубом
+  const [communities, setCommunities] = useState([]);
+  const [selectedCommunity, setSelectedCommunity] = useState(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
 
@@ -169,6 +190,23 @@ function TeamLayoutContent() {
   // Иконка и подпись настраиваются: на странице команды это «⋯» с действиями раздела,
   // в турнирах — «swap», меняющий турнир. Сравнение с прошлым состоянием обязательно:
   // объект пересобирается на каждый вызов, и без него регистрация гоняла бы лишний рендер.
+  // Левая кнопка шапки: обычно тоггл сайдбара, но страница может подменить её
+  // на «назад». Нужно там, где экран открыт как следующий шаг, а не как раздел:
+  // в сообщество можно прийти и из каталога (тогда назад — к списку), и из
+  // сайдбара (тогда это обычный раздел, и уводить человека некуда).
+  const [headerBackVisible, setHeaderBackVisible] = useState(false);
+  const headerBackHandlerRef = useRef(null);
+  const registerHeaderBack = useCallback((handler) => {
+    headerBackHandlerRef.current = handler || null;
+    setHeaderBackVisible(prev => (prev === !!handler ? prev : !!handler));
+  }, []);
+
+  // Свой значок раздела в шапке — узел, а не обработчик: это ссылка с фирменной
+  // картинкой, и общим Icon её не выразить. Страница обязана снять его за собой
+  // при уходе, иначе значок переживёт свой раздел.
+  const [headerExtra, setHeaderExtra] = useState(null);
+  const registerHeaderExtra = useCallback((node) => setHeaderExtra(node || null), []);
+
   const [headerMenu, setHeaderMenu] = useState({ visible: false, icon: 'more', label: 'Меню раздела' });
   const headerMenuHandlerRef = useRef(null);
   const registerHeaderMenu = useCallback((handler, options = {}) => {
@@ -450,13 +488,24 @@ function TeamLayoutContent() {
     return clubs.find(c => String(c.id) === String(id)) || null;
   }, [eventForOverlay?.my_club_id, clubs]);
 
-  const { checkAccess: checkAccessForHeader, checkClubAccess: checkClubAccessForHeader } =
-    useAccess(user, selectedTeam, eventClub);
+  // Сообщество события берём из самого события, как и клуб: человек мог открыть
+  // тренировку, стоя в контексте команды.
+  const eventCommunity = useMemo(() => {
+    const id = eventForOverlay?.my_community_id;
+    if (!id) return null;
+    return communities.find(c => String(c.id) === String(id)) || null;
+  }, [eventForOverlay?.my_community_id, communities]);
+
+  const {
+    checkAccess: checkAccessForHeader,
+    checkClubAccess: checkClubAccessForHeader,
+    checkCommunityAccess: checkCommunityAccessForHeader,
+  } = useAccess(user, selectedTeam, eventClub, eventCommunity);
 
   const headerEventAccess = useMemo(() => {
     if (!eventForOverlay) return { canSee: false };
-    return computeEventEditAccess(eventForOverlay, user, selectedTeam, checkAccessForHeader, checkClubAccessForHeader);
-  }, [eventForOverlay, user, selectedTeam, checkAccessForHeader, checkClubAccessForHeader]);
+    return computeEventEditAccess(eventForOverlay, user, selectedTeam, checkAccessForHeader, checkClubAccessForHeader, checkCommunityAccessForHeader);
+  }, [eventForOverlay, user, selectedTeam, checkAccessForHeader, checkClubAccessForHeader, checkCommunityAccessForHeader]);
 
   const openEventEditPanel = useCallback(() => {
     if (!eventForOverlay) return;
@@ -465,6 +514,7 @@ function TeamLayoutContent() {
       user,
       selectedTeam,
       selectedClub: eventClub,
+      selectedCommunity: eventCommunity,
       onEventUpdate: handleEventUpdate,
       // После удаления — возвращаем пользователя из overlay-события в календарь
       onEventDeleted: handleCloseEvent,
@@ -496,6 +546,11 @@ function TeamLayoutContent() {
         setClubs(userClubs);
         const savedClubId = localStorage.getItem('teampwa_selected_club');
         setSelectedClub(userClubs.find(c => c.id == savedClubId) || userClubs[0] || null);
+
+        const userCommunities = parsedUser.communities || [];
+        setCommunities(userCommunities);
+        const savedCommunityId = localStorage.getItem('teampwa_selected_community');
+        setSelectedCommunity(userCommunities.find(c => c.id == savedCommunityId) || userCommunities[0] || null);
 
         setIsLoading(false);
       }
@@ -547,6 +602,11 @@ function TeamLayoutContent() {
         setClubs(userClubs);
         const savedClubId = localStorage.getItem('teampwa_selected_club');
         setSelectedClub(userClubs.find(c => c.id == savedClubId) || userClubs[0] || null);
+
+        const userCommunities = data.user.communities || [];
+        setCommunities(userCommunities);
+        const savedCommunityId = localStorage.getItem('teampwa_selected_community');
+        setSelectedCommunity(userCommunities.find(c => c.id == savedCommunityId) || userCommunities[0] || null);
       } catch (err) {
         clearTimeout(timeoutId);
         if (!localStorage.getItem('teampwa_cached_user') && !localStorage.getItem('teampwa_user')) {
@@ -582,6 +642,41 @@ function TeamLayoutContent() {
     setSelectedClub(club);
     localStorage.setItem('teampwa_selected_club', club.id.toString());
   };
+
+  const handleCommunityChange = (community) => {
+    setSelectedCommunity(community);
+    localStorage.setItem('teampwa_selected_community', community.id.toString());
+  };
+
+  // Сообщество могло появиться прямо сейчас — его создали или в него вступили из
+  // каталога. Перечитываем список, не гоняя весь /auth/me: он тянет команды,
+  // клубы и обе матрицы доступов, а нужен только один раздел.
+  const refreshCommunities = useCallback(async (selectId = null) => {
+    try {
+      const res = await fetch(`${import.meta.env.VITE_API_URL}/api/communities/my`, {
+        headers: getAuthHeaders(),
+      });
+      if (!res.ok) return;
+      const data = await res.json();
+      const list = data.communities || [];
+      setCommunities(list);
+      setSelectedCommunity(prev => {
+        const target = selectId
+          ? list.find(c => String(c.id) === String(selectId))
+          : list.find(c => String(c.id) === String(prev?.id));
+        const next = target || list[0] || null;
+        if (next) localStorage.setItem('teampwa_selected_community', String(next.id));
+        return next;
+      });
+    } catch {
+      // Молча: список сообществ не критичен для работы остального экрана
+    }
+  }, []);
+
+  const handleCommunityUpdated = useCallback((updated) => {
+    setSelectedCommunity(prev => (prev ? { ...prev, ...updated } : prev));
+    setCommunities(prev => prev.map(c => (c.id === updated.id ? { ...c, ...updated } : c)));
+  }, []);
 
   // Профиль клуба обновился (карандашик в шапке страницы клуба) — синхронизируем
   // и выбранный клуб, и список, иначе сайдбар останется со старым логотипом.
@@ -694,8 +789,11 @@ function TeamLayoutContent() {
           clubs={clubs}
           selectedTeam={selectedTeam}
           selectedClub={selectedClub}
+          communities={communities}
+          selectedCommunity={selectedCommunity}
           onTeamChange={handleTeamChange}
           onClubChange={handleClubChange}
+          onCommunityChange={handleCommunityChange}
           onClose={() => setIsSidebarOpen(false)}
         />
       </aside>
@@ -728,6 +826,8 @@ function TeamLayoutContent() {
             setSelectedTeam(prev => ({ ...prev, ...updatedTeam }));
             setTeams(prev => prev.map(t => t.id === updatedTeam.id ? { ...t, ...updatedTeam } : t));
           }}
+          onBack={headerBackVisible ? () => headerBackHandlerRef.current?.() : undefined}
+          extraAction={headerExtra}
           showEditButton={showHeaderEdit}
           onEditClick={() => headerEditHandlerRef.current?.()}
           showMenuButton={headerMenu.visible}
@@ -746,12 +846,14 @@ function TeamLayoutContent() {
           <Outlet context={{
             user, teams, selectedTeam, handleTeamChange,
             clubs, selectedClub, handleClubChange,
-            openRightPanel, pushRightPanel, openPanel100, closePanel100, registerHeaderEdit, registerHeaderMenu,
+            communities, selectedCommunity, handleCommunityChange, refreshCommunities,
+            openRightPanel, pushRightPanel, openPanel100, closePanel100, registerHeaderEdit, registerHeaderMenu, registerHeaderBack, registerHeaderExtra,
             onTeamUpdated: (updatedTeam) => {
               setSelectedTeam(prev => ({ ...prev, ...updatedTeam }));
               setTeams(prev => prev.map(t => t.id === updatedTeam.id ? { ...t, ...updatedTeam } : t));
             },
             onClubUpdated: handleClubUpdated,
+            onCommunityUpdated: handleCommunityUpdated,
           }} />
         </main>
       </div>
@@ -762,7 +864,7 @@ function TeamLayoutContent() {
         className={clsx(
           "absolute top-0 right-0 h-full bg-surface-level2 border-l border-white/10 shadow-[-15px_0_30px_rgba(0,0,0,0.1)] flex flex-col overflow-hidden flex-shrink-0",
           "transition-transform duration-300 ease-[cubic-bezier(0.32,0.72,0,1)]",
-          (rightPanel.type === 'eventEdit' || rightPanel.type === 'playerDocs' || rightPanel.type === 'playerProfile' || rightPanel.type === 'userDetails' || rightPanel.type === 'teamStats' || rightPanel.type === 'clubStats' || TEAM_SECTION_PANELS.includes(rightPanel.type)) ? "z-[110]" : "z-[40]",
+          (OVER_EVENT_PANELS.includes(rightPanel.type) || rightPanel.type === 'playerDocs' || rightPanel.type === 'clubStats' || TEAM_SECTION_PANELS.includes(rightPanel.type)) ? "z-[110]" : "z-[40]",
           rightPanel.isOpen ? "translate-x-0" : "translate-x-full"
         )}
         style={{ width: `${panelPct}%` }}
@@ -847,6 +949,12 @@ function TeamLayoutContent() {
                     {rightPanel.type === 'editClubProfile' && (
                       <EditClubProfilePanel {...rightPanel.data} onClose={closeRightPanel} />
                     )}
+                    {rightPanel.type === 'communityDetails' && (
+                      <CommunityDetailsPanel {...rightPanel.data} onClose={closeRightPanel} />
+                    )}
+                    {rightPanel.type === 'communityMemberDetails' && (
+                      <CommunityMemberDetails {...rightPanel.data} onClose={closeRightPanel} />
+                    )}
                     {rightPanel.type === 'eventEdit' && (
                       <Suspense fallback={<PageLoader />}>
                         <EditEventPanel data={rightPanel.data} onClose={closeRightPanel} />
@@ -916,7 +1024,7 @@ function TeamLayoutContent() {
             key="event-overlay"
             className="absolute inset-0 z-[100] overflow-hidden"
             initial={{ x: '100%' }}
-            animate={{ x: rightPanel.isOpen && (rightPanel.type === 'eventEdit' || rightPanel.type === 'playerProfile' || rightPanel.type === 'userDetails' || rightPanel.type === 'teamStats') ? `-${panelPct}%` : 0 }}
+            animate={{ x: rightPanel.isOpen && OVER_EVENT_PANELS.includes(rightPanel.type) ? `-${panelPct}%` : 0 }}
             exit={{ x: '100%' }}
             transition={{ duration: 0.35, ease: [0.32, 0.72, 0, 1] }}
           >
@@ -938,7 +1046,7 @@ function TeamLayoutContent() {
 
       {/* Click-zone слева для закрытия панели редактирования/профиля игрока, когда поверх лежит EventPage, SeasonRostersDetailsPage или panel100.
           z-[105] — выше оверлея (z-100) и panel100 (z-60), но ниже самой панели (z-110). */}
-      {rightPanel.isOpen && ((rightPanel.type === 'eventEdit' && eventForOverlay) || (rightPanel.type === 'playerDocs' && applicationMatch) || (TEAM_SECTION_PANELS.includes(rightPanel.type) && teamSection) || ((rightPanel.type === 'playerProfile' || rightPanel.type === 'userDetails' || rightPanel.type === 'teamStats') && (eventForOverlay || panel100.isOpen))) && (
+      {rightPanel.isOpen && ((rightPanel.type === 'eventEdit' && eventForOverlay) || (rightPanel.type === 'playerDocs' && applicationMatch) || (TEAM_SECTION_PANELS.includes(rightPanel.type) && teamSection) || (OVER_EVENT_PANELS.includes(rightPanel.type) && (eventForOverlay || panel100.isOpen))) && (
         <div
           className="absolute top-0 bottom-0 left-0 z-[105] cursor-pointer"
           style={{ width: `${100 - panelPct}%` }}
@@ -1003,6 +1111,23 @@ function TeamLayoutContent() {
             <FadeIn className="h-full w-full bg-surface-level2">
               {panel100.type === 'tournamentGameDetails' && (
                 <TournamentGamePanel data={panel100.data} openRightPanel={openRightPanel} />
+              )}
+              {/* Управление сообществом — на всю ширину: в блоках формы с
+                  описаниями и списками, и 80% под них мало */}
+              {panel100.type === 'communityProfile' && (
+                <CommunityProfilePanel {...panel100.data} />
+              )}
+              {panel100.type === 'communityInfoBlocks' && (
+                <CommunityInfoBlocksPanel {...panel100.data} />
+              )}
+              {panel100.type === 'communitySettings' && (
+                <CommunitySettingsPanel {...panel100.data} />
+              )}
+              {panel100.type === 'communityGroups' && (
+                <CommunityGroupsPanel {...panel100.data} />
+              )}
+              {panel100.type === 'communityEventDefaults' && (
+                <CommunityEventDefaultsPanel {...panel100.data} />
               )}
               {panel100.type === 'drillDetails' && (
                 <Suspense fallback={<PageLoader />}>

@@ -21,11 +21,14 @@ export function TeamPageHeader({ selectedTeam, activeTeamDetails, activeBrandCol
       <div className="px-4 pointer-events-auto relative z-20">
         <div className="bg-surface-base p-4  flex items-center gap-4 shadow-lg text-left">
           {/* ЛОГОТИП КЛУБА */}
-          <div className="w-12 h-12  flex items-center justify-center overflow-hidden drop-shadow-sm shrink-0 ml-4">
+          {/* Скругление нужно логотипам-фотографиям: у сообществ это часто снимок,
+              а не прозрачный PNG, и острые углы в шапке выглядят инородно.
+              Прозрачным логотипам команд и клубов оно ничего не меняет. */}
+          <div className="w-12 h-12 rounded-xl flex items-center justify-center overflow-hidden drop-shadow-sm shrink-0 ml-4">
             <img 
               src={getImageUrl(logoUrl)} 
               alt={teamName} 
-              className="w-full h-full object-contain" 
+              className="w-full h-full object-contain rounded-xl" 
             />
           </div>
 

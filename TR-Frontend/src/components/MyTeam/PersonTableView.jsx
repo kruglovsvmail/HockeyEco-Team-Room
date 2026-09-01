@@ -30,9 +30,13 @@ export const PersonTableView = ({
   pressHandlers,           // хендлеры долгого нажатия (входа в режим правки)
   isEditMode = false,
   canExclude = false,      // показывать крестик исключения (режим правки + права роли)
+  // Точечный запрет на исключение. Владельца сообщества снять нельзя,
+  // и крестик у него не должен появляться вовсе.
+  canExcludePerson,
   hasManageAccess = true,  // false → крестик потухший, с подсказкой про подписку
   onExcludeClick,
-  animatingOutId
+  animatingOutId,
+  showTitle = false        // подпись должности под ФИО (штаб сообщества)
 }) => {
   const badgeBgColor = activeBrandColor || 'var(--color-brand)';
   const badgeTextColorClass = getContrastTextColor(activeBrandColor);
@@ -80,6 +84,11 @@ export const PersonTableView = ({
             {person.middle_name && (
               <span className="text-[12px] text-content-muted mt-0.5 truncate">{person.middle_name}</span>
             )}
+            {showTitle && person.title_label && (
+              <span className="mt-1 self-start max-w-full truncate px-1.5 py-0.5 rounded-md bg-surface-level2 border border-surface-border text-[12px] font-bold text-content-muted leading-tight">
+                {person.title_label}
+              </span>
+            )}
           </div>
         )
       }
@@ -122,6 +131,7 @@ export const PersonTableView = ({
         width: '38px',
         align: 'center',
         render: (person) => (
+          canExcludePerson && !canExcludePerson(person) ? null :
           hasManageAccess ? (
             <button
               type="button"
@@ -148,7 +158,7 @@ export const PersonTableView = ({
     }
 
     return cols;
-  }, [showBadges, canExclude, hasManageAccess, onExcludeClick, badgeBgColor, badgeTextColorClass]);
+  }, [showBadges, canExclude, canExcludePerson, showTitle, hasManageAccess, onExcludeClick, badgeBgColor, badgeTextColorClass]);
 
   // Долгое нажатие вешаем на всю строку. В режиме правки гасим всплытие клика,
   // чтобы тап по строке не закрывал режим (как и у плиток).
