@@ -160,29 +160,44 @@ export function MatchEventSheet({
   const [pmAway, setPmAway] = useState([]);
 
   // ── Конечная карусель (для goal-mode) ─────────────────────────────────
-  // 2 слайда: [scoring, conceding]. Стартуем на scoring (progress 0).
-  // scrollProgress — непрерывная величина 0..1, шапка едет вместе с контентом.
-  // scrollIdx — дискретный (для стрелок: гаснут на границах).
-  const [scrollProgress, setScrollProgress] = useState(0);
-  const scrollIdx = Math.round(scrollProgress);
+  // 2 слайда: [scoring, conceding]. Стартуем на scoring (индекс 0).
+  //
+  // Шапку двигаем не через состояние, а прямой записью в style.transform: сам
+  // скролл идёт в браузере покадрово, а рендер React на каждое onScroll успевает
+  // не всегда — из-за этого название команды заметно отставало от контента.
+  // В состоянии держим только дискретный индекс (для стрелок: гаснут на
+  // границах), и обновляем его лишь когда слайд действительно сменился.
+  const [scrollIdx, setScrollIdx] = useState(0);
   const carouselRef = useRef(null);
+  const headerTrackRef = useRef(null);
+
+  // p — непрерывная позиция 0..1. Дорожка шапки шириной 200%, поэтому сдвиг
+  // на 50% её собственной ширины равен ровно одной ширине окна.
+  const applyHeaderShift = (p) => {
+    if (headerTrackRef.current) {
+      headerTrackRef.current.style.transform = `translateX(-${p * 50}%)`;
+    }
+  };
 
   // Установка начальной позиции при открытии шторки.
   // Соперник, который пропустил гол, сразу попадает на свою (вторую) панель «−».
   useEffect(() => {
     if (!isOpen || !isGoal) return;
     const startIdx = (isOpponent && !canEditScoring) ? 1 : 0;
-    setScrollProgress(startIdx);
+    setScrollIdx(startIdx);
+    applyHeaderShift(startIdx);
     const id = requestAnimationFrame(() => {
       if (!carouselRef.current) return;
       carouselRef.current.scrollTo({ left: carouselRef.current.clientWidth * startIdx, behavior: 'auto' });
+      // Если контейнер уже стоял в нужной позиции, onScroll не придёт —
+      // дожимаем шапку руками, иначе она осталась бы на первой команде.
+      applyHeaderShift(startIdx);
     });
     return () => cancelAnimationFrame(id);
   }, [isOpen, isGoal, isOpponent, canEditScoring]);
 
-  // Программный scroll по нажатию стрелки.
-  // Обновлять scrollProgress не нужно — onScroll отстреливает на каждом кадре
-  // плавного scrollTo и тянет шапку синхронно с контентом.
+  // Программный scroll по нажатию стрелки. Шапку не трогаем: onScroll
+  // отстреливает на каждом кадре плавного scrollTo и тянет её за контентом.
   const navigate = (dir) => {
     if (!carouselRef.current) return;
     const w = carouselRef.current.clientWidth;
@@ -192,13 +207,15 @@ export function MatchEventSheet({
     carouselRef.current.scrollTo({ left: w * target, behavior: 'smooth' });
   };
 
-  // Свайп пальцем / плавный scrollTo → непрерывное обновление прогресса
+  // Свайп пальцем / плавный scrollTo → сдвиг шапки тем же кадром
   const handleCarouselScroll = () => {
     if (!carouselRef.current) return;
     const { scrollLeft, clientWidth } = carouselRef.current;
     if (clientWidth === 0) return;
     const p = Math.max(0, Math.min(1, scrollLeft / clientWidth));
-    setScrollProgress(p);
+    applyHeaderShift(p);
+    const idx = Math.round(p);
+    setScrollIdx(prev => (prev === idx ? prev : idx));
   };
 
   // Префилл / сброс при открытии шторки
@@ -447,10 +464,12 @@ export function MatchEventSheet({
 
                     <div className="flex items-center overflow-hidden flex-1 justify-center">
                       <div className="relative overflow-hidden w-full h-6 flex items-center justify-center">
-                        {/* 2 плитки — шапка едет синхронно с контентом карусели */}
+                        {/* 2 плитки. transform не в JSX намеренно: его пишет
+                            applyHeaderShift прямо в DOM на каждом кадре скролла,
+                            и перерисовка React не должна его перетирать. */}
                         <div
+                          ref={headerTrackRef}
                           className="w-[200%] flex items-stretch h-full absolute left-0 top-0 will-change-transform"
-                          style={{ transform: `translateX(-${scrollProgress * 50}%)` }}
                         >
                           {[
                             { name: scoringName,   logo: scoringLogo,   k: 's' },

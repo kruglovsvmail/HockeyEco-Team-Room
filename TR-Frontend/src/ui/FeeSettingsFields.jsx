@@ -85,6 +85,7 @@ export const FeeSettingsFields = ({
           placeholder="Не указан"
           value={amount}
           onChange={handleAmountChange}
+          inputMode="numeric"
           disabled={disabled || isFree}
           activeColor={activeColor}
         />
@@ -103,7 +104,7 @@ export const FeeSettingsFields = ({
           {!isMeeting && (
             <div className="flex items-center justify-between gap-4 px-1 mt-6">
               <div className="min-w-0">
-                <span className="text-[14px] font-bold text-content-main block">Вратари бесплатно</span>
+                <span className="text-[14px] font-semibold text-content-main block">Вратари бесплатно</span>
 
               </div>
               <Toggle
@@ -117,7 +118,8 @@ export const FeeSettingsFields = ({
 
           <div className="flex flex-col gap-1.5 mt-6">
             <StepperLP
-              label="Показывать цену от"
+              inline
+              label="Минимум человек для показа взноса"
               value={minParticipants}
               onChange={(val) => patch({ minParticipants: Math.max(val, 1) })}
               min={1}
@@ -126,7 +128,7 @@ export const FeeSettingsFields = ({
               disabled={disabled}
               activeColor={activeColor}
             />
-            <span className="text-[12px] text-content-muted leading-tight pl-1">
+            <span className="text-[11px] text-content-subtle leading-relaxed pl-1">
               {/* Формулировку берём из того же места, что и карточка события,
                   чтобы руководитель видел ровно то, что увидит игрок. */}
               Пока отметившихся меньше, взнос будет скрыт.
@@ -135,21 +137,23 @@ export const FeeSettingsFields = ({
         </>
       )}
 
+      {/* Ноль часов — дедлайна нет вовсе: снять отметку можно до самого начала. */}
       <div className="flex flex-col gap-1.5 mt-6">
         <StepperLP
-          label="Деадлайн снятия отметки"
+          inline
+          label="Крайний срок снятия отметки до события"
           value={deadlineHours ?? 0}
           onChange={(val) => patch({ deadlineHours: val })}
           min={0}
           max={72}
-          suffix="ч."
+          suffix="ч"
           disabled={disabled}
           activeColor={activeColor}
         />
-        <span className="text-[12px] text-content-muted leading-tight pl-1">
+        <span className="text-[11px] text-content-subtle leading-relaxed pl-1">
           {Number(deadlineHours) > 0
             ? `Кто снимет отметку позже, всё равно будет учитыается в расчете общей суммы.`
-            : 'Снять отметку можно до самого начала события.'}
+            : 'Дедлайна нет — снять отметку можно до самого начала события.'}
         </span>
       </div>
     </div>

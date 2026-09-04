@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { ButtonLP } from '../../ui/Button-LP';
-import { StepperLP, TextInputLP } from '../../ui/Input-LP';
+import { StepperLP } from '../../ui/Input-LP';
 import { FeeSettingsFields } from '../../ui/FeeSettingsFields';
 import { RadioLP } from '../../ui/Radio-LP';
 import { PanelBlock } from './CommunityPanelBlock';
@@ -28,8 +28,10 @@ export function CommunityEventDefaultsPanel({
     deadlineHours: community?.default_attendance_deadline_hours ?? 4,
   }));
 
-  const [maxSkaters, setMaxSkaters] = useState(community?.default_max_skaters ?? 0);
-  const [maxGoalies, setMaxGoalies] = useState(community?.default_max_goalies ?? 0);
+  // Пустая строка — «лимита нет» (NULL в колонке). У вратарей за ней идёт ноль:
+  // он значит, что вратари не набираются вовсе, и пустотой его подменять нельзя.
+  const [maxSkaters, setMaxSkaters] = useState(community?.default_max_skaters ?? '');
+  const [maxGoalies, setMaxGoalies] = useState(community?.default_max_goalies ?? '');
   const [publishMode, setPublishMode] = useState(community?.default_publish_mode || 'immediate');
   const [publishHours, setPublishHours] = useState(
     community?.default_publish_hours_before != null ? String(community.default_publish_hours_before) : '24'
@@ -76,7 +78,7 @@ export function CommunityEventDefaultsPanel({
 
   return (
     <div className="w-full h-full flex flex-col overflow-y-auto scrollbar-hide text-left">
-      <div className="flex flex-col gap-3 p-4 pb-32">
+      <div className="flex flex-col gap-3 px-3 py-4 pb-32">
         {error && (
           <div className="p-3 rounded-xl bg-red-500/10 border border-red-500/20 text-red-400 text-[14px] font-semibold">
             {error}
@@ -100,17 +102,21 @@ export function CommunityEventDefaultsPanel({
         <PanelBlock title="Состав" icon="users" accentColor={accentColor} isSaving={savingBlock === 'limits'}>
           <div className="flex flex-col gap-4 pt-1">
             <StepperLP
-              label="Полевых максимум"
-              value={Number(maxSkaters) || 0}
+              inline
+              allowEmpty
+              label="Максимум полевых"
+              value={maxSkaters}
               onChange={setMaxSkaters}
-              min={0}
+              min={1}
               max={60}
               suffix="чел."
               activeColor={accentColor}
             />
             <StepperLP
-              label="Вратарей максимум"
-              value={Number(maxGoalies) || 0}
+              inline
+              allowEmpty
+              label="Максимум вратарей"
+              value={maxGoalies}
               onChange={setMaxGoalies}
               min={0}
               max={10}
@@ -118,13 +124,14 @@ export function CommunityEventDefaultsPanel({
               activeColor={accentColor}
             />
             <span className="text-[11px] text-content-subtle leading-relaxed pl-1">
-              Ноль — без ограничения. Когда основа заполнена, отметившиеся уходят
-              в резерв и ждут освободившегося места.
+              «—» — без ограничения. Когда основа заполнена, отметившиеся уходят
+              в резерв и ждут освободившегося места. Ноль вратарей означает, что
+              вратари не набираются вовсе.
             </span>
             <ButtonLP
               onClick={() => save('limits', {
-                default_max_skaters: Number(maxSkaters) || null,
-                default_max_goalies: Number(maxGoalies) || null,
+                default_max_skaters: maxSkaters === '' ? null : Number(maxSkaters),
+                default_max_goalies: maxGoalies === '' ? null : Number(maxGoalies),
               })}
               disabled={savingBlock === 'limits'}
               activeColor={accentColor}
@@ -154,24 +161,29 @@ export function CommunityEventDefaultsPanel({
               name="community-publish-default"
               checked={publishMode === 'manual'}
               onChange={() => setPublishMode('manual')}
-              label="Вручную"
-              description="Событие откроется, когда штаб нажмёт «Опубликовать»"
+              label="По кнопке на карточке события"
               activeColor={accentColor}
             />
             <RadioLP
               name="community-publish-default"
               checked={publishMode === 'before_event'}
               onChange={() => setPublishMode('before_event')}
-              label="За сколько часов до начала"
+              label="Автоматическая публикация"
               activeColor={accentColor}
             />
+            {/* Степпер — не четвёртый вариант выбора, а параметр выбранного,
+                поэтому отбит от списка радиокнопок сверху и ещё чуть сильнее
+                снизу, до кнопки сохранения. */}
             {publishMode === 'before_event' && (
-              <TextInputLP
-                label="За сколько часов до начала"
-                value={publishHours}
-                onChange={setPublishHours}
-                type="number"
-                size="sm"
+              <StepperLP
+                inline
+                className="mt-4 mb-4"
+                label="За сколько часов до начала события"
+                value={Number(publishHours) || 24}
+                onChange={(val) => setPublishHours(String(val))}
+                min={1}
+                max={168}
+                suffix="ч"
                 activeColor={accentColor}
               />
             )}
@@ -185,7 +197,7 @@ export function CommunityEventDefaultsPanel({
               })}
               disabled={savingBlock === 'publish'}
               activeColor={accentColor}
-              className="w-full mt-1 py-2.5"
+              className="w-full mt-3 py-2.5"
             >
               Сохранить
             </ButtonLP>

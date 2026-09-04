@@ -5,7 +5,7 @@ import { useAccess } from '../../hooks/useAccess';
 import { SubscriptionStub } from '../../ui/SubscriptionStub';
 import { SegmentedControl } from '../../ui/SegmentedControl';
 import { ContainerContent } from '../../ui/ContainerContent';
-import { TextInputLP, NativeDateInputLP, NativeTimeInputLP } from '../../ui/Input-LP';
+import { TextInputLP, NativeDateInputLP, NativeTimeInputLP, StepperLP } from '../../ui/Input-LP';
 import { FeeSettingsFields } from '../../ui/FeeSettingsFields';
 import { ButtonLP } from '../../ui/Button-LP';
 import { FadeIn } from '../../ui/FadeIn';
@@ -461,9 +461,13 @@ export function CreateEventPage() {
         <TeamPageHeaderSpacer />
         
         <div className="px-3 pt-2 flex flex-col gap-4">
-          <div className="transition-colors duration-300">
-            <SegmentedControl options={eventTypeOptions} value={eventType} onChange={setEventType} activeColor={hasTeamColor ? activeBrandColor : null} />
-          </div>
+          {/* У сообщества тип события один на всю категорию — переключателю
+              с единственной вкладкой выбирать нечего, и он только занимает место. */}
+          {!isCommunityScope && (
+            <div className="transition-colors duration-300">
+              <SegmentedControl options={eventTypeOptions} value={eventType} onChange={setEventType} activeColor={hasTeamColor ? activeBrandColor : null} />
+            </div>
+          )}
 
           {eventType === 'match' && !isClubScope && (
             /* ИСПРАВЛЕНО: Добавлен flex-col для выравнивания ширины селектора подтипа */
@@ -477,7 +481,7 @@ export function CreateEventPage() {
           {/* ИСПРАВЛЕНО: Каждая карточка теперь принудительно расправляется на w-full flex flex-col */}
           <FadeIn key={`base-info-${eventType}-${matchType}`} duration={250} delay={100} className="w-full flex flex-col">
             <ContainerContent title="Основная информация" collapsible={true} defaultExpanded={false} activeBrandColor={hasTeamColor ? activeBrandColor : null}>
-              <div className="flex flex-col gap-8 text-left py-1 px-3">
+              <div className="flex flex-col gap-8 text-left py-1 px-1">
                 <div className="grid grid-cols-2 gap-12">
                   <NativeDateInputLP label="Дата" value={eventDate} onChange={setEventDate} activeColor={hasTeamColor ? activeBrandColor : null} />
                   <NativeTimeInputLP label="Время" value={eventTime} onChange={setEventTime} activeColor={hasTeamColor ? activeBrandColor : null} />
@@ -511,28 +515,38 @@ export function CreateEventPage() {
           {isCommunityScope && (
             <FadeIn key="community-limits" duration={250} delay={150} className="w-full flex flex-col">
               <ContainerContent title="Состав и резерв" collapsible={true} defaultExpanded={false} activeBrandColor={hasTeamColor ? activeBrandColor : null}>
-                <div className="flex flex-col gap-6 text-left py-1 px-3">
-                  <div className="grid grid-cols-2 gap-8">
-                    <TextInputLP
-                      label="Полевых, максимум"
+                <div className="flex flex-col gap-6 text-left py-1 px-1">
+                  {/* «—» ниже минимума — это «лимита нет». У вратарей за ним идёт
+                      ноль: он значит, что вратари на событие не набираются вовсе.
+                      У полевых ряд начинается с единицы — ноль полевых запрещён
+                      CHECK'ом в БД: это событие, на которое некому идти. */}
+                  <div className="flex flex-col gap-3">
+                    <StepperLP
+                      inline
+                      allowEmpty
+                      label="Максимум полевых"
                       value={maxSkaters}
                       onChange={setMaxSkaters}
-                      type="number"
-                      placeholder="Без лимита"
+                      min={1}
+                      max={60}
+                      suffix="чел."
                       activeColor={hasTeamColor ? activeBrandColor : null}
                     />
-                    <TextInputLP
-                      label="Вратарей, максимум"
+                    <StepperLP
+                      inline
+                      allowEmpty
+                      label="Максимум вратарей"
                       value={maxGoalies}
                       onChange={setMaxGoalies}
-                      type="number"
-                      placeholder="Без лимита"
+                      min={0}
+                      max={10}
+                      suffix="чел."
                       activeColor={hasTeamColor ? activeBrandColor : null}
                     />
                   </div>
 
-                  <p className="text-[11px] text-content-subtle leading-relaxed">
-                    Пусто — лимита нет. При наборе лимита следующие отметившиеся уходят
+                  <p className="text-[11px] text-content-subtle leading-relaxed pl-1">
+                    «—» — лимита нет. При наборе лимита следующие отметившиеся уходят
                     в резерв: когда место освободится, первому в очереди придёт
                     предложение с таймером. Ноль вратарей означает, что вратари на это
                     событие не набираются вовсе.
@@ -597,23 +611,28 @@ export function CreateEventPage() {
                       name="community-publish"
                       checked={publishMode === 'manual'}
                       onChange={() => setPublishMode('manual')}
-                      label="Вручную"
-                      description="По кнопке «Опубликовать» на карточке события"
+                      label="По кнопке на карточке события"
                       activeColor={hasTeamColor ? activeBrandColor : null}
                     />
                     <RadioLP
                       name="community-publish"
                       checked={publishMode === 'before_event'}
                       onChange={() => setPublishMode('before_event')}
-                      label="За сколько часов до начала"
+                      label="Автоматическая публикация"
                       activeColor={hasTeamColor ? activeBrandColor : null}
                     />
+                    {/* Отбиваем от списка радиокнопок: это параметр выбранного
+                        варианта, а не ещё один вариант в том же ряду. */}
                     {publishMode === 'before_event' && (
-                      <TextInputLP
-                        label="За сколько часов до начала"
-                        value={publishHours}
-                        onChange={setPublishHours}
-                        type="number"
+                      <StepperLP
+                        inline
+                        className="mt-2"
+                        label="За сколько часов до начала события"
+                        value={Number(publishHours) || 24}
+                        onChange={(val) => setPublishHours(String(val))}
+                        min={1}
+                        max={168}
+                        suffix="ч"
                         activeColor={hasTeamColor ? activeBrandColor : null}
                       />
                     )}
@@ -640,7 +659,7 @@ export function CreateEventPage() {
               {/* ИСПРАВЛЕНО: Добавлен flex-col */}
               <FadeIn key={`opponent-panel-${matchType}`} duration={250} delay={150} className="w-full flex flex-col">
                 <ContainerContent title="Параметры соперника" collapsible={true} defaultExpanded={false} activeBrandColor={hasTeamColor ? activeBrandColor : null}>
-                  <div className="flex flex-col gap-4 text-left py-1 px-3">
+                  <div className="flex flex-col gap-4 text-left py-1 px-1">
                     {matchType === 'friendly' && (
                       <div className="flex flex-col gap-1.5">
                         <span className="text-[10px] font-bold text-content-muted uppercase tracking-wider pl-1">Команда соперника</span>
@@ -690,7 +709,7 @@ export function CreateEventPage() {
                 /* ИСПРАВЛЕНО: Добавлен flex-col */
                 <FadeIn key="deadline-panel" duration={250} delay={200} className="w-full flex flex-col">
                   <ContainerContent title="Дедлайн подтверждения вызова" collapsible={true} defaultExpanded={false} activeBrandColor={hasTeamColor ? activeBrandColor : null}>
-                    <div className="grid grid-cols-2 gap-3 text-left py-1 px-3">
+                    <div className="grid grid-cols-2 gap-3 text-left py-1 px-1">
                       <NativeDateInputLP label="Дата дедлайна" value={deadlineDate} onChange={setDeadlineDate} activeColor={hasTeamColor ? activeBrandColor : null} />
                       <NativeTimeInputLP label="Время дедлайна" value={deadlineTime} onChange={setDeadlineTime} activeColor={hasTeamColor ? activeBrandColor : null} />
                     </div>
@@ -702,7 +721,7 @@ export function CreateEventPage() {
                 /* ИСПРАВЛЕНО: Добавлен flex-col */
                 <FadeIn key="stage-panel" duration={250} delay={250} className="w-full flex flex-col">
                   <ContainerContent title="Этап и турнирная стадия" collapsible={true} defaultExpanded={false} activeBrandColor={hasTeamColor ? activeBrandColor : null}>
-                    <div className="py-1 px-3 flex flex-col gap-4 text-left">
+                    <div className="py-1 px-1 flex flex-col gap-4 text-left">
                       <SegmentedControl options={stageTypeOptions} value={stageType} onChange={setStageType} activeColor={hasTeamColor ? activeBrandColor : null} />
                       {stageType === 'regular' && (
                         <div className="grid grid-cols-2 gap-3 animate-fade-in">
@@ -729,7 +748,7 @@ export function CreateEventPage() {
               {/* ИСПРАВЛЕНО: Добавлен flex-col */}
               <FadeIn key={`media-panel-${matchType}`} duration={250} delay={300} className="w-full flex flex-col">
                 <ContainerContent title="Ссылки на трансляции" collapsible={true} defaultExpanded={false} activeBrandColor={hasTeamColor ? activeBrandColor : null}>
-                  <div className="flex flex-col gap-4 text-left py-1 px-3">
+                  <div className="flex flex-col gap-4 text-left py-1 px-1">
                     <TextInputLP label="Ссылка 1" value={videoYtUrl} onChange={setVideoYtUrl} activeColor={hasTeamColor ? activeBrandColor : null} />
                     <TextInputLP label="Ссылка 2" value={videoVkUrl} onChange={setVideoVkUrl} activeColor={hasTeamColor ? activeBrandColor : null} />
                   </div>
@@ -744,7 +763,7 @@ export function CreateEventPage() {
           {eventType === 'training' && (
             <FadeIn key="training-type-panel" duration={250} delay={200} className="w-full flex flex-col">
               <ContainerContent title="Тип тренировки" collapsible={true} defaultExpanded={true} activeBrandColor={hasTeamColor ? activeBrandColor : null}>
-                <div className="py-2 px-3 text-left">
+                <div className="py-2 px-1 text-left">
                   <ChipTabs
                     wrap
                     tabs={TRAINING_TYPES}
@@ -763,7 +782,7 @@ export function CreateEventPage() {
             /* ИСПРАВЛЕНО: Добавлен flex-col */
             <FadeIn key="title-panel-meeting" duration={250} delay={200} className="w-full flex flex-col">
               <ContainerContent title="Описание" collapsible={true} defaultExpanded={false} activeBrandColor={hasTeamColor ? activeBrandColor : null}>
-                <div className="py-1 px-3 text-left">
+                <div className="py-1 px-1 text-left">
                   <TextInputLP placeholder="Например: Разбор тактики..." value={eventTitle} onChange={setEventTitle} activeColor={hasTeamColor ? activeBrandColor : null} />
                 </div>
               </ContainerContent>

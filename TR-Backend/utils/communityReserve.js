@@ -67,29 +67,58 @@ const laneExpr = (attAlias, communityIdParam) => `
 /**
  * Сколько минут даётся на подтверждение места.
  *
- * Лесенка читается сверху вниз до первой ступени, у которой before_minutes не
- * больше остатка времени до события. Если не подошла ни одна — берётся последняя,
- * она же catch-all для всего, что ближе самой мелкой ступени.
+ * Ступень задаёт нижнюю границу зоны: «before_minutes и больше». Соседняя сверху
+ * задаёт верхнюю, так что ступени нарезают шкалу на промежутки, а всё, что ниже
+ * самой мелкой, работает по последней ступени как catch-all.
+ *
+ * Лимит ступени — не готовый ответ, а потолок. Пока человек думает, событие
+ * приближается и зона может смениться на более строгую, поэтому таймер считается
+ * так, чтобы НИ В ОДИН момент не обещать больше, чем разрешает текущая зона:
+ *
+ *   в момент начала каждой зоны на таймере должно остаться не больше,
+ *   чем эта зона даёт.
+ *
+ * Зона начинается на пороге ступени, что стоит НАД ней, поэтому у каждой
+ * появляется своя крайняя точка «порог соседа сверху минус собственный лимит».
+ * Берём самую раннюю из них — она и определяет срок.
+ *
+ * Пример. Лесенка 24ч→12ч, 10ч→8ч, 5ч→1ч; предложение выдано за 11 часов.
+ * Своя зона дала бы 8 часов (до отметки «3 часа»), но зона «от 5 до 10 → 1 час»
+ * начинается на отметке «10 часов» и обязывает закончить к «9 часам».
+ * Итог — 2 часа, и ровно через час, когда вступит часовое правило, на таймере
+ * будет ровно час.
  *
  * @param {Array} ladder - communities.reserve_ladder
  * @param {number} minutesUntilEvent - сколько минут осталось до начала
  * @returns {number|null} минут на подтверждение, null если предложение выдавать нельзя
  */
 export function resolveConfirmMinutes(ladder, minutesUntilEvent) {
-  const rungs = Array.isArray(ladder) ? ladder : [];
+  const rungs = (Array.isArray(ladder) ? ladder : [])
+    .map(r => ({
+      before: Number(r?.before_minutes),
+      confirm: Number(r?.confirm_minutes),
+    }))
+    .filter(r => Number.isFinite(r.before) && Number.isFinite(r.confirm));
+
   if (rungs.length === 0) return null;
   if (!Number.isFinite(minutesUntilEvent) || minutesUntilEvent <= 0) return null;
 
-  for (const rung of rungs) {
-    const before = Number(rung?.before_minutes);
-    const confirm = Number(rung?.confirm_minutes);
-    if (!Number.isFinite(before) || !Number.isFinite(confirm)) continue;
-    if (minutesUntilEvent >= before) return confirm > 0 ? confirm : null;
+  // В какой зоне находимся сейчас. Не нашли ни одной подходящей — значит до
+  // события меньше самой мелкой ступени, работает она же.
+  let current = rungs.findIndex(r => minutesUntilEvent >= r.before);
+  if (current === -1) current = rungs.length - 1;
+
+  // Момент (в минутах до начала события), раньше которого предложение обязано
+  // закончиться. Стартуем с собственного лимита зоны и поджимаем каждой зоной,
+  // которая наступит за время раздумий.
+  let endsAt = minutesUntilEvent - rungs[current].confirm;
+  for (let i = current + 1; i < rungs.length; i++) {
+    endsAt = Math.max(endsAt, rungs[i - 1].before - rungs[i].confirm);
   }
 
-  const last = rungs[rungs.length - 1];
-  const confirm = Number(last?.confirm_minutes);
-  return Number.isFinite(confirm) && confirm > 0 ? confirm : null;
+  // Пережить начало события предложение не может ни при каких настройках.
+  const minutes = Math.min(minutesUntilEvent - endsAt, minutesUntilEvent);
+  return minutes > 0 ? Math.round(minutes) : null;
 }
 
 /**

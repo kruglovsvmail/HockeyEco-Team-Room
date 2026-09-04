@@ -124,7 +124,7 @@ export function CommunityInfoBlocksPanel({
 
   return (
     <div className="w-full h-full flex flex-col overflow-y-auto scrollbar-hide text-left">
-      <div className="flex flex-col gap-3 p-4 pb-32">
+      <div className="flex flex-col gap-3 px-3 py-4 pb-32">
         {error && (
           <div className="p-3 rounded-xl bg-red-500/10 border border-red-500/20 text-red-400 text-[14px] font-semibold">
             {error}

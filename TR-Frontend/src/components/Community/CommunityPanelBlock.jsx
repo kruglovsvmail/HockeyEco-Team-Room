@@ -16,7 +16,7 @@ export const PanelBlock = ({
   const color = accentColor || 'var(--color-brand)';
 
   return (
-    <div className="flex flex-col p-4 bg-surface-level1 border border-surface-border rounded-2xl shadow-sm relative">
+    <div className="flex flex-col px-3 py-4 bg-surface-level1 border border-surface-border rounded-2xl shadow-sm relative">
       {isSaving && (
         <div className="absolute inset-0 bg-surface-base/40 backdrop-blur-[1px] z-20 flex items-center justify-center rounded-2xl">
           <div className="flex items-center gap-2 px-3 py-1.5 bg-surface-level1 border border-surface-border rounded-xl shadow-md">

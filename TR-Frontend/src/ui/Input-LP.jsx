@@ -162,7 +162,10 @@ export function EmailInputLP({ value, onChange, disabled, error, className, labe
   );
 }
 
-export function TextInputLP({ value, onChange, disabled, error, className, label, placeholder, type = "text", activeColor, size = "md", rows = 4, maxLength, textAlign = "left" }) {
+// inputMode — какую клавиатуру звать на телефоне. Для денег и прочих полей,
+// где кроме цифр ничего не вводят, ставим "numeric": буквенная раскладка там
+// только мешает. Сам type остаётся text — фильтрацию делает вызывающий код.
+export function TextInputLP({ value, onChange, disabled, error, className, label, placeholder, type = "text", inputMode, activeColor, size = "md", rows = 4, maxLength, textAlign = "left" }) {
   const [currentType, setCurrentType] = useState(type === 'date' && !value ? 'text' : type);
   const [isFocused, setIsFocused] = useState(false);
 
@@ -229,6 +232,7 @@ export function TextInputLP({ value, onChange, disabled, error, className, label
           /* ИСПРАВЛЕНО: Добавлен динамический расчет размера шрифта и высоты при size="sm" */
           <input
             type={currentType}
+            inputMode={inputMode}
             value={value}
             onChange={(e) => onChange(e.target.value)}
             onFocus={handleFocus}
@@ -504,19 +508,187 @@ export function DateMaskInputLP({ value, onChange, disabled, error, className, l
 // ─────────────────────────── Числовой степпер в стиле Input-LP ─────────────
 // value (number), onChange(number), min/max/step, label, suffix (например "мин"),
 // size: 'md' (default) | 'lg', activeColor для подсветки рамки и +/− кнопок.
+//
+// inline     — подпись слева, степпер справа одной строкой: тот же ряд, что у
+//              тумблера «Вратари бесплатно». Подчёркивания и мелкого лейбла нет.
+// allowEmpty — перед минимумом появляется пустое значение «—»: там, где кроме
+//              чисел нужен ещё и вариант «ограничения нет». Наружу оно уходит
+//              пустой строкой, ряд читается как «—», 0, 1, 2 … (или «—», 1, 2 …,
+//              если min = 1).
+// steps      — готовый список допустимых значений вместо равномерного шага:
+//              нужен неравномерной шкале (часы, где ниже часа осмысленны
+//              четверти, а выше идут целые). min/max задают границы по
+//              значению, max = null — без потолка. formatValue подписывает
+//              значение (например «0,25»), ввод с клавиатуры принимает и
+//              запятую, и точку.
 export function StepperLP({
   value, onChange, min = 0, max = 99, step = 1,
-  label, suffix, disabled, error, className, activeColor, size = 'md'
+  label, suffix, disabled, error, className, activeColor, size = 'md',
+  inline = false, allowEmpty = false, emptyLabel = '—',
+  steps = null, formatValue = String
 }) {
   const [isFocused, setIsFocused] = useState(false);
+  // Пока человек печатает, значение живёт в строке: иначе «1» на пути к «12»
+  // тут же схлопнулась бы в ближайшую ступень и стёрла набранное.
+  const [draft, setDraft] = useState(null);
   const isLg = size === 'lg';
   const wrapperStyle = isFocused && activeColor ? { borderColor: activeColor } : {};
   const labelStyle = isFocused && activeColor ? { color: activeColor } : {};
   const accentStyle = activeColor ? { color: activeColor } : {};
 
+  const isEmpty = allowEmpty && (value === '' || value === null || value === undefined);
+  const numeric = Math.floor(Number(value) || 0);
+
   const clamp = (n) => Math.max(min, Math.min(max, Math.floor(Number(n) || 0)));
-  const dec = () => !disabled && onChange(clamp(Number(value) - step));
-  const inc = () => !disabled && onChange(clamp(Number(value) + step));
+
+  // ── Режим ступеней ──────────────────────────────────────────────────────
+  const useSteps = Array.isArray(steps) && steps.length > 0;
+  const snapToStep = (n) => steps.reduce(
+    (best, s) => (Math.abs(s - n) < Math.abs(best - n) ? s : best),
+    steps[0]
+  );
+  const currentStep = useSteps ? snapToStep(Number(value) || 0) : null;
+  const stepIndex = useSteps ? steps.indexOf(currentStep) : -1;
+  const minIndex = useSteps ? steps.indexOf(snapToStep(min ?? steps[0])) : -1;
+  const maxIndex = useSteps
+    ? (max === null || max === undefined ? steps.length - 1 : steps.indexOf(snapToStep(max)))
+    : -1;
+  const clampIndex = (i) => Math.min(maxIndex, Math.max(minIndex, i));
+
+  const atMin = useSteps ? stepIndex <= minIndex : numeric <= min;
+  const atMax = useSteps ? stepIndex >= maxIndex : numeric >= max;
+
+  // Шаг вниз с минимума уводит в пустое значение, шаг вверх из пустого
+  // возвращает на минимум — «—» стоит ровно одной позицией ниже min.
+  const dec = () => {
+    if (disabled || isEmpty) return;
+    if (allowEmpty && atMin) return onChange('');
+    if (useSteps) {
+      const next = steps[clampIndex(stepIndex - 1)];
+      if (next !== currentStep) onChange(next);
+      return;
+    }
+    onChange(clamp(numeric - step));
+  };
+  const inc = () => {
+    if (disabled) return;
+    if (isEmpty) return onChange(useSteps ? steps[clampIndex(minIndex)] : min);
+    if (useSteps) {
+      const next = steps[clampIndex(stepIndex + 1)];
+      if (next !== currentStep) onChange(next);
+      return;
+    }
+    onChange(clamp(numeric + step));
+  };
+
+  // Набранное с клавиатуры приводим к ближайшей ступени — промежуточных
+  // значений в такой шкале не бывает.
+  const commitDraft = () => {
+    if (draft === null) return;
+    const parsed = parseFloat(String(draft).replace(',', '.'));
+    setDraft(null);
+    if (!Number.isFinite(parsed)) return;
+    const next = steps[clampIndex(steps.indexOf(snapToStep(parsed)))];
+    if (next !== currentStep) onChange(next);
+  };
+
+  const arrowStyles = twMerge(
+    "shrink-0 flex items-center justify-center rounded-full transition-all active:scale-90 outline-none cursor-pointer text-brand disabled:opacity-30 disabled:cursor-not-allowed",
+    isLg ? "w-8 h-8" : "w-7 h-7"
+  );
+  const arrowIcon = isLg ? "w-5 h-5" : "w-4 h-4";
+
+  const decButton = (
+    <button
+      type="button"
+      disabled={disabled || isEmpty || (!allowEmpty && atMin)}
+      onClick={dec}
+      style={accentStyle}
+      className={arrowStyles}
+    >
+      <Icon name="chevron_left" className={arrowIcon} />
+    </button>
+  );
+
+  const incButton = (
+    <button
+      type="button"
+      disabled={disabled || (!isEmpty && atMax)}
+      onClick={inc}
+      style={accentStyle}
+      className={twMerge(arrowStyles, "rotate-180")}
+    >
+      <Icon name="chevron_left" className={arrowIcon} />
+    </button>
+  );
+
+  // Ступени бывают дробными («0,25»), под них колонка чуть шире. Внутри одного
+  // блока степперы однотипны, так что выравнивание чисел не страдает.
+  const valueWidth = inline ? (useSteps ? "w-12 shrink-0" : "w-10 shrink-0") : "flex-1 min-w-0";
+
+  const valueField = isEmpty ? (
+    <span className={twMerge(
+      "text-center text-content-subtle font-bold select-none text-[18px]",
+      valueWidth
+    )}>
+      {emptyLabel}
+    </span>
+  ) : (
+    <input
+      inputMode={useSteps ? "decimal" : "numeric"}
+      value={useSteps ? (draft ?? formatValue(currentStep)) : value}
+      onChange={(e) => {
+        if (useSteps) return setDraft(e.target.value);
+        const raw = e.target.value.replace(/\D/g, '');
+        onChange(allowEmpty && raw === '' ? '' : clamp(raw));
+      }}
+      onFocus={() => setIsFocused(true)}
+      onBlur={() => { setIsFocused(false); commitDraft(); }}
+      onKeyDown={(e) => { if (e.key === 'Enter') e.currentTarget.blur(); }}
+      disabled={disabled}
+      className={twMerge(
+        "bg-transparent outline-none text-center text-content-main font-bold tabular-nums text-[18px]",
+        valueWidth
+      )}
+    />
+  );
+
+  const suffixNode = suffix ? (
+    <span className={twMerge(
+      "shrink-0 text-content-subtle uppercase tracking-widest font-bold",
+      isLg ? "text-[10px]" : "text-[10px]"
+    )}>
+      {suffix}
+    </span>
+  ) : null;
+
+  // Суффикс в инлайне живёт в колонке постоянной ширины: «чел.» и «ч» разной
+  // длины иначе сдвигали бы цифру, и у степперов, стоящих друг под другом,
+  // числа не попадали бы в одну колонку. По той же причине слот остаётся на
+  // месте пустым, когда значение пустое.
+  const inlineSuffix = suffix ? (
+    <span className="w-9 shrink-0 pl-1 text-left text-[10px] text-content-subtle uppercase tracking-widest font-bold">
+      {isEmpty ? '' : suffix}
+    </span>
+  ) : null;
+
+  if (inline) {
+    return (
+      <div className={twMerge("flex items-center justify-between gap-3 px-1", className)}>
+        {label && (
+          <span className="text-[14px] font-semibold text-content-main leading-tight min-w-0">
+            {label}
+          </span>
+        )}
+        <div className={twMerge("shrink-0 flex items-center gap-1", isLg ? "h-10" : "h-8")}>
+          {decButton}
+          {valueField}
+          {inlineSuffix}
+          {incButton}
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div
@@ -529,53 +701,10 @@ export function StepperLP({
         </label>
       )}
       <div className={twMerge("flex items-center justify-between gap-2", isLg ? "h-10" : "h-8")}>
-        <button
-          type="button"
-          disabled={disabled || Number(value) <= min}
-          onClick={dec}
-          style={accentStyle}
-          className={twMerge(
-            "shrink-0 flex items-center justify-center rounded-full transition-all active:scale-90 outline-none cursor-pointer text-brand disabled:opacity-30 disabled:cursor-not-allowed",
-            isLg ? "w-8 h-8" : "w-7 h-7"
-          )}
-        >
-          <Icon name="chevron_left" className={isLg ? "w-5 h-5" : "w-4 h-4"} />
-        </button>
-
-        <input
-          inputMode="numeric"
-          value={value}
-          onChange={(e) => onChange(clamp(e.target.value.replace(/\D/g, '')))}
-          onFocus={() => setIsFocused(true)}
-          onBlur={() => setIsFocused(false)}
-          disabled={disabled}
-          className={twMerge(
-            "flex-1 min-w-0 bg-transparent outline-none text-center text-content-main font-bold tabular-nums",
-            isLg ? "text-[18px]" : "text-[18px]"
-          )}
-        />
-
-        {suffix && (
-          <span className={twMerge(
-            "shrink-0 text-content-subtle uppercase tracking-widest font-bold",
-            isLg ? "text-[10px]" : "text-[10px]"
-          )}>
-            {suffix}
-          </span>
-        )}
-
-        <button
-          type="button"
-          disabled={disabled || Number(value) >= max}
-          onClick={inc}
-          style={accentStyle}
-          className={twMerge(
-            "shrink-0 flex items-center justify-center rounded-full transition-all active:scale-90 outline-none cursor-pointer text-brand disabled:opacity-30 disabled:cursor-not-allowed rotate-180",
-            isLg ? "w-8 h-8" : "w-7 h-7"
-          )}
-        >
-          <Icon name="chevron_left" className={isLg ? "w-5 h-5" : "w-4 h-4"} />
-        </button>
+        {decButton}
+        {valueField}
+        {suffixNode}
+        {incButton}
       </div>
       {typeof error === 'string' && error !== '' && (
         <span className="absolute top-full left-0 mt-1 text-[10px] text-danger font-bold uppercase tracking-widest pointer-events-none transition-opacity duration-300">

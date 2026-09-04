@@ -24,8 +24,8 @@ const TeamRosterPlayers = lazy(() => import('../components/MyTeam/TeamRosterPlay
 const TeamStaffMembers = lazy(() => import('../components/MyTeam/TeamStaffMembers').then(m => ({ default: m.TeamStaffMembers })));
 
 const TEAM_OPTIONS = [
-  { value: 'all', label: 'Состав' },
-  { value: 'roster', label: 'Ростер' },
+  { value: 'all', label: 'Коллектив' },
+  { value: 'roster', label: 'Состав' },
   { value: 'staff', label: 'Штаб' }
 ];
 
