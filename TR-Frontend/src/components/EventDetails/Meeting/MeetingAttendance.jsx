@@ -8,6 +8,7 @@ import { Avatar } from '../../../ui/Avatar';
 import { Icon } from '../../../ui/Icon';
 import { ContainerContent } from '../../../ui/ContainerContent';
 import { HintPopover } from '../../../ui/HintPopover';
+import { SelfAttendanceBadge } from '../../../ui/SelfAttendanceBadge';
 import { FadeIn } from '../../../ui/FadeIn';
 import clsx from 'clsx';
 import { notifyAttendanceChanged, isAfterWithdrawDeadline } from '../../../utils/eventFee';
@@ -450,6 +451,36 @@ export const MeetingAttendance = ({
     )
   );
 
+  // ── Отметка на себя ──────────────────────────────────────────────────────
+  // Кто не отмечает других, отмечается сам — бейджем на месте кнопки добавления.
+  // Тело запроса ровно то же, что шлёт тумблер на карточке календаря: без
+  // targetUserId сервер понимает отметку как самоотметку и спрашивает своё право.
+  // Блок здесь один: на собрании амплуа ни при чём, вратарей и полевых не делят.
+  const toggleSelfAttendance = async (next) => {
+    const apiUrl = import.meta.env.VITE_API_URL || '';
+    const res = await fetch(`${apiUrl}/api/meetings/${event.event_id}/attendance`, {
+      method: 'POST',
+      headers: { ...getAuthHeaders(), 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        isAttending: next,
+        eventType: event.event_type,
+        teamId: isClubEvent ? null : event.my_team_id,
+        clubId: eventClubId,
+      }),
+    });
+    if (!res.ok) throw new Error('failed');
+    refreshData();
+    notifyAttendanceChanged();
+  };
+
+  const headerAction = hasManageAccess ? addButton : (
+    <SelfAttendanceBadge
+      event={event}
+      onToggle={toggleSelfAttendance}
+      activeColor={activeBrandColor}
+    />
+  );
+
   return (
     <FadeIn className="flex flex-col gap-2 pb-32 min-h-[30vh]">
       <div className="flex flex-col gap-2 w-full" onClick={handleContainerClick}>
@@ -477,7 +508,7 @@ export const MeetingAttendance = ({
           .animate-slot-exit  { animation: slotExit  0.2s  cubic-bezier(0.6, -0.28, 0.735, 0.045) both; will-change: transform, opacity; }
         `}</style>
 
-        <ContainerContent title="Участники собрания" count={presentAttendees.length} action={addButton}>
+        <ContainerContent title="Участники собрания" count={presentAttendees.length} action={headerAction}>
           {presentAttendees.length > 0 ? (
             <div className="grid grid-cols-[repeat(auto-fill,minmax(94px,1fr))] gap-y-5 gap-x-2 justify-items-center mt-2">
               {presentAttendees.map((a, i) => renderAttendeeCard(a, i))}

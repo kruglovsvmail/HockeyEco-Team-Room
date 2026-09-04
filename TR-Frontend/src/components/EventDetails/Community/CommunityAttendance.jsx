@@ -8,6 +8,7 @@ import { ContainerContent } from '../../../ui/ContainerContent';
 import { BottomSheet } from '../../../ui/BottomSheet';
 import { ButtonLP } from '../../../ui/Button-LP';
 import { TextInputLP } from '../../../ui/Input-LP';
+import { SelfAttendanceBadge } from '../../../ui/SelfAttendanceBadge';
 import { Toast } from '../../../ui/Toast';
 import { PageLoader } from '../../../ui/Loader';
 import { useAccess } from '../../../hooks/useAccess';
@@ -576,6 +577,43 @@ export const CommunityAttendance = ({ event, refreshData, openRightPanel }) => {
 
   if (loading) return <PageLoader />;
 
+  // ── Отметка на себя ──────────────────────────────────────────────────────
+  // Кто не отмечает других, отмечается сам — бейджем на месте кнопки добавления.
+  // Тело запроса ровно то же, что шлёт тумблер на карточке календаря: без
+  // targetUserId контроллер понимает отметку как самоотметку и спрашивает
+  // COMMUNITY_SELF_ATTENDANCE вместо права управления составом.
+  const toggleSelfAttendance = async (next) => {
+    const res = await fetch(
+      `${import.meta.env.VITE_API_URL}/api/community-events/${eventId}/attendance`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
+        body: JSON.stringify({ isAttending: next, eventType, communityId }),
+      }
+    );
+    if (!res.ok) throw new Error('failed');
+    await reloadAndSyncCard();
+  };
+
+  // Амплуа берём из своей же отметки, если человек уже отмечен: там оно настоящее,
+  // из членства в сообществе. Не отмечен — из платёжной роли карточки, но она
+  // бывает 'free' у освобождённых от взноса, и тогда падаем на полевого.
+  const mySelfPosition = (myRow?.position || event?.my_pay_role) === 'goalie' ? 'goalie' : 'skater';
+
+  // В резерве бейдж не нужен: там не «отмечен или нет», а очередь, и ей
+  // отведены свои кнопки выше — «беру место», «не поеду», «в очередь снова».
+  const selfBadge = (!hasManageAccess && (!myRow?.slot_status || myRow.slot_status === 'main')) ? (
+    <SelfAttendanceBadge
+      event={event}
+      onToggle={toggleSelfAttendance}
+      activeColor={activeBrandColor}
+    />
+  ) : null;
+
+  const laneAction = (lane) => (hasManageAccess
+    ? addButton(lane)
+    : (mySelfPosition === lane ? selfBadge : null));
+
   // Кнопка «отметить» в шапке блока — та же, что в командных отметках
   const addButton = (filter) => (hasManageAccess && !isEditMode ? (
     <button
@@ -647,7 +685,7 @@ export const CommunityAttendance = ({ event, refreshData, openRightPanel }) => {
       <ContainerContent
         title="Вратари"
         count={limitLabel(groups.goalies.length, event?.max_goalies)}
-        action={Number(event?.max_goalies) === 0 ? null : addButton('goalie')}
+        action={Number(event?.max_goalies) === 0 ? null : laneAction('goalie')}
       >
         {groups.goalies.length > 0
           ? <Grid>{groups.goalies.map((p, i) => <PersonTile key={p.attendance_id} person={p} index={i} />)}</Grid>
@@ -657,7 +695,7 @@ export const CommunityAttendance = ({ event, refreshData, openRightPanel }) => {
       <ContainerContent
         title="Полевые"
         count={limitLabel(groups.skaters.length, event?.max_skaters)}
-        action={addButton('skater')}
+        action={laneAction('skater')}
       >
         {groups.skaters.length > 0
           ? <Grid>{groups.skaters.map((p, i) => <PersonTile key={p.attendance_id} person={p} index={i} />)}</Grid>

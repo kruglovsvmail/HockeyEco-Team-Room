@@ -9,6 +9,7 @@ import { Avatar } from '../../../ui/Avatar';
 import { Icon } from '../../../ui/Icon';
 import { ContainerContent } from '../../../ui/ContainerContent';
 import { HintPopover } from '../../../ui/HintPopover';
+import { SelfAttendanceBadge } from '../../../ui/SelfAttendanceBadge';
 import { DisqualificationBadge } from '../../../ui/DisqualificationBadge';
 import clsx from 'clsx';
 import { PageLoader } from '../../../ui/Loader';
@@ -525,6 +526,49 @@ export const MatchAttendance = ({ event, initialAttendees = [], initialTeamRoste
     )
   );
 
+  // ── Отметка на себя ──────────────────────────────────────────────────────
+  // Кто не отмечает других, отмечается сам — бейджем на месте кнопки добавления.
+  // Тело запроса ровно то же, что шлёт тумблер на карточке календаря: без
+  // targetUserId сервер понимает отметку как самоотметку и спрашивает своё право.
+  const toggleSelfAttendance = async (next) => {
+    const apiUrl = import.meta.env.VITE_API_URL || '';
+    const res = await fetch(`${apiUrl}/api/matches/${event.event_id}/attendance`, {
+      method: 'POST',
+      headers: { ...getAuthHeaders(), 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        isAttending: next,
+        eventType: event.event_type,
+        teamId: event.my_team_id,
+      }),
+    });
+    if (!res.ok) throw new Error('failed');
+    refreshData();
+    notifyAttendanceChanged();
+  };
+
+  // В каком блоке показать бейдж. Амплуа берём из своей же отметки, если человек
+  // уже отмечен, иначе из ростера; в последнюю очередь — из платёжной роли
+  // карточки. Ничего не нашли — полевой, как и на сервере.
+  const myPosition = useMemo(() => {
+    const isGoalie = (p) => p === 'goalie' || p === 'G';
+    const mine = attendees.find(a => String(a.id) === String(activeUserId));
+    if (mine) return isGoalie(mine.position) ? 'goalie' : 'skater';
+    const inRoster = teamRoster.find(p => String(p.user_id) === String(activeUserId));
+    if (inRoster) return isGoalie(inRoster.position) ? 'goalie' : 'skater';
+    return event?.my_pay_role === 'goalie' ? 'goalie' : 'skater';
+  }, [attendees, teamRoster, activeUserId, event?.my_pay_role]);
+
+  const selfBadge = (
+    <SelfAttendanceBadge
+      event={event}
+      onToggle={toggleSelfAttendance}
+      activeColor={activeBrandColor}
+    />
+  );
+
+  const goalieAction = hasManageAccess ? goalieAddButton : (myPosition === 'goalie' ? selfBadge : null);
+  const skaterAction = hasManageAccess ? skaterAddButton : (myPosition === 'skater' ? selfBadge : null);
+
   return (
     <FadeIn className="flex flex-col gap-2 pb-32 min-h-[30vh]">
       <div className="flex flex-col gap-2 w-full" onClick={handleContainerClick}>
@@ -563,7 +607,7 @@ export const MatchAttendance = ({ event, initialAttendees = [], initialTeamRoste
 
         <div className="flex flex-col gap-3 w-full">
           {/* Контейнер вратарей */}
-          <ContainerContent title="Вратари" count={goalies.length} action={goalieAddButton}>
+          <ContainerContent title="Вратари" count={goalies.length} action={goalieAction}>
             {goalies.length > 0 ? (
               <div className="grid grid-cols-[repeat(auto-fill,minmax(94px,1fr))] gap-y-5 gap-x-2 justify-items-center mt-2">
                 {goalies.map((attendeeUser, idx) => renderAttendeeCard(attendeeUser, idx))}
@@ -576,7 +620,7 @@ export const MatchAttendance = ({ event, initialAttendees = [], initialTeamRoste
           </ContainerContent>
 
           {/* Контейнер полевых игроков */}
-          <ContainerContent title="Полевые игроки" count={skaters.length} action={skaterAddButton}>
+          <ContainerContent title="Полевые игроки" count={skaters.length} action={skaterAction}>
             {skaters.length > 0 ? (
               <div className="grid grid-cols-[repeat(auto-fill,minmax(94px,1fr))] gap-y-5 gap-x-2 justify-items-center mt-2">
                 {skaters.map((attendeeUser, idx) => renderAttendeeCard(attendeeUser, idx))}
