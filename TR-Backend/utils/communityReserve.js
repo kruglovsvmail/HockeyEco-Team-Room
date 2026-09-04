@@ -43,18 +43,25 @@ export const isCommunityEvent = (eventType) => Boolean(COMMUNITY_EVENT_MAP[event
 // ── Кто платит за событие сообщества ────────────────────────────────────────
 // Отличие от команд и клубов: резерв не платит вообще (человек на лёд не вышел),
 // а слившийся после дедлайна освобождается от оплаты, если его место занял другой —
-// замена зафиксирована в replaced_by_user_id. Слившийся без замены платит, как везде.
+// замена зафиксирована в replaced_by_user_id либо, когда место занял гость без
+// аккаунта, в replaced_by_attendance_id. Слившийся без замены платит, как везде.
 // Фрагмент подставляется в WHERE к алиасу строки отметки.
 export const payerPredicate = (alias = 'a') =>
-  `${alias}.slot_status = 'main' AND ${alias}.replaced_by_user_id IS NULL`;
+  `${alias}.slot_status = 'main'`
+  + ` AND ${alias}.replaced_by_user_id IS NULL`
+  + ` AND ${alias}.replaced_by_attendance_id IS NULL`;
 
-// Дорожка очереди: вратарь или полевой. Амплуа берём из членства в сообществе,
-// у гостя без строки в community_members его нет — считаем полевым.
+// Дорожка очереди: вратарь или полевой. У гостя — человека без аккаунта, за
+// которого место занял штаб, — строки в community_members нет вовсе, поэтому
+// его амплуа лежит прямо в отметке и читается первым. Дальше членство
+// в сообществе, а если и его нет — полевой.
 const laneExpr = (attAlias, communityIdParam) => `
-  COALESCE((
-    SELECT cm.position FROM community_members cm
-    WHERE cm.community_id = ${communityIdParam} AND cm.user_id = ${attAlias}.user_id
-  ), 'skater')
+  COALESCE(
+    ${attAlias}.guest_position,
+    (SELECT cm.position FROM community_members cm
+     WHERE cm.community_id = ${communityIdParam} AND cm.user_id = ${attAlias}.user_id),
+    'skater'
+  )
 `;
 
 /**
@@ -143,36 +150,46 @@ export async function resolveSlotOnMark(client, cfg, event, lane) {
  * предложению, и когда резерва не было и место просто занял новый отметившийся.
  * Если слились несколько, а место занял один, освобождается тот, кто слился раньше.
  *
+ * Занять место может и гость без аккаунта: у него нет user_id, поэтому замену
+ * фиксируем ещё и ссылкой на строку отметки (replaced_by_attendance_id). Обе
+ * колонки проверяются вместе — см. payerPredicate.
+ *
  * @param preferredForUserId - чьё место предлагалось (offer_for_user_id), если известно
+ * @param newAttendanceId    - строка отметки занявшего место; обязательна для гостя
  */
-export async function linkReplacement(client, cfg, event, lane, newUserId, preferredForUserId = null) {
+export async function linkReplacement(client, cfg, event, lane, newUserId, preferredForUserId = null, newAttendanceId = null) {
   if (preferredForUserId) {
     const { rowCount } = await client.query(`
       UPDATE "public"."${cfg.att}"
-      SET replaced_by_user_id = $3
+      SET replaced_by_user_id = $3, replaced_by_attendance_id = $4
       WHERE ${cfg.fk} = $1 AND user_id = $2
-        AND withdrawn_at IS NOT NULL AND replaced_by_user_id IS NULL
-    `, [event.id, preferredForUserId, newUserId]);
+        AND withdrawn_at IS NOT NULL
+        AND replaced_by_user_id IS NULL AND replaced_by_attendance_id IS NULL
+    `, [event.id, preferredForUserId, newUserId, newAttendanceId]);
     if (rowCount > 0) return preferredForUserId;
   }
 
-  // Свободное занятие места: ищем самого раннего слившегося без замены в своей дорожке
+  // Свободное занятие места: ищем самого раннего слившегося без замены в своей
+  // дорожке. Себя исключаем по тому ключу, который у занявшего место есть:
+  // у участника это user_id, у гостя — id строки отметки.
   const { rows } = await client.query(`
     UPDATE "public"."${cfg.att}" a
-    SET replaced_by_user_id = $3
+    SET replaced_by_user_id = $3, replaced_by_attendance_id = $5
     WHERE a.id = (
       SELECT a2.id FROM "public"."${cfg.att}" a2
       WHERE a2.${cfg.fk} = $1
         AND a2.withdrawn_at IS NOT NULL
         AND a2.replaced_by_user_id IS NULL
+        AND a2.replaced_by_attendance_id IS NULL
         AND a2.slot_status = 'main'
-        AND a2.user_id <> $3
+        AND ($3::int IS NULL OR a2.user_id IS DISTINCT FROM $3)
+        AND ($5::int IS NULL OR a2.id <> $5)
         AND ${laneExpr('a2', '$2')} = $4
       ORDER BY a2.withdrawn_at
       LIMIT 1
     )
     RETURNING a.user_id
-  `, [event.id, event.community_id, newUserId, lane]);
+  `, [event.id, event.community_id, newUserId, lane, newAttendanceId]);
 
   return rows[0]?.user_id || null;
 }
@@ -225,7 +242,7 @@ export async function confirmReserveOffer(eventType, eventId, userId) {
       WHERE id = $1
     `, [att.id]);
 
-    await linkReplacement(client, cfg, event, att.lane, userId, att.offer_for_user_id);
+    await linkReplacement(client, cfg, event, att.lane, userId, att.offer_for_user_id, att.id);
 
     await client.query('COMMIT');
     return true;
@@ -353,9 +370,12 @@ export async function rotateReserveOffers() {
           ORDER BY a.withdrawn_at
         `, [event.id, event.community_id, lane]);
 
+        // Гостей в раздачу не берём: подтвердить предложение некому — аккаунта
+        // у человека нет. Гость в резерве ждёт, пока штаб переведёт его вручную.
         const { rows: waiting } = await pool.query(`
           SELECT a.id, a.user_id FROM "public"."${cfg.att}" a
           WHERE a.${cfg.fk} = $1 AND a.slot_status = 'reserve'
+            AND a.user_id IS NOT NULL
             AND ${laneExpr('a', '$2')} = $3
           ORDER BY a.queued_at
           LIMIT $4

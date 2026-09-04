@@ -12,21 +12,24 @@
     <meta name="apple-mobile-web-app-status-bar-style" content="default" />
     <meta name="apple-mobile-web-app-title" content="HockeyEco" />
     
-    <meta id="theme-meta" name="theme-color" content="#f3f4f6" />
+    <!-- Системный статус-бар тёмный в обеих темах, и это решение, а не упущение.
+         Следовать теме приложения он не может: когда Android ставит PWA как WebAPK,
+         цвет панели запекается в него из theme_color манифеста при установке, и
+         правки этой меты до него уже не доходят. Ставится ли WebAPK или обычный
+         ярлык — решает система, поэтому на одних устройствах панель слушалась
+         темы, а на других нет. Один постоянный цвет убирает эту лотерею.
+         Значение обязано совпадать с theme_color в vite.config.js и с заливкой
+         верхней safe-area зоны в App.jsx. -->
+    <meta id="theme-meta" name="theme-color" content="#242424" />
 
     <title>HockeyEco | Кабинет команды</title>
 
     <script>
       /* 🚀 ЗАЩИТА ОТ ВСПОЛОХА БЕЛОГО ЭКРАHА ПРИ ХОЛОДHОМ СТАРТЕ PWA */
       (function () {
+        /* theme-color здесь намеренно не трогаем: панель тёмная всегда, см. мету выше */
         const savedTheme = localStorage.getItem('tr_theme');
-        if (savedTheme === 'dark') {
-          document.documentElement.classList.add('dark');
-          document.querySelector('#theme-meta')?.setAttribute('content', '#242424');
-        } else {
-          document.documentElement.classList.remove('dark');
-          document.querySelector('#theme-meta')?.setAttribute('content', '#f3f4f6');
-        }
+        document.documentElement.classList.toggle('dark', savedTheme === 'dark');
 
         /* Личный акцентный цвет пользователя (Настройки → Персонализация).
            Ставим до отрисовки, иначе на холодном старте успевает мелькнуть

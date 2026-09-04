@@ -319,14 +319,11 @@ export default function App() {
     };
   }, []);
 
-  // Инициализируем тему на этапе старта приложения
+  // Инициализируем тему на этапе старта приложения.
+  // theme-color здесь не трогаем: системный статус-бар тёмный в обеих темах,
+  // объяснение — в комментарии к мете в index.html.
   useEffect(() => {
-    const isDark = localStorage.getItem('tr_theme') === 'dark';
-    document.documentElement.classList.toggle('dark', isDark);
-    const metaTheme = document.querySelector('meta[name="theme-color"]');
-    if (metaTheme) {
-      metaTheme.setAttribute('content', isDark ? '#242424' : '#f3f4f6');
-    }
+    document.documentElement.classList.toggle('dark', localStorage.getItem('tr_theme') === 'dark');
   }, []);
 
   // Инициализируем пользовательский масштаб интерфейса (настройка размера шрифта)
@@ -438,8 +435,19 @@ export default function App() {
 
       {/* Заливка системных safe-area зон (edge-to-edge, viewport-fit=cover):
           верх = статус-бар, низ = системная панель навигации Android.
-          Цвет surface-base (#f3f4f6 / #242424). На устройствах без вырезов высота = 0. */}
-      <div className="fixed top-0 inset-x-0 z-[5] bg-surface-base pointer-events-none" style={{ height: 'env(safe-area-inset-top)' }} />
+          На устройствах без вырезов высота = 0.
+
+          Верх залит фиксированным тёмным, а не токеном темы, и это намеренно:
+          там, где контент под статус-бар не заходит, панель красит система цветом
+          из манифеста, и он один на обе темы. Красили бы здесь по теме — на одних
+          устройствах панель следовала бы теме, на других нет. Значение обязано
+          совпадать с theme_color в vite.config.js и theme-color в index.html.
+          Низ остаётся на токене: панель навигации красится фоном body и теме следует.
+
+          z-20 верхней полосе обязателен: оболочка ниже лежит на z-10 и красит
+          собственным фоном всю свою коробку, включая padding под статус-баром, —
+          на z-5 полоса просто не видна. Кликам она не мешает (pointer-events-none). */}
+      <div className="fixed top-0 inset-x-0 z-[20] pointer-events-none" style={{ height: 'env(safe-area-inset-top)', backgroundColor: '#242424' }} />
       <div className="fixed bottom-0 inset-x-0 z-[5] bg-surface-base pointer-events-none" style={{ height: 'env(safe-area-inset-bottom)' }} />
 
       {/* Edge-to-edge: контент сдвигаем внутрь безопасной зоны через padding на оболочке.

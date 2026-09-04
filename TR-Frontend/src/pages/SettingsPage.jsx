@@ -107,12 +107,9 @@ export function SettingsPage() {
     const targetTheme = checked ? 'dark' : 'light';
     localStorage.setItem('tr_theme', targetTheme);
     
+    // theme-color не трогаем: системный статус-бар тёмный в обеих темах,
+    // объяснение — в комментарии к мете в index.html
     document.documentElement.classList.toggle('dark', checked);
-
-    const metaTheme = document.querySelector('meta[name="theme-color"]');
-    if (metaTheme) {
-      metaTheme.setAttribute('content', checked ? '#242424' : '#f3f4f6');
-    }
   };
 
   useFocusRevalidate(() => {

@@ -264,6 +264,17 @@ export const EventDetailsTraining = ({ event, openRightPanel }) => {
   // только руками. Жест стартует лишь когда экран прокручен в самый верх.
   usePullToRefresh(scrollContainerRef, fetchAllTrainingData);
 
+  // Отметки могли измениться не отсюда: человек ставит тумблер на карточке
+  // календаря и тут же входит в тренировку — загрузка при монтировании обгоняет
+  // его отметку и приносит список без него. 'tr-events-updated' приходит уже по
+  // ответу сервера, так что этот список заведомо полный. Саму карточку по тому
+  // же сигналу перечитывает SyncEventOnUpdate в конце компонента.
+  useEffect(() => {
+    const onUpdate = () => { fetchAllTrainingData(); };
+    window.addEventListener('tr-events-updated', onUpdate);
+    return () => window.removeEventListener('tr-events-updated', onUpdate);
+  }, [fetchAllTrainingData]);
+
   // Предзагрузка картинки расстановки из S3 заранее (на уровне страницы деталей, а не вкладки «Расстановка»).
   const [formationFile, setFormationFile] = useState(null);
   useEffect(() => {

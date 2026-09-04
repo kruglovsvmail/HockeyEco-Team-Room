@@ -128,8 +128,13 @@ export const EventDetailsMeeting = ({ event, openRightPanel }) => {
   usePullToRefresh(scrollContainerRef, fetchAllMeetingData);
 
   // ── Синхронизация event при редактировании через панель ──────────────────
+  // Заодно перечитываем отметки: состав могли изменить не отсюда — тумблером
+  // на карточке календаря прямо перед входом в событие, и тогда загрузка при
+  // монтировании обгоняет отметку и приносит список без человека. Сигнал
+  // приходит уже по ответу сервера, так что этот список заведомо полный.
   useEffect(() => {
     const onUpdate = () => {
+      fetchAllMeetingData();
       const routeType = 'meeting';
       const key = `tr_event_${routeType}_${localEvent?.event_id}`;
       const cached = sessionStorage.getItem(key);
@@ -137,7 +142,7 @@ export const EventDetailsMeeting = ({ event, openRightPanel }) => {
     };
     window.addEventListener('tr-events-updated', onUpdate);
     return () => window.removeEventListener('tr-events-updated', onUpdate);
-  }, [localEvent?.event_id]);
+  }, [fetchAllMeetingData, localEvent?.event_id]);
 
   if (!localEvent) return null;
 

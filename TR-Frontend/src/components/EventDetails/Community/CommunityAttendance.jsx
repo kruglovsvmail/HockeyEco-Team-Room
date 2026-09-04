@@ -1,11 +1,13 @@
 import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import clsx from 'clsx';
 import { getAuthHeaders } from '../../../utils/helpers';
+import { notifyAttendanceChanged } from '../../../utils/eventFee';
 import { Avatar } from '../../../ui/Avatar';
 import { Icon } from '../../../ui/Icon';
 import { ContainerContent } from '../../../ui/ContainerContent';
 import { BottomSheet } from '../../../ui/BottomSheet';
 import { ButtonLP } from '../../../ui/Button-LP';
+import { TextInputLP } from '../../../ui/Input-LP';
 import { Toast } from '../../../ui/Toast';
 import { PageLoader } from '../../../ui/Loader';
 import { useAccess } from '../../../hooks/useAccess';
@@ -21,6 +23,11 @@ export const CommunityAttendance = ({ event, refreshData, openRightPanel }) => {
   const eventType = event?.event_type;
   const communityId = event?.my_community_id;
 
+  // Солянка отличается от тренировки сообщества тем, как собирают состав:
+  // туда штаб набирает людей разом и добирает знакомыми без аккаунта, поэтому
+  // мультивыбор и занятые места живут только здесь.
+  const isGame = eventType === 'community_game';
+
   const [attendees, setAttendees] = useState([]);
   const [loading, setLoading] = useState(true);
   const [isBusy, setIsBusy] = useState(false);
@@ -32,6 +39,20 @@ export const CommunityAttendance = ({ event, refreshData, openRightPanel }) => {
   const [isAddOpen, setIsAddOpen] = useState(false);
   const [addFilter, setAddFilter] = useState('skater');
   const [savingPersonId, setSavingPersonId] = useState(null);
+
+  // Шторка добавления на солянке двухэкранная: сначала выбор, потом имена тех,
+  // за кого заняли места. addStep переключает экраны внутри одной шторки —
+  // отдельная шторка поверх шторки читалась бы как возврат назад, а не шаг вперёд.
+  const [addStep, setAddStep] = useState('list');
+  const [selectedIds, setSelectedIds] = useState([]);
+  const [guestCount, setGuestCount] = useState(0);
+  const [guestNames, setGuestNames] = useState([]);
+  const [isAdding, setIsAdding] = useState(false);
+
+  // Карточка занятого места: имя можно вписать позже, когда стало известно, кто придёт
+  const [guestToEdit, setGuestToEdit] = useState(null);
+  const [guestForm, setGuestForm] = useState({ lastName: '', firstName: '' });
+  const [isSavingGuest, setIsSavingGuest] = useState(false);
 
   // Долгое нажатие включает тряску с крестиками — как в ростере и в отметках команды
   const [isEditMode, setIsEditMode] = useState(false);
@@ -93,6 +114,16 @@ export const CommunityAttendance = ({ event, refreshData, openRightPanel }) => {
 
   useEffect(() => { load(); }, [load]);
 
+  // Состав могли изменить и не отсюда: человек ставит тумблер на карточке
+  // календаря и тут же входит в событие — наша загрузка при монтировании легко
+  // обгоняет его отметку и приносит список без него. 'tr-events-updated'
+  // приходит уже по ответу сервера, так что этот список заведомо полный.
+  useEffect(() => {
+    const onUpdate = () => { load(); };
+    window.addEventListener('tr-events-updated', onUpdate);
+    return () => window.removeEventListener('tr-events-updated', onUpdate);
+  }, [load]);
+
   // Состав сообщества нужен только штабу и только чтобы предложить, кого отметить
   useEffect(() => {
     if (!hasManageAccess || !communityId) return;
@@ -115,6 +146,19 @@ export const CommunityAttendance = ({ event, refreshData, openRightPanel }) => {
     refreshData?.();
   }, [load, refreshData]);
 
+  // Любое изменение состава двигает долевую стоимость и тумблер на карточке,
+  // а считает их сервер — локальным патчем не обойтись. Перечитываем и открытую
+  // карточку, и календарь: своя отметка меняет цену всем остальным тоже.
+  // Ровно то же делают отметки командных событий (TrainingAttendance).
+  //
+  // Свой список забираем сразу — ради мгновенной отрисовки, а состав для вкладки
+  // «Формации» приедет вместе с карточкой по сигналу, и звать refreshData здесь
+  // значило бы запросить его дважды подряд.
+  const reloadAndSyncCard = useCallback(async () => {
+    await load();
+    notifyAttendanceChanged();
+  }, [load]);
+
   // ── Раскладка по блокам ───────────────────────────────────────────────────
   // Порядок внутри резерва сервер уже отдал по queued_at — здесь его не трогаем,
   // иначе номер в очереди перестанет соответствовать реальному.
@@ -135,7 +179,16 @@ export const CommunityAttendance = ({ event, refreshData, openRightPanel }) => {
   );
 
   // ── Действия ──────────────────────────────────────────────────────────────
-  const callReserve = async (action, targetUserId = null) => {
+  // К занятому месту нельзя обратиться по человеку — за ним никого нет.
+  // Все ручки принимают либо targetUserId, либо строку отметки.
+  const targetOf = (person) => (person?.is_guest
+    ? { attendanceId: person.attendance_id }
+    : { targetUserId: person?.id ?? null });
+
+  const guestDisplayName = (person) =>
+    [person.last_name, person.first_name].filter(Boolean).join(' ') || 'Гость';
+
+  const callReserve = async (action, person = null) => {
     setIsBusy(true);
     try {
       const res = await fetch(
@@ -143,7 +196,7 @@ export const CommunityAttendance = ({ event, refreshData, openRightPanel }) => {
         {
           method: 'POST',
           headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
-          body: JSON.stringify({ eventType, communityId, targetUserId }),
+          body: JSON.stringify({ eventType, communityId, ...(person ? targetOf(person) : {}) }),
         }
       );
       const json = await res.json();
@@ -154,7 +207,7 @@ export const CommunityAttendance = ({ event, refreshData, openRightPanel }) => {
       } else if (action === 'confirm') {
         notify('Место за вами');
       }
-      await reload();
+      await reloadAndSyncCard();
     } catch (err) {
       notify(err.message === 'failed' ? 'Не удалось выполнить действие' : err.message, 'error');
     } finally {
@@ -170,7 +223,9 @@ export const CommunityAttendance = ({ event, refreshData, openRightPanel }) => {
     if (!canMarkFee) return;
 
     const nextState = !person.has_pay_tag;
-    setAttendees(prev => prev.map(a => (a.id === person.id ? { ...a, has_pay_tag: nextState } : a)));
+    setAttendees(prev => prev.map(a => (
+      a.attendance_id === person.attendance_id ? { ...a, has_pay_tag: nextState } : a
+    )));
     if (window.navigator?.vibrate) window.navigator.vibrate(30);
 
     try {
@@ -181,7 +236,7 @@ export const CommunityAttendance = ({ event, refreshData, openRightPanel }) => {
           headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
           body: JSON.stringify({
             eventType, communityId,
-            targetUserId: person.id,
+            ...targetOf(person),
             hasPayTag: nextState,
           }),
         }
@@ -217,7 +272,7 @@ export const CommunityAttendance = ({ event, refreshData, openRightPanel }) => {
       if (json.slotStatus && json.slotStatus !== 'main') {
         notify('Состав полон — участник встал в резерв');
       }
-      await reload();
+      await reloadAndSyncCard();
     } catch (err) {
       notify(err.message === 'failed' ? 'Не удалось отметить участника' : err.message, 'error');
     } finally {
@@ -225,18 +280,71 @@ export const CommunityAttendance = ({ event, refreshData, openRightPanel }) => {
     }
   };
 
-  // Кого ещё можно отметить: состав сообщества минус все, кто уже в списке
+  // Отметка пачкой — только солянка: одна транзакция на весь выбор, одно
+  // уведомление сообществу и один пересчёт стоимости вместо цепочки одиночных.
+  const submitAdd = async () => {
+    setIsAdding(true);
+    try {
+      const res = await fetch(
+        `${import.meta.env.VITE_API_URL}/api/community-events/${eventId}/attendance-bulk`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
+          body: JSON.stringify({
+            eventType, communityId,
+            userIds: selectedIds,
+            // Счётчик — источник правды: имена могли остаться от прошлого
+            // захода на второй экран, если мест потом стало меньше
+            guests: guestNames.slice(0, guestCount).map(g => ({ ...g, position: addFilter })),
+          }),
+        }
+      );
+      const json = await res.json();
+      if (!res.ok || json.success === false) throw new Error(json.error || 'failed');
+
+      if (json.reserved > 0) {
+        notify(json.reserved === json.added
+          ? 'Состав полон — все встали в резерв'
+          : `Состав полон — ${json.reserved} из ${json.added} встали в резерв`);
+      }
+      setIsAddOpen(false);
+      await reloadAndSyncCard();
+    } catch (err) {
+      notify(err.message === 'failed' ? 'Не удалось отметить участников' : err.message, 'error');
+    } finally {
+      setIsAdding(false);
+    }
+  };
+
+  // Кого ещё можно отметить: состав сообщества минус все, кто уже в списке.
+  // Гости из этого вычитания выпадают сами — у них нет user_id, и занять
+  // место за одного человека можно сколько угодно раз.
   const availableMembers = useMemo(() => {
-    const marked = new Set(attendees.map(a => String(a.id)));
+    const marked = new Set(attendees.filter(a => a.id).map(a => String(a.id)));
     return members
       .filter(m => !marked.has(String(m.user_id)))
       .filter(m => (addFilter === 'goalie' ? m.position === 'goalie' : m.position !== 'goalie'))
       .sort((a, b) => `${a.last_name} ${a.first_name}`.localeCompare(`${b.last_name} ${b.first_name}`, 'ru'));
   }, [members, attendees, addFilter]);
 
+  const selectedCount = selectedIds.length + guestCount;
+
+  const toggleSelected = (userId) => {
+    setSelectedIds(prev => (prev.includes(userId)
+      ? prev.filter(id => id !== userId)
+      : [...prev, userId]));
+  };
+
   // Карточка участника — та же правая панель, что на странице сообщества:
   // отдельная шторка с обрывками тех же сведений была лишней сущностью.
+  // У занятого места такой панели нет: показывать в ней нечего, кроме имени,
+  // поэтому для него открывается своя маленькая шторка.
   const openPersonCard = (person) => {
+    if (person.is_guest) {
+      setGuestForm({ lastName: person.last_name || '', firstName: person.first_name || '' });
+      setGuestToEdit(person);
+      return;
+    }
     openRightPanel?.('communityMemberDetails', {
       communityId,
       userId: person.id,
@@ -250,8 +358,38 @@ export const CommunityAttendance = ({ event, refreshData, openRightPanel }) => {
     }, 'Участник');
   };
 
+  const saveGuestName = async () => {
+    setIsSavingGuest(true);
+    try {
+      const res = await fetch(
+        `${import.meta.env.VITE_API_URL}/api/community-events/${eventId}/attendance-guest`,
+        {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
+          body: JSON.stringify({
+            eventType, communityId,
+            attendanceId: guestToEdit.attendance_id,
+            lastName: guestForm.lastName,
+            firstName: guestForm.firstName,
+          }),
+        }
+      );
+      if (!res.ok) throw new Error('failed');
+      setGuestToEdit(null);
+      await reload();
+    } catch {
+      notify('Не удалось сохранить имя', 'error');
+    } finally {
+      setIsSavingGuest(false);
+    }
+  };
+
   const openAddSheet = (filter) => {
     setAddFilter(filter);
+    setAddStep('list');
+    setSelectedIds([]);
+    setGuestCount(0);
+    setGuestNames([]);
     setIsAddOpen(true);
   };
 
@@ -276,7 +414,7 @@ export const CommunityAttendance = ({ event, refreshData, openRightPanel }) => {
 
   // Полное удаление отметки штабом, в том числе снятой после дедлайна: обычное
   // снятие оставляет строку, чтобы человек остался плательщиком.
-  const purgeAttendance = async (targetUserId) => {
+  const purgeAttendance = async (person) => {
     setIsBusy(true);
     try {
       const res = await fetch(
@@ -285,13 +423,13 @@ export const CommunityAttendance = ({ event, refreshData, openRightPanel }) => {
           method: 'POST',
           headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
           body: JSON.stringify({
-            eventType, communityId, targetUserId,
+            eventType, communityId, ...targetOf(person),
             isAttending: false, purge: true,
           }),
         }
       );
       if (!res.ok) throw new Error('failed');
-      await reload();
+      await reloadAndSyncCard();
     } catch {
       notify('Не удалось убрать отметку', 'error');
     } finally {
@@ -333,7 +471,7 @@ export const CommunityAttendance = ({ event, refreshData, openRightPanel }) => {
         <button
           type="button"
           disabled={isBusy}
-          onClick={(e) => { e.stopPropagation(); callReserve('promote', person.id); }}
+          onClick={(e) => { e.stopPropagation(); callReserve('promote', person); }}
           style={{ backgroundColor: activeBrandColor }}
           className="absolute top-0 left-1/2 -translate-x-10 -translate-y-1.5 w-[22px] h-[22px] rounded-full flex items-center justify-center shadow-md z-30 hover:scale-110 active:scale-90 transition-transform cursor-pointer disabled:opacity-50"
         >
@@ -342,12 +480,23 @@ export const CommunityAttendance = ({ event, refreshData, openRightPanel }) => {
       )}
 
       <div className="relative">
-        <Avatar
-          photoUrl={person.avatar_url}
-          firstName={person.first_name}
-          lastName={person.last_name}
-          className="w-[68px] h-[68px] rounded-2xl bg-surface-level1 border border-surface-border"
-        />
+        {/* Занятое место без имени: инициалов нет, рисуем значок. Пунктирная
+            рамка остаётся у гостя и с именем — иначе он неотличим от участника. */}
+        {person.is_guest && !person.last_name && !person.first_name ? (
+          <div className="w-[68px] h-[68px] rounded-2xl bg-surface-level1 border border-dashed border-content-subtle flex items-center justify-center shrink-0">
+            <Icon name="users" className="w-6 h-6 text-content-subtle" />
+          </div>
+        ) : (
+          <Avatar
+            photoUrl={person.avatar_url}
+            firstName={person.first_name}
+            lastName={person.last_name}
+            className={clsx(
+              'w-[68px] h-[68px] rounded-2xl bg-surface-level1 border',
+              person.is_guest ? 'border-dashed border-content-subtle' : 'border-surface-border'
+            )}
+          />
+        )}
 
         {/* Номер в очереди: без него «резерв» — просто список, а он упорядочен */}
         {queueIndex !== null && (
@@ -396,10 +545,10 @@ export const CommunityAttendance = ({ event, refreshData, openRightPanel }) => {
 
       <div className="w-full text-center px-0.5">
         <span className="text-[14px] font-bold text-content-main leading-tight whitespace-nowrap block">
-          {person.last_name}
+          {person.last_name || (person.is_guest ? 'Гость' : '')}
         </span>
         <span className="text-[10px] text-content-muted leading-tight whitespace-nowrap block">
-          {person.first_name}
+          {person.first_name || (person.is_guest ? 'занятое место' : '')}
         </span>
       </div>
     </div>
@@ -501,7 +650,7 @@ export const CommunityAttendance = ({ event, refreshData, openRightPanel }) => {
         action={Number(event?.max_goalies) === 0 ? null : addButton('goalie')}
       >
         {groups.goalies.length > 0
-          ? <Grid>{groups.goalies.map((p, i) => <PersonTile key={p.id} person={p} index={i} />)}</Grid>
+          ? <Grid>{groups.goalies.map((p, i) => <PersonTile key={p.attendance_id} person={p} index={i} />)}</Grid>
           : <Empty text={Number(event?.max_goalies) === 0 ? 'Вратари не набираются' : 'Вратари не отмечены'} />}
       </ContainerContent>
 
@@ -511,14 +660,14 @@ export const CommunityAttendance = ({ event, refreshData, openRightPanel }) => {
         action={addButton('skater')}
       >
         {groups.skaters.length > 0
-          ? <Grid>{groups.skaters.map((p, i) => <PersonTile key={p.id} person={p} index={i} />)}</Grid>
+          ? <Grid>{groups.skaters.map((p, i) => <PersonTile key={p.attendance_id} person={p} index={i} />)}</Grid>
           : <Empty text="Полевые не отмечены" />}
       </ContainerContent>
 
       {groups.queue.length > 0 && (
         <ContainerContent title="Резерв" count={groups.queue.length}>
           <Grid>
-            {groups.queue.map((p, i) => <PersonTile key={p.id} person={p} queueIndex={i} />)}
+            {groups.queue.map((p, i) => <PersonTile key={p.attendance_id} person={p} queueIndex={i} />)}
           </Grid>
           <div className="text-[10px] text-content-muted leading-tight mt-4 px-1">
             Очередь в порядке отметки. Когда место освобождается, предложение уходит
@@ -531,7 +680,7 @@ export const CommunityAttendance = ({ event, refreshData, openRightPanel }) => {
       {groups.expired.length > 0 && (
         <ContainerContent title="Упустили место" count={groups.expired.length}>
           <Grid dimmed>
-            {groups.expired.map(p => <PersonTile key={p.id} person={p} dimmed />)}
+            {groups.expired.map(p => <PersonTile key={p.attendance_id} person={p} dimmed />)}
           </Grid>
           <div className="text-[10px] text-content-muted leading-tight mt-4 px-1">
             Не подтвердили предложение вовремя или отказались. Могут встать
@@ -543,7 +692,7 @@ export const CommunityAttendance = ({ event, refreshData, openRightPanel }) => {
       {groups.withdrawn.length > 0 && (
         <ContainerContent title="Снялись после дедлайна" count={groups.withdrawn.length}>
           <Grid dimmed>
-            {groups.withdrawn.map(p => <PersonTile key={p.id} person={p} dimmed />)}
+            {groups.withdrawn.map(p => <PersonTile key={p.attendance_id} person={p} dimmed />)}
           </Grid>
           <div className="text-[10px] text-content-muted leading-tight mt-4 px-1">
             Взнос за событие сохраняется — кроме тех, чьё место успел занять другой
@@ -552,55 +701,268 @@ export const CommunityAttendance = ({ event, refreshData, openRightPanel }) => {
         </ContainerContent>
       )}
 
-      {/* Кого отметить: состав сообщества минус те, кто уже в списке */}
-      <BottomSheet isOpen={isAddOpen} onClose={() => setIsAddOpen(false)}>
-        <div className="flex flex-col gap-4">
-          <h3 className="text-[18px] font-black text-content-main mb-2">
-            {addFilter === 'goalie' ? 'Отметить вратаря' : 'Отметить полевого'}
-          </h3>
+      {/* Кого отметить: состав сообщества минус те, кто уже в списке.
+          На солянке шторка двухэкранная и с мультивыбором, на тренировке
+          остаётся прежней — по одному человеку кнопкой в строке. */}
+      <BottomSheet isOpen={isAddOpen} onClose={() => !isAdding && setIsAddOpen(false)}>
+        {addStep === 'guests' ? (
+          <div className="flex flex-col gap-4">
+            <div>
+              <h3 className="text-[18px] font-black text-content-main">Кто займёт места</h3>
+              <p className="text-[12px] text-content-muted leading-snug mt-1">
+                Можно оставить пустым — в списке такое место будет «Гость»,
+                имя допишете позже. Взнос за него считается в любом случае.
+              </p>
+            </div>
 
-          {availableMembers.length > 0 ? (
-            <div className="flex flex-col gap-2 max-h-[60vh] overflow-y-auto scrollbar-hide">
-              {availableMembers.map(member => (
-                <div key={member.user_id} className="flex items-center justify-between p-3 bg-surface-level2 rounded-xl">
-                  <div className="flex items-center gap-3 min-w-0">
-                    <Avatar
-                      photoUrl={member.avatar_url}
-                      firstName={member.first_name}
-                      lastName={member.last_name}
-                      className="w-10 h-10 rounded-xl bg-surface-level1 border border-surface-border shrink-0"
-                    />
-                    <div className="flex flex-col text-left min-w-0">
-                      <span className="text-[14px] font-bold text-content-main truncate">
-                        {member.last_name} {member.first_name}
-                      </span>
-                      {member.group_name && (
-                        <span className="text-[10px] text-content-subtle leading-none mt-0.5 truncate">
-                          {member.group_name}
-                        </span>
-                      )}
-                    </div>
-                  </div>
-
-                  <ButtonLP
-                    onClick={() => markPerson(member)}
-                    variant="primary"
-                    className="!w-auto !py-1.5 !px-3 !text-[10px] ml-2 shrink-0 normal-case"
+            <div className="flex flex-col gap-3 max-h-[52vh] overflow-y-auto scrollbar-hide pr-0.5">
+              {guestNames.map((guest, i) => (
+                <div key={i} className="flex flex-col gap-2 p-3 bg-surface-level2 rounded-xl">
+                  <span className="text-[10px] font-black uppercase tracking-widest text-content-subtle">
+                    Место {i + 1}
+                  </span>
+                  <TextInputLP
+                    label="Фамилия"
+                    placeholder="Иванов"
+                    size="sm"
+                    maxLength={100}
+                    value={guest.lastName}
                     activeColor={hasTeamColor ? activeBrandColor : null}
-                    isLoading={savingPersonId === member.user_id}
-                    disabled={savingPersonId !== null}
-                  >
-                    Добавить
-                  </ButtonLP>
+                    onChange={v => setGuestNames(prev => prev.map((g, gi) => (gi === i ? { ...g, lastName: v } : g)))}
+                  />
+                  <TextInputLP
+                    label="Имя"
+                    placeholder="Иван"
+                    size="sm"
+                    maxLength={100}
+                    value={guest.firstName}
+                    activeColor={hasTeamColor ? activeBrandColor : null}
+                    onChange={v => setGuestNames(prev => prev.map((g, gi) => (gi === i ? { ...g, firstName: v } : g)))}
+                  />
                 </div>
               ))}
             </div>
-          ) : (
-            <div className="flex justify-center items-center h-24 text-[10px] font-black text-content-muted uppercase tracking-widest text-center py-4">
-              {addFilter === 'goalie' ? 'Все вратари уже отмечены' : 'Все полевые уже отмечены'}
+
+            <div className="flex gap-3">
+              <ButtonLP
+                variant="outline"
+                onClick={() => setAddStep('list')}
+                disabled={isAdding}
+                className="flex-1"
+              >
+                Назад
+              </ButtonLP>
+              <ButtonLP
+                variant="primary"
+                onClick={submitAdd}
+                isLoading={isAdding}
+                disabled={isAdding}
+                activeColor={hasTeamColor ? activeBrandColor : null}
+                className="flex-1"
+              >
+                Добавить
+              </ButtonLP>
             </div>
-          )}
-        </div>
+          </div>
+        ) : (
+          <div className="flex flex-col gap-4">
+            <h3 className="text-[18px] font-black text-content-main mb-2">
+              {isGame
+                ? (addFilter === 'goalie' ? 'Отметить вратарей' : 'Отметить полевых')
+                : (addFilter === 'goalie' ? 'Отметить вратаря' : 'Отметить полевого')}
+            </h3>
+
+            {(availableMembers.length > 0 || isGame) ? (
+              <div className="flex flex-col gap-2 max-h-[56vh] overflow-y-auto scrollbar-hide">
+                {availableMembers.map(member => {
+                  const isSelected = selectedIds.includes(member.user_id);
+                  return (
+                    <div
+                      key={member.user_id}
+                      onClick={isGame ? () => toggleSelected(member.user_id) : undefined}
+                      className={clsx(
+                        'flex items-center justify-between p-3 rounded-xl transition-colors',
+                        isGame && 'cursor-pointer select-none',
+                        isSelected ? 'bg-brand-opacity' : 'bg-surface-level2'
+                      )}
+                      style={isSelected && hasTeamColor ? { backgroundColor: `${activeBrandColor}1f` } : undefined}
+                    >
+                      <div className="flex items-center gap-3 min-w-0">
+                        <Avatar
+                          photoUrl={member.avatar_url}
+                          firstName={member.first_name}
+                          lastName={member.last_name}
+                          className="w-10 h-10 rounded-xl bg-surface-level1 border border-surface-border shrink-0"
+                        />
+                        <div className="flex flex-col text-left min-w-0">
+                          <span className="text-[14px] font-bold text-content-main truncate">
+                            {member.last_name} {member.first_name}
+                          </span>
+                          {member.group_name && (
+                            <span className="text-[10px] text-content-subtle leading-none mt-0.5 truncate">
+                              {member.group_name}
+                            </span>
+                          )}
+                        </div>
+                      </div>
+
+                      {isGame ? (
+                        <div
+                          style={isSelected ? { backgroundColor: activeBrandColor, borderColor: activeBrandColor } : undefined}
+                          className={clsx(
+                            'w-6 h-6 rounded-lg border flex items-center justify-center shrink-0 ml-2 transition-colors',
+                            isSelected ? 'border-transparent' : 'border-surface-border bg-surface-level1'
+                          )}
+                        >
+                          {isSelected && <Icon name="check" className="w-3.5 h-3.5 text-white" strokeWidth={3.5} />}
+                        </div>
+                      ) : (
+                        <ButtonLP
+                          onClick={() => markPerson(member)}
+                          variant="primary"
+                          className="!w-auto !py-1.5 !px-3 !text-[10px] ml-2 shrink-0 normal-case"
+                          activeColor={hasTeamColor ? activeBrandColor : null}
+                          isLoading={savingPersonId === member.user_id}
+                          disabled={savingPersonId !== null}
+                        >
+                          Добавить
+                        </ButtonLP>
+                      )}
+                    </div>
+                  );
+                })}
+
+                {availableMembers.length === 0 && isGame && (
+                  <div className="flex justify-center items-center h-16 text-[10px] font-black text-content-muted uppercase tracking-widest text-center">
+                    {addFilter === 'goalie' ? 'Все вратари уже отмечены' : 'Все полевые уже отмечены'}
+                  </div>
+                )}
+
+                {/* Занять место — в самом низу, после всех участников: это
+                    не человек из списка, а место для того, кого в системе нет.
+                    Занять можно сколько угодно, счётчик показывает сколько. */}
+                {isGame && (
+                  <div className="flex items-center justify-between p-3 bg-surface-level2 rounded-xl mt-1 border border-dashed border-surface-border">
+                    <div className="flex items-center gap-3 min-w-0">
+                      <div className="w-10 h-10 rounded-xl bg-surface-level1 border border-dashed border-content-subtle flex items-center justify-center shrink-0">
+                        <Icon name="users" className="w-4 h-4 text-content-subtle" />
+                      </div>
+                      <div className="flex flex-col text-left min-w-0">
+                        <span className="text-[14px] font-bold text-content-main truncate">Занять место</span>
+                        <span className="text-[10px] text-content-subtle leading-none mt-0.5 truncate">
+                          для того, у кого нет аккаунта
+                        </span>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center gap-2 shrink-0 ml-2">
+                      <button
+                        type="button"
+                        onClick={() => setGuestCount(c => Math.max(0, c - 1))}
+                        disabled={guestCount === 0}
+                        className="w-7 h-7 rounded-lg bg-surface-level3 flex items-center justify-center outline-none active:scale-90 transition-transform disabled:opacity-30 cursor-pointer"
+                      >
+                        <Icon name="minus" className="w-3.5 h-3.5 text-content-main" strokeWidth={3} />
+                      </button>
+                      <span className="text-[14px] font-black text-content-main w-4 text-center">{guestCount}</span>
+                      <button
+                        type="button"
+                        onClick={() => setGuestCount(c => Math.min(50, c + 1))}
+                        style={{ backgroundColor: activeBrandColor }}
+                        className="w-7 h-7 rounded-lg flex items-center justify-center outline-none active:scale-90 transition-transform cursor-pointer"
+                      >
+                        <Icon name="plus" className="w-3.5 h-3.5 text-white" strokeWidth={3} />
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </div>
+            ) : (
+              <div className="flex justify-center items-center h-24 text-[10px] font-black text-content-muted uppercase tracking-widest text-center py-4">
+                {addFilter === 'goalie' ? 'Все вратари уже отмечены' : 'Все полевые уже отмечены'}
+              </div>
+            )}
+
+            {isGame && (
+              <ButtonLP
+                variant="primary"
+                onClick={() => {
+                  if (guestCount > 0) {
+                    setGuestNames(Array.from({ length: guestCount }, (_, i) => guestNames[i] || { lastName: '', firstName: '' }));
+                    setAddStep('guests');
+                  } else {
+                    submitAdd();
+                  }
+                }}
+                isLoading={isAdding}
+                disabled={selectedCount === 0 || isAdding}
+                activeColor={hasTeamColor ? activeBrandColor : null}
+              >
+                {guestCount > 0 ? `Далее · ${selectedCount}` : `Добавить · ${selectedCount}`}
+              </ButtonLP>
+            )}
+          </div>
+        )}
+      </BottomSheet>
+
+      {/* Карточка занятого места: у гостя нет профиля, показывать нечего,
+          кроме имени — его тут и вписывают */}
+      <BottomSheet isOpen={!!guestToEdit} onClose={() => !isSavingGuest && setGuestToEdit(null)}>
+        {guestToEdit && (
+          <div className="flex flex-col gap-4">
+            <div>
+              <h3 className="text-[18px] font-black text-content-main">Занятое место</h3>
+              <p className="text-[12px] text-content-muted leading-snug mt-1">
+                {guestDisplayName(guestToEdit)} · {guestToEdit.position === 'goalie' ? 'вратарь' : 'полевой'}.
+                Человека нет в системе, поэтому у места только имя.
+              </p>
+            </div>
+
+            <div className="flex flex-col gap-2 p-3 bg-surface-level2 rounded-xl">
+              <TextInputLP
+                label="Фамилия"
+                placeholder="Иванов"
+                size="sm"
+                maxLength={100}
+                value={guestForm.lastName}
+                disabled={!hasManageAccess || isSavingGuest}
+                activeColor={hasTeamColor ? activeBrandColor : null}
+                onChange={v => setGuestForm(prev => ({ ...prev, lastName: v }))}
+              />
+              <TextInputLP
+                label="Имя"
+                placeholder="Иван"
+                size="sm"
+                maxLength={100}
+                value={guestForm.firstName}
+                disabled={!hasManageAccess || isSavingGuest}
+                activeColor={hasTeamColor ? activeBrandColor : null}
+                onChange={v => setGuestForm(prev => ({ ...prev, firstName: v }))}
+              />
+            </div>
+
+            <div className="flex gap-3">
+              <ButtonLP
+                variant="outline"
+                onClick={() => setGuestToEdit(null)}
+                disabled={isSavingGuest}
+                className="flex-1"
+              >
+                Закрыть
+              </ButtonLP>
+              <ButtonLP
+                variant="primary"
+                onClick={saveGuestName}
+                isLoading={isSavingGuest}
+                disabled={isSavingGuest || !hasManageAccess}
+                activeColor={hasTeamColor ? activeBrandColor : null}
+                className="flex-1"
+              >
+                Сохранить
+              </ButtonLP>
+            </div>
+          </div>
+        )}
       </BottomSheet>
 
       {/* Снятие отметки крестиком */}
@@ -614,7 +976,9 @@ export const CommunityAttendance = ({ event, refreshData, openRightPanel }) => {
               Убрать отметку?
             </h3>
             <p className="text-[14px] text-content-muted max-w-[280px]">
-              <span className="font-bold text-content-main">{personToRemove.last_name}</span>{' '}
+              <span className="font-bold text-content-main">
+                {personToRemove.last_name || (personToRemove.is_guest ? 'Гость' : '')}
+              </span>{' '}
               исчезнет из списка целиком — вместе с местом в очереди и участием
               в расчёте стоимости.
             </p>
@@ -625,7 +989,7 @@ export const CommunityAttendance = ({ event, refreshData, openRightPanel }) => {
               <ButtonLP
                 variant="primary"
                 activeColor="#ef4444"
-                onClick={() => { const id = personToRemove.id; setPersonToRemove(null); purgeAttendance(id); }}
+                onClick={() => { const target = personToRemove; setPersonToRemove(null); purgeAttendance(target); }}
                 isLoading={isBusy}
                 disabled={isBusy}
                 className="flex-1"

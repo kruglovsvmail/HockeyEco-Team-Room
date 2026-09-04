@@ -1051,7 +1051,9 @@ export const getEvents = async (req, res) => {
             WHERE att.community_training_id = ct.id
               AND att.pay_role <> 'free'
               AND NOT (ct.goalies_free AND att.pay_role = 'goalie')
-              AND att.slot_status = 'main' AND att.replaced_by_user_id IS NULL
+              AND att.slot_status = 'main'
+              AND att.replaced_by_user_id IS NULL
+              AND att.replaced_by_attendance_id IS NULL
           )::int AS paying_count,
 
           COALESCE(
@@ -1081,14 +1083,16 @@ export const getEvents = async (req, res) => {
           -- карточке разошёлся бы с тем, что считает сама очередь.
           (SELECT count(*) FROM community_training_attendance att
             WHERE att.community_training_id = ct.id AND att.slot_status = 'main' AND att.withdrawn_at IS NULL
-              AND COALESCE((SELECT cmem.position FROM community_members cmem
+              AND COALESCE(att.guest_position,
+                           (SELECT cmem.position FROM community_members cmem
                             WHERE cmem.community_id = uc.community_id
                               AND cmem.user_id = att.user_id), 'skater') <> 'goalie'
           )::int AS main_skaters,
 
           (SELECT count(*) FROM community_training_attendance att
             WHERE att.community_training_id = ct.id AND att.slot_status = 'main' AND att.withdrawn_at IS NULL
-              AND COALESCE((SELECT cmem.position FROM community_members cmem
+              AND COALESCE(att.guest_position,
+                           (SELECT cmem.position FROM community_members cmem
                             WHERE cmem.community_id = uc.community_id
                               AND cmem.user_id = att.user_id), 'skater') = 'goalie'
           )::int AS main_goalies,
@@ -1237,7 +1241,9 @@ export const getEvents = async (req, res) => {
             WHERE att.community_game_id = ct.id
               AND att.pay_role <> 'free'
               AND NOT (ct.goalies_free AND att.pay_role = 'goalie')
-              AND att.slot_status = 'main' AND att.replaced_by_user_id IS NULL
+              AND att.slot_status = 'main'
+              AND att.replaced_by_user_id IS NULL
+              AND att.replaced_by_attendance_id IS NULL
           )::int AS paying_count,
 
           COALESCE(
@@ -1267,14 +1273,16 @@ export const getEvents = async (req, res) => {
           -- карточке разошёлся бы с тем, что считает сама очередь.
           (SELECT count(*) FROM community_game_attendance att
             WHERE att.community_game_id = ct.id AND att.slot_status = 'main' AND att.withdrawn_at IS NULL
-              AND COALESCE((SELECT cmem.position FROM community_members cmem
+              AND COALESCE(att.guest_position,
+                           (SELECT cmem.position FROM community_members cmem
                             WHERE cmem.community_id = uc.community_id
                               AND cmem.user_id = att.user_id), 'skater') <> 'goalie'
           )::int AS main_skaters,
 
           (SELECT count(*) FROM community_game_attendance att
             WHERE att.community_game_id = ct.id AND att.slot_status = 'main' AND att.withdrawn_at IS NULL
-              AND COALESCE((SELECT cmem.position FROM community_members cmem
+              AND COALESCE(att.guest_position,
+                           (SELECT cmem.position FROM community_members cmem
                             WHERE cmem.community_id = uc.community_id
                               AND cmem.user_id = att.user_id), 'skater') = 'goalie'
           )::int AS main_goalies,

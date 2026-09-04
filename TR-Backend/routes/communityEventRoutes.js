@@ -1,6 +1,8 @@
 import express from 'express';
 import {
   toggleCommunityAttendance,
+  bulkMarkCommunityAttendance,
+  updateCommunityGuest,
   getCommunityAttendance,
   toggleCommunityAttendanceTag,
   confirmCommunityOffer,
@@ -35,6 +37,24 @@ router.post(
   verifyToken,
   requireCommunityPermission('COMMUNITY_INTERNAL_VIEW'),
   toggleCommunityAttendance
+);
+
+// Отметка пачкой — только солянка. Штаб набирает состав разом, поэтому здесь
+// одна транзакция и одно сводное уведомление вместо цепочки одиночных отметок.
+// В теле едут и участники (userIds), и занятые места для людей без аккаунта (guests).
+router.post(
+  '/:eventId/attendance-bulk',
+  verifyToken,
+  requireCommunityPermission('COMMUNITY_EVENT_ATTENDANCE_MANAGE'),
+  bulkMarkCommunityAttendance
+);
+
+// Фамилия и имя гостя: место занимают и не зная, кто придёт, — имя дописывают позже
+router.put(
+  '/:eventId/attendance-guest',
+  verifyToken,
+  requireCommunityPermission('COMMUNITY_EVENT_ATTENDANCE_MANAGE'),
+  updateCommunityGuest
 );
 
 // Финансовая пометка участника (₽) — деньги остаются за владельцем

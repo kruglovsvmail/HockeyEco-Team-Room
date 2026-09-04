@@ -764,8 +764,15 @@ export default function LoginPage() {
                 />
               </div>
 
-              <EmailInputLP label="" placeholder="Электронная почта" value={regData.email}
-                onChange={v => { setRegData({ ...regData, email: v }); setRegError(''); }} disabled={isRegLoading} />
+              {/* Пояснение обязательно: без него люди вбивают почту-заглушку, а пароль
+                  от аккаунта уходит письмом именно на этот адрес */}
+              <div className="flex flex-col gap-1.5">
+                <EmailInputLP label="" placeholder="Электронная почта" value={regData.email}
+                  onChange={v => { setRegData({ ...regData, email: v }); setRegError(''); }} disabled={isRegLoading} />
+                <p className="text-[12px] text-content-muted leading-snug pl-1">
+                  На эту почту придёт пароль для входа — укажите действующий адрес, к которому у вас есть доступ.
+                </p>
+              </div>
             </div>
 
             {regError && <div className="text-danger font-medium text-[14px] mt-4">{regError}</div>}

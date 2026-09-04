@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo, useRef, Suspense, lazy, useCallback } from 'react';
-import { getAuthHeaders, uiFixed, getTrainingTypeIcon, COMMUNITY_CATEGORIES } from '../../../utils/helpers';
+import { getAuthHeaders, uiFixed, getTrainingTypeIcon, COMMUNITY_CATEGORIES, COMMUNITY_EVENT_ROUTE } from '../../../utils/helpers';
 import { Icon } from '../../../ui/Icon';
 import { FeeRow } from '../../../ui/FeeRow';
 import { ChipTabs } from '../../../ui/ChipTabs';
@@ -102,8 +102,15 @@ export const EventDetailsCommunity = ({ event, openRightPanel }) => {
       );
       const json = await res.json();
       if (json.success) {
-        // На лёд выходит только основа: резерв расставлять не по чему
-        setAttendees((json.attendees || []).filter(a => a.slot_status === 'main' && !a.withdrawn_at));
+        // На лёд выходит только основа: резерв расставлять не по чему.
+        // Занятые места (гости солянки) человека за собой не имеют, а расстановка
+        // адресует игроков одним полем id — выдаём им ссылку вида «g12» на строку
+        // отметки. Тем же идентификатором расстановка возвращается с сервера.
+        setAttendees((json.attendees || [])
+          .filter(a => a.slot_status === 'main' && !a.withdrawn_at)
+          .map(a => (a.is_guest
+            ? { ...a, id: `g${a.attendance_id}`, last_name: a.last_name || 'Гость' }
+            : a)));
       }
     } catch {
       // Молча: вкладка отметок покажет свою ошибку, дублировать её незачем
@@ -114,13 +121,26 @@ export const EventDetailsCommunity = ({ event, openRightPanel }) => {
 
   useEffect(() => { fetchAttendees(); }, [fetchAttendees]);
 
-  // Карточка события живёт в кэше календаря: после отметки её надо перечитать,
-  // иначе стоимость и счётчики останутся старыми.
+  // Карточка события (взнос, занятость дорожек, свой тумблер) считается сервером
+  // и живёт в кэше календаря — после отметки её надо перечитать, иначе цифры
+  // останутся теми, какими были на момент открытия события: useEffect выше следит
+  // только за сменой event_id, а он не меняется. Свежую карточку кладёт
+  // в sessionStorage TeamLayout, ответив на 'tr-event-refresh', — оттуда и берём.
+  // Так же устроены детали командной тренировки (SyncEventOnUpdate).
+  //
+  // Заодно перечитываем состав для «Формаций»: он мог измениться не отсюда —
+  // тумблером на карточке календаря прямо перед входом в событие.
   useEffect(() => {
-    const onUpdate = () => fetchAttendees();
+    const onUpdate = () => {
+      fetchAttendees();
+      const routeType = COMMUNITY_EVENT_ROUTE[eventType];
+      if (!routeType || !localEvent?.event_id) return;
+      const cached = sessionStorage.getItem(`tr_event_${routeType}_${localEvent.event_id}`);
+      if (cached) setLocalEvent(JSON.parse(cached));
+    };
     window.addEventListener('tr-events-updated', onUpdate);
     return () => window.removeEventListener('tr-events-updated', onUpdate);
-  }, [fetchAttendees]);
+  }, [fetchAttendees, eventType, localEvent?.event_id]);
 
   const tabIndex = Math.max(0, tabs.findIndex(t => t.id === activeTab));
   const trackWidth = `${tabs.length * 100}%`;

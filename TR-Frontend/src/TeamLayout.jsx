@@ -311,6 +311,10 @@ function TeamLayoutContent() {
 
   const eventFromState = location.state?.event || null;
   const [eventStorageVersion, setEventStorageVersion] = useState(0);
+  // Событие, для которого карточка уже получена с сервера в этом заходе. Ставится
+  // и дотягиванием по ссылке, и обновлением при открытии — чтобы они не сделали
+  // один и тот же запрос дважды подряд.
+  const freshCardKey = useRef(null);
   const eventForOverlay = useMemo(() => {
     if (!eventMatch) return null;
     if (eventFromState) return eventFromState;
@@ -368,6 +372,8 @@ function TeamLayoutContent() {
         }
 
         sessionStorage.setItem(`tr_event_${eventType}_${eventId}`, JSON.stringify(card));
+        // Карточка только что с сервера — обновлять её при открытии уже незачем
+        freshCardKey.current = `${eventType}/${eventId}`;
         // history.state тоже должен знать о событии — иначе следующий рефреш снова придёт пустым
         navigate(`/event/${eventType}/${eventId}`, { replace: true, state: { event: card } });
       } catch (err) {
@@ -448,11 +454,23 @@ function TeamLayoutContent() {
   // отметки её нельзя пропатчить локально — цифру знает только сервер. Экраны
   // отметок дёргают 'tr-event-refresh', а результат уезжает через handleEventUpdate,
   // который чинит и sessionStorage, и history.state сразу.
+  //
+  // По ответу сервера отсюда уходит 'tr-events-updated' — он нужен экранам
+  // деталей: свою копию события они держат локально и перечитывают карточку
+  // из sessionStorage, куда она попадает строкой выше.
+  //
+  // calendarChanged здесь всегда false: календарю этот сигнал ничего не даёт.
+  // Если состав правда изменился, календарь уже узнал об этом от того, кто
+  // изменение сделал (notifyAttendanceChanged или тумблер в самом календаре),
+  // и перечитывает месяц параллельно с нами. А обновление карточки при открытии
+  // события в календаре не меняет вообще ничего.
   useEffect(() => {
     if (!eventMatch) return;
     const { eventType, eventId } = eventMatch.params;
 
     const onRefresh = async () => {
+      // Офлайн перечитывать нечего, и календарь в этом случае тоже сам
+      // не ходит в сеть — сигналить не о чем
       if (!getToken() || !navigator.onLine) return;
       try {
         const res = await fetch(
@@ -463,21 +481,53 @@ function TeamLayoutContent() {
         const card = (data?.cards || []).find(
           c => String(c.event_id) === String(eventId) && routeTypeOfEvent(c.event_type) === eventType
         );
-        if (!card) return;
-        handleEventUpdate(card);
-        // Экраны деталей держат свою копию события и перечитывают её из
-        // sessionStorage по 'tr-events-updated'. Свежая карточка попадает туда
-        // только сейчас, после ответа сервера, — поэтому сигналим ещё раз:
-        // тот, что летел вместе с 'tr-event-refresh', застал ещё старые данные.
-        window.dispatchEvent(new CustomEvent('tr-events-updated'));
+        if (card) handleEventUpdate(card);
       } catch (err) {
         console.error('Не удалось обновить карточку события:', err);
+      } finally {
+        // Шлём даже когда карточку получить не удалось: экраны деталей по этому
+        // же сигналу перезабирают свои списки, и терять их из-за сбоя запроса
+        // карточки незачем
+        window.dispatchEvent(new CustomEvent('tr-events-updated', {
+          detail: { calendarChanged: false },
+        }));
       }
     };
 
     window.addEventListener('tr-event-refresh', onRefresh);
     return () => window.removeEventListener('tr-event-refresh', onRefresh);
   }, [eventMatch, handleEventUpdate]);
+
+  // Обновление карточки при самом открытии события.
+  //
+  // Детали живут от объекта, который передал календарь, а он бывает устаревшим
+  // уже в момент открытия: после переключения тумблера календарь правит локально
+  // только is_attending, а долю пересчитывает сервер — и если открыть событие
+  // раньше, чем ответ дошёл, в шапке будет вчерашний взнос. Тот же случай —
+  // открытие из localStorage-кэша календаря после запуска приложения.
+  //
+  // Поэтому на каждое открытие просим карточку заново. Ключ — сам маршрут
+  // события: пока открыто одно и то же событие, повторных запросов нет, а
+  // handleEventUpdate меняет location.state и, значит, себя — привязываться
+  // к нему здесь нельзя, иначе обновление зациклится само на себя.
+  //
+  // Эффект объявлен ПОСЛЕ регистрации слушателя намеренно: эффекты выполняются
+  // в порядке объявления, и сигнал из более раннего был бы отправлен в пустоту.
+  const routeEventKey = eventMatch
+    ? `${eventMatch.params.eventType}/${eventMatch.params.eventId}`
+    : null;
+  const hasOverlayCard = !!eventForOverlay;
+
+  useEffect(() => {
+    // Ушли с события — следующее открытие снова просит свежую карточку
+    if (!routeEventKey) { freshCardKey.current = null; return; }
+    // Карточки нет вовсе — значит событие открыли по ссылке, и её сейчас
+    // дотягивает эффект гидратации выше. Своим запросом мы бы его продублировали
+    if (!hasOverlayCard || freshCardKey.current === routeEventKey) return;
+
+    freshCardKey.current = routeEventKey;
+    window.dispatchEvent(new CustomEvent('tr-event-refresh'));
+  }, [routeEventKey, hasOverlayCard]);
 
   // Доступ к редактированию текущего события — для отображения карандашика в шапке.
   // Клуб события берём из самого события (my_club_id), а не из выбранного в сайдбаре:

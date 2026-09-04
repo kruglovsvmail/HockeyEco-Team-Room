@@ -19,7 +19,21 @@ const COMMUNITY_FORMATION = {
     event: 'community_game',
     formation: 'community_formation_game',
     fk: 'community_game_id',
+    // На солянке в составе бывают гости — люди без аккаунта, за которых штаб
+    // занял место. У них нет player_id, поэтому в расстановке они хранятся
+    // ссылкой на строку отметки (guest_attendance_id), а наружу отдаются
+    // идентификатором вида «g12»: фронт различает своих и гостей по нему же.
+    guests: true,
+    attendance: 'community_game_attendance',
   },
+};
+
+// Ссылка на гостя в расстановке: «g» + id строки отметки. Разбирается обратно
+// при сохранении — всё, что не число, ищем среди занятых мест.
+const GUEST_REF = /^g(\d+)$/;
+const parseGuestRef = (value) => {
+  const match = GUEST_REF.exec(String(value ?? ''));
+  return match ? Number(match[1]) : null;
 };
 
 export const getTrainingLines = async (req, res) => {
@@ -44,19 +58,36 @@ export const getTrainingLines = async (req, res) => {
     // Тренировка: на общий лёд приходят люди без команды, фото берём из профиля —
     // как и на клубной тренировке.
     if (isCommunity) {
-      const result = await pool.query(`
-        SELECT
-          cf.player_id,
-          cf.line_number,
-          cf.position_in_line,
-          cf.jersey_color,
-          u.first_name,
-          u.last_name,
-          u.avatar_url
-        FROM "${communityCfg.formation}" cf
-        JOIN users u ON u.id = cf.player_id
-        WHERE cf."${communityCfg.fk}" = $1 AND cf.community_id = $2
-      `, [eventId, communityId]);
+      // Расстановка солянки держит и гостей, поэтому users присоединяется
+      // LEFT JOIN, а имя берётся из отметки, если человека за строкой нет.
+      const result = communityCfg.guests
+        ? await pool.query(`
+            SELECT
+              COALESCE(cf.player_id::text, 'g' || cf.guest_attendance_id) AS player_id,
+              cf.line_number,
+              cf.position_in_line,
+              cf.jersey_color,
+              COALESCE(u.first_name, ga.guest_first_name) AS first_name,
+              COALESCE(u.last_name, ga.guest_last_name) AS last_name,
+              u.avatar_url
+            FROM "${communityCfg.formation}" cf
+            LEFT JOIN users u ON u.id = cf.player_id
+            LEFT JOIN "${communityCfg.attendance}" ga ON ga.id = cf.guest_attendance_id
+            WHERE cf."${communityCfg.fk}" = $1 AND cf.community_id = $2
+          `, [eventId, communityId])
+        : await pool.query(`
+            SELECT
+              cf.player_id,
+              cf.line_number,
+              cf.position_in_line,
+              cf.jersey_color,
+              u.first_name,
+              u.last_name,
+              u.avatar_url
+            FROM "${communityCfg.formation}" cf
+            JOIN users u ON u.id = cf.player_id
+            WHERE cf."${communityCfg.fk}" = $1 AND cf.community_id = $2
+          `, [eventId, communityId]);
 
       return res.json({ success: true, lines: result.rows });
     }
@@ -145,10 +176,23 @@ export const saveTrainingLines = async (req, res) => {
       );
 
       for (const player of lines) {
+        // «g12» — занятое место, обычное число — участник. Гости приходят только
+        // с солянки; на тренировке сообщества такой ссылки быть не может, и
+        // строку с ней молча пропускаем, а не пишем битую расстановку.
+        const guestAttendanceId = parseGuestRef(player.player_id);
+        const playerId = guestAttendanceId ? null : Number(player.player_id) || null;
+        if (guestAttendanceId && !communityCfg.guests) continue;
+        if (!guestAttendanceId && !playerId) continue;
+
         await client.query(`
-          INSERT INTO "${communityCfg.formation}" ("${communityCfg.fk}", community_id, player_id, line_number, position_in_line, jersey_color)
-          VALUES ($1, $2, $3, $4, $5, $6)
-        `, [eventId, communityId, player.player_id, player.line_number, player.position_in_line, player.jersey_color || null]);
+          INSERT INTO "${communityCfg.formation}"
+            ("${communityCfg.fk}", community_id, player_id, ${communityCfg.guests ? 'guest_attendance_id, ' : ''}line_number, position_in_line, jersey_color)
+          VALUES ($1, $2, $3, ${communityCfg.guests ? '$7, ' : ''}$4, $5, $6)
+        `, [
+          eventId, communityId, playerId,
+          player.line_number, player.position_in_line, player.jersey_color || null,
+          ...(communityCfg.guests ? [guestAttendanceId] : []),
+        ]);
       }
     } else if (isClub) {
       await client.query(

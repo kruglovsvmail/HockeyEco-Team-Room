@@ -101,17 +101,6 @@ export const EventDetailsMatch = ({ event, user: userProp, selectedTeam: selecte
     return userRoles.some(r => perm.allowedRoles.map(ar => ar.toLowerCase()).includes(r));
   };
 
-  // Локальное обновление события при изменениях через панель редактирования
-  useEffect(() => {
-    const onUpdate = () => {
-      const key = `tr_event_match_${localEvent?.event_id}`;
-      const cached = sessionStorage.getItem(key);
-      if (cached) setLocalEvent(JSON.parse(cached));
-    };
-    window.addEventListener('tr-events-updated', onUpdate);
-    return () => window.removeEventListener('tr-events-updated', onUpdate);
-  }, [localEvent?.event_id]);
-
   const targetDate = localEvent?.event_date || localEvent?.game_date;
   const arenaTz    = localEvent?.arena_timezone || 'UTC';
 
@@ -162,6 +151,23 @@ export const EventDetailsMatch = ({ event, user: userProp, selectedTeam: selecte
   // «Потяни вниз — обнови»: тот же ре-фетч, что и при возврате на вкладку,
   // только руками. Жест стартует лишь когда экран прокручен в самый верх.
   usePullToRefresh(scrollContainerRef, fetchAllMatchData);
+
+  // Локальное обновление события при изменениях через панель редактирования.
+  // Заодно перечитываем отметки: состав могли изменить не отсюда — тумблером
+  // на карточке календаря прямо перед входом в событие, и тогда загрузка при
+  // монтировании обгоняет отметку и приносит список без человека. Сигнал
+  // приходит уже по ответу сервера, так что этот список заведомо полный.
+  useEffect(() => {
+    const onUpdate = () => {
+      fetchAllMatchData();
+      const key = `tr_event_match_${localEvent?.event_id}`;
+      const cached = sessionStorage.getItem(key);
+      if (cached) setLocalEvent(JSON.parse(cached));
+    };
+    window.addEventListener('tr-events-updated', onUpdate);
+    return () => window.removeEventListener('tr-events-updated', onUpdate);
+  }, [fetchAllMatchData, localEvent?.event_id]);
+
   useEffect(() => () => { if (rafRef.current) cancelAnimationFrame(rafRef.current); }, []);
 
   // Предзагрузка картинки состава из S3 заранее (на уровне страницы деталей, а не вкладки «Состав»).
