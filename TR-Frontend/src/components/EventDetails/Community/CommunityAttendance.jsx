@@ -689,7 +689,7 @@ export const CommunityAttendance = ({ event, refreshData, openRightPanel }) => {
       >
         {groups.goalies.length > 0
           ? <Grid>{groups.goalies.map((p, i) => <PersonTile key={p.attendance_id} person={p} index={i} />)}</Grid>
-          : <Empty text={Number(event?.max_goalies) === 0 ? 'Вратари не набираются' : 'Вратари не отмечены'} />}
+          : <Empty text={Number(event?.max_goalies) === 0 ? 'Вратари не отмечены' : 'Вратари не отмечены'} />}
       </ContainerContent>
 
       <ContainerContent
