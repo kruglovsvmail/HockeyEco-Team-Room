@@ -52,6 +52,7 @@ export function SeasonRostersDetailsPage({ appId, teamId, teamColor, onClose, op
           division_id: draftDivision.id,
           division_name: draftDivision.name,
           digital_applications_only: draftDivision.digital_applications_only,
+          league_managed_roster: draftDivision.league_managed_roster,
           league_name: draftDivision.league_name,
           league_short_name: draftDivision.league_short_name,
           league_logo: draftDivision.league_logo,

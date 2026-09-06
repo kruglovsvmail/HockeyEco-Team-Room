@@ -504,6 +504,13 @@ export function SeasonRosterDetails({ app, teamId, onClose, activeBrandColor, op
   const isPaperBlocked = !app.digital_applications_only && !app.paper_roster_league_url;
   const isEditableStatus = ['draft', 'revision'].includes(app.status);
   const canEdit = isEditableStatus && !isPaperBlocked;
+
+  // Дивизион, где состав заявки ведёт лига: игроков и представителей вносит она сама,
+  // из LMS, после того как прикрепила утверждённый заявочный лист. Команде остаются скан,
+  // номера, нашивки и документы игроков — их правка идёт по canEdit, как и раньше.
+  // Сервер запрещает то же самое (MgrSeasonController.assertApplicationEditable).
+  const isLeagueManaged = !app.digital_applications_only && !!app.league_managed_roster;
+  const canEditComposition = canEdit && !isLeagueManaged;
   // Скан заявочного листа команда загружает сама в статусах draft/revision —
   // ещё до проверки лигой, поэтому isPaperBlocked здесь не учитывается.
   const canEditPaper = isEditableStatus;
@@ -840,10 +847,27 @@ export function SeasonRosterDetails({ app, teamId, onClose, activeBrandColor, op
       {isPaperBlocked && (
         <div className="p-3 bg-danger/10 border border-danger/20 rounded-2xl text-[14px] font-medium text-danger leading-relaxed">
           {(!app.paper_roster_team_url && !pendingPaperFile)
-            ? 'Этот дивизион требует скан заявочного листа. Загрузите скан заполненного заявочного листа и отправьте заявку на проверку — после решения лиги вы сможете вести состав в электронном виде.'
+            ? (isLeagueManaged
+                ? 'Этот дивизион требует скан заявочного листа. Загрузите скан заполненного листа и отправьте заявку на проверку — состав в заявку внесёт лига.'
+                : 'Этот дивизион требует скан заявочного листа. Загрузите скан заполненного заявочного листа и отправьте заявку на проверку — после решения лиги вы сможете вести состав в электронном виде.')
             : isEditableStatus
-              ? 'Скан прикреплён. Отправьте заявку на проверку — после решения лиги вы сможете вести состав и штаб в электронном виде.'
-              : 'Ожидается проверка загруженного бумажного заявочного листа лигой. Редактирование состава и штаба будет доступно после публикации решения лиги.'}
+              ? (isLeagueManaged
+                  ? 'Скан прикреплён. Отправьте заявку на проверку — после решения лиги игроков и представителей внесёт она сама.'
+                  : 'Скан прикреплён. Отправьте заявку на проверку — после решения лиги вы сможете вести состав и штаб в электронном виде.')
+              : (isLeagueManaged
+                  ? 'Ожидается проверка загруженного бумажного заявочного листа лигой. Состав и штаб она внесёт в заявку сама.'
+                  : 'Ожидается проверка загруженного бумажного заявочного листа лигой. Редактирование состава и штаба будет доступно после публикации решения лиги.')}
+        </div>
+      )}
+
+      {/* Лист утверждён, но состав ведёт лига: объясняем, почему в блоках нет «плюсов».
+          Иначе исчезнувшая кнопка добавления читается как поломка. */}
+      {!isPaperBlocked && isLeagueManaged && (
+        <div className="p-3 bg-surface-level2 border border-surface-border rounded-2xl text-[13px] font-medium text-content-muted leading-relaxed">
+          Состав этой заявки ведёт лига: игроков и представителей вносит она по утверждённому заявочному листу.
+          {isEditableStatus
+            ? ' Вам доступны скан листа, номера с нашивками и документы игроков.'
+            : ' Пока заявку не вернут на исправление, состав и карточки игроков доступны только на просмотр.'}
         </div>
       )}
 
@@ -877,7 +901,7 @@ export function SeasonRosterDetails({ app, teamId, onClose, activeBrandColor, op
           title={group.label}
           count={group.data.length}
           activeBrandColor={activeBrandColor}
-          action={canEdit ? (
+          action={canEditComposition ? (
             <button type="button" onClick={(e) => { e.stopPropagation(); setAddPlayerPosition(group.key); setIsAddPlayerOpen(true); }} className="p-1 text-content-muted hover:opacity-80 transition-colors" style={activeBrandColor ? { color: activeBrandColor } : {}}>
               <Icon name="user_plus" className="w-5 h-5" />
             </button>
@@ -903,7 +927,7 @@ export function SeasonRosterDetails({ app, teamId, onClose, activeBrandColor, op
             title={role.label}
             count={group.length}
             activeBrandColor={activeBrandColor}
-            action={canEdit ? (
+            action={canEditComposition ? (
               <button type="button" onClick={(e) => { e.stopPropagation(); setAddStaffRole(role.value); setIsAddStaffOpen(true); }} className="p-1 text-content-muted hover:opacity-80 transition-colors" style={activeBrandColor ? { color: activeBrandColor } : {}}>
                 <Icon name="user_plus" className="w-5 h-5" />
               </button>
@@ -941,7 +965,8 @@ export function SeasonRosterDetails({ app, teamId, onClose, activeBrandColor, op
         player={selectedPlayer}
         roster={roster}
         canEdit={canEdit}
-        canRemove={canRemovePlayer}
+        // Убрать игрока из заявки — это правка состава: там, где его ведёт лига, кнопки нет
+        canRemove={canRemovePlayer && !isLeagueManaged}
         showVerdict={showAdmission}
         activeBrandColor={activeBrandColor}
         onSave={handleSavePlayer}
@@ -952,7 +977,9 @@ export function SeasonRosterDetails({ app, teamId, onClose, activeBrandColor, op
         isOpen={!!selectedStaff}
         onClose={() => setSelectedStaff(null)}
         person={selectedStaff}
-        canEdit={canEdit}
+        // Роль представителя — это строка в составе заявки, а не карточка человека,
+        // поэтому шторка целиком уходит в режим просмотра, когда состав ведёт лига
+        canEdit={canEditComposition}
         activeBrandColor={activeBrandColor}
         onSave={handleSaveStaff}
         onRemove={handleRemoveStaff}

@@ -56,14 +56,31 @@ const normalizeRoles = (roles) => {
 };
 
 /**
+ * Дивизион, где состав заявки ведёт лига: она вносит игроков и представителей сама,
+ * из раздела «Дивизионы» в LMS, после того как прикрепила утверждённый заявочный лист.
+ * Команде остаются скан, номера, нашивки и документы игроков.
+ *
+ * Флаг осмыслен только в бумажном дивизионе: в цифровом заявочного листа нет вовсе,
+ * и состав всегда ведёт команда.
+ */
+const isLeagueManagedRoster = (division) => !division.digital_applications_only && !!division.league_managed_roster;
+
+/**
  * Проверяет, что заявка appId принадлежит команде teamId, и что она сейчас
  * редактируема: статус draft/revision и не заблокирована ожиданием проверки
  * бумажной заявки лигой (paper_roster_league_url ещё не загружен лигой).
  * Бросает Error с полем status для унифицированной обработки в контроллерах.
+ *
+ * composition = true — операция меняет СОСТАВ заявки (добавить/убрать игрока или
+ * представителя). В дивизионах с league_managed_roster состав ведёт лига, и команде
+ * такие операции закрыты в любом статусе. Правка карточки игрока (номер, нашивки,
+ * амплуа) и загрузка документов идут с composition = false и остаются команде
+ * в статусах «Формируется» и «На исправлении».
  */
-const assertApplicationEditable = async (client, appId, teamId) => {
+const assertApplicationEditable = async (client, appId, teamId, { composition = false } = {}) => {
   const { rows } = await client.query(`
-    SELECT tt.id, tt.status, tt.team_id, tt.division_id, tt.paper_roster_league_url, d.digital_applications_only
+    SELECT tt.id, tt.status, tt.team_id, tt.division_id, tt.paper_roster_league_url,
+           d.digital_applications_only, d.league_managed_roster
     FROM tournament_teams tt
     JOIN divisions d ON tt.division_id = d.id
     WHERE tt.id = $1
@@ -76,6 +93,15 @@ const assertApplicationEditable = async (client, appId, teamId) => {
   }
 
   const app = rows[0];
+
+  // Проверяем раньше статуса: иначе команде в статусе «На проверке» вернётся отказ про
+  // статус, хотя дело не в нём — состав ей закрыт совсем.
+  if (composition && isLeagueManagedRoster(app)) {
+    const err = new Error('Состав заявки ведёт лига: добавить или убрать человека может только она');
+    err.status = 403;
+    throw err;
+  }
+
   const isPaperBlocked = !app.digital_applications_only && !app.paper_roster_league_url;
   if (isPaperBlocked || !['draft', 'revision'].includes(app.status)) {
     const err = new Error(isPaperBlocked
@@ -115,7 +141,8 @@ export const getAvailableDivisions = async (req, res) => {
              json_agg(json_build_object(
                  'id', d.id, 'name', d.name,
                  'app_start', d.application_start, 'app_end', d.application_end,
-                 'digital_applications_only', d.digital_applications_only
+                 'digital_applications_only', d.digital_applications_only,
+                 'league_managed_roster', d.league_managed_roster
              ) ORDER BY d.name) as divisions
       FROM divisions d
       JOIN seasons s ON d.season_id = s.id
@@ -139,7 +166,7 @@ export const getAvailableDivisions = async (req, res) => {
 const APPLICATION_SELECT_SQL = `
   SELECT tt.id, tt.status, tt.created_at, tt.paper_roster_team_url, tt.paper_roster_league_url,
          d.id as division_id, d.name as division_name, d.short_name as division_short_name, d.end_date as division_end_date,
-         d.digital_applications_only, d.req_med_cert, d.req_insurance, d.req_consent,
+         d.digital_applications_only, d.league_managed_roster, d.req_med_cert, d.req_insurance, d.req_consent,
          s.name as season_name,
          l.name as league_name, l.logo_url as league_logo,
 
@@ -246,7 +273,9 @@ export const getTeamRosterForPicker = async (req, res) => {
     // без исключений. Используется шторками добавления игроков/штаба, пока заявка собирается
     // локально на фронте (см. SeasonRosterDetails, виртуальный режим).
     const isVirtual = appId === 'new';
-    if (!isVirtual) await assertApplicationOwnership(pool, appId, teamId);
+    // Пикер — это шторка добавления, поэтому его закрывает то же правило, что и сами
+    // добавления: там, где состав ведёт лига, команде выбирать некого.
+    if (!isVirtual) await assertApplicationEditable(pool, appId, teamId, { composition: true });
     const exclusionAppId = isVirtual ? -1 : appId;
 
     // Штаб добавляется в заявку отдельно на каждую роль, поэтому из списка прячем не всех,
@@ -464,7 +493,8 @@ export const sendApplicationForReview = async (req, res) => {
   try {
     const { teamId, appId } = req.params;
     const { rows } = await pool.query(`
-      SELECT tt.status, tt.paper_roster_team_url, tt.paper_roster_league_url, d.digital_applications_only,
+      SELECT tt.status, tt.paper_roster_team_url, tt.paper_roster_league_url,
+             d.digital_applications_only, d.league_managed_roster,
              (SELECT COUNT(*) FROM tournament_team_roles WHERE tournament_team_id = tt.id AND left_at IS NULL) as staff_count
       FROM tournament_teams tt
       JOIN divisions d ON tt.division_id = d.id
@@ -485,7 +515,10 @@ export const sendApplicationForReview = async (req, res) => {
       return res.status(400).json({ success: false, error: 'Сначала загрузите скан заявочного листа' });
     }
 
-    if (app.digital_applications_only || app.paper_roster_league_url !== null) {
+    // Представителей требуем только там, где их вносит сама команда. Когда состав ведёт
+    // лига, штаб появится уже после проверки — иначе команда не смогла бы отправить
+    // заявку повторно после возврата на исправление.
+    if (!isLeagueManagedRoster(app) && (app.digital_applications_only || app.paper_roster_league_url !== null)) {
       if (parseInt(app.staff_count, 10) === 0) {
         return res.status(400).json({ success: false, error: 'Нельзя отправить заявку: необходимо добавить хотя бы одного представителя команды (тренера или руководителя)' });
       }
@@ -572,7 +605,7 @@ export const addPlayersToApplication = async (req, res) => {
     const { teamId, appId } = req.params;
     const { playerIds, position } = req.body;
 
-    const app = await assertApplicationEditable(client, appId, teamId);
+    const app = await assertApplicationEditable(client, appId, teamId, { composition: true });
 
     if (Array.isArray(playerIds) && playerIds.length > 0) {
       await assertPlayersAllowedInDivision(client, app.division_id, playerIds);
@@ -645,7 +678,7 @@ export const addPlayersToApplication = async (req, res) => {
 export const removePlayerFromApplication = async (req, res) => {
   try {
     const { teamId, appId, rosterId } = req.params;
-    const app = await assertApplicationEditable(pool, appId, teamId);
+    const app = await assertApplicationEditable(pool, appId, teamId, { composition: true });
 
     const gamesCheck = await pool.query(
       `SELECT EXISTS (SELECT 1 FROM games WHERE division_id = $1 AND status = 'finished') as has_games`,
@@ -794,7 +827,7 @@ export const addStaffToApplication = async (req, res) => {
       throw err;
     }
 
-    await assertApplicationEditable(client, appId, teamId);
+    await assertApplicationEditable(client, appId, teamId, { composition: true });
 
     // Штаб заявки формируется только из активного штата самой команды
     const staffCheck = await client.query(`
@@ -848,7 +881,7 @@ export const addStaffToApplication = async (req, res) => {
 export const removeStaffFromApplication = async (req, res) => {
   try {
     const { teamId, appId, userId, role } = req.params;
-    await assertApplicationEditable(pool, appId, teamId);
+    await assertApplicationEditable(pool, appId, teamId, { composition: true });
 
     const roleFilter = TOURNAMENT_ROLES.includes(role) ? role : null;
 
