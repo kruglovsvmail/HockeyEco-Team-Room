@@ -616,7 +616,7 @@ export const UserDetails = ({ data, openRightPanel, pushRightPanel }) => {
                   className={`mt-2 self-start px-2 py-0.5 font-black uppercase rounded-md shadow-sm whitespace-nowrap ${getContrastTextColor(brandColor)}`}
                   style={{ backgroundColor: brandColor, fontSize: uiFixed(10) }}
                 >
-                  {profile.is_captain ? 'Капитан (C)' : 'Ассистент (A)'}
+                  {profile.is_captain ? 'Капитан (К)' : 'Ассистент (А)'}
                 </div>
               )}
             </div>
@@ -627,7 +627,7 @@ export const UserDetails = ({ data, openRightPanel, pushRightPanel }) => {
               {profile.roster_id ? (
                 <>
                   <span className="text-[10px] font-black text-content-muted uppercase tracking-wider mb-0.5">Спортивный статус:</span>
-                  <CheckboxLP checked={formData.is_captain} onChange={handleToggleCaptainCheckbox} label="Капитан команды (C)" className="py-0.5" activeColor={activeBrandColor} />
+                  <CheckboxLP checked={formData.is_captain} onChange={handleToggleCaptainCheckbox} label="Капитан команды (К)" className="py-0.5" activeColor={activeBrandColor} />
                   <CheckboxLP checked={formData.is_assistant} onChange={handleToggleAssistantCheckbox} label="Ассистент капитана (A)" className="py-0.5" activeColor={activeBrandColor} />
                   {assistantError && <span className="text-[10px] text-danger font-bold mt-1 animate-pulse">{assistantError}</span>}
                   <ButtonLP

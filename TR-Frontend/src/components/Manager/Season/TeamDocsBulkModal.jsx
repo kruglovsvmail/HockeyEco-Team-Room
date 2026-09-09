@@ -50,33 +50,42 @@ const formatDate = (value) => {
 
 const fullName = (p) => `${p.last_name || ''} ${p.first_name || ''}`.trim();
 
-// Одна справка сразу нескольким игрокам заявки. Отмечает игроков менеджер сам: в списке
-// справки есть не все — кого-то допустили по личной, кого-то заявили уже после её выдачи.
+// Одна справка сразу нескольким людям заявки. Отмечает их менеджер сам: в списке справки
+// есть не все — кого-то допустили по личной, кого-то заявили уже после её выдачи.
+//
+// В списке и состав, и штаб: документы лежат на человеке в заявке, и играющий тренер в
+// бумажной справке обычно идёт общей строкой. Такой человек в списке ровно один — иначе
+// он получил бы две отметки на один комплект документов.
 export function TeamDocsBulkModal({ data, onClose }) {
-  const { teamId, appId, roster = [], docType = 'medical', activeBrandColor, loadData, onApplied } = data || {};
+  const { teamId, appId, roster = [], staff = [], docType = 'medical', activeBrandColor, loadData, onApplied } = data || {};
 
   const meta = TEAM_DOC_META[docType] || TEAM_DOC_META.medical;
   const urlKey = `${docType}_url`;
   const expiresKey = `${docType}_expires_at`;
 
-  const players = useMemo(
-    () => [...roster].sort((a, b) => fullName(a).localeCompare(fullName(b), 'ru')),
-    [roster]
-  );
+  const players = useMemo(() => {
+    const byUser = new Map();
+    // В строке состава человек опознаётся по player_id, в строке штаба — по user_id
+    [...roster.map(p => ({ ...p, user_id: p.player_id })), ...staff].forEach(p => {
+      const key = String(p.user_id);
+      if (!byUser.has(key)) byUser.set(key, p);
+    });
+    return [...byUser.values()].sort((a, b) => fullName(a).localeCompare(fullName(b), 'ru'));
+  }, [roster, staff]);
 
   const [file, setFile] = useState(null);
   const [expiresAt, setExpiresAt] = useState('');
   const [search, setSearch] = useState('');
   // По умолчанию отмечены те, у кого документа ещё нет: обычный случай — справка на всю
   // команду, а тем, у кого файл уже лежит, замену менеджер отмечает осознанно.
-  const [selectedIds, setSelectedIds] = useState(() => new Set(players.filter(p => !p[urlKey]).map(p => p.id)));
+  const [selectedIds, setSelectedIds] = useState(() => new Set(players.filter(p => !p[urlKey]).map(p => String(p.user_id))));
   const [isSaving, setIsSaving] = useState(false);
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [error, setError] = useState('');
 
   const filtered = players.filter(p => fullName(p).toLowerCase().includes(search.trim().toLowerCase()));
   const filledCount = players.filter(p => p[urlKey]).length;
-  const replacedCount = players.filter(p => selectedIds.has(p.id) && p[urlKey]).length;
+  const replacedCount = players.filter(p => selectedIds.has(String(p.user_id)) && p[urlKey]).length;
 
   const toggle = (id) => setSelectedIds(prev => {
     const next = new Set(prev);
@@ -84,7 +93,7 @@ export function TeamDocsBulkModal({ data, onClose }) {
     return next;
   });
 
-  const setAll = (checked) => setSelectedIds(checked ? new Set(players.map(p => p.id)) : new Set());
+  const setAll = (checked) => setSelectedIds(checked ? new Set(players.map(p => String(p.user_id))) : new Set());
 
   const apply = async () => {
     setIsSaving(true);
@@ -94,10 +103,10 @@ export function TeamDocsBulkModal({ data, onClose }) {
       formData.append('file', file);
       formData.append('type', docType);
       formData.append('expires_at', expiresAt || '');
-      formData.append('rosterIds', JSON.stringify([...selectedIds]));
+      formData.append('userIds', JSON.stringify([...selectedIds].map(Number)));
 
       const res = await fetch(
-        `${import.meta.env.VITE_API_URL}/api/manager/seasons/${teamId}/applications/${appId}/roster/docs/bulk`,
+        `${import.meta.env.VITE_API_URL}/api/manager/seasons/${teamId}/applications/${appId}/docs/bulk`,
         { method: 'POST', headers: getAuthHeaders(), body: formData }
       );
       const json = await res.json();
@@ -182,14 +191,14 @@ export function TeamDocsBulkModal({ data, onClose }) {
           {filtered.length === 0 ? (
             <div className="text-center py-6 text-[14px] font-bold text-content-muted opacity-60">Ничего не найдено</div>
           ) : filtered.map(player => {
-            const checked = selectedIds.has(player.id);
+            const checked = selectedIds.has(String(player.user_id));
             const hasDoc = !!player[urlKey];
             const expires = formatDate(player[expiresKey]);
 
             return (
               <div
-                key={player.id}
-                onClick={() => toggle(player.id)}
+                key={player.user_id}
+                onClick={() => toggle(String(player.user_id))}
                 className="w-full py-3 px-4 border border-surface-border rounded-xl flex items-center justify-between gap-3 bg-surface-level2 select-none cursor-pointer active:scale-[0.995] transition-all"
               >
                 <div className="flex items-center gap-3 min-w-0">
@@ -238,8 +247,8 @@ export function TeamDocsBulkModal({ data, onClose }) {
           {!file
             ? 'Выберите файл'
             : selectedIds.size === 0
-              ? 'Отметьте игроков'
-              : `Применить ${selectedIds.size} ${selectedIds.size === 1 ? 'игроку' : 'игрокам'}`}
+              ? 'Отметьте людей'
+              : `Применить ${selectedIds.size} ${selectedIds.size === 1 ? 'человеку' : 'людям'}`}
         </ButtonLP>
       </div>
 

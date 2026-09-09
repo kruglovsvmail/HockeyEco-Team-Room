@@ -694,9 +694,14 @@ export function SeasonRosterDetails({ app, teamId, onClose, activeBrandColor, op
     }
   };
 
-  const handleOpenDocs = (player, e) => {
+  // Одна и та же панель для игрока и представителя: документы лежат на человеке в заявке,
+  // и у играющего тренера они общие. В строке состава человек опознаётся по player_id,
+  // в строке штаба — по user_id.
+  const handleOpenDocs = (person, e) => {
     if (e) e.stopPropagation();
-    openRightPanel('playerDocs', { teamId, appId: app.id, player, division: app, editable: canEdit, loadData, activeBrandColor }, 'Документы игрока');
+    const userId = person.player_id ?? person.user_id;
+    const title = person.player_id ? 'Документы игрока' : 'Документы представителя';
+    openRightPanel('playerDocs', { teamId, appId: app.id, person, userId, division: app, editable: canEdit, loadData, activeBrandColor }, title);
   };
 
   // Командный документ — одна бумага со списком игроков внутри (типовой пример: медицинское
@@ -707,6 +712,7 @@ export function SeasonRosterDetails({ app, teamId, onClose, activeBrandColor, op
       teamId,
       appId: app.id,
       roster,
+      staff: staffList,
       docType,
       activeBrandColor,
       loadData,
@@ -734,7 +740,14 @@ export function SeasonRosterDetails({ app, teamId, onClose, activeBrandColor, op
   // Условие canEdit — это статусы «Формируется» и «На исправлении». На проверке, в допущенной
   // и в отклонённой заявке документы всё равно не принимаются (сервер вернёт отказ), поэтому
   // строк там нет вовсе.
-  const teamDocRows = (canEdit && roster.length > 0)
+  // Командный документ применяется и к игрокам, и к представителям — в бумажной справке
+  // играющий тренер обычно в общем списке.
+  const docPeopleCount = new Set([
+    ...roster.map(p => String(p.player_id)),
+    ...staffList.map(st => String(st.user_id)),
+  ]).size;
+
+  const teamDocRows = (canEdit && docPeopleCount > 0)
     ? Object.entries(TEAM_DOC_META)
         .filter(([, meta]) => !!app[meta.reqKey])
         .map(([type, meta]) => ({ type, meta }))
@@ -845,6 +858,26 @@ export function SeasonRosterDetails({ app, teamId, onClose, activeBrandColor, op
         </div>
       )
     },
+    // Документы допуска дивизион требует и с представителей — по тем же флагам, что и
+    // с игроков. У играющего тренера бейдж в обеих таблицах показывает одно и то же:
+    // документы лежат на человеке, а не на строке состава.
+    ...(requiresDocs ? [{
+      key: 'docs', title: <span className="whitespace-nowrap">Док-ты</span>, width: '64px', align: 'center',
+      render: (s) => {
+        const summary = getDocsSummary(s, app);
+        if (!summary) return null;
+        return (
+          <button
+            type="button"
+            onClick={(e) => handleOpenDocs(s, e)}
+            className={clsx(PILL_CLASS, "gap-1 active:scale-95 transition-transform", summary.className)}
+          >
+            <Icon name="file" className="w-3.5 h-3.5 shrink-0" />
+            {summary.label}
+          </button>
+        );
+      }
+    }] : []),
   ];
 
   return (

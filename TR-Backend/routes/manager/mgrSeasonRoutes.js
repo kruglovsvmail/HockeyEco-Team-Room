@@ -14,8 +14,8 @@ import {
   addPlayersToApplication,
   removePlayerFromApplication,
   updateRosterEntry,
-  uploadRosterDocs,
-  bulkUploadRosterDocs,
+  uploadPersonDocs,
+  bulkUploadPersonDocs,
   addStaffToApplication,
   removeStaffFromApplication
 } from '../../controllers/manager/MgrSeasonController.js';
@@ -35,14 +35,14 @@ router.get('/:teamId/applications/:appId/roster-picker', verifyToken, requireTea
 router.post('/:teamId/applications/:appId/roster', verifyToken, requireTeamPermission('MGR_SEASON_ROSTERS'), addPlayersToApplication);
 router.delete('/:teamId/applications/:appId/roster/:rosterId', verifyToken, requireTeamPermission('MGR_SEASON_ROSTERS'), removePlayerFromApplication);
 router.patch('/:teamId/applications/:appId/roster/:rosterId', verifyToken, requireTeamPermission('MGR_SEASON_ROSTERS'), updateRosterEntry);
-router.post('/:teamId/applications/:appId/roster/:rosterId/docs', verifyToken, requireTeamPermission('MGR_SEASON_ROSTERS'), upload.fields([
+// Документы допуска — на человека в заявке, а не на строку состава: представитель может
+// быть и игроком, и документы у него одни (см. tournament_person_docs).
+router.post('/:teamId/applications/:appId/docs/bulk', verifyToken, requireTeamPermission('MGR_SEASON_ROSTERS'), upload.single('file'), bulkUploadPersonDocs);
+router.post('/:teamId/applications/:appId/docs/:userId', verifyToken, requireTeamPermission('MGR_SEASON_ROSTERS'), upload.fields([
   { name: 'insurance', maxCount: 1 },
   { name: 'medical', maxCount: 1 },
   { name: 'consent', maxCount: 1 }
-]), uploadRosterDocs);
-// Один файл сразу нескольким игрокам заявки — командная справка со списком внутри.
-// Тип документа и получатели приходят полями того же multipart-запроса.
-router.post('/:teamId/applications/:appId/roster/docs/bulk', verifyToken, requireTeamPermission('MGR_SEASON_ROSTERS'), upload.single('file'), bulkUploadRosterDocs);
+]), uploadPersonDocs);
 
 router.post('/:teamId/applications/:appId/staff', verifyToken, requireTeamPermission('MGR_SEASON_ROSTERS'), addStaffToApplication);
 // Без :role — человек убирается из заявки целиком, с :role — снимается только эта его роль

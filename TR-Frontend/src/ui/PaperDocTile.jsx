@@ -9,6 +9,10 @@ import { DOCUMENT_ACCEPT } from '../utils/uploadFormats';
 // см. PlayerDocsModal.jsx). Внешний вид один и тот же во всех статусах: плоская карточка с иконкой
 // и подписью. editable добавляет только загрузку (когда файла и локального выбора ещё нет) и крестик
 // удаления (когда есть) — сама рамка никогда не превращается в дропзону.
+//
+// replaceable — плитка принимает файл и поверх уже загруженного. Нужна там, где документ
+// нельзя просто убрать, а можно только заменить другим: документы допуска в заявке
+// (PlayerDocsModal). Там крестика нет вовсе, и без этого флага файл стало бы не поменять.
 export function PaperDocTile({
   url,
   pendingLabel, // имя локально выбранного файла, ещё не сохранённого на сервере
@@ -16,6 +20,7 @@ export function PaperDocTile({
   emptyLabel = 'Файл не загружен',
   tone = 'brand',
   editable = false,
+  replaceable = false,
   onUpload,
   onDeleteClick,
   uploading = false,
@@ -23,7 +28,7 @@ export function PaperDocTile({
 }) {
   const toneClass = tone === 'success' ? 'bg-success/15 text-success' : 'bg-brand/15 text-brand';
   const hasContent = !!url || !!pendingLabel;
-  const canUpload = editable && !hasContent && !!onUpload;
+  const canUpload = editable && !!onUpload && (!hasContent || replaceable);
   const canDelete = editable && hasContent && !!onDeleteClick;
 
   // 15%-альфа тон иконки под цвет команды (тот же приём, что и в ButtonLP), если включено цветовое кодирование

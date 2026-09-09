@@ -22,25 +22,6 @@ const getFileExt = (originalname) => (originalname.split('.').pop() || 'bin');
 // Согласия тут нет намеренно: его подписывает каждый лично, общего согласия не бывает.
 const BULK_DOC_TYPES = ['medical', 'insurance'];
 
-// Прежний файл документа игрока в S3 после замены или очистки. Раньше он оставался
-// в бакете навсегда: «очистить документ» обнуляло только ссылку в базе, а новый скан
-// ложился рядом, если у него другое расширение — или если согласие до этого подписали
-// на сайте лиги, где в имя файла добавляется случайный хвост.
-//
-// Вызывать строго ПОСЛЕ успешной записи в БД: иначе сбой на UPDATE оставил бы заявку
-// со ссылкой на уже удалённый файл.
-const deleteReplacedDoc = async (previousUrl, newUrl, rosterId, type) => {
-  const key = (previousUrl || '').replace(/^\//, '');
-  if (!key || `/${key}` === newUrl) return;
-  // Трогаем только «свои» файлы этой заявки: в колонке теоретически может оказаться
-  // ссылка на что-то постороннее, и удалять её вслепую нельзя.
-  if (!key.startsWith(`uploads/tournament_rosters_${rosterId}_${type}`)) return;
-
-  await s3
-    .send(new DeleteObjectCommand({ Bucket: S3_BUCKET, Key: key }))
-    .catch((err) => console.error(`Не удалось удалить прежний файл (${type}):`, err.message));
-};
-
 /**
  * Роли представителя в турнирной заявке. Их ровно три — в отличие от ролей внутри команды
  * (team_roles), где дополнительно живёт head_coach. Главный тренер и тренер команды
@@ -184,8 +165,8 @@ const APPLICATION_SELECT_SQL = `
                  'id', tr.id, 'player_id', tr.player_id, 'jersey_number', tr.jersey_number,
                  'position', tr.position, 'is_captain', tr.is_captain, 'is_assistant', tr.is_assistant,
                  'application_status', tr.application_status,
-                 'medical_url', tr.medical_url, 'insurance_url', tr.insurance_url, 'consent_url', tr.consent_url,
-                 'medical_expires_at', tr.medical_expires_at, 'insurance_expires_at', tr.insurance_expires_at, 'consent_expires_at', tr.consent_expires_at,
+                 'medical_url', tpd.medical_url, 'insurance_url', tpd.insurance_url, 'consent_url', tpd.consent_url,
+                 'medical_expires_at', tpd.medical_expires_at, 'insurance_expires_at', tpd.insurance_expires_at, 'consent_expires_at', tpd.consent_expires_at,
                  'first_name', u.first_name, 'last_name', u.last_name,
                  'user_avatar_url', u.avatar_url,
                  'team_member_photo_url', tm.photo_url,
@@ -208,6 +189,10 @@ const APPLICATION_SELECT_SQL = `
              ) ORDER BY u.last_name ASC)
              FROM tournament_rosters tr
              JOIN users u ON tr.player_id = u.id
+             -- Документы допуска лежат на паре «заявка + человек»: у играющего
+             -- представителя они одни и те же и в составе, и в штабе
+             LEFT JOIN tournament_person_docs tpd
+                    ON tpd.tournament_team_id = tt.id AND tpd.user_id = u.id
              LEFT JOIN team_members tm ON tm.user_id = u.id AND tm.team_id = tt.team_id
              LEFT JOIN user_qualifications uq
                     ON uq.user_id = u.id AND uq.league_id = s.league_id AND uq.ended_at IS NULL
@@ -222,10 +207,16 @@ const APPLICATION_SELECT_SQL = `
                  'role', ttr.tournament_role,
                  'first_name', u.first_name, 'last_name', u.last_name,
                  'user_avatar_url', u.avatar_url,
-                 'team_member_photo_url', tm.photo_url
+                 'team_member_photo_url', tm.photo_url,
+                 -- Те же документы допуска, что и у игроков: дивизион требует их с
+                 -- представителей по тем же флагам req_med_cert / req_insurance / req_consent
+                 'medical_url', tpd.medical_url, 'insurance_url', tpd.insurance_url, 'consent_url', tpd.consent_url,
+                 'medical_expires_at', tpd.medical_expires_at, 'insurance_expires_at', tpd.insurance_expires_at, 'consent_expires_at', tpd.consent_expires_at
              ) ORDER BY u.last_name ASC)
              FROM tournament_team_roles ttr
              JOIN users u ON ttr.user_id = u.id
+             LEFT JOIN tournament_person_docs tpd
+                    ON tpd.tournament_team_id = tt.id AND tpd.user_id = u.id
              LEFT JOIN team_members tm ON tm.user_id = u.id AND tm.team_id = tt.team_id
              WHERE ttr.tournament_team_id = tt.id AND ttr.left_at IS NULL),
          '[]'::json) as staff
@@ -750,83 +741,143 @@ export const updateRosterEntry = async (req, res) => {
   }
 };
 
-// POST /:teamId/applications/:appId/roster/:rosterId/docs (multipart: insurance?, medical?, consent?)
-export const uploadRosterDocs = async (req, res) => {
-  try {
-    const { teamId, appId, rosterId } = req.params;
-    const {
-      insurance_cleared, medical_cleared, consent_cleared,
-      insurance_expires_at, medical_expires_at, consent_expires_at
-    } = req.body;
+// ─────────────────── ДОКУМЕНТЫ ДОПУСКА В ЗАЯВКЕ ───────────────────
+// Живут на паре «заявка + человек» (tournament_person_docs), а не на строке игрока.
+// Причина одна и важная: представитель команды может быть заявлен и игроком, и тогда
+// справка у него должна быть одна на обе роли. Держи их в двух местах — разъедутся
+// в первый же день, потому что грузить будут то из состава, то из штаба.
+//
+// Побочный полезный эффект: документы переживают отзаявку и повторное добавление
+// игрока — раньше они лежали на строке ростера и с ней же терялись.
 
-    await assertApplicationEditable(pool, appId, teamId);
+const personDocKey = (appId, userId, type) => `uploads/tournament_person_${appId}_${userId}_${type}`;
 
-    // Ссылки на текущие файлы забираем той же проверкой владения: после UPDATE узнать,
-    // что лежало раньше, уже неоткуда, а старые объекты надо убрать из бакета.
-    const ownerCheck = await pool.query(
-      `SELECT id, insurance_url, medical_url, consent_url
-       FROM tournament_rosters WHERE id = $1 AND tournament_team_id = $2`,
-      [rosterId, appId]
-    );
-    if (ownerCheck.rows.length === 0) {
-      return res.status(404).json({ success: false, error: 'Игрок не найден в этой заявке' });
-    }
-    const previous = ownerCheck.rows[0];
+// Ключ файлов, загруженных до переезда документов: они лежат от строки ростера.
+const legacyDocKey = (type) => new RegExp(`^uploads/tournament_rosters_\\d+_${type}`);
 
-    const files = req.files || {};
-    let insuranceUrl, medicalUrl, consentUrl;
+// Прежний файл документа в S3 после замены. Вызывать строго ПОСЛЕ успешной записи в БД:
+// иначе сбой на UPDATE оставил бы заявку со ссылкой на уже удалённый файл.
+const deleteReplacedPersonDoc = async (previousUrl, newUrl, appId, userId, type) => {
+  const key = (previousUrl || '').replace(/^\//, '');
+  if (!key || `/${key}` === newUrl) return;
 
-    if (insurance_cleared === 'true') insuranceUrl = null;
-    else if (files['insurance']?.[0]) {
-      const f = files['insurance'][0];
-      insuranceUrl = await uploadBufferToS3(f, `uploads/tournament_rosters_${rosterId}_insurance.${getFileExt(f.originalname)}`);
-    }
+  // Трогаем только файлы этого же слота документа — своего формата ключа или старого,
+  // от строки ростера. Ссылка на что-то постороннее удаляться не должна.
+  const isOwn = key.startsWith(personDocKey(appId, userId, type)) || legacyDocKey(type).test(key);
+  if (!isOwn) return;
 
-    if (medical_cleared === 'true') medicalUrl = null;
-    else if (files['medical']?.[0]) {
-      const f = files['medical'][0];
-      medicalUrl = await uploadBufferToS3(f, `uploads/tournament_rosters_${rosterId}_medical.${getFileExt(f.originalname)}`);
-    }
+  await s3
+    .send(new DeleteObjectCommand({ Bucket: S3_BUCKET, Key: key }))
+    .catch((err) => console.error(`Не удалось удалить прежний файл (${type}):`, err.message));
+};
 
-    if (consent_cleared === 'true') consentUrl = null;
-    else if (files['consent']?.[0]) {
-      const f = files['consent'][0];
-      consentUrl = await uploadBufferToS3(f, `uploads/tournament_rosters_${rosterId}_consent.${getFileExt(f.originalname)}`);
-    }
+// Человек должен быть в этой заявке — игроком или представителем. Иначе документы
+// повисли бы на постороннем пользователе.
+const assertPersonInApplication = async (client, appId, userId) => {
+  const { rowCount } = await client.query(`
+    SELECT 1 FROM tournament_rosters
+     WHERE tournament_team_id = $1 AND player_id = $2 AND period_end IS NULL
+    UNION ALL
+    SELECT 1 FROM tournament_team_roles
+     WHERE tournament_team_id = $1 AND user_id = $2 AND left_at IS NULL
+     LIMIT 1
+  `, [appId, userId]);
 
-    const updates = ['updated_at = NOW()']; const values = []; let counter = 1;
-    if (insuranceUrl !== undefined) { updates.push(`insurance_url = $${counter++}`); values.push(insuranceUrl); }
-    if (insurance_expires_at !== undefined) { updates.push(`insurance_expires_at = $${counter++}`); values.push(insurance_expires_at || null); }
-    if (medicalUrl !== undefined) { updates.push(`medical_url = $${counter++}`); values.push(medicalUrl); }
-    if (medical_expires_at !== undefined) { updates.push(`medical_expires_at = $${counter++}`); values.push(medical_expires_at || null); }
-    if (consentUrl !== undefined) { updates.push(`consent_url = $${counter++}`); values.push(consentUrl); }
-    if (consent_expires_at !== undefined) { updates.push(`consent_expires_at = $${counter++}`); values.push(consent_expires_at || null); }
-
-    if (updates.length > 1) {
-      values.push(rosterId);
-      await pool.query(`UPDATE tournament_rosters SET ${updates.join(', ')} WHERE id = $${counter}`, values);
-
-      if (insuranceUrl !== undefined) await deleteReplacedDoc(previous.insurance_url, insuranceUrl, rosterId, 'insurance');
-      if (medicalUrl !== undefined) await deleteReplacedDoc(previous.medical_url, medicalUrl, rosterId, 'medical');
-      if (consentUrl !== undefined) await deleteReplacedDoc(previous.consent_url, consentUrl, rosterId, 'consent');
-    }
-
-    return res.json({ success: true, insurance_url: insuranceUrl, medical_url: medicalUrl, consent_url: consentUrl });
-  } catch (err) {
-    console.error('[Upload Roster Docs Error]:', err);
-    return res.status(err.status || 500).json({ success: false, error: err.status ? err.message : 'Ошибка сервера при загрузке документов игрока' });
+  if (rowCount === 0) {
+    const err = new Error('Этот человек не заявлен в составе или штабе заявки');
+    err.status = 404;
+    throw err;
   }
 };
 
-// POST /:teamId/applications/:appId/roster/docs/bulk (multipart: file, type, expires_at, rosterIds)
+const loadPersonDocs = async (client, appId, userId) => {
+  const { rows } = await client.query(
+    `SELECT medical_url, insurance_url, consent_url FROM tournament_person_docs
+      WHERE tournament_team_id = $1 AND user_id = $2`,
+    [appId, userId]
+  );
+  return rows[0] || {};
+};
+
+// Запись документов одного человека. Строка заводится по факту первой загрузки.
+const savePersonDocs = async (client, appId, userId, patch) => {
+  const columns = Object.keys(patch);
+  if (columns.length === 0) return;
+
+  const insertCols = ['tournament_team_id', 'user_id', ...columns];
+  const values = [appId, userId, ...columns.map(c => patch[c])];
+  const placeholders = values.map((_, i) => `$${i + 1}`);
+  const updates = columns.map(c => `${c} = EXCLUDED.${c}`);
+
+  await client.query(`
+    INSERT INTO tournament_person_docs (${insertCols.join(', ')})
+    VALUES (${placeholders.join(', ')})
+    ON CONFLICT ON CONSTRAINT tournament_person_docs_unique
+    DO UPDATE SET ${updates.join(', ')}, updated_at = NOW()
+  `, values);
+};
+
+// POST /:teamId/applications/:appId/docs/:userId (multipart: insurance?, medical?, consent?)
 //
-// Командный документ — одна бумага со списком игроков внутри (типовой пример: медицинское
+// Удаления тут нет намеренно: документ допуска нельзя просто убрать из заявки, его можно
+// только заменить другим файлом (см. PlayerDocsModal — крестика у плитки нет).
+export const uploadPersonDocs = async (req, res) => {
+  try {
+    const { teamId, appId, userId } = req.params;
+
+    await assertApplicationEditable(pool, appId, teamId);
+    await assertPersonInApplication(pool, appId, userId);
+
+    // Ссылки на текущие файлы забираем до записи: после UPDATE узнать, что лежало
+    // раньше, уже неоткуда, а старые объекты надо убрать из бакета.
+    const previous = await loadPersonDocs(pool, appId, userId);
+
+    const files = req.files || {};
+    const patch = {};
+    const uploaded = {};
+
+    for (const type of DOC_TYPES) {
+      const file = files[type]?.[0];
+      if (file) {
+        const key = `${personDocKey(appId, userId, type)}.${getFileExt(file.originalname)}`;
+        uploaded[type] = await uploadBufferToS3(file, key);
+        patch[`${type}_url`] = uploaded[type];
+      }
+
+      const expires = req.body[`${type}_expires_at`];
+      if (expires !== undefined) patch[`${type}_expires_at`] = expires || null;
+    }
+
+    await savePersonDocs(pool, appId, userId, patch);
+
+    for (const type of DOC_TYPES) {
+      if (uploaded[type]) {
+        await deleteReplacedPersonDoc(previous[`${type}_url`], uploaded[type], appId, userId, type);
+      }
+    }
+
+    return res.json({
+      success: true,
+      medical_url: uploaded.medical,
+      insurance_url: uploaded.insurance,
+      consent_url: uploaded.consent,
+    });
+  } catch (err) {
+    console.error('[Upload Person Docs Error]:', err);
+    return res.status(err.status || 500).json({ success: false, error: err.status ? err.message : 'Ошибка сервера при загрузке документов' });
+  }
+};
+
+// POST /:teamId/applications/:appId/docs/bulk (multipart: file, type, expires_at, userIds)
+//
+// Командный документ — одна бумага со списком людей внутри (типовой пример: медицинское
 // заключение по приложению N2 к приказу Минздрава N 1144н). Отдельной сущности под неё в базе
-// нет: файл раскладывается копиями по выбранным строкам состава, и дальше это обычные личные
-// документы — со своей плиткой, своим сроком и своим удалением у каждого игрока.
+// нет: файл раскладывается копиями по выбранным людям, и дальше это обычные личные
+// документы — со своей плиткой, своим сроком и своей заменой у каждого.
 //
-// Отмечает игроков менеджер сам: в списке справки есть не все, а кого-то могли и не допустить.
-export const bulkUploadRosterDocs = async (req, res) => {
+// Отмечает людей менеджер сам: в списке справки есть не все, а кого-то могли и не допустить.
+// В списке и игроки, и представители — играющий тренер в бумажной справке обычно есть.
+export const bulkUploadPersonDocs = async (req, res) => {
   try {
     const { teamId, appId } = req.params;
     const { type, expires_at } = req.body;
@@ -842,70 +893,76 @@ export const bulkUploadRosterDocs = async (req, res) => {
       throw err;
     }
 
-    // rosterIds приходит строкой: запрос multipart, JSON в теле нет
-    let rosterIds;
+    // userIds приходит строкой: запрос multipart, JSON в теле нет
+    let userIds;
     try {
-      rosterIds = JSON.parse(req.body.rosterIds || '[]');
+      userIds = JSON.parse(req.body.userIds || '[]');
     } catch {
-      rosterIds = [];
+      userIds = [];
     }
-    rosterIds = [...new Set((Array.isArray(rosterIds) ? rosterIds : []).map(Number).filter(Number.isInteger))];
+    userIds = [...new Set((Array.isArray(userIds) ? userIds : []).map(Number).filter(Number.isInteger))];
 
-    if (rosterIds.length === 0) {
-      const err = new Error('Не выбран ни один игрок');
+    if (userIds.length === 0) {
+      const err = new Error('Не выбран ни один человек');
       err.status = 400;
       throw err;
     }
 
     await assertApplicationEditable(pool, appId, teamId);
 
-    // Строки состава и их прежние файлы забираем одним запросом: он же проверяет, что все
-    // выбранные игроки принадлежат этой заявке и не отзаявлены.
-    const { rows } = await pool.query(
-      `SELECT id, ${type}_url AS previous_url
-         FROM tournament_rosters
-        WHERE id = ANY($1::int[]) AND tournament_team_id = $2 AND period_end IS NULL`,
-      [rosterIds, appId]
-    );
+    // Проверяем разом, что все выбранные действительно в этой заявке — игроками или
+    // представителями, — и заодно забираем прежние файлы.
+    const { rows } = await pool.query(`
+      SELECT p.user_id, tpd.${type}_url AS previous_url
+        FROM (
+          SELECT DISTINCT player_id AS user_id FROM tournament_rosters
+           WHERE tournament_team_id = $1 AND period_end IS NULL
+          UNION
+          SELECT DISTINCT user_id FROM tournament_team_roles
+           WHERE tournament_team_id = $1 AND left_at IS NULL
+        ) p
+        LEFT JOIN tournament_person_docs tpd
+               ON tpd.tournament_team_id = $1 AND tpd.user_id = p.user_id
+       WHERE p.user_id = ANY($2::int[])
+    `, [appId, userIds]);
 
-    if (rows.length !== rosterIds.length) {
-      const err = new Error('Часть выбранных игроков не найдена в этой заявке');
+    if (rows.length !== userIds.length) {
+      const err = new Error('Часть выбранных людей не найдена в этой заявке');
       err.status = 400;
       throw err;
     }
 
-    // Файл кладём в бакет столько раз, сколько отмечено игроков, — по ключу на строку состава.
-    // Копия у каждого своя намеренно: ключи и удаление прежних файлов завязаны на rosterId
-    // (см. deleteReplacedDoc), и одна общая ссылка на всех означала бы, что очистка документа
-    // у одного игрока уносит файл у всех остальных.
-    //
-    // Server-side CopyObject тут не используем: провайдер S3-совместимый, и лишняя зависимость
-    // от его поддержки копирования не окупается — буфер уже в памяти сервера.
+    // Файл кладём в бакет столько раз, сколько отмечено людей, — по ключу на человека.
+    // Копия у каждого своя намеренно: ключи и удаление прежних файлов завязаны на пару
+    // «заявка + человек», и одна общая ссылка на всех означала бы, что замена документа
+    // у одного уносит файл у всех остальных.
     const ext = getFileExt(req.file.originalname);
     const targets = rows.map(row => ({
-      id: row.id,
+      userId: row.user_id,
       previousUrl: row.previous_url,
-      url: `/uploads/tournament_rosters_${row.id}_${type}.${ext}`,
+      url: `/${personDocKey(appId, row.user_id, type)}.${ext}`,
     }));
 
     await Promise.all(targets.map(t => uploadBufferToS3(req.file, t.url.replace(/^\//, ''))));
 
-    await pool.query(
-      `UPDATE tournament_rosters tr
-          SET ${type}_url = v.url, ${type}_expires_at = $1, updated_at = NOW()
-         FROM unnest($2::int[], $3::text[]) AS v(id, url)
-        WHERE tr.id = v.id`,
-      [expires_at || null, targets.map(t => t.id), targets.map(t => t.url)]
-    );
+    await pool.query(`
+      INSERT INTO tournament_person_docs (tournament_team_id, user_id, ${type}_url, ${type}_expires_at)
+      SELECT $1, v.user_id, v.url, $2
+        FROM unnest($3::int[], $4::text[]) AS v(user_id, url)
+      ON CONFLICT ON CONSTRAINT tournament_person_docs_unique
+      DO UPDATE SET ${type}_url = EXCLUDED.${type}_url,
+                    ${type}_expires_at = EXCLUDED.${type}_expires_at,
+                    updated_at = NOW()
+    `, [appId, expires_at || null, targets.map(t => t.userId), targets.map(t => t.url)]);
 
-    // Только после успешной записи: сбой на UPDATE оставил бы заявку со ссылками на удалённое
+    // Только после успешной записи: сбой на INSERT оставил бы заявку со ссылками на удалённое
     for (const t of targets) {
-      await deleteReplacedDoc(t.previousUrl, t.url, t.id, type);
+      await deleteReplacedPersonDoc(t.previousUrl, t.url, appId, t.userId, type);
     }
 
     return res.json({ success: true, updated: targets.length });
   } catch (err) {
-    console.error('[Bulk Upload Roster Docs Error]:', err);
+    console.error('[Bulk Upload Person Docs Error]:', err);
     return res.status(err.status || 500).json({ success: false, error: err.status ? err.message : 'Ошибка сервера при массовой загрузке документа' });
   }
 };

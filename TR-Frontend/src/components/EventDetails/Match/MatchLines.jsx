@@ -1258,7 +1258,7 @@ export const MatchLines = ({ event, initialAttendees = [], initialDraftLines = [
 
             <div className="flex flex-col gap-3 border border-surface-border rounded-2xl p-4">
               <CheckboxLP 
-                label="Капитан команды (C)" 
+                label="Капитан команды (К)" 
                 checked={editCaptain} 
                 activeColor={hasTeamColor ? event.team_color : null}
                 onChange={(val) => {

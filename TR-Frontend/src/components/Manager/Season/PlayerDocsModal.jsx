@@ -1,7 +1,6 @@
 import React, { useState } from 'react';
 import { PaperDocTile } from '../../../ui/PaperDocTile';
 import { NativeDateInputLP } from '../../../ui/Input-LP';
-import { ConfirmSheet } from '../../../ui/ConfirmSheet';
 import { getAuthHeaders } from '../../../utils/helpers';
 
 // Postgres date -> "YYYY-MM-DD" для <input type="date">
@@ -10,26 +9,27 @@ const toDateInputValue = (value) => {
   return String(value).slice(0, 10);
 };
 
-const DOC_LABELS = {
-  medical: 'медицинскую справку',
-  insurance: 'страховой полис',
-  consent: 'согласие',
-};
-
-function DocBlock({ title, fileUrl, expiresAt, editable, uploading, onFileChange, onDeleteClick, onExpiryChange, activeBrandColor }) {
+function DocBlock({ title, fileUrl, expiresAt, editable, uploading, onFileChange, onExpiryChange, activeBrandColor }) {
   return (
     <div className="p-4 bg-surface-level1 border border-surface-border rounded-2xl flex flex-col gap-3">
       <span className="text-[10px] font-black text-content-muted uppercase tracking-widest">{title}</span>
+      {/* Удаления нет намеренно: документ допуска нельзя просто убрать из заявки,
+          его можно только заменить другим файлом — поэтому плитка replaceable и без крестика. */}
       <PaperDocTile
         url={fileUrl}
         doneLabel="Открыть файл"
         emptyLabel={editable ? 'Загрузить файл' : 'Файл не загружен'}
         editable={editable}
+        replaceable
         uploading={uploading}
         onUpload={onFileChange}
-        onDeleteClick={onDeleteClick}
         activeBrandColor={activeBrandColor}
       />
+      {editable && fileUrl && (
+        <span className="text-[10px] text-content-subtle uppercase tracking-wider -mt-1">
+          Нажмите на плитку, чтобы заменить файл
+        </span>
+      )}
       {editable ? (
         <NativeDateInputLP label="Действует до" value={expiresAt} onChange={onExpiryChange} activeColor={activeBrandColor} />
       ) : (
@@ -39,10 +39,16 @@ function DocBlock({ title, fileUrl, expiresAt, editable, uploading, onFileChange
   );
 }
 
-// Каждое действие (загрузка/удаление файла, смена даты) сохраняется на сервер сразу же —
-// отдельной кнопки «Сохранить» тут нет, панель ведёт себя как прямое редактирование.
+// Каждое действие (загрузка файла, смена даты) сохраняется на сервер сразу же — отдельной
+// кнопки «Сохранить» тут нет, панель ведёт себя как прямое редактирование. Удаления в панели
+// нет вовсе: документ допуска можно только заменить другим файлом.
+//
+// Панель одна и та же для игрока и для представителя: документы лежат на человеке в заявке
+// (tournament_person_docs), и у играющего тренера они одни и те же в обеих ролях. person —
+// строка состава или строка штаба, userId берётся из неё вызывающим экраном.
 export function PlayerDocsModal({ data }) {
-  const { teamId, appId, player, division, editable, loadData, activeBrandColor } = data || {};
+  const { teamId, appId, person, userId, division, editable, loadData, activeBrandColor } = data || {};
+  const player = person;
 
   const [medicalUrl, setMedicalUrl] = useState(player?.medical_url ?? null);
   const [medExp, setMedExp] = useState(toDateInputValue(player?.medical_expires_at));
@@ -53,25 +59,22 @@ export function PlayerDocsModal({ data }) {
   const [consentUrl, setConsentUrl] = useState(player?.consent_url ?? null);
   const [consentExp, setConsentExp] = useState(toDateInputValue(player?.consent_expires_at));
 
-  const [pendingDeleteKey, setPendingDeleteKey] = useState(null); // 'medical' | 'insurance' | 'consent' | null
   const [uploadingKey, setUploadingKey] = useState(null);
   const [error, setError] = useState('');
 
-  if (!player || !division) return null;
+  if (!player || !userId || !division) return null;
 
   const URL_SETTERS = { medical: setMedicalUrl, insurance: setInsuranceUrl, consent: setConsentUrl };
-  const EXP_SETTERS = { medical: setMedExp, insurance: setInsExp, consent: setConsentExp };
 
-  const saveDoc = async (key, { file, cleared, expiresAt } = {}) => {
+  const saveDoc = async (key, { file, expiresAt } = {}) => {
     setUploadingKey(key);
     setError('');
     try {
       const formData = new FormData();
       if (file) formData.append(key, file);
-      if (cleared) formData.append(`${key}_cleared`, 'true');
       if (expiresAt !== undefined) formData.append(`${key}_expires_at`, expiresAt || '');
 
-      const res = await fetch(`${import.meta.env.VITE_API_URL}/api/manager/seasons/${teamId}/applications/${appId}/roster/${player.id}/docs`, {
+      const res = await fetch(`${import.meta.env.VITE_API_URL}/api/manager/seasons/${teamId}/applications/${appId}/docs/${userId}`, {
         method: 'POST',
         headers: getAuthHeaders(),
         body: formData
@@ -92,14 +95,6 @@ export function PlayerDocsModal({ data }) {
     }
   };
 
-  const handleConfirmDeleteDoc = async () => {
-    const key = pendingDeleteKey;
-    if (!key) return;
-    await saveDoc(key, { cleared: true, expiresAt: '' });
-    EXP_SETTERS[key]('');
-    setPendingDeleteKey(null);
-  };
-
   return (
     <div className="flex flex-col h-full bg-surface-level2 text-left overflow-hidden">
       <div className="px-4 pt-4 pb-3 shrink-0 border-b border-surface-border">
@@ -116,7 +111,6 @@ export function PlayerDocsModal({ data }) {
             editable={editable}
             uploading={uploadingKey === 'medical'}
             onFileChange={(file) => saveDoc('medical', { file })}
-            onDeleteClick={() => setPendingDeleteKey('medical')}
             onExpiryChange={(value) => { setMedExp(value); saveDoc('medical', { expiresAt: value }); }}
             activeBrandColor={activeBrandColor}
           />
@@ -129,7 +123,6 @@ export function PlayerDocsModal({ data }) {
             editable={editable}
             uploading={uploadingKey === 'insurance'}
             onFileChange={(file) => saveDoc('insurance', { file })}
-            onDeleteClick={() => setPendingDeleteKey('insurance')}
             onExpiryChange={(value) => { setInsExp(value); saveDoc('insurance', { expiresAt: value }); }}
             activeBrandColor={activeBrandColor}
           />
@@ -142,7 +135,6 @@ export function PlayerDocsModal({ data }) {
             editable={editable}
             uploading={uploadingKey === 'consent'}
             onFileChange={(file) => saveDoc('consent', { file })}
-            onDeleteClick={() => setPendingDeleteKey('consent')}
             onExpiryChange={(value) => { setConsentExp(value); saveDoc('consent', { expiresAt: value }); }}
             activeBrandColor={activeBrandColor}
           />
@@ -157,16 +149,6 @@ export function PlayerDocsModal({ data }) {
         {error && <div className="text-[14px] font-medium text-danger">{error}</div>}
       </div>
 
-      <ConfirmSheet
-        isOpen={!!pendingDeleteKey}
-        onClose={() => setPendingDeleteKey(null)}
-        onConfirm={handleConfirmDeleteDoc}
-        isLoading={uploadingKey === pendingDeleteKey}
-        title="Удалить документ?"
-        description={pendingDeleteKey && <>Файл — <span className="font-bold text-content-main">{DOC_LABELS[pendingDeleteKey]}</span> — будет удалён из заявки.</>}
-        confirmLabel="Да, удалить"
-        variant="danger"
-      />
     </div>
   );
 }
