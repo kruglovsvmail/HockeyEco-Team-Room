@@ -27,7 +27,7 @@ function DocBlock({ title, fileUrl, expiresAt, editable, uploading, onFileChange
       />
       {editable && fileUrl && (
         <span className="text-[10px] text-content-subtle uppercase tracking-wider -mt-1">
-          Нажмите на плитку, чтобы заменить файл
+          Для замены нажмите на иконку
         </span>
       )}
       {editable ? (
