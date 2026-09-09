@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef, Suspense, lazy, useCallback, useMemo } from 'react';
 import { useOutletContext, useNavigate } from 'react-router-dom';
 import clsx from 'clsx';
-import { getAuthHeaders, getImageUrl, getTeamUiColor } from '../utils/helpers';
+import { getAuthHeaders, getImageUrl, getTeamUiColor, isTeamOwner as isTeamOwnerOf } from '../utils/helpers';
 import { SegmentedControl } from '../ui/SegmentedControl';
 import { useAccess } from '../hooks/useAccess';
 import { PERMISSIONS, ROLES } from '../utils/permissions';
@@ -126,7 +126,7 @@ export const MyTeamPage = () => {
   const { checkAccess } = useAccess(user, selectedTeam);
   
   const teamRoles = selectedTeam?.user_role?.split(',').map(r => r.trim()) || [];
-  const isTeamOwner = selectedTeam?.owner_id === user?.id;
+  const isTeamOwner = isTeamOwnerOf(selectedTeam, user?.id);
   const isManagerOrCoach = isTeamOwner || teamRoles.some(r => ['team_manager', 'team_admin', 'head_coach', 'coach'].includes(r));
 
   const hasAllTabManageAccess = checkAccess('TEAM_MANAGE_TAB_ALL');
@@ -398,7 +398,7 @@ export const MyTeamPage = () => {
   // запертому можно: страницы разделов сами показывают SubscriptionStub.
   const teamMenuSections = useMemo(() => {
     const roles = selectedTeam?.user_role?.split(',').map(r => r.trim()).filter(Boolean) || [];
-    if (selectedTeam?.owner_id === user?.id) roles.push(ROLES.OWNER);
+    if (isTeamOwnerOf(selectedTeam, user?.id)) roles.push(ROLES.OWNER);
     const isGlobalAdmin = user?.globalRole === ROLES.GLOBAL_ADMIN || user?.global_role === ROLES.GLOBAL_ADMIN;
 
     return TEAM_MENU_SECTIONS

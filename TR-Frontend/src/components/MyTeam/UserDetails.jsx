@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import dayjs from 'dayjs';
-import { getImageUrl, getAuthHeaders, getContrastTextColor, uiFixed } from '../../utils/helpers';
+import { getImageUrl, getAuthHeaders, getContrastTextColor, uiFixed, isTeamOwner as isTeamOwnerOf } from '../../utils/helpers';
 import { Avatar } from '../../ui/Avatar';
 import { PageLoader } from '../../ui/Loader';
 import { FadeIn } from '../../ui/FadeIn';
@@ -167,7 +167,7 @@ export const UserDetails = ({ data, openRightPanel, pushRightPanel }) => {
   // КЛИЕНТСКИЙ ГАРАНТ: Рассчитываем полный статус руководителя на клиенте для защиты от багов роли в БД
   const frontendIsManager = useMemo(() => {
     if (!currentUser || !currentTeam) return false;
-    const isTeamOwner = String(currentTeam.owner_id) === String(currentUser.id);
+    const isTeamOwner = isTeamOwnerOf(currentTeam, currentUser.id);
     const teamRoles = currentTeam.user_role?.split(',').map(r => r.trim()) || [];
     return isTeamOwner || teamRoles.some(r => ['team_manager', 'team_admin', 'head_coach', 'coach'].includes(r));
   }, [currentUser, currentTeam]);
@@ -178,10 +178,10 @@ export const UserDetails = ({ data, openRightPanel, pushRightPanel }) => {
     return currentTeam.user_role.split(',').map(r => r.trim());
   }, [currentTeam]);
 
-  const isTeamOwner = useMemo(() => {
-    if (!currentUser || !currentTeam) return false;
-    return String(currentTeam.owner_id) === String(currentUser.id);
-  }, [currentUser, currentTeam]);
+  const isTeamOwner = useMemo(
+    () => isTeamOwnerOf(currentTeam, currentUser?.id),
+    [currentUser, currentTeam]
+  );
 
   // Клубный аналог: руководитель клуба (или его владелец) правит клубные роли
   const frontendIsClubManager = useMemo(() => {

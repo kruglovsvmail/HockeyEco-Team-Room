@@ -15,6 +15,7 @@ import {
   removePlayerFromApplication,
   updateRosterEntry,
   uploadRosterDocs,
+  bulkUploadRosterDocs,
   addStaffToApplication,
   removeStaffFromApplication
 } from '../../controllers/manager/MgrSeasonController.js';
@@ -39,6 +40,9 @@ router.post('/:teamId/applications/:appId/roster/:rosterId/docs', verifyToken, r
   { name: 'medical', maxCount: 1 },
   { name: 'consent', maxCount: 1 }
 ]), uploadRosterDocs);
+// Один файл сразу нескольким игрокам заявки — командная справка со списком внутри.
+// Тип документа и получатели приходят полями того же multipart-запроса.
+router.post('/:teamId/applications/:appId/roster/docs/bulk', verifyToken, requireTeamPermission('MGR_SEASON_ROSTERS'), upload.single('file'), bulkUploadRosterDocs);
 
 router.post('/:teamId/applications/:appId/staff', verifyToken, requireTeamPermission('MGR_SEASON_ROSTERS'), addStaffToApplication);
 // Без :role — человек убирается из заявки целиком, с :role — снимается только эта его роль

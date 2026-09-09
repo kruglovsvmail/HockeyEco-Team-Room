@@ -62,6 +62,7 @@ import { TournamentGamePanel } from './components/Tournaments/TournamentGamePane
 
 import { CreateApplicationPanel } from './components/Manager/Season/CreateApplicationPanel';
 import { PlayerDocsModal } from './components/Manager/Season/PlayerDocsModal';
+import { TeamDocsBulkModal } from './components/Manager/Season/TeamDocsBulkModal';
 import { SeasonRostersDetailsPage } from './pages/SeasonRostersDetailsPage';
 
 import { PlayerProfilePanel } from './components/Player/PlayerProfilePanel';
@@ -108,6 +109,8 @@ const TEAM_SECTIONS = {
 
 // Панели, которые открываются только из этих разделов. Раздел лежит на z-90, поэтому
 // его панели обязаны быть выше — на общей z-40 они оказались бы под ним.
+// Панели, которые открываются из оверлея заявки на сезон и должны лежать поверх него
+const APPLICATION_PANELS = ['playerDocs', 'teamDocsBulk'];
 const TEAM_SECTION_PANELS = ['createApplication', 'opponentForm', 'tournamentForm'];
 
 // Панели, которые открываются поверх деталей события и сдвигают их влево, а не
@@ -914,7 +917,7 @@ function TeamLayoutContent() {
         className={clsx(
           "absolute top-0 right-0 h-full bg-surface-level2 border-l border-white/10 shadow-[-15px_0_30px_rgba(0,0,0,0.1)] flex flex-col overflow-hidden flex-shrink-0",
           "transition-transform duration-300 ease-[cubic-bezier(0.32,0.72,0,1)]",
-          (OVER_EVENT_PANELS.includes(rightPanel.type) || rightPanel.type === 'playerDocs' || rightPanel.type === 'clubStats' || TEAM_SECTION_PANELS.includes(rightPanel.type)) ? "z-[110]" : "z-[40]",
+          (OVER_EVENT_PANELS.includes(rightPanel.type) || APPLICATION_PANELS.includes(rightPanel.type) || rightPanel.type === 'clubStats' || TEAM_SECTION_PANELS.includes(rightPanel.type)) ? "z-[110]" : "z-[40]",
           rightPanel.isOpen ? "translate-x-0" : "translate-x-full"
         )}
         style={{ width: `${panelPct}%` }}
@@ -981,6 +984,9 @@ function TeamLayoutContent() {
                     )}
                     {rightPanel.type === 'playerDocs' && (
                       <PlayerDocsModal data={rightPanel.data} />
+                    )}
+                    {rightPanel.type === 'teamDocsBulk' && (
+                      <TeamDocsBulkModal data={rightPanel.data} onClose={closeRightPanel} />
                     )}
                     {rightPanel.type === 'playerProfile' && (
                       <PlayerProfilePanel data={rightPanel.data} />
@@ -1096,7 +1102,7 @@ function TeamLayoutContent() {
 
       {/* Click-zone слева для закрытия панели редактирования/профиля игрока, когда поверх лежит EventPage, SeasonRostersDetailsPage или panel100.
           z-[105] — выше оверлея (z-100) и panel100 (z-60), но ниже самой панели (z-110). */}
-      {rightPanel.isOpen && ((rightPanel.type === 'eventEdit' && eventForOverlay) || (rightPanel.type === 'playerDocs' && applicationMatch) || (TEAM_SECTION_PANELS.includes(rightPanel.type) && teamSection) || (OVER_EVENT_PANELS.includes(rightPanel.type) && (eventForOverlay || panel100.isOpen))) && (
+      {rightPanel.isOpen && ((rightPanel.type === 'eventEdit' && eventForOverlay) || (APPLICATION_PANELS.includes(rightPanel.type) && applicationMatch) || (TEAM_SECTION_PANELS.includes(rightPanel.type) && teamSection) || (OVER_EVENT_PANELS.includes(rightPanel.type) && (eventForOverlay || panel100.isOpen))) && (
         <div
           className="absolute top-0 bottom-0 left-0 z-[105] cursor-pointer"
           style={{ width: `${100 - panelPct}%` }}
@@ -1112,7 +1118,7 @@ function TeamLayoutContent() {
             key="application-overlay"
             className="absolute inset-0 z-[100] overflow-hidden"
             initial={{ x: '100%' }}
-            animate={{ x: rightPanel.isOpen && rightPanel.type === 'playerDocs' ? `-${panelPct}%` : 0 }}
+            animate={{ x: rightPanel.isOpen && APPLICATION_PANELS.includes(rightPanel.type) ? `-${panelPct}%` : 0 }}
             exit={{ x: '100%' }}
             transition={{ duration: 0.35, ease: [0.32, 0.72, 0, 1] }}
           >

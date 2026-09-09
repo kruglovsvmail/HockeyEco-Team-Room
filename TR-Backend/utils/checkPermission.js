@@ -1,5 +1,6 @@
 import pool from '../config/db.js';
 import { PERMISSIONS, ROLES } from './permissions.js';
+import { isTeamOwner } from './teamOwners.js';
 
 /**
  * Вспомогательная функция безопасного извлечения ID контекстной команды из запроса
@@ -130,9 +131,8 @@ export async function checkPermissionInternal(userId, teamId, permissionKey, cli
   let userRoles = [];
 
   if (teamId) {
-    // 1. Динамическая проверка на Владельца команды (owner_id)
-    const teamOwnerRes = await client.query('SELECT owner_id FROM teams WHERE id = $1', [teamId]);
-    if (teamOwnerRes.rows.length > 0 && teamOwnerRes.rows[0].owner_id === userId) {
+    // 1. Динамическая проверка на Владельца команды (team_owners: их бывает двое)
+    if (await isTeamOwner(client, teamId, userId)) {
       userRoles.push('owner');
     }
 
@@ -206,7 +206,7 @@ export async function isCoachAnywhere(userId, client = pool) {
       WHERE cr.user_id = $1 AND cr.role = 'coach'
         AND cr.left_at IS NULL AND cm.left_at IS NULL
       UNION ALL
-      SELECT 1 FROM teams WHERE owner_id = $1
+      SELECT 1 FROM team_owners WHERE user_id = $1
       UNION ALL
       SELECT 1 FROM clubs WHERE owner_id = $1
       UNION ALL

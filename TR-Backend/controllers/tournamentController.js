@@ -693,7 +693,7 @@ class TournamentController {
               AND (${teamParam}::int IS NULL OR tt.team_id = ${teamParam}::int)
               AND (
                 EXISTS (SELECT 1 FROM team_members tm WHERE tm.team_id = tt.team_id AND tm.user_id = ${userParam} AND tm.left_at IS NULL)
-                OR EXISTS (SELECT 1 FROM teams t WHERE t.id = tt.team_id AND t.owner_id = ${userParam})
+                OR EXISTS (SELECT 1 FROM team_owners tow WHERE tow.team_id = tt.team_id AND tow.user_id = ${userParam})
               )
           )`;
       } else {
@@ -763,7 +763,7 @@ class TournamentController {
                  WHERE tt.division_id = d.id AND tt.status = 'approved'
                    AND (
                      EXISTS (SELECT 1 FROM team_members tm WHERE tm.team_id = tt.team_id AND tm.user_id = $2 AND tm.left_at IS NULL)
-                     OR EXISTS (SELECT 1 FROM teams t WHERE t.id = tt.team_id AND t.owner_id = $2)
+                     OR EXISTS (SELECT 1 FROM team_owners tow WHERE tow.team_id = tt.team_id AND tow.user_id = $2)
                    )
                ) AS is_mine
         FROM seasons s

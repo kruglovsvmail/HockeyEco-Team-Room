@@ -83,9 +83,9 @@ export const getEvents = async (req, res) => {
         JOIN teams t ON t.club_id = c.id 
         WHERE cm.user_id = $1 AND cm.left_at IS NULL
         UNION
-        -- Владелец команды (teams.owner_id) видит события своей команды,
+        -- Владелец команды (team_owners) видит события своей команды,
         -- даже если он не состоит в team_members и не привязан к клубу команды.
-        SELECT t.id FROM teams t WHERE t.owner_id = $1
+        SELECT tow.team_id FROM team_owners tow WHERE tow.user_id = $1
         UNION
         -- Владелец клуба видит события всех команд клуба, даже не будучи в его базе
         SELECT t.id FROM clubs c JOIN teams t ON t.club_id = c.id WHERE c.owner_id = $1
@@ -147,7 +147,7 @@ export const getEvents = async (req, res) => {
         WHERE cr.user_id = $1 AND cr.left_at IS NULL AND cm.left_at IS NULL
       ),
       user_team_roles AS (
-        SELECT t.id as team_id, 'owner'::varchar as role FROM teams t WHERE t.owner_id = $1
+        SELECT tow.team_id, 'owner'::varchar as role FROM team_owners tow WHERE tow.user_id = $1
         UNION
         SELECT tm.team_id, tr.role::varchar FROM team_roles tr 
         JOIN team_members tm ON tr.member_id = tm.id 

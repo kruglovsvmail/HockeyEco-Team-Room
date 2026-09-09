@@ -159,8 +159,21 @@ export const TRAINING_TYPE_ICONS = {
 // может не прийти вовсе (кэш sessionStorage от прошлой версии календаря).
 export const getTrainingTypeIcon = (type) => TRAINING_TYPE_ICONS[type] || TRAINING_TYPE_ICONS.general;
 
+/**
+ * Владелец ли человек этой команды. Владельцев у команды бывает двое, и оба равны
+ * в правах — сервер отдаёт их массивом owner_ids.
+ *
+ * owner_id рядом читается ради кэша: профиль с командами лежит в localStorage, и у
+ * клиента, который ещё не перелогинился, массива в нём нет — только прежнее поле.
+ */
+export const isTeamOwner = (team, userId) => {
+  if (!team || !userId) return false;
+  const ids = Array.isArray(team.owner_ids) ? team.owner_ids : (team.owner_id ? [team.owner_id] : []);
+  return ids.some(id => String(id) === String(userId));
+};
+
 export const isOwnTeam = (team, userId) => {
-  if (team?.owner_id && String(team.owner_id) === String(userId)) return true;
+  if (isTeamOwner(team, userId)) return true;
   const roles = (team?.user_role || '').split(',').map(r => r.trim().toLowerCase());
   return roles.some(r => TEAM_OWN_ROLES.includes(r));
 };

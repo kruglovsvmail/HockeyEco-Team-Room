@@ -1,6 +1,7 @@
 import jwt from 'jsonwebtoken';
 import pool from '../config/db.js';
 import { ROLES, PERMISSIONS } from '../utils/permissions.js';
+import { isTeamOwner } from '../utils/teamOwners.js';
 import {
   checkClubPermissionInternal,
   checkCommunityPermissionInternal,
@@ -147,12 +148,8 @@ export const requireTeamPermission = (permissionKey) => async (req, res, next) =
     for (const tId of teamIds) {
       let userRoles = [];
 
-      // 1. Динамическая проверка на Владельца команды (owner_id)
-      const teamOwnerRes = await pool.query(
-        'SELECT owner_id FROM teams WHERE id = $1',
-        [tId]
-      );
-      if (teamOwnerRes.rows.length > 0 && teamOwnerRes.rows[0].owner_id === userId) {
+      // 1. Динамическая проверка на Владельца команды (team_owners: их бывает двое)
+      if (await isTeamOwner(pool, tId, userId)) {
         userRoles.push(ROLES.OWNER);
       }
 

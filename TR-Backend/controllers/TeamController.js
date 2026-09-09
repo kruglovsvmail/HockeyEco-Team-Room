@@ -2,6 +2,7 @@
 import s3 from '../config/s3.js';
 import path from 'path';
 import { PERMISSIONS } from '../utils/permissions.js';
+import { isTeamOwner } from '../utils/teamOwners.js';
 import { processAvatar } from '../utils/imageProcessor.js';
 import { sendPushToTeamExcept } from '../services/pushService.js';
 import { syncClubMembershipOnTeamJoin, canOfferClubExclusion, removeFromClubOnly, CLUB_EXCLUSION_OFFER_PREDICATE } from '../utils/clubMembership.js';
@@ -28,8 +29,7 @@ async function checkPermissionInternal(userId, teamId, permissionKey, client = p
   let userRoles = [];
 
   if (teamId) {
-    const teamOwnerRes = await client.query('SELECT owner_id FROM teams WHERE id = $1', [teamId]);
-    if (teamOwnerRes.rows.length > 0 && teamOwnerRes.rows[0].owner_id === userId) {
+    if (await isTeamOwner(client, teamId, userId)) {
       userRoles.push('owner');
     }
 
@@ -86,12 +86,16 @@ export const getMyTeams = async (req, res) => {
             SELECT DISTINCT t.id, t.name, t.short_name, t.logo_url, t.city, t.description,
                             t.jersey_dark_url, t.jersey_light_url, t.ui_color,
                             t.color_home_1, t.color_home_2,
-                            t.color_away_1, t.color_away_2, t.owner_id
+                            t.color_away_1, t.color_away_2,
+                            -- Владельцев у команды может быть двое, и оба равны в правах
+                            (SELECT COALESCE(array_agg(tow.user_id ORDER BY tow.added_at, tow.id), '{}')
+                               FROM team_owners tow WHERE tow.team_id = t.id) AS owner_ids
             FROM teams t
             LEFT JOIN team_members tm ON tm.team_id = t.id AND tm.left_at IS NULL
             LEFT JOIN club_members cm ON cm.club_id = t.club_id AND cm.left_at IS NULL
             LEFT JOIN clubs c ON c.id = t.club_id
-            WHERE (tm.user_id = $1 OR cm.user_id = $1 OR t.owner_id = $1 OR c.owner_id = $1)
+            WHERE (tm.user_id = $1 OR cm.user_id = $1 OR c.owner_id = $1
+                   OR EXISTS (SELECT 1 FROM team_owners tow WHERE tow.team_id = t.id AND tow.user_id = $1))
             ORDER BY t.name
         `;
         const { rows: teams } = await pool.query(teamsQuery, [userId]);
@@ -144,12 +148,16 @@ export const getMyTeams = async (req, res) => {
 
         // 6. РЎРѕР±РёСЂР°РµРј РёС‚РѕРіРѕРІС‹Р№ РјР°СЃСЃРёРІ РєРѕРјР°РЅРґ СЃ СЂРѕР»СЏРјРё
         const enrichedTeams = teams.map(team => {
-            const isOwner = team.owner_id === userId;
+            const ownerIds = (team.owner_ids || []).map(Number);
+            const isOwner = ownerIds.includes(Number(userId));
             const roles = Array.from(rolesByTeam[team.id] || []);
             if (isOwner) roles.unshift('owner');
 
             return {
                 ...team,
+                // Первый владелец отдельным полем — его читают клиенты со старым кэшем
+                // профиля в localStorage, где массива owner_ids ещё нет.
+                owner_id: ownerIds[0] ?? null,
                 user_role: roles.join(','),       // СЃС‚СЂРѕРєР° РґР»СЏ РѕР±СЂР°С‚РЅРѕР№ СЃРѕРІРјРµСЃС‚РёРјРѕСЃС‚Рё СЃ С„РѕР»Р±РµРєРѕРј
                 user_roles: roles,                 // РјР°СЃСЃРёРІ РґР»СЏ accessMatrix
                 has_subscription: hasSubscription,

@@ -1,7 +1,7 @@
 // Справочник ролей внутри Команды / Клуба
 export const ROLES = {
   GLOBAL_ADMIN: 'admin',           // Глобальный администратор системы (Разработчик/Владелец)
-  OWNER: 'owner',                  // Юридический владелец конкретной команды (teams.owner_id)
+  OWNER: 'owner',                  // Юридический владелец конкретной команды (team_owners, их бывает двое)
   CLUB_TOP_MANAGER: 'top_manager', // Руководитель клуба
   CLUB_ADMIN: 'club_admin',        // Администратор клуба
   TEAM_MANAGER: 'team_manager',    // Менеджер (Руководитель) конкретной команды

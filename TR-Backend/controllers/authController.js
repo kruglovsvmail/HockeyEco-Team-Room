@@ -57,7 +57,13 @@ const fetchPwaUserProfile = async (userId) => {
   // на турнир человек, и рядовой член клуба должны видеть команду в списке, просто с
   // пустым набором ролей.
   const teamsResult = await pool.query(`
-    SELECT t.id, t.name, t.short_name, t.logo_url, t.owner_id, t.club_id,
+    SELECT t.id, t.name, t.short_name, t.logo_url, t.club_id,
+      -- Владельцев у команды может быть двое. owner_id рядом с массивом — для клиентов
+      -- со старым кэшем профиля, который знает только про одного владельца.
+      (SELECT COALESCE(array_agg(tow.user_id ORDER BY tow.added_at, tow.id), '{}')
+         FROM team_owners tow WHERE tow.team_id = t.id) AS owner_ids,
+      (SELECT tow.user_id FROM team_owners tow WHERE tow.team_id = t.id
+        ORDER BY tow.added_at, tow.id LIMIT 1) AS owner_id,
       (
         SELECT string_agg(DISTINCT role, ',') FROM (
           SELECT (CASE WHEN cr.role = 'coach' THEN 'club_coach' ELSE cr.role END) AS role FROM club_roles cr 
@@ -77,7 +83,7 @@ const fetchPwaUserProfile = async (userId) => {
 
           UNION
 
-          SELECT 'owner' as role FROM teams WHERE id = t.id AND owner_id = $1
+          SELECT 'owner' as role FROM team_owners WHERE team_id = t.id AND user_id = $1
 
           UNION
 
@@ -87,7 +93,9 @@ const fetchPwaUserProfile = async (userId) => {
         ) AS roles
       ) as user_role
     FROM teams t
-    WHERE t.owner_id = $1
+    WHERE EXISTS (
+      SELECT 1 FROM team_owners tow WHERE tow.team_id = t.id AND tow.user_id = $1
+    )
     OR EXISTS (
       SELECT 1 FROM team_members tm WHERE tm.team_id = t.id AND tm.user_id = $1 AND tm.left_at IS NULL
     )
@@ -179,7 +187,8 @@ const fetchPwaUserProfile = async (userId) => {
   const accessMatrix = {};
   teamsResult.rows.forEach(row => {
     const roles = row.user_role ? row.user_role.split(',') : [];
-    const isOwner = row.owner_id === user.id;
+    // Владельцев двое — сравниваем со всем списком, а не с первым из них
+    const isOwner = (row.owner_ids || []).map(Number).includes(Number(user.id));
 
     if (isOwner && !roles.includes('owner')) {
       roles.push('owner');

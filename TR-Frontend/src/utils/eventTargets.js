@@ -1,4 +1,5 @@
 import { PERMISSIONS, ROLES } from './permissions';
+import { isTeamOwner } from './helpers';
 
 // Кому пользователь может ставить события: клубы и команды одним плоским списком.
 //
@@ -13,8 +14,8 @@ import { PERMISSIONS, ROLES } from './permissions';
 
 const rolesForTeam = (team, userId) => {
   const roles = [];
-  // Роль владельца динамическая, в user_role её нет — она выводится из owner_id
-  if (team?.owner_id === userId) roles.push(ROLES.OWNER);
+  // Роль владельца динамическая, в user_role её нет — она выводится из owner_ids
+  if (isTeamOwner(team, userId)) roles.push(ROLES.OWNER);
   if (typeof team?.user_role === 'string') {
     roles.push(...team.user_role.split(',').map(r => r.trim()).filter(Boolean));
   }

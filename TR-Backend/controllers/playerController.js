@@ -90,7 +90,7 @@ export const getPlayerProfile = async (req, res) => {
             WHERE huq.user_id = tr.player_id AND huq.league_id = l.id
           ), '[]'::json) AS qual_history,
           (
-            EXISTS(SELECT 1 FROM "public"."teams" tow WHERE tow.id = tt.team_id AND tow.owner_id = $2)
+            EXISTS(SELECT 1 FROM "public"."team_owners" tow WHERE tow.team_id = tt.team_id AND tow.user_id = $2)
             OR EXISTS(SELECT 1 FROM "public"."team_members" tmem WHERE tmem.team_id = tt.team_id AND tmem.user_id = $2 AND tmem.left_at IS NULL)
             OR EXISTS(SELECT 1 FROM "public"."teams" tcw JOIN "public"."clubs" cw ON cw.id = tcw.club_id WHERE tcw.id = tt.team_id AND cw.owner_id = $2)
             OR EXISTS(SELECT 1 FROM "public"."teams" tcm JOIN "public"."club_members" cmem ON cmem.club_id = tcm.club_id WHERE tcm.id = tt.team_id AND cmem.user_id = $2 AND cmem.left_at IS NULL)

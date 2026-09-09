@@ -1,6 +1,7 @@
 import pool from '../../config/db.js';
 import { PERMISSIONS } from '../../utils/permissions.js';
 import { checkClubPermissionInternal } from '../../utils/checkPermission.js';
+import { isTeamOwner } from '../../utils/teamOwners.js';
 import { sendPushToTeamExcept, sendPushToClubExcept, scheduleNotification, scheduleMatchDeadlines, getTrainingInfo, getMeetingInfo, getMatchInfo } from '../../services/pushService.js';
 
 /**
@@ -34,9 +35,8 @@ async function checkPermissionInternal(userId, teamId, permissionKey, client = p
   let userRoles = [];
 
   if (teamId) {
-    // 1. Проверка на создателя / владельца команды
-    const teamOwnerRes = await client.query('SELECT owner_id FROM teams WHERE id = $1', [teamId]);
-    if (teamOwnerRes.rows.length > 0 && teamOwnerRes.rows[0].owner_id === userId) {
+    // 1. Проверка на создателя / владельца команды (их бывает двое, см. team_owners)
+    if (await isTeamOwner(client, teamId, userId)) {
       userRoles.push('owner');
     }
 

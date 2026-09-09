@@ -14,6 +14,7 @@ import { PaperDocTile } from '../../../ui/PaperDocTile';
 import { HintPopover } from '../../../ui/HintPopover';
 import { Toast } from '../../../ui/Toast';
 import { PageLoader } from '../../../ui/Loader';
+import { TEAM_DOC_META } from './TeamDocsBulkModal';
 import { getAuthHeaders, getImageUrl } from '../../../utils/helpers';
 import {
   STATUS_META, ROLE_OPTIONS, ROLE_LABELS,
@@ -698,6 +699,21 @@ export function SeasonRosterDetails({ app, teamId, onClose, activeBrandColor, op
     openRightPanel('playerDocs', { teamId, appId: app.id, player, division: app, editable: canEdit, loadData, activeBrandColor }, 'Документы игрока');
   };
 
+  // Командный документ — одна бумага со списком игроков внутри (типовой пример: медицинское
+  // заключение на команду). Панель раскладывает файл по отмеченным игрокам, дальше он живёт
+  // у каждого как личный документ.
+  const handleOpenTeamDocs = (docType) => {
+    openRightPanel('teamDocsBulk', {
+      teamId,
+      appId: app.id,
+      roster,
+      docType,
+      activeBrandColor,
+      loadData,
+      onApplied: (count) => triggerToast(`Документ добавлен ${count} ${count === 1 ? 'игроку' : 'игрокам'}`, 'success'),
+    }, TEAM_DOC_META[docType].title);
+  };
+
   // Лига может не пользоваться квалификациями вовсе — тогда столбец не нужен.
   // Считаем по всей заявке, а не по одной группе: таблицы вратарей/защитников/нападающих
   // должны иметь одинаковый набор колонок.
@@ -710,6 +726,19 @@ export function SeasonRosterDetails({ app, teamId, onClose, activeBrandColor, op
   // прячется всегда — так и надо: документы грузятся в существующую запись, до создания заявки
   // открывать их всё равно некуда.
   const requiresDocs = !!(app.req_med_cert || app.req_insurance || app.req_consent);
+
+  // Строки командных документов живут в карточке документов заявки — там же, где сканы
+  // заявочного листа: это бумаги на всю заявку, а не на конкретного игрока. Показываем те
+  // типы, которые требует дивизион, и только когда есть кому их применить.
+  //
+  // Условие canEdit — это статусы «Формируется» и «На исправлении». На проверке, в допущенной
+  // и в отклонённой заявке документы всё равно не принимаются (сервер вернёт отказ), поэтому
+  // строк там нет вовсе.
+  const teamDocRows = (canEdit && roster.length > 0)
+    ? Object.entries(TEAM_DOC_META)
+        .filter(([, meta]) => !!app[meta.reqKey])
+        .map(([type, meta]) => ({ type, meta }))
+    : [];
 
   const rosterColumns = [
     {
@@ -871,21 +900,52 @@ export function SeasonRosterDetails({ app, teamId, onClose, activeBrandColor, op
         </div>
       )}
 
-      {!app.digital_applications_only && (
+      {/* Документы всей заявки: сканы заявочного листа (только бумажный дивизион) и общие
+          документы команды. В цифровом дивизионе сканов нет — карточка остаётся ради них. */}
+      {(!app.digital_applications_only || teamDocRows.length > 0) && (
         <div className="w-full bg-surface-level1 rounded-3xl shadow-md p-5 flex flex-col gap-3">
-          <PaperDocTile
-            url={app.paper_roster_team_url}
-            pendingLabel={pendingPaperFile?.name}
-            doneLabel="Ваш скан"
-            emptyLabel={canEditPaper ? 'Загрузить скан заявки' : 'Файл не загружен'}
-            editable={canEditPaper}
-            onUpload={handleUploadPaper}
-            onDeleteClick={() => setDeletePaperConfirmOpen(true)}
-            uploading={isUploadingPaper}
-            activeBrandColor={activeBrandColor}
-          />
+          {!app.digital_applications_only && (
+            <>
+              <PaperDocTile
+                url={app.paper_roster_team_url}
+                pendingLabel={pendingPaperFile?.name}
+                doneLabel="Ваш скан"
+                emptyLabel={canEditPaper ? 'Загрузить скан заявки' : 'Файл заявки не загружен'}
+                editable={canEditPaper}
+                onUpload={handleUploadPaper}
+                onDeleteClick={() => setDeletePaperConfirmOpen(true)}
+                uploading={isUploadingPaper}
+                activeBrandColor={activeBrandColor}
+              />
 
-          <PaperDocTile url={app.paper_roster_league_url} doneLabel="Скан лиги" emptyLabel="Ожидает лигу" tone="success" />
+              <PaperDocTile url={app.paper_roster_league_url} doneLabel="Файл утвержденной заявки" emptyLabel="Ожидает лигу" tone="success" />
+            </>
+          )}
+
+          {teamDocRows.map(({ type, meta }) => (
+            <button
+              key={type}
+              type="button"
+              onClick={() => handleOpenTeamDocs(type)}
+              className="flex items-center gap-3 p-3 rounded-xl border border-surface-border bg-surface-level1 text-left transition-transform active:scale-[0.995]"
+            >
+              <div
+                className="shrink-0 w-9 h-9 rounded-lg flex items-center justify-center bg-brand/15 text-brand"
+                style={activeBrandColor ? { backgroundColor: `${activeBrandColor}26`, color: activeBrandColor } : undefined}
+              >
+                <Icon name="file" className="w-4.5 h-4.5" />
+              </div>
+
+              <div className="flex-1 min-w-0 flex flex-col">
+                <span className="text-[14px] font-bold text-content-main">{meta.title}</span>
+                <span className="text-[11px] font-medium text-content-muted leading-tight mt-0.5">
+                  {meta.rowHint}
+                </span>
+              </div>
+
+              <Icon name="chevron_right" className="w-6 h-6 text-content-subtle shrink-0" />
+            </button>
+          ))}
         </div>
       )}
 

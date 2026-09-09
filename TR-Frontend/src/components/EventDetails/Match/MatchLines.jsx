@@ -298,7 +298,12 @@ export const MatchLines = ({ event, initialAttendees = [], initialDraftLines = [
       });
       const data = await res.json();
       if (data.success) {
-        setIsPublished(false);
+        // Заявку, если она была отправлена, сервер пересобрал сам из новой расстановки —
+        // и сохранил при этом номера с капитанством, проставленные руководителем.
+        setIsPublished(!!data.rosterResubmitted);
+        if (data.rosterResubmitted) {
+          setToast({ isOpen: true, message: 'Расстановка сохранена, заявка отправлена заново', type: 'success' });
+        }
         setIsEditMode(false);
         setIsDeleteMode(false);
         setActiveSelection(null);
@@ -337,7 +342,11 @@ export const MatchLines = ({ event, initialAttendees = [], initialDraftLines = [
         setIsPublished(true);
         setToast({
           isOpen: true,
-          message: 'Заявка отправлена в лигу!',
+          // Расстановки не было — сервер собрал заявку из отметившихся на матч.
+          // Об этом стоит сказать: состав уехал в лигу не тот, что нарисован на поле.
+          message: data.source === 'attendance'
+            ? 'Заявка отправлена в лигу по явке'
+            : 'Заявка отправлена в лигу!',
           type: 'success'
         });
         refreshData(); 
@@ -726,7 +735,11 @@ export const MatchLines = ({ event, initialAttendees = [], initialDraftLines = [
       const data = await res.json();
       if (data.success) {
         setIsRosterSheetOpen(false);
-        setIsPublished(false);
+        // Как и при сохранении расстановки: отправленная заявка пересобирается сервером сама
+        setIsPublished(!!data.rosterResubmitted);
+        if (data.rosterResubmitted) {
+          setToast({ isOpen: true, message: 'Изменения сохранены, заявка отправлена заново', type: 'success' });
+        }
         // Параметры (номер/капитан/ассистент) изменились → пометим картинку на перегенерацию,
         // она запустится, когда приедет свежий draftLines (см. эффект formationDirtyRef)
         formationDirtyRef.current = true;

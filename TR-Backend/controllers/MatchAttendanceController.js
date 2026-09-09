@@ -2,6 +2,7 @@ import pool from '../config/db.js';
 import { checkPermissionInternal, getTeamIdFromRequest } from '../utils/checkPermission.js';
 import { sendPushToTeamExcept, getMatchInfo, getUserName } from '../services/pushService.js';
 import { resolvePayRole, getFeeContext, isAfterWithdrawDeadline, describeSplitFee } from '../utils/eventFees.js';
+import { isRosterFollowingAttendance, resyncRosterWithAttendance } from './MatchLinesController.js';
 
 // =============================================================================
 // ДОСТУПНЫЙ СОСТАВ НА МАТЧ (с учетом регламентов и дисквалификаций)
@@ -136,6 +137,12 @@ export const toggleMatchAttendance = async (req, res) => {
     const feeCtx = await getFeeContext('match', eventId, teamId);
     const lateWithdraw = !isAttending && !isPurge && isAfterWithdrawDeadline(feeCtx);
 
+    // Заявку на матч можно подать, не рисуя расстановку: тогда она собирается из явки.
+    // Такая заявка должна идти за явкой дальше — каждая новая отметка и каждое снятие
+    // пересобирают её. Проверяем ДО изменения: после него отличить заявку по явке от
+    // заявки, которую правили руками (например, секретарь лиги в протоколе), уже нельзя.
+    const rosterFollowsAttendance = await isRosterFollowingAttendance(pool, { eventId, teamId });
+
     if (isAttending) {
       const gameCheck = await pool.query(`SELECT game_type, division_id FROM games WHERE id = $1`, [eventId]);
       const { game_type, division_id } = gameCheck.rows[0] || {};
@@ -176,6 +183,19 @@ export const toggleMatchAttendance = async (req, res) => {
         `DELETE FROM team_game_attendance WHERE game_id = $1 AND user_id = $2 AND team_id = $3`,
         [eventId, targetId, teamId]
       );
+    }
+
+    if (rosterFollowsAttendance) {
+      const client = await pool.connect();
+      try {
+        await resyncRosterWithAttendance(client, { eventId, teamId });
+      } catch (err) {
+        // Явку уже изменили и ответ отдаём успешный: сама отметка прошла. Заявка
+        // останется прежней — её всегда можно отправить заново кнопкой.
+        console.error('Не удалось пересобрать заявку по явке:', err);
+      } finally {
+        client.release();
+      }
     }
 
     (async () => {

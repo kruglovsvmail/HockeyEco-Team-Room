@@ -2,7 +2,7 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { NavLink, useLocation, useNavigate } from 'react-router-dom';
 import { Icon } from '../ui/Icon';
 import { Avatar } from '../ui/Avatar';
-import { getImageUrl, isOwnTeam, COMMUNITY_CATEGORY_LABELS } from '../utils/helpers';
+import { getImageUrl, isOwnTeam, isTeamOwner, COMMUNITY_CATEGORY_LABELS } from '../utils/helpers';
 import { ROLES } from '../utils/permissions';
 import { buildEventTargets } from '../utils/eventTargets';
 import { getSubscriptionStatus } from '../utils/subscription';
@@ -54,7 +54,7 @@ export function Sidebar({
   // Вспомогательная функция безопасного извлечения ролей с учетом динамической роли Владельца
   const getRolesForTeam = (team) => {
     const roles = [];
-    if (team?.owner_id === user?.id) {
+    if (isTeamOwner(team, user?.id)) {
       roles.push(ROLES.OWNER);
     }
     if (team?.user_role && typeof team.user_role === 'string') {
