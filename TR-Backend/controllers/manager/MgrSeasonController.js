@@ -217,12 +217,18 @@ const APPLICATION_SELECT_SQL = `
                  -- Те же документы допуска, что и у игроков: дивизион требует их с
                  -- представителей по тем же флагам req_med_cert / req_insurance / req_consent
                  'medical_url', tpd.medical_url, 'insurance_url', tpd.insurance_url, 'consent_url', tpd.consent_url,
-                 'medical_expires_at', tpd.medical_expires_at, 'insurance_expires_at', tpd.insurance_expires_at, 'consent_expires_at', tpd.consent_expires_at
+                 'medical_expires_at', tpd.medical_expires_at, 'insurance_expires_at', tpd.insurance_expires_at, 'consent_expires_at', tpd.consent_expires_at,
+                 -- Допуск представителя. Лежит отдельно от ролей (ролей у человека может быть
+                 -- несколько, а допуск один), строка заводится по первому щелчку тумблера
+                 -- лигой — поэтому её отсутствие и есть «не допущен».
+                 'is_admitted', COALESCE(tsa.is_admitted, false)
              ) ORDER BY u.last_name ASC)
              FROM tournament_team_roles ttr
              JOIN users u ON ttr.user_id = u.id
              LEFT JOIN tournament_person_docs tpd
                     ON tpd.tournament_team_id = tt.id AND tpd.user_id = u.id
+             LEFT JOIN tournament_staff_admission tsa
+                    ON tsa.tournament_team_id = tt.id AND tsa.user_id = u.id
              LEFT JOIN team_members tm ON tm.user_id = u.id AND tm.team_id = tt.team_id
              WHERE ttr.tournament_team_id = tt.id AND ttr.left_at IS NULL),
          '[]'::json) as staff
@@ -1052,6 +1058,10 @@ export const addStaffToApplication = async (req, res) => {
         [appId, userId, nextRoles]
       );
     }
+
+    // Набор ролей изменился — проверка лиги относилась к прежнему набору. У представителя
+    // это единственная его «правка» помимо документов: ни номера, ни амплуа у него нет.
+    await resetAdmissionForPersons(client, appId, [userId]);
 
     await client.query('COMMIT');
     return res.json({ success: true });

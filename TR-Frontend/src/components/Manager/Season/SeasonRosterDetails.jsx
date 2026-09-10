@@ -163,7 +163,7 @@ function PlayerEditSheet({ isOpen, onClose, player, roster = [], canEdit, canRem
 // person — это пара «человек + роль» (одна строка блока), а не человек целиком: если он занимает
 // несколько ролей, у него столько же строк. Смена роли переносит его в другой блок,
 // «Убрать из заявки» снимает только эту роль — остальные остаются.
-function StaffEditSheet({ isOpen, onClose, person, canEdit, activeBrandColor, onSave, onRemove }) {
+function StaffEditSheet({ isOpen, onClose, person, canEdit, showVerdict, activeBrandColor, onSave, onRemove }) {
   const [role, setRole] = useState('coach');
   const [isSaving, setIsSaving] = useState(false);
   const [displayedPerson, setDisplayedPerson] = useState(null);
@@ -184,6 +184,12 @@ function StaffEditSheet({ isOpen, onClose, person, canEdit, activeBrandColor, on
     onClose();
   };
 
+  // Допуск у представителя булев, а подписи те же, что у игрока: для команды это одно и то
+  // же состояние и один и тот же тумблер лиги (см. ROSTER_VERDICT_META).
+  const verdict = showVerdict && displayedPerson
+    ? (displayedPerson.is_admitted ? ROSTER_VERDICT_META.approved : ROSTER_VERDICT_META.pending)
+    : null;
+
   return (
     <BottomSheet isOpen={isOpen} onClose={onClose}>
       {displayedPerson && (
@@ -193,6 +199,7 @@ function StaffEditSheet({ isOpen, onClose, person, canEdit, activeBrandColor, on
             <div className="flex flex-col min-w-0">
               <span className="text-[18px] font-black text-content-main leading-tight truncate">{displayedPerson.last_name}</span>
               <span className="text-[14px] text-content-muted font-bold truncate">{displayedPerson.first_name}</span>
+              {verdict && <span className={clsx("text-[10px] font-black uppercase tracking-wider mt-1", verdict.className)}>{verdict.label}</span>}
             </div>
           </div>
 
@@ -846,7 +853,21 @@ export function SeasonRosterDetails({ app, teamId, onClose, activeBrandColor, op
   const staffColumns = [
     {
       key: 'photo', title: '', width: '52px',
-      render: (s) => <Avatar photoUrl={s.team_member_photo_url || s.user_avatar_url} firstName={s.first_name} lastName={s.last_name} className="w-11 h-11 rounded-xl bg-surface-level2" />
+      // Красная обводка = представитель ещё не допущен, ровно как у игроков в составе.
+      // Отдельной колонки под допуск тут тоже нет: строка узкая, а ячейка фото есть и так.
+      render: (s) => {
+        const pending = showAdmission && !s.is_admitted;
+        return (
+          <div title={pending ? ROSTER_VERDICT_META.pending.label : undefined}>
+            <Avatar
+              photoUrl={s.team_member_photo_url || s.user_avatar_url}
+              firstName={s.first_name}
+              lastName={s.last_name}
+              className={clsx("w-11 h-11 rounded-xl bg-surface-level2", pending && "ring-2 ring-danger")}
+            />
+          </div>
+        );
+      }
     },
     {
       key: 'name', title: 'Сотрудник', sortable: true,
@@ -1070,6 +1091,7 @@ export function SeasonRosterDetails({ app, teamId, onClose, activeBrandColor, op
         isOpen={!!selectedStaff}
         onClose={() => setSelectedStaff(null)}
         person={selectedStaff}
+        showVerdict={showAdmission}
         // Роль представителя — это строка в составе заявки, а не карточка человека,
         // поэтому шторка целиком уходит в режим просмотра, когда состав ведёт лига
         canEdit={canEditComposition}

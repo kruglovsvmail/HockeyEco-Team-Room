@@ -1,20 +1,27 @@
 /**
- * Автоснятие допуска: правка команды возвращает игрока на проверку.
+ * Автоснятие допуска: правка команды возвращает человека на проверку.
  *
- * Тумблер допуска (tournament_rosters.application_status = 'approved') — это не
- * свойство игрока, а подпись лиги под конкретным набором данных: номер, амплуа,
- * нашивки, документы. Как только команда что-то из этого меняет, подпись
- * относится уже к другим данным, и держать её дальше нельзя. Поэтому любая правка
- * со стороны команды переводит игрока обратно в 'pending' — «на проверке».
+ * Тумблер допуска — это не свойство человека, а подпись лиги под конкретным набором
+ * данных: номер, амплуа, нашивки, документы. Как только команда что-то из этого меняет,
+ * подпись относится уже к другим данным, и держать её дальше нельзя. Поэтому любая правка
+ * со стороны команды возвращает человека в «на проверке».
+ *
+ * ДВЕ ТАБЛИЦЫ, ОДНО СОСТОЯНИЕ. У игрока допуск лежит в самой строке состава
+ * (tournament_rosters.application_status), у представителя — отдельно, в
+ * tournament_staff_admission парой «заявка + человек»: строк в tournament_team_roles у
+ * него столько, сколько ролей, а допуск один. Играющий тренер заявлен и там, и там, и его
+ * допуски синхронны — значит и сбрасывать их нужно вместе. Обе функции ниже это и делают,
+ * поэтому вызывающему коду про две таблицы знать не нужно. Со стороны лиги ту же
+ * синхронность держит LMS-Backend/utils/personAdmission.js.
  *
  * КТО СБРАСЫВАЕТ. Только Team-Room, то есть команда. Лига правит те же поля из LMS
  * и допуск себе не снимает: она и есть тот, кто проверяет. Поэтому вызовы этих
  * функций живут исключительно в TR-бэкенде, и в LMS их быть не должно.
  *
- * ЧТО СЧИТАЕТСЯ ПРАВКОЙ: position, jersey_number, is_captain, is_assistant и любой
- * документ допуска в tournament_person_docs (файл или срок). НЕ считается: is_fee_paid
- * (это поле лиги) и квалификация — она принадлежит паре «человек + лига»
- * (user_qualifications), а не заявке.
+ * ЧТО СЧИТАЕТСЯ ПРАВКОЙ: у игрока — position, jersey_number, is_captain, is_assistant;
+ * у представителя — набор его ролей в заявке; у обоих — любой документ допуска в
+ * tournament_person_docs (файл или срок). НЕ считается: is_fee_paid (это поле лиги) и
+ * квалификация — она принадлежит паре «человек + лига» (user_qualifications), а не заявке.
  *
  * ФОТО СЮДА НЕ ВХОДИТ, и это не упущение. Оно закрыто слепком: в момент допуска ссылка
  * на фото фиксируется в заявке (photo_snapshot_url), и дальше лига везде видит именно
@@ -52,29 +59,62 @@ const RESET_WHERE = `
         application_status = 'approved'
     AND period_end IS NULL`;
 
+// Допуск представителя лежит в своей таблице (tournament_staff_admission), потому что строк
+// в tournament_team_roles у человека столько, сколько у него ролей, а допуск один. Отдельного
+// слепка у представителя нет — он на льду не появляется.
+//
+// Строка заводится лениво, по первому щелчку тумблера лигой, поэтому здесь именно UPDATE:
+// если строки нет, человека и не допускали, и сбрасывать нечего — при чтении её отсутствие
+// и так означает «не допущен».
+const STAFF_RESET_SQL = `
+        UPDATE tournament_staff_admission
+           SET is_admitted = false,
+               updated_at = NOW()
+         WHERE tournament_team_id = $1
+           AND user_id = ANY($2::int[])
+           AND is_admitted = true`;
+
 /**
  * Сброс по конкретным строкам состава. Нужен там, где правка адресована строке:
  * номер, амплуа, нашивки.
+ *
+ * Штаб цепляем той же парой «заявка + человек», вытащенной из этих же строк: если игрок
+ * заявлен ещё и представителем, оба допуска обязаны уйти вместе.
  */
 export const resetAdmissionByRosterIds = async (clientOrPool, rosterIds) => {
     const ids = [...new Set((rosterIds || []).map(Number).filter(Number.isInteger))];
     if (ids.length === 0) return 0;
 
-    const { rowCount } = await clientOrPool.query(`
+    const { rows } = await clientOrPool.query(`
         UPDATE tournament_rosters
            SET ${RESET_SET}
          WHERE id = ANY($1::int[])
            AND ${RESET_WHERE}
+        RETURNING tournament_team_id, player_id
     `, [ids]);
-    return rowCount;
+
+    // Заявка у всех строк, как правило, одна, но запрос этого не гарантирует: раскладываем
+    // людей по заявкам и снимаем допуск в штабе каждой отдельно.
+    const byApp = new Map();
+    for (const row of rows) {
+        if (!byApp.has(row.tournament_team_id)) byApp.set(row.tournament_team_id, []);
+        byApp.get(row.tournament_team_id).push(row.player_id);
+    }
+    for (const [appId, userIds] of byApp) {
+        await clientOrPool.query(STAFF_RESET_SQL, [appId, userIds]);
+    }
+
+    return rows.length;
 };
 
 /**
  * Сброс по людям внутри одной заявки. Документы лежат на паре «заявка + человек»,
- * а не на строке состава, поэтому у документов адрес именно такой.
+ * а не на строке состава, поэтому у документов адрес именно такой. Тем же адресом
+ * снимается и допуск представителя — эта функция закрывает обе роли человека разом.
  *
- * В списке спокойно может оказаться представитель штаба: документы есть и у него,
- * а строки в составе нет. Такой просто не найдётся — отдельно отфильтровывать не надо.
+ * В списке спокойно может оказаться тот, у кого нет строки в составе (чистый представитель)
+ * или нет строки в штабе (чистый игрок). Лишний UPDATE просто не найдёт строк — отдельно
+ * отфильтровывать не надо.
  */
 export const resetAdmissionForPersons = async (clientOrPool, appId, userIds) => {
     const ids = [...new Set((userIds || []).map(Number).filter(Number.isInteger))];
@@ -87,6 +127,9 @@ export const resetAdmissionForPersons = async (clientOrPool, appId, userIds) => 
            AND player_id = ANY($2::int[])
            AND ${RESET_WHERE}
     `, [appId, ids]);
-    return rowCount;
+
+    const staffRes = await clientOrPool.query(STAFF_RESET_SQL, [appId, ids]);
+
+    return rowCount + staffRes.rowCount;
 };
 
