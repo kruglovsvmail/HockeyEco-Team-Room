@@ -223,7 +223,10 @@ class TournamentController {
             u.id AS player_id,
             u.first_name,
             u.last_name,
-            tm.photo_url AS photo_url,
+            -- Пока игрок допущен, в турнирных разделах показываем слепок фотографии из
+            -- заявки: фото в команде руководитель меняет когда угодно, а в лиге лицо
+            -- должно оставаться тем, что допустили (см. updateTournamentRosterStatus в LMS)
+            COALESCE(tr.photo_snapshot_url, tm.photo_url) AS photo_url,
             tt.team_id AS team_id,
             t.name AS team_name,
             t.logo_url AS team_logo,
@@ -277,7 +280,10 @@ class TournamentController {
             u.id AS player_id,
             u.first_name,
             u.last_name,
-            tm.photo_url AS photo_url,
+            -- Пока игрок допущен, в турнирных разделах показываем слепок фотографии из
+            -- заявки: фото в команде руководитель меняет когда угодно, а в лиге лицо
+            -- должно оставаться тем, что допустили (см. updateTournamentRosterStatus в LMS)
+            COALESCE(tr.photo_snapshot_url, tm.photo_url) AS photo_url,
             tt.team_id AS team_id,
             t.name AS team_name,
             t.logo_url AS team_logo,

@@ -211,6 +211,11 @@ export const getEvents = async (req, res) => {
           COALESCE(l.name, ext_tour.name)::varchar AS league_name,
           l.short_name::varchar AS league_short_name,
           l.logo_url::varchar AS league_logo_url,
+          -- Что организаторы разрешают менять в формации на этот матч: игровой номер и
+          -- нашивки капитана с ассистентом. По умолчанию не разрешено — тогда в TR вместо
+          -- шторки правки показывается пояснение (см. MatchLines).
+          COALESCE(l.allow_match_jersey_change, false)::boolean AS allow_match_jersey_change,
+          COALESCE(l.allow_match_letters_change, false)::boolean AS allow_match_letters_change,
           COALESCE(d.logo_url, ext_tour.logo_url)::varchar AS division_logo_url,
           s.name::varchar AS season_name,
           

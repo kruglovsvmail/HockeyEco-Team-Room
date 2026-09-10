@@ -110,7 +110,6 @@ export function ProfilePage() {
   const [pinCode, setPinCode] = useState('');
 
   // Индивидуальные режимы редактирования блоков (карандашики)
-  const [isEditPersonal, setIsEditPersonal] = useState(false);
   const [isEditHockey, setIsEditHockey] = useState(false);
   const [isEditContacts, setIsEditContacts] = useState(false);
   const [isEditPassword, setIsEditPassword] = useState(false);
@@ -118,7 +117,6 @@ export function ProfilePage() {
 
   // Черновики блоков — независимые копии значений на время редактирования.
   // Благодаря ним сохранение одного блока не затирает несохранённые правки другого.
-  const [draftPersonal, setDraftPersonal] = useState({ firstName: '', lastName: '', middleName: '', birthDate: '' });
   const [draftHockey, setDraftHockey] = useState({ height: '', weight: '', grip: 'left' });
   const [draftContacts, setDraftContacts] = useState({ email: '', phone: '' });
 
@@ -128,7 +126,7 @@ export function ProfilePage() {
   const [verifySeconds, setVerifySeconds] = useState(0);
 
   // Ref-флаги режимов редактирования — всегда актуальны внутри async-функций (нет stale closure).
-  const editingRef = useRef({ personal: false, hockey: false, contacts: false });
+  const editingRef = useRef({ hockey: false, contacts: false });
 
   // Хелпер вызова тоста
   const triggerToast = (message, type = 'success') => {
@@ -183,9 +181,6 @@ export function ProfilePage() {
 
         // Черновики обновляем только для блоков, НЕ открытых на редактирование.
         // editingRef.current читается здесь напрямую — нет stale closure.
-        if (!editingRef.current.personal) {
-          setDraftPersonal({ firstName: serverFirstName, lastName: serverLastName, middleName: serverMiddleName, birthDate: serverBirthDate });
-        }
         if (!editingRef.current.hockey) {
           setDraftHockey({ height: serverHeight, weight: serverWeight, grip: serverGrip });
         }
@@ -571,45 +566,25 @@ export function ProfilePage() {
               </div>
 
               {/* БЛОК 2: ЛИЧНАЯ ИНФОРМАЦИЯ */}
+              {/* Карандашика здесь нет намеренно: по ФИО и дате рождения лига опознаёт
+                  человека в заявке, протоколах и дисквалификациях. Правит их только
+                  поддержка HockeyEco — иначе состав можно подменить, не трогая заявку. */}
               <CustomBlock 
                 title="Личная информация" 
                 icon="player"
-                isEditing={isEditPersonal}
-                isSaving={savingBlock === 'personal'}
-                onAction={() => {
-                  if (isEditPersonal) {
-                    editingRef.current.personal = false;
-                    handleSaveBlock('personal', { first_name: draftPersonal.firstName, last_name: draftPersonal.lastName, middle_name: draftPersonal.middleName, birth_date: draftPersonal.birthDate || null });
-                  } else {
-                    setDraftPersonal({ firstName, lastName, middleName, birthDate });
-                    editingRef.current.personal = true;
-                    setIsEditPersonal(true);
-                  }
-                }}
+                isEditing={false}
+                onAction={null}
               >
-                {isEditPersonal ? (
-                  <div className="space-y-3 pt-1">
-                    <TextInputLP label="Фамилия" value={draftPersonal.lastName} onChange={(v) => setDraftPersonal(p => ({ ...p, lastName: v }))} placeholder="Введите фамилию" />
-                    <TextInputLP label="Имя" value={draftPersonal.firstName} onChange={(v) => setDraftPersonal(p => ({ ...p, firstName: v }))} placeholder="Введите имя" />
-                    <TextInputLP label="Отчество" value={draftPersonal.middleName} onChange={(v) => setDraftPersonal(p => ({ ...p, middleName: v }))} placeholder="Введите отчество" />
-                    <div className="flex flex-col gap-1.5">
-                      <span className="text-[10px] font-bold text-content-muted uppercase tracking-wider pl-1">Дата рождения</span>
-                      <input 
-                        type="date" 
-                        value={draftPersonal.birthDate} 
-                        onChange={(e) => setDraftPersonal(p => ({ ...p, birthDate: e.target.value }))}
-                        className="w-full p-4 bg-surface-level2 border border-surface-border rounded-xl text-[14px] font-bold text-content-main outline-none focus:border-brand/40 transition-colors"
-                      />
-                    </div>
-                  </div>
-                ) : (
-                  <div className="flex flex-col">
-                    <InfoRow label="Фамилия" value={lastName} />
-                    <InfoRow label="Имя" value={firstName} />
-                    <InfoRow label="Отчество" value={middleName} />
-                    <InfoRow label="Дата рождения" value={birthDate ? birthDate.split('-').reverse().join('.') : null} />
-                  </div>
-                )}
+                <div className="flex flex-col">
+                  <InfoRow label="Фамилия" value={lastName} />
+                  <InfoRow label="Имя" value={firstName} />
+                  <InfoRow label="Отчество" value={middleName} />
+                  <InfoRow label="Дата рождения" value={birthDate ? birthDate.split('-').reverse().join('.') : null} />
+                </div>
+                <div className="mt-3 pt-3 border-t border-surface-border text-[12px] text-content-muted leading-relaxed">
+                  ФИО и дата рождения используются лигами в заявках и протоколах, поэтому
+                  самостоятельно их изменить нельзя. Если в данных ошибка — обратитесь в поддержку HockeyEco.
+                </div>
               </CustomBlock>
 
               {/* БЛОК 3: АНТРОПОМЕТРИЯ (РОСТ, ВЕС, ХВАТ) */}

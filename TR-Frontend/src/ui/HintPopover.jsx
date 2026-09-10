@@ -40,6 +40,9 @@ export function HintPopover({ status, customContent, children, className, style 
     deadline_roster_submit: `Отправка заблокирована. До игры осталось меньше ${DEADLINES?.ROSTER_SUBMIT_MINUTES || 120} ${pluralizeMinutesGenitive(DEADLINES?.ROSTER_SUBMIT_MINUTES || 120)}.`,
     deadline_player_params: `Изменение параметров игрока заблокировано. До игры осталось меньше ${DEADLINES?.ROSTER_SUBMIT_MINUTES || 120} ${pluralizeMinutesGenitive(DEADLINES?.ROSTER_SUBMIT_MINUTES || 120)}.`,
     match_started: 'Действие недоступно. Матч уже начался.',
+    // Запрет организаторов турнира: игровой номер и нашивки на матч меняет только лига.
+    // Настройка живёт в параметрах лиги и по умолчанию выключена.
+    league_params_locked: 'Организаторы не разрешают менять игровые номера и назначать капитана с ассистентом на матч. Номер и нашивки берутся из заявки на сезон.',
     match_finished: 'Действие недоступно. Матч уже завершён.',
     not_in_roster: 'Не доступно. Пользователь не в ростере команды',
     not_in_club: 'Вы не состоите в составе клуба, поэтому отметиться нельзя.',

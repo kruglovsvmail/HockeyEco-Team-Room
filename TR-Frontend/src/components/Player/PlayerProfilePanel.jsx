@@ -281,7 +281,14 @@ export function PlayerProfilePanel({ data }) {
     const seen = new Set();
     (profile.info.team_photos || []).forEach(p => {
       if (p.url && !seen.has(p.url)) {
-        teamPhotos.push({ url: p.url, type: 'team', teamLogo: p.teamLogo, teamId: p.teamId });
+        teamPhotos.push({
+          url: p.url,
+          type: 'team',
+          teamLogo: p.teamLogo,
+          teamId: p.teamId,
+          divisionLogo: p.divisionLogo,
+          divisionName: p.divisionName,
+        });
         seen.add(p.url);
       }
     });
@@ -363,6 +370,16 @@ export function PlayerProfilePanel({ data }) {
             {allPhotos[photoIndex]?.type === 'team' && allPhotos[photoIndex]?.teamLogo && (
               <div className="absolute bottom-1 left-1 w-6 h-6 rounded-full bg-surface-base shadow-sm flex items-center justify-center p-0.5">
                 <img src={getImageUrl(allPhotos[photoIndex].teamLogo)} alt="" className="w-full h-full object-contain" />
+              </div>
+            )}
+            {/* Снимок из заявки — рядом с эмблемой команды показываем и лого дивизиона
+                (0,8 от размера командного), чтобы было видно, к какому турниру относится фото. */}
+            {allPhotos[photoIndex]?.type === 'team' && allPhotos[photoIndex]?.divisionLogo && (
+              <div
+                className="absolute bottom-1 right-1 w-[1.2rem] h-[1.2rem] rounded-full bg-surface-base shadow-sm flex items-center justify-center p-0.5"
+                title={allPhotos[photoIndex].divisionName || ''}
+              >
+                <img src={getImageUrl(allPhotos[photoIndex].divisionLogo)} alt="" className="w-full h-full object-contain" />
               </div>
             )}
             {allPhotos.length > 1 && (

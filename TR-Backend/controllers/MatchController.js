@@ -685,7 +685,9 @@ export const getMatchStats = async (req, res) => {
         gr.jersey_number::int,
         u.first_name::varchar,
         u.last_name::varchar,
-        tm.photo_url::varchar,
+        -- Фото из заявки (снимок на момент допуска), иначе живое фото в составе команды:
+        -- у товарищеского матча дивизиона нет, там tr не находится и остаётся team_members
+        COALESCE(tr.photo_snapshot_url, tm.photo_url)::varchar AS photo_url,
         COALESCE(g.goals, 0)::int AS goals,
         COALESCE(a.assists, 0)::int AS assists,
         (COALESCE(g.goals, 0) + COALESCE(a.assists, 0))::int AS points,
@@ -794,7 +796,9 @@ export const getMatchStats = async (req, res) => {
         gr.jersey_number::int,
         u.first_name::varchar,
         u.last_name::varchar,
-        tm.photo_url::varchar,
+        -- Фото из заявки (снимок на момент допуска), иначе живое фото в составе команды:
+        -- у товарищеского матча дивизиона нет, там tr не находится и остаётся team_members
+        COALESCE(tr.photo_snapshot_url, tm.photo_url)::varchar AS photo_url,
         -- Отражённые броски = (все броски в створ вратарю) − (голы С БРОСКА против него).
         -- Ячейку НЕ ЗАПОЛНЯЛИ (строки нет, s.shots_against IS NULL) → NULL, фронт
         -- покажет «—». Заполнили нулём → 0: это результат, а не отсутствие данных.
@@ -1045,7 +1049,7 @@ export const getMatchProtocol = async (req, res) => {
         scorer.first_name::varchar AS scorer_first_name,
         scorer.last_name::varchar  AS scorer_last_name,
         scorer_gr.jersey_number::int AS scorer_jersey,
-        scorer_tm.photo_url::varchar AS scorer_photo,
+        COALESCE(scorer_tr.photo_snapshot_url, scorer_tm.photo_url)::varchar AS scorer_photo,
 
         -- Ассистент 1
         a1.id::int                AS assist1_id,
@@ -1074,6 +1078,13 @@ export const getMatchProtocol = async (req, res) => {
         ON scorer_gr.player_id = scorer.id AND scorer_gr.game_id = ge.game_id
       LEFT JOIN "public"."team_members" scorer_tm
         ON scorer_tm.user_id = scorer.id AND scorer_tm.team_id = ge.team_id
+      -- Фото из заявки в дивизион этого матча: в лиге игрока узнают по заявочному снимку.
+      -- Товарищеский матч (division_id IS NULL) сюда не попадает и остаётся на team_members.
+      LEFT JOIN "public"."tournament_teams" scorer_tt
+        ON scorer_tt.team_id = ge.team_id AND scorer_tt.division_id = g.division_id
+      LEFT JOIN "public"."tournament_rosters" scorer_tr
+        ON scorer_tr.tournament_team_id = scorer_tt.id AND scorer_tr.player_id = scorer.id
+       AND scorer_tr.period_end IS NULL
 
       -- Ассистент 1
       LEFT JOIN "public"."users" a1 ON a1.id = ge.assist1_id

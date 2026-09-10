@@ -351,7 +351,9 @@ export const getMatchLines = async (req, res) => {
           COALESCE(tfg.is_assistant, tr.is_assistant, false) AS is_assistant,
           u.first_name, 
           u.last_name, 
-          COALESCE(tm.photo_url, u.avatar_url) AS avatar_url
+          -- Официальный матч — лиговый контекст: показываем фото из заявки (снимок на момент
+          -- допуска), чтобы состав на матч совпадал с тем, кого лига допустила
+          COALESCE(tr.photo_snapshot_url, tm.photo_url, u.avatar_url) AS avatar_url
         FROM team_formation_game tfg
         JOIN users u ON u.id = tfg.player_id
         LEFT JOIN team_members tm ON tm.user_id = u.id AND tm.team_id = $2 AND tm.left_at IS NULL
@@ -573,10 +575,22 @@ export const updateLinePlayer = async (req, res) => {
       return res.status(403).json({ success: false, error: 'Матч уже начался, изменение параметров игроков заблокировано' });
     }
 
-    const gameQuery = await client.query(`SELECT game_date, game_type, division_id FROM games WHERE id = $1`, [eventId]);
+    // Вместе с матчем забираем и разрешения организаторов: в официальном матче лига решает,
+    // можно ли команде менять игровой номер и нашивки именно на игру. Настройка по умолчанию
+    // выключена, поэтому COALESCE к false — у матчей вне лиги её нет вовсе.
+    const gameQuery = await client.query(`
+      SELECT g.game_date, g.game_type, g.division_id,
+             COALESCE(l.allow_match_jersey_change, false) AS allow_jersey,
+             COALESCE(l.allow_match_letters_change, false) AS allow_letters
+        FROM games g
+        LEFT JOIN divisions d ON d.id = g.division_id
+        LEFT JOIN seasons s ON s.id = d.season_id
+        LEFT JOIN leagues l ON l.id = s.league_id
+       WHERE g.id = $1
+    `, [eventId]);
     if (gameQuery.rowCount === 0) return res.status(404).json({ success: false, error: 'Матч не найден' });
 
-    const { game_date, game_type, division_id } = gameQuery.rows[0];
+    const { game_date, game_type, division_id, allow_jersey, allow_letters } = gameQuery.rows[0];
     const diffMinutes = (new Date(game_date) - new Date()) / 1000 / 60;
     
     if (diffMinutes < DEADLINES.ROSTER_SUBMIT_MINUTES) {
@@ -592,6 +606,27 @@ export const updateLinePlayer = async (req, res) => {
       `SELECT player_id, jersey_number, is_captain, is_assistant FROM team_formation_game WHERE game_id = $1 AND team_id = $2`,
       [eventId, teamId]
     );
+
+    // Запрет организаторов. Проверяем по факту изменения, а не по наличию поля в запросе:
+    // приложение всегда шлёт всю тройку, и запрещённое поле обычно приходит неизменным —
+    // отказывать на этом было бы неверно. Игрока в расстановке может не быть (его только что
+    // добавили другим запросом) — тогда сравнивать не с чем, и правку считаем изменением.
+    if (game_type === 'official' && (!allow_jersey || !allow_letters)) {
+      const current = currentLines.rows.find(p => String(p.player_id) === String(playerId));
+      const nextJersey = jerseyNumber === '' || jerseyNumber === undefined ? null : Number(jerseyNumber);
+      const currentJersey = current?.jersey_number ?? null;
+
+      if (!allow_jersey && nextJersey !== currentJersey) {
+        await client.query('ROLLBACK');
+        return res.status(403).json({ success: false, error: 'Организаторы не разрешают менять игровой номер на матч' });
+      }
+
+      const lettersChanged = (!!isCaptain !== !!current?.is_captain) || (!!isAssistant !== !!current?.is_assistant);
+      if (!allow_letters && lettersChanged) {
+        await client.query('ROLLBACK');
+        return res.status(403).json({ success: false, error: 'Организаторы не разрешают назначать капитана и ассистента на матч' });
+      }
+    }
 
     if (jerseyNumber !== undefined && jerseyNumber !== null && jerseyNumber !== '') {
       const duplicate = currentLines.rows.find(p => String(p.player_id) !== String(playerId) && p.jersey_number === parseInt(jerseyNumber));

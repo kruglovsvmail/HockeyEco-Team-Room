@@ -135,6 +135,16 @@ export const MatchLines = ({ event, initialAttendees = [], initialDraftLines = [
   // 2. БЕЗОПАСНЫЙ ВЫЗОВ ХУКА ПРАВ НА ОСНОВЕ ЧИСТЫХ ОФЛАЙН-КОНТЕКСТОВ ПРИЛОЖЕНИЯ
   const { user, checkAccess, selectedTeam } = useAccess(localUser, localTeam);
 
+  // Что организаторы разрешают менять именно на матч. Настройка живёт в лиге и приезжает
+  // с карточкой события; у товарищеских матчей её нет — там команда всегда сама себе хозяин.
+  // Поля может не быть в карточке из старого кэша сессии — считаем, что не разрешено:
+  // так же, как по умолчанию в базе, и сервер откажет в том же самом.
+  const isOfficialMatch = event?.game_type === 'official';
+  const canEditJersey = !isOfficialMatch || !!event?.allow_match_jersey_change;
+  const canEditLetters = !isOfficialMatch || !!event?.allow_match_letters_change;
+  // Шторку правки открывать незачем, только когда запрещено и то, и другое
+  const isPlayerParamsLocked = !canEditJersey && !canEditLetters;
+
   // Вычисляем гранулярные права допуска In-Memory матрицы по подписке для этой команды матча
   const hasLinesManageAccess = checkAccess('MATCH_LINES_MANAGE', event?.my_team_id);
   const hasRosterSubmitAccess = checkAccess('MATCH_ROSTER_SUBMIT', event?.my_team_id);
@@ -771,7 +781,9 @@ export const MatchLines = ({ event, initialAttendees = [], initialDraftLines = [
           ? 'no_subscription'
           : timeToMatch < DEADLINES.ROSTER_SUBMIT_MINUTES
             ? getDeadlineHintStatus('deadline_player_params')
-            : null)
+            : isPlayerParamsLocked
+              ? 'league_params_locked'
+              : null)
       : null;
     const isHintWrapped = hintStatus != null;
 
@@ -796,8 +808,9 @@ export const MatchLines = ({ event, initialAttendees = [], initialDraftLines = [
           if (isEditMode) {
             handleSlotClick(lineNum, pos);
           } else if (player) {
-            // ЖЕСТКИЙ БЛОК: Если нет подписки или наступил временной дедлайн лиги — шторку не инициируем
-            if (!hasPlayerParamsAccess || timeToMatch < DEADLINES.ROSTER_SUBMIT_MINUTES) {
+            // ЖЕСТКИЙ БЛОК: нет подписки, наступил дедлайн или организаторы запретили и номер,
+            // и нашивки — шторку не инициируем, вместо неё игрок видит подсказку с причиной
+            if (!hasPlayerParamsAccess || timeToMatch < DEADLINES.ROSTER_SUBMIT_MINUTES || isPlayerParamsLocked) {
               return;
             }
             handleViewPlayerClick(player, e);
@@ -1241,6 +1254,15 @@ export const MatchLines = ({ event, initialAttendees = [], initialDraftLines = [
               </div>
             )}
 
+            {/* Организаторы могли разрешить только часть правок — тогда запрещённая половина
+                в шторку не попадает вовсе, а рядом объясняется почему. */}
+            {!canEditJersey && (
+              <div className="p-3 rounded-xl bg-surface-level2 text-content-muted text-[13px] font-medium leading-relaxed">
+                Организаторы не разрешают менять игровой номер на матч. Номер берётся из заявки на сезон.
+              </div>
+            )}
+
+            {canEditJersey && (
             <div className="flex flex-col gap-2">
               <label className="text-[10px] font-black text-content-muted uppercase tracking-widest ml-2">
                 Игровой номер на матч
@@ -1255,7 +1277,15 @@ export const MatchLines = ({ event, initialAttendees = [], initialDraftLines = [
                 className="w-full h-11 bg-surface-level2 border border-surface-border rounded-2xl px-4 text-ms font-bold text-content-main focus:border-brand focus:outline-none"
               />
             </div>
+            )}
 
+            {!canEditLetters && (
+              <div className="p-3 rounded-xl bg-surface-level2 text-content-muted text-[13px] font-medium leading-relaxed">
+                Организаторы не разрешают назначать капитана и ассистента на матч. Нашивки берутся из заявки на сезон.
+              </div>
+            )}
+
+            {canEditLetters && (
             <div className="flex flex-col gap-3 border border-surface-border rounded-2xl p-4">
               <CheckboxLP 
                 label="Капитан команды (К)" 
@@ -1277,6 +1307,7 @@ export const MatchLines = ({ event, initialAttendees = [], initialDraftLines = [
                 }} 
               />
             </div>
+            )}
 
             <div className="pt-4">
               <ButtonLP 

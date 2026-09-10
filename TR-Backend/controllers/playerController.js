@@ -13,13 +13,38 @@ export const getPlayerProfile = async (req, res) => {
         u.birth_date, u.height, u.weight, u.grip, u.avatar_url,
         COALESCE(
           (
-            SELECT json_agg(json_build_object('url', sub.photo_url, 'teamLogo', sub.logo_url, 'teamId', sub.team_id))
+            SELECT json_agg(photo ORDER BY photo->>'divisionName' NULLS LAST)
             FROM (
-              SELECT DISTINCT tm.photo_url, t.logo_url, tm.team_id
-              FROM "public"."team_members" tm
-              JOIN "public"."teams" t ON tm.team_id = t.id
-              WHERE tm.user_id = u.id AND tm.photo_url IS NOT NULL
-            ) sub
+              -- Фотографии в карусели: сперва слепки из заявок — то самое лицо, которое лига
+              -- допустила в конкретном дивизионе (см. photo_snapshot_url), с логотипами
+              -- команды и дивизиона. Следом — живые фото в командах, где слепка ещё нет:
+              -- иначе у незаявленного игрока карусель была бы пустой.
+              SELECT DISTINCT ON (sub.photo_url)
+                     json_build_object(
+                       'url', sub.photo_url,
+                       'teamLogo', sub.team_logo,
+                       'teamId', sub.team_id,
+                       'divisionLogo', sub.division_logo,
+                       'divisionName', sub.division_name
+                     ) AS photo
+              FROM (
+                SELECT tr.photo_snapshot_url AS photo_url, t.logo_url AS team_logo, t.id AS team_id,
+                       d.logo_url AS division_logo, d.name AS division_name
+                FROM "public".tournament_rosters tr
+                JOIN "public".tournament_teams tt ON tt.id = tr.tournament_team_id
+                JOIN "public".teams t ON t.id = tt.team_id
+                JOIN "public".divisions d ON d.id = tt.division_id
+                WHERE tr.player_id = u.id AND tr.photo_snapshot_url IS NOT NULL
+
+                UNION ALL
+
+                SELECT tm.photo_url, t.logo_url, t.id, NULL, NULL
+                FROM "public".team_members tm
+                JOIN "public".teams t ON t.id = tm.team_id
+                WHERE tm.user_id = u.id AND tm.photo_url IS NOT NULL
+              ) sub
+              ORDER BY sub.photo_url, sub.division_name NULLS LAST
+            ) photos
           ),
           '[]'::json
         ) as team_photos

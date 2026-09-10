@@ -114,7 +114,11 @@ class ProfileController {
       // только через связку requestPhoneChange/getPhoneChangeStatus с подтверждением звонком.
       // Если писать его отсюда, опечатка в номере навсегда отрезает человека от аккаунта:
       // ни вход, ни восстановление пароля (оно тоже идёт по телефону) больше не сработают.
-      const { email, first_name, last_name, middle_name, birth_date, height, weight, grip } = req.body;
+      //
+      // ФИО и дата рождения тоже не принимаются: по ним лига опознаёт человека в заявке,
+      // в протоколах и в дисквалификациях. Меняет их только глобальный админ через реестр
+      // в LMS — иначе команда может подменить заявленного игрока, не трогая заявку.
+      const { email, height, weight, grip } = req.body;
 
       if (email) {
         const emailCheck = await pool.query('SELECT id FROM users WHERE email = $1 AND id <> $2', [email, userId]);
@@ -127,23 +131,15 @@ class ProfileController {
       const query = `
         UPDATE users
         SET email       = COALESCE($1, email),
-            first_name  = COALESCE($2, first_name),
-            last_name   = COALESCE($3, last_name),
-            middle_name = COALESCE($4, middle_name),
-            birth_date  = COALESCE($5, birth_date),
-            height      = COALESCE($6, height),
-            weight      = COALESCE($7, weight),
-            grip        = COALESCE($8, grip),
+            height      = COALESCE($2, height),
+            weight      = COALESCE($3, weight),
+            grip        = COALESCE($4, grip),
             updated_at  = NOW()
-        WHERE id = $9
+        WHERE id = $5
       `;
 
       await pool.query(query, [
         email       ?? null,
-        first_name  ?? null,
-        last_name   ?? null,
-        middle_name ?? null,
-        birth_date  ?? null,
         height      ?? null,
         weight      ?? null,
         grip        ?? null,
