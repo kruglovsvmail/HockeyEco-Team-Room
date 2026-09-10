@@ -420,6 +420,10 @@ export const getEvents = async (req, res) => {
           NULL::varchar AS league_name,
           NULL::varchar AS league_short_name,
           NULL::varchar AS league_logo_url,
+          -- Не лиговое событие: ограничивать правку номеров и нашивок некому. Колонки
+          -- всё равно обязаны быть во всех ветвях UNION ALL (см. training_type).
+          false::boolean AS allow_match_jersey_change,
+          false::boolean AS allow_match_letters_change,
           NULL::varchar AS division_logo_url,
           NULL::varchar AS season_name,
           NULL::varchar AS stage_type,
@@ -564,6 +568,10 @@ export const getEvents = async (req, res) => {
           NULL::varchar AS league_name,
           NULL::varchar AS league_short_name,
           NULL::varchar AS league_logo_url,
+          -- Не лиговое событие: ограничивать правку номеров и нашивок некому. Колонки
+          -- всё равно обязаны быть во всех ветвях UNION ALL (см. training_type).
+          false::boolean AS allow_match_jersey_change,
+          false::boolean AS allow_match_letters_change,
           NULL::varchar AS division_logo_url,
           NULL::varchar AS season_name,
           NULL::varchar AS stage_type,
@@ -706,6 +714,10 @@ export const getEvents = async (req, res) => {
           NULL::varchar AS league_name,
           NULL::varchar AS league_short_name,
           NULL::varchar AS league_logo_url,
+          -- Не лиговое событие: ограничивать правку номеров и нашивок некому. Колонки
+          -- всё равно обязаны быть во всех ветвях UNION ALL (см. training_type).
+          false::boolean AS allow_match_jersey_change,
+          false::boolean AS allow_match_letters_change,
           NULL::varchar AS division_logo_url,
           NULL::varchar AS season_name,
           NULL::varchar AS stage_type,
@@ -852,6 +864,10 @@ export const getEvents = async (req, res) => {
           NULL::varchar AS league_name,
           NULL::varchar AS league_short_name,
           NULL::varchar AS league_logo_url,
+          -- Не лиговое событие: ограничивать правку номеров и нашивок некому. Колонки
+          -- всё равно обязаны быть во всех ветвях UNION ALL (см. training_type).
+          false::boolean AS allow_match_jersey_change,
+          false::boolean AS allow_match_letters_change,
           NULL::varchar AS division_logo_url,
           NULL::varchar AS season_name,
           NULL::varchar AS stage_type,
@@ -991,6 +1007,10 @@ export const getEvents = async (req, res) => {
           NULL::varchar AS league_name,
           NULL::varchar AS league_short_name,
           NULL::varchar AS league_logo_url,
+          -- Не лиговое событие: ограничивать правку номеров и нашивок некому. Колонки
+          -- всё равно обязаны быть во всех ветвях UNION ALL (см. training_type).
+          false::boolean AS allow_match_jersey_change,
+          false::boolean AS allow_match_letters_change,
           NULL::varchar AS division_logo_url,
           NULL::varchar AS season_name,
           NULL::varchar AS stage_type,
@@ -1189,6 +1209,10 @@ export const getEvents = async (req, res) => {
           NULL::varchar AS league_name,
           NULL::varchar AS league_short_name,
           NULL::varchar AS league_logo_url,
+          -- Не лиговое событие: ограничивать правку номеров и нашивок некому. Колонки
+          -- всё равно обязаны быть во всех ветвях UNION ALL (см. training_type).
+          false::boolean AS allow_match_jersey_change,
+          false::boolean AS allow_match_letters_change,
           NULL::varchar AS division_logo_url,
           NULL::varchar AS season_name,
           NULL::varchar AS stage_type,
