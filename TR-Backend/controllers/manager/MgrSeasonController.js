@@ -2,6 +2,7 @@ import pool from '../../config/db.js';
 import s3 from '../../config/s3.js';
 import { PutObjectCommand, DeleteObjectCommand } from '@aws-sdk/client-s3';
 import { assertPlayersAllowedInDivision, assertApplicationRosterAllowed, loadDivisionQualificationRules } from '../../utils/qualificationAccess.js';
+import { resetAdmissionByRosterIds, resetAdmissionForPersons } from '../../utils/admissionReset.js';
 
 const S3_BUCKET = process.env.S3_BUCKET || 'hockeyeco-uploads';
 
@@ -643,6 +644,12 @@ export const addPlayersToApplication = async (req, res) => {
           UPDATE tournament_rosters AS tr
           SET period_end = NULL,
               application_status = 'pending',
+              -- Игрок вернулся в заявку и снова ждёт проверки, значит прежний слепок
+              -- фото больше не действует: гасим его тем же движением, что и сброс
+              -- допуска (см. utils/admissionReset.js), иначе лига сверяла бы человека
+              -- по кадру, допущенному ещё до отзаявки.
+              photo_snapshot_prev_url = photo_snapshot_url,
+              photo_snapshot_url = NULL,
               position = v.position,
               jersey_number = v.jersey_number::int,
               is_captain = v.is_captain::boolean,
@@ -731,11 +738,21 @@ export const updateRosterEntry = async (req, res) => {
       values.push(rosterId);
       await pool.query(`UPDATE tournament_rosters SET ${updates.join(', ')}, updated_at = NOW() WHERE id = $${counter}`, values);
 
+      // Данные изменились — проверка лиги относилась уже к другим данным (utils/admissionReset.js)
+      await resetAdmissionByRosterIds(pool, [rosterId]);
+
       if (is_captain === true) {
-        await pool.query(
-          `UPDATE tournament_rosters SET is_captain = false WHERE tournament_team_id = $1 AND id != $2 AND period_end IS NULL`,
+        // Капитан в заявке один: у прежнего нашивку снимаем, и это тоже правка его
+        // данных — значит и его допуск уходит на перепроверку. Условие is_captain
+        // здесь обязательно: без него UPDATE трогал бы всю заявку целиком и сносил
+        // допуск всей команде разом, хотя менялся один человек.
+        const { rows: dethroned } = await pool.query(
+          `UPDATE tournament_rosters SET is_captain = false, updated_at = NOW()
+            WHERE tournament_team_id = $1 AND id != $2 AND period_end IS NULL AND is_captain = true
+            RETURNING id`,
           [appId, rosterId]
         );
+        await resetAdmissionByRosterIds(pool, dethroned.map(r => r.id));
       }
     }
 
@@ -855,6 +872,13 @@ export const uploadPersonDocs = async (req, res) => {
 
     await savePersonDocs(pool, appId, userId, patch);
 
+    // Панель документов сохраняет каждое действие сразу и по одному документу за раз
+    // (см. PlayerDocsModal — общей кнопки «Сохранить» там нет). Значит непустой patch
+    // это всегда осознанная замена файла или сдвиг срока, и допуск уходит на перепроверку.
+    if (Object.keys(patch).length > 0) {
+      await resetAdmissionForPersons(pool, appId, [userId]);
+    }
+
     for (const type of DOC_TYPES) {
       if (uploaded[type]) {
         await deleteReplacedPersonDoc(previous[`${type}_url`], uploaded[type], appId, userId, type);
@@ -959,6 +983,11 @@ export const bulkUploadPersonDocs = async (req, res) => {
                     ${type}_expires_at = EXCLUDED.${type}_expires_at,
                     updated_at = NOW()
     `, [appId, expires_at || null, targets.map(t => t.userId), targets.map(t => t.url)]);
+
+    // Одна бумага — но у каждого отмеченного это замена его личного документа, поэтому
+    // на перепроверку уходят все разом. Команда, заливая общую справку на допущенный
+    // состав, снимает допуск всему списку — это и есть цена массовой операции.
+    await resetAdmissionForPersons(pool, appId, targets.map(t => t.userId));
 
     // Только после успешной записи: сбой на INSERT оставил бы заявку со ссылками на удалённое
     for (const t of targets) {

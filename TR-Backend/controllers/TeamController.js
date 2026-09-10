@@ -778,6 +778,10 @@ export const updateMemberPhoto = async (req, res) => {
       [photoUrl, memberId, teamId]
     );
 
+    // Допуск игрока при замене фото НЕ снимается — и не должен. В момент допуска
+    // лига снимает слепок (tournament_rosters.photo_snapshot_url) и дальше везде видит
+    // именно тот кадр, с которым допускала. Что команда делает с фото у себя после
+    // этого — на заявку не влияет, снимать проверку не с чего.
     res.json({ success: true, photo_url: photoUrl });
   } catch (error) {
     console.error('[Update Member Photo Error]:', error);
@@ -793,6 +797,9 @@ export const deleteMemberPhoto = async (req, res) => {
       `UPDATE team_members SET photo_url = NULL WHERE id = $1 AND team_id = $2 AND left_at IS NULL`,
       [memberId, teamId]
     );
+
+    // Допуск не трогаем по той же причине, что и при замене фото (см. updateMemberPhoto):
+    // у допущенного игрока лига смотрит на слепок, а не на живое фото команды.
     res.json({ success: true, message: 'Р¤РѕС‚РѕРіСЂР°С„РёСЏ СѓСЃРїРµС€РЅРѕ СѓРґР°Р»РµРЅР°' });
   } catch (error) {
     console.error('[Delete Member Photo Error]:', error);

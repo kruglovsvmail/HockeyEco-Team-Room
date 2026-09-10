@@ -46,11 +46,19 @@ export const POSITION_LABELS_SHORT = Object.fromEntries(POSITION_OPTIONS_SHORT.m
 //
 // В черновике («Формируется») вердикта нет вообще — ни обводки, ни подписи в шторке игрока:
 // заявка ещё не отправлена, лига её не видела и допускать никого не могла.
+//
+// Подпись у всех недопущенных одна и та же намеренно. Во-первых, «Недопущен» звучало
+// приговором, хотя в pending лига могла ещё даже не смотреть заявку. Во-вторых, игрок
+// попадает в pending и сам собой: допущенному поправили номер, нашивку или документ — и
+// проверка слетела (TR-Backend/utils/admissionReset.js). Для команды разницы нет: на лёд
+// нельзя в любом случае, а причину узнают у лиги.
+const NOT_ADMITTED = { label: 'На проверке или не допущен', className: 'text-danger' };
+
 export const ROSTER_VERDICT_META = {
-  draft:    { label: 'Не допущен', className: 'text-danger' },
-  pending:  { label: 'Не допущен', className: 'text-danger' },
-  approved: { label: 'Допущен',    className: 'text-success' },
-  declined: { label: 'Недопущен',  className: 'text-danger' },
+  draft:    NOT_ADMITTED,
+  pending:  NOT_ADMITTED,
+  approved: { label: 'Допущен', className: 'text-success' },
+  declined: NOT_ADMITTED,
 };
 
 // Подпись квалификации игрока: полное название, а не сокращение — «МС» рядом с фамилией
