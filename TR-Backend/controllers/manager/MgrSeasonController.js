@@ -17,6 +17,11 @@ const uploadBufferToS3 = async (file, key) => {
 
 const getFileExt = (originalname) => (originalname.split('.').pop() || 'bin');
 
+// Все типы личных документов допуска: по такой плитке на каждый в PlayerDocsModal.
+// Теми же словами названы колонки в tournament_person_docs (medical_url / medical_expires_at)
+// и поля формы, которыми файлы и сроки приходят с фронта.
+const DOC_TYPES = ['medical', 'insurance', 'consent'];
+
 // Типы документов, которые бывают общими на команду: одна бумага со списком игроков внутри.
 // Тем же словом названы колонки в tournament_rosters (medical_url / medical_expires_at).
 // Согласия тут нет намеренно: его подписывает каждый лично, общего согласия не бывает.
