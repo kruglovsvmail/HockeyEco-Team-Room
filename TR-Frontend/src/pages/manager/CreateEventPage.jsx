@@ -264,9 +264,6 @@ export function CreateEventPage() {
     { value: 'tournament_ext', label: 'Турнир' }
   ];
 
-  // Раздел "Турнир" в разработке — блоки параметров временно подменяются заглушкой.
-  const isTournamentExtDisabled = true;
-
   const stageTypeOptions = [
     { value: 'regular', label: 'Регулярка' },
     { value: 'playoff', label: 'Плей-офф' }
@@ -642,19 +639,7 @@ export function CreateEventPage() {
             </FadeIn>
           )}
 
-          {eventType === 'match' && matchType === 'tournament_ext' && isTournamentExtDisabled && (
-            <FadeIn key="tournament-ext-stub" duration={250} delay={150} className="w-full flex flex-col">
-              <div className="w-full bg-surface-level2 border border-dashed border-surface-border rounded-2xl p-6 text-center">
-                <Icon name="trophy" className="w-8 h-8 mx-auto mb-3 text-content-subtle opacity-60" />
-                <p className="text-[14px] font-bold text-content-main mb-1">Раздел в разработке</p>
-                <p className="text-[14px] text-content-muted leading-relaxed">
-                  Внешние турниры команд находятся в разработке и появятся позже.
-                </p>
-              </div>
-            </FadeIn>
-          )}
-
-          {eventType === 'match' && !(matchType === 'tournament_ext' && isTournamentExtDisabled) && (
+          {eventType === 'match' && (
             <>
               {/* ИСПРАВЛЕНО: Добавлен flex-col */}
               <FadeIn key={`opponent-panel-${matchType}`} duration={250} delay={150} className="w-full flex flex-col">
@@ -681,19 +666,38 @@ export function CreateEventPage() {
                     {matchType === 'tournament_ext' && (
                       <div className="flex flex-col gap-4">
                         <div className="flex flex-col gap-1.5">
-                          <span className="text-[14px] font-bold text-content-muted uppercase tracking-wider pl-1">Сторонний турнир</span>
+                          <span className="text-[10px] font-bold text-content-muted uppercase tracking-wider pl-1">Турнир вне платформы</span>
                           <button type="button" onClick={handleSelectExternalTournamentClick} className="w-full p-4 bg-surface-level2 border border-surface-border rounded-xl text-left flex items-center justify-between outline-none transition-all active:scale-[0.99] hover:border-brand/40">
-                            {selectedExtTournament ? <span className="text-[14px] font-bold text-content-main">{selectedExtTournament.name}</span> : <span className="text-[14px] text-content-subtle font-medium">Выбрать внешний турнир...</span>}
-                            <Icon name="chevron_right" className="w-4 h-4 text-content-subtle" />
+                            {selectedExtTournament ? (
+                              <div className="flex items-center gap-3 min-w-0">
+                                {selectedExtTournament.logo_url && <div className="w-6 h-6 rounded bg-surface-level1 p-0.5 flex items-center justify-center shrink-0"><img src={getImageUrl(selectedExtTournament.logo_url)} alt="" className="w-full h-full object-contain" /></div>}
+                                <span className="text-[14px] font-bold text-content-main truncate">{selectedExtTournament.name}</span>
+                              </div>
+                            ) : <span className="text-[14px] text-content-subtle font-medium">Выбрать турнир...</span>}
+                            <Icon name="chevron_right" className="w-4 h-4 text-content-subtle shrink-0" />
                           </button>
                         </div>
                         <div className="flex flex-col gap-1.5">
-                          <span className="text-[14px] font-bold text-content-muted uppercase tracking-wider pl-1">Команда соперника в турнире</span>
+                          <span className="text-[10px] font-bold text-content-muted uppercase tracking-wider pl-1">Соперник из состава турнира</span>
                           <button type="button" disabled={!selectedExtTournament} onClick={handleSelectExtOpponentClick} className={clsx("w-full p-4 bg-surface-level2 border rounded-xl text-left flex items-center justify-between outline-none transition-all", !selectedExtTournament ? "opacity-35 cursor-not-allowed border-dashed border-surface-border" : "border-surface-border active:scale-[0.99] hover:border-brand/40")}>
-                            {selectedExtOpponent ? <span className="text-[14px] font-bold text-content-main">{selectedExtOpponent.name}</span> : <span className="text-[14px] text-content-subtle font-medium">{selectedExtTournament ? "Выбрать соперника турнира..." : "Сначала выберите турнир..."}</span>}
-                            <Icon name="chevron_right" className="w-4 h-4 text-content-subtle" />
+                            {selectedExtOpponent ? (
+                              <div className="flex items-center gap-3 min-w-0">
+                                {selectedExtOpponent.logo_url && <div className="w-6 h-6 rounded bg-surface-level1 p-0.5 flex items-center justify-center shrink-0"><img src={getImageUrl(selectedExtOpponent.logo_url)} alt="" className="w-full h-full object-contain" /></div>}
+                                <div className="flex flex-col min-w-0">
+                                  <span className="text-[14px] font-bold text-content-main truncate">{selectedExtOpponent.name}</span>
+                                  {selectedExtOpponent.city && <span className="text-[10px] text-content-muted mt-0.5 truncate">{selectedExtOpponent.city}</span>}
+                                </div>
+                              </div>
+                            ) : <span className="text-[14px] text-content-subtle font-medium">{selectedExtTournament ? "Выбрать соперника..." : "Сначала выберите турнир..."}</span>}
+                            <Icon name="chevron_right" className="w-4 h-4 text-content-subtle shrink-0" />
                           </button>
                         </div>
+                        {/* Турниры и их составы ведутся в справочнике «Вне платформы» — здесь
+                            только выбор из готового. Подсказка, чтобы не искали, где добавить. */}
+                        <p className="text-[11px] text-content-subtle leading-relaxed pl-1">
+                          Турниры и соперники добавляются на странице команды: ⋯ → «Вне платформы».
+                          В списке соперников — только команды из состава выбранного турнира.
+                        </p>
                       </div>
                     )}
 

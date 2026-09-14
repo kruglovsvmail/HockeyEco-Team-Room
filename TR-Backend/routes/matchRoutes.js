@@ -1,7 +1,6 @@
 import express from 'express';
 import { 
   getMatchStaff, 
-  getMatchH2H,
   getMatchStats,
   getMatchProtocol,
   updateMatchMedia,
@@ -44,7 +43,6 @@ const router = express.Router();
 router.get('/:eventId/staff', verifyToken, requireTeamPermission('INTERNAL_VIEW'), getMatchStaff);
 
 // Получить историю очных встреч (Head-to-Head) между командами
-router.get('/:eventId/h2h', verifyToken, requireTeamPermission('INTERNAL_VIEW'), getMatchH2H);
 
 // Получить сводную статистику матча (броски, реализация, большинство/меньшинство, штрафы)
 router.get('/:eventId/stats', verifyToken, requireTeamPermission('INTERNAL_VIEW'), getMatchStats);

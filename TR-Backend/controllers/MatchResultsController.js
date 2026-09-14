@@ -4,6 +4,23 @@ import { recalculatePlayerGameStats } from '../utils/playerGameStatsCalculator.j
 
 const EDIT_WINDOW_HOURS = 72;
 
+// Периоды и типы событий, которые команда вносит сама. Послематчевые буллиты —
+// отдельный период 'SO' и свои два типа (та же модель, что у LMS): период и тип
+// обязаны совпадать, иначе бросок серии окажется в основном времени или наоборот.
+const EVENT_PERIODS = ['1', '2', '3', 'OT', 'SO'];
+const EVENT_TYPES = ['goal', 'penalty', 'failed_ps', 'pending_ps', 'shootout_goal', 'shootout_miss'];
+const SHOOTOUT_TYPES = ['shootout_goal', 'shootout_miss'];
+
+const validateEventShape = ({ period, event_type, time_seconds, team_id }) => {
+  if (!EVENT_PERIODS.includes(String(period))) return 'Некорректный период (допустимо 1/2/3/OT/SO)';
+  if (!EVENT_TYPES.includes(event_type)) return 'Некорректный тип события';
+  const isShootout = SHOOTOUT_TYPES.includes(event_type);
+  if (isShootout !== (String(period) === 'SO')) return 'Бросок серии буллитов должен быть в периоде SO, а остальные события — нет';
+  if (time_seconds == null || Number(time_seconds) < 0) return 'Некорректное время события';
+  if (team_id === undefined) return 'Не указана команда события';
+  return null;
+};
+
 // Пересчёт боксскора матча (player_game_statistics) после правки протокола.
 // До появления этой таблицы Team Room не пересчитывал статистику вообще: матч
 // доигрывался, статус менялся на finished — и на этом всё, личная статистика
@@ -22,8 +39,12 @@ const refreshBoxscore = async (gameId) => {
 
 // Гард на запись: матч существует, неофициальный, инициатор — текущая команда,
 // время матча уже наступило и не прошло больше EDIT_WINDOW_HOURS часов с начала
-// (глобальный админ — исключение, для него окно не действует). Используется во
-// всех write-эндпоинтах результатов. Возвращает роль редактора: 'initiator'
+// (глобальный админ — исключение, для него окно не действует). Окно защищает
+// товарищеские матчи, где соперник — живая команда платформы и её статистика
+// тоже зависит от протокола. У матчей внешних турниров (tournament_ext) соперника
+// в системе нет, статистика касается одной команды — окно для них не действует:
+// протокол лиги вне платформы нередко заполняют спустя неделю.
+// Используется во всех write-эндпоинтах результатов. Возвращает роль редактора: 'initiator'
 // (полный доступ) или 'opponent' (только свои данные — если матч-флаг
 // opponent_can_edit включён). Конкретные ограничения для соперника навешиваются
 // в самих обработчиках: add/delete/regulation/goalie-log — только инициатору;
@@ -73,7 +94,8 @@ const assertEditable = async (client, gameId, teamId, userId) => {
     return { ok: false, code: 400, error: 'Результаты можно вносить только после начала матча' };
   }
   const isAdmin = g.global_role === 'admin';
-  if (!isAdmin) {
+  const hasEditWindow = g.game_type !== 'tournament_ext';
+  if (!isAdmin && hasEditWindow) {
     const editWindowEnd = new Date(g.game_date).getTime() + EDIT_WINDOW_HOURS * 60 * 60 * 1000;
     if (Date.now() > editWindowEnd) {
       return { ok: false, code: 403, error: `Редактирование результатов доступно только в течение ${EDIT_WINDOW_HOURS} часов после начала матча` };
@@ -226,17 +248,9 @@ export const addMatchEvent = async (req, res) => {
     plus_minus_home, plus_minus_away
   } = req.body || {};
 
-  if (!['1','2','3','OT'].includes(String(period))) {
-    return res.status(400).json({ success: false, error: 'Некорректный период (допустимо 1/2/3/OT)' });
-  }
-  if (!['goal','penalty','failed_ps','pending_ps'].includes(event_type)) {
-    return res.status(400).json({ success: false, error: 'Некорректный тип события' });
-  }
-  if (time_seconds == null || Number(time_seconds) < 0) {
-    return res.status(400).json({ success: false, error: 'Некорректное время события' });
-  }
-  if (team_id === undefined) {
-    return res.status(400).json({ success: false, error: 'Не указана команда события' });
+  const shapeError = validateEventShape({ period, event_type, time_seconds, team_id });
+  if (shapeError) {
+    return res.status(400).json({ success: false, error: shapeError });
   }
   // team_id === null допустим — сторона внешнего соперника (нет реальной команды
   // в системе), game_events.team_id допускает NULL по FK на teams.
@@ -353,17 +367,9 @@ export const updateMatchEvent = async (req, res) => {
     // вовсе (все не-+/- поля берутся из existing), поэтому эти проверки для неё пропускаем.
     let eventTeamId, fromShotValue;
     if (check.role !== 'official_team') {
-      if (!['1','2','3','OT'].includes(String(period))) {
-        return res.status(400).json({ success: false, error: 'Некорректный период' });
-      }
-      if (!['goal','penalty','failed_ps','pending_ps'].includes(event_type)) {
-        return res.status(400).json({ success: false, error: 'Некорректный тип события' });
-      }
-      if (time_seconds == null || Number(time_seconds) < 0) {
-        return res.status(400).json({ success: false, error: 'Некорректное время события' });
-      }
-      if (team_id === undefined) {
-        return res.status(400).json({ success: false, error: 'Не указана команда события' });
+      const shapeError = validateEventShape({ period, event_type, time_seconds, team_id });
+      if (shapeError) {
+        return res.status(400).json({ success: false, error: shapeError });
       }
       // team_id === null допустим — сторона внешнего соперника.
       eventTeamId = team_id != null ? Number(team_id) : null;
@@ -866,33 +872,70 @@ export const publishMatchResults = async (req, res) => {
       [gameId]
     );
 
-    // При публикации пересчитываем счёт из game_events (event_type='goal').
-    // Так избегаем рассинхрона: home_score/away_score всегда отражают сохранённые голы.
+    // Счёт и формат завершения считаем из game_events, а не берём с клиента —
+    // так home_score/away_score/end_type всегда отражают сохранённые события.
+    //
+    // Для внешнего соперника away_team_id = NULL в games, а события гостей
+    // сохраняются с team_id = NULL тоже (FK на teams допускает NULL) — обычное "="
+    // никогда не совпадёт с NULL, поэтому IS NOT DISTINCT FROM.
+    const { rows: tallyRows } = await client.query(`
+      SELECT
+        COUNT(*) FILTER (WHERE ge.event_type = 'goal' AND ge.team_id IS NOT DISTINCT FROM g.home_team_id)::int AS home_goals,
+        COUNT(*) FILTER (WHERE ge.event_type = 'goal' AND ge.team_id IS NOT DISTINCT FROM g.away_team_id)::int AS away_goals,
+        COUNT(*) FILTER (WHERE ge.event_type = 'shootout_goal' AND ge.team_id IS NOT DISTINCT FROM g.home_team_id)::int AS home_so,
+        COUNT(*) FILTER (WHERE ge.event_type = 'shootout_goal' AND ge.team_id IS NOT DISTINCT FROM g.away_team_id)::int AS away_so,
+        COUNT(*) FILTER (WHERE ge.event_type IN ('shootout_goal', 'shootout_miss'))::int AS so_attempts,
+        COUNT(*) FILTER (WHERE ge.event_type = 'goal' AND ge.period = 'OT')::int AS ot_goals
+      FROM "public"."games" g
+      LEFT JOIN "public"."game_events" ge ON ge.game_id = g.id
+      WHERE g.id = $1
+    `, [gameId]);
+    const t = tallyRows[0];
+
+    let homeScore = t.home_goals;
+    let awayScore = t.away_goals;
+    let endType = 'regular';
+
+    if (t.so_attempts > 0) {
+      // Серия буллитов: победителю дописывается одна шайба за серию, end_type = 'so' —
+      // та же конвенция, что у LMS (finishShootout). Серия бывает только при равном
+      // счёте, а равный счёт в самой серии — это недоигранная серия; ни то, ни
+      // другое публиковать нельзя.
+      if (t.home_goals !== t.away_goals) {
+        return res.status(400).json({ success: false, error: 'Серия буллитов возможна только при равном счёте в основное время и овертайме. Проверьте голы или удалите броски серии.' });
+      }
+      if (t.home_so === t.away_so) {
+        return res.status(400).json({ success: false, error: 'Серия буллитов не выявила победителя: счёт в серии равный. Добавьте решающий бросок или удалите серию.' });
+      }
+      if (t.home_so > t.away_so) homeScore += 1; else awayScore += 1;
+      endType = 'so';
+    } else if (t.ot_goals > 0) {
+      endType = 'ot';
+    }
+
     const upd = await client.query(`
       UPDATE "public"."games" g
          SET status = 'finished',
-             home_score = COALESCE((
-               SELECT COUNT(*)::int FROM "public"."game_events" ge
-                WHERE ge.game_id = g.id AND ge.event_type = 'goal' AND ge.team_id = g.home_team_id
-             ), 0),
-             away_score = COALESCE((
-               SELECT COUNT(*)::int FROM "public"."game_events" ge
-                -- Для внешнего соперника away_team_id = NULL в games, а события гостей
-                -- сохраняются с team_id = NULL тоже (FK на teams допускает NULL) —
-                -- обычное "=" никогда не совпадёт с NULL, поэтому IS NOT DISTINCT FROM.
-                WHERE ge.game_id = g.id AND ge.event_type = 'goal' AND ge.team_id IS NOT DISTINCT FROM g.away_team_id
-             ), 0)
+             home_score = $2,
+             away_score = $3,
+             end_type = $4
        WHERE g.id = $1
          AND g.game_type <> 'official'
          AND g.status IN ('finished_no_result', 'scheduled', 'finished')
-       RETURNING id, status, home_score, away_score
-    `, [gameId]);
+       RETURNING id, status, home_score, away_score, end_type
+    `, [gameId, homeScore, awayScore, endType]);
 
     if (upd.rowCount === 0) {
       return res.status(400).json({ success: false, error: 'Невозможно опубликовать матч в текущем статусе' });
     }
 
-    const { home_score, away_score } = upd.rows[0];
+    // Статус серии в табло — как его ставит LMS: серия сыграна и есть победитель.
+    await client.query(
+      `UPDATE "public"."game_timers" SET shootout_status = $2 WHERE game_id = $1`,
+      [gameId, endType === 'so' ? 'finished_win' : 'pending']
+    );
+
+    const { home_score, away_score, end_type } = upd.rows[0];
 
     // Именно здесь товарищеский матч впервые попадает в личную статистику:
     // до этого статус был не finished и боксскор для него не собирался
@@ -903,6 +946,7 @@ export const publishMatchResults = async (req, res) => {
       status: upd.rows[0].status,
       home_score,
       away_score,
+      end_type,
     });
   } catch (err) {
     console.error('[Match Results: publish]', err);

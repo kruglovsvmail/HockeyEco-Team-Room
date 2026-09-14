@@ -184,10 +184,16 @@ const EventCenter = ({ event }) => {
     }
   })();
 
+  // У броска серии времени нет — показываем его номер в серии (so_index ставит
+  // mergedPeriods по порядку слотов).
+  const isShootoutRow = event.event_type === 'shootout_goal' || event.event_type === 'shootout_miss';
+
   return (
     <div className="flex flex-col items-center gap-1 shrink-0 self-start" style={{ width: uiFixed(80) }}>
       <span className="font-bold text-content-main tabular-nums leading-tight" style={{ fontSize: uiFixed(14) }}>
-        {formatTime(event.display_seconds ?? event.time_seconds)}
+        {isShootoutRow
+          ? (event.so_index ? `Бросок ${event.so_index}` : 'Бросок')
+          : formatTime(event.display_seconds ?? event.time_seconds)}
       </span>
       {badge}
       {/* Доп. метка: БОЛ / МЕН / ПВ / минуты штрафа */}
@@ -425,8 +431,10 @@ export const MatchProtocol = ({ event, user, selectedTeam, openRightPanel }) => 
   const hasTeamColor = isColorsEnabled && !!event?.team_color;
   const activeBrandColor = hasTeamColor ? event.team_color : null;
 
+  // Возвращает свежие периоды (или null при ошибке): handleSaveResults пересобирает
+  // из них черновик сразу, не дожидаясь, пока обновится состояние periods.
   const fetchProtocol = useCallback(async () => {
-    if (!event?.event_id) return;
+    if (!event?.event_id) return null;
     try {
       const apiUrl = import.meta.env.VITE_API_URL || '';
       const headers = getAuthHeaders();
@@ -435,9 +443,14 @@ export const MatchProtocol = ({ event, user, selectedTeam, openRightPanel }) => 
         { headers }
       );
       const data = await res.json();
-      if (data.success) setPeriods(data.periods || []);
+      if (data.success) {
+        setPeriods(data.periods || []);
+        return data.periods || [];
+      }
+      return null;
     } catch (err) {
       console.error('Ошибка загрузки хода матча:', err);
+      return null;
     } finally {
       setLoading(false);
     }
@@ -560,7 +573,7 @@ export const MatchProtocol = ({ event, user, selectedTeam, openRightPanel }) => 
   const fetchGoalieLog = useCallback(async () => {
     // Официальному матчу журнал вратарей тоже нужен (кто стоял) — для шторки бросков
     // по своему вратарю, даже если сам журнал самой команде недоступен на правку.
-    if ((!canFillResults && !canAccessOfficialPM) || !event?.event_id || !event?.my_team_id) return;
+    if ((!canFillResults && !canAccessOfficialPM) || !event?.event_id || !event?.my_team_id) return null;
     const apiUrl = import.meta.env.VITE_API_URL || '';
     try {
       const r = await fetch(
@@ -568,8 +581,12 @@ export const MatchProtocol = ({ event, user, selectedTeam, openRightPanel }) => 
         { headers: getAuthHeaders() }
       );
       const j = await r.json();
-      if (j?.success) setGoalieLog(j.log || []);
-    } catch { /* пусто */ }
+      if (j?.success) {
+        setGoalieLog(j.log || []);
+        return j.log || [];
+      }
+      return null;
+    } catch { return null; }
   }, [canFillResults, canAccessOfficialPM, event?.event_id, event?.my_team_id]);
 
   useEffect(() => { fetchGoalieLog(); }, [fetchGoalieLog]);
@@ -705,6 +722,9 @@ export const MatchProtocol = ({ event, user, selectedTeam, openRightPanel }) => 
       status: 'finished',
       home_score: data.home_score,
       away_score: data.away_score,
+      // Формат завершения (основное время / ОТ / буллиты) сервер выводит из событий —
+      // карточка и календарь рисуют по нему метки «ОТ» / «Б».
+      end_type: data.end_type ?? null,
     });
   };
 
@@ -736,12 +756,25 @@ export const MatchProtocol = ({ event, user, selectedTeam, openRightPanel }) => 
   // ── Сохранить: коммитим черновик одним пакетом (события → журнал вратарей →
   // броски), затем пересчитываем счёт (doPublish) и подтягиваем свежую правду
   // с сервера. Если матч уже был опубликован раньше — это повторный пересчёт.
+  //
+  // Два шага разведены нарочно. Если публикация отклонена (например, серия
+  // буллитов без победителя), события к этому моменту уже лежат на сервере —
+  // и черновик пересобирается из них, иначе повторное «Сохранить» отправило бы
+  // те же строки ещё раз. Пользователь остаётся в режиме правки и чинит.
   const handleSaveResults = async () => {
     if (isPublishing) return;
     setIsPublishing(true);
     try {
       const apiUrl = import.meta.env.VITE_API_URL || '';
       const headers = { 'Content-Type': 'application/json', ...getAuthHeaders() };
+      // Ответ сервера проверяем у каждого запроса: раньше 400 на одном событии
+      // молча проглатывался, и «Сохранить» отчитывалось об успехе.
+      const send = async (url, options) => {
+        const res = await fetch(url, options);
+        const json = await res.json().catch(() => ({}));
+        if (!res.ok || json?.success === false) throw new Error(json?.error || 'Не удалось сохранить изменения');
+        return json;
+      };
 
       for (const ev of (draftEvents || [])) {
         if (!ev._isNew && !ev._dirty) continue;
@@ -756,6 +789,10 @@ export const MatchProtocol = ({ event, user, selectedTeam, openRightPanel }) => 
           assist2_id: ev.assist2_id ?? null,
           goal_strength: ev.goal_strength ?? null,
           from_shot: ev.from_shot ?? null,
+          // Вратарь нужен только броскам серии буллитов (у голов его выводит
+          // калькулятор боксскора по журналу смен); протокол отдаёт колонку
+          // как есть, чтобы повторное сохранение её не обнуляло.
+          against_goalie_id: ev.against_goalie_id ?? null,
           plus_minus_home: ev.plus_minus_home ?? [],
           plus_minus_away: ev.plus_minus_away ?? [],
           penalty_player_id: ev.penalty_player_id ?? null,
@@ -763,23 +800,23 @@ export const MatchProtocol = ({ event, user, selectedTeam, openRightPanel }) => 
           penalty_minutes: ev.penalty_minutes ?? null,
         };
         if (ev._isNew) {
-          await fetch(`${apiUrl}/api/matches/${event.event_id}/results/events`, {
+          await send(`${apiUrl}/api/matches/${event.event_id}/results/events`, {
             method: 'POST', headers, body: JSON.stringify(payload),
           });
         } else {
-          await fetch(`${apiUrl}/api/matches/${event.event_id}/results/events/${ev.id}`, {
+          await send(`${apiUrl}/api/matches/${event.event_id}/results/events/${ev.id}`, {
             method: 'PUT', headers, body: JSON.stringify(payload),
           });
         }
       }
       for (const id of deletedEventIds) {
-        await fetch(`${apiUrl}/api/matches/${event.event_id}/results/events/${id}?teamId=${event.my_team_id}`, {
+        await send(`${apiUrl}/api/matches/${event.event_id}/results/events/${id}?teamId=${event.my_team_id}`, {
           method: 'DELETE', headers: getAuthHeaders(),
         });
       }
 
       if (draftGoalieLog) {
-        await fetch(`${apiUrl}/api/matches/${event.event_id}/results/goalie-log`, {
+        await send(`${apiUrl}/api/matches/${event.event_id}/results/goalie-log`, {
           method: 'PUT', headers, body: JSON.stringify({ teamId: event.my_team_id, entries: draftGoalieLog }),
         });
       }
@@ -796,11 +833,26 @@ export const MatchProtocol = ({ event, user, selectedTeam, openRightPanel }) => 
             shots_count: Number(val) || 0,
           });
         });
-        await fetch(`${apiUrl}/api/matches/${event.event_id}/results/goalie-shots`, {
+        await send(`${apiUrl}/api/matches/${event.event_id}/results/goalie-shots`, {
           method: 'PUT', headers, body: JSON.stringify({ teamId: event.my_team_id, entries: shotsEntries }),
         });
       }
+    } catch (err) {
+      // Часть черновика могла уйти на сервер до ошибки — пересобираем его из
+      // того, что там реально лежит, чтобы не отправить дважды.
+      console.error('Ошибка сохранения результатов:', err);
+      const freshPeriods = await fetchProtocol();
+      const freshLog = await fetchGoalieLog();
+      if (freshPeriods) setDraftEvents(freshPeriods.flatMap(p => p.events.map(ev => ({ ...ev }))));
+      setDeletedEventIds(new Set());
+      if (freshLog) setDraftGoalieLog(freshLog.map(r => ({ ...r })));
+      setIsPublishing(false);
+      alert(err?.message || 'Не удалось сохранить результаты матча');
+      return;
+    }
 
+    // Черновик целиком на сервере. Дальше — публикация: пересчёт счёта и статуса.
+    try {
       await doPublish();
       await fetchProtocol();
       await fetchGoalieLog();
@@ -811,8 +863,13 @@ export const MatchProtocol = ({ event, user, selectedTeam, openRightPanel }) => 
       setDraftShots(null);
       setIsEditMode(false);
     } catch (err) {
-      console.error('Ошибка сохранения результатов:', err);
-      alert(err?.message || 'Не удалось сохранить результаты матча');
+      console.error('Ошибка публикации результатов:', err);
+      const freshPeriods = await fetchProtocol();
+      const freshLog = await fetchGoalieLog();
+      if (freshPeriods) setDraftEvents(freshPeriods.flatMap(p => p.events.map(ev => ({ ...ev }))));
+      setDeletedEventIds(new Set());
+      if (freshLog) setDraftGoalieLog(freshLog.map(r => ({ ...r })));
+      alert(err?.message || 'Не удалось опубликовать результаты матча');
     } finally {
       setIsPublishing(false);
     }
@@ -884,7 +941,9 @@ export const MatchProtocol = ({ event, user, selectedTeam, openRightPanel }) => 
       return;
     }
     setEventSheet({
-      mode: ev.event_type === 'penalty' ? 'penalty' : 'goal',
+      mode: ev.event_type === 'penalty' ? 'penalty'
+        : (ev.event_type === 'shootout_goal' || ev.event_type === 'shootout_miss') ? 'shootout'
+        : 'goal',
       scoringTeamId: ev.team_id,
       existingEvent: ev,
     });
@@ -1074,9 +1133,43 @@ export const MatchProtocol = ({ event, user, selectedTeam, openRightPanel }) => 
       .filter(p => map.has(p))
       .map(p => {
         const blk = map.get(p);
-        return { ...blk, events: blk.events.slice().sort((a, b) => (a.display_seconds ?? a.time_seconds ?? 0) - (b.display_seconds ?? b.time_seconds ?? 0)) };
+        const sorted = blk.events.slice().sort((a, b) => (a.display_seconds ?? a.time_seconds ?? 0) - (b.display_seconds ?? b.time_seconds ?? 0));
+        // Броски серии нумеруем по порядку слотов — время у них служебное.
+        if (p === 'SO') {
+          let n = 0;
+          sorted.forEach(ev => {
+            if (ev.event_type === 'shootout_goal' || ev.event_type === 'shootout_miss') ev.so_index = ++n;
+          });
+        }
+        return { ...blk, events: sorted };
       });
   }, [activePeriodEvents, goalieFeedItems]);
+
+  // Слот следующего броска серии: за концом матча (основное время + ОТ по
+  // регламенту), по 30 «секунд» на бросок — та же раскладка, что в LMS. Считаем от
+  // максимального занятого слота, а не от количества: после удаления броска из
+  // середины номера не должны съехать на уже сохранённые.
+  const shootoutNextTime = useMemo(() => {
+    const plSec = (regulation.period_length || 20) * 60;
+    const otSec = (regulation.ot_length || 0) * 60;
+    const base = (regulation.periods_count || 3) * plSec + otSec;
+    const source = (isEditMode && draftEvents) ? draftEvents : periods.flatMap(p => p.events);
+    const maxSlot = source
+      .filter(ev => ev.period === 'SO')
+      .reduce((m, ev) => Math.max(m, Number(ev.time_seconds) || 0), base);
+    return maxSlot + 30;
+  }, [regulation, isEditMode, draftEvents, periods]);
+
+  // Вратари на конец матча — последняя точка таймлайна каждой стороны в журнале
+  // смен. Дефолт поля «Вратарь» у броска серии.
+  const endGoalies = useMemo(() => {
+    const model = decodeGoalieLog(activeGoalieLog || []);
+    const last = (points) => {
+      const pt = points[points.length - 1];
+      return pt && !pt.unspecified ? (pt.goalie_id ?? null) : null;
+    };
+    return { home: last(model.home), away: last(model.away) };
+  }, [activeGoalieLog]);
 
   // Стартовые вратари каждой команды (первая точка таймлайна смен).
   // Возвращаем объект всегда — если вратарь не задан, сторона = null («не указан»).
@@ -1128,6 +1221,7 @@ export const MatchProtocol = ({ event, user, selectedTeam, openRightPanel }) => 
       penalty: 'text-danger',
       goalie: 'text-content-muted',
       shots: 'text-content-muted',
+      shootout: 'text-brand',
     }[type] || 'border-surface-border text-content-muted';
     return (
       <button
@@ -1168,6 +1262,12 @@ export const MatchProtocol = ({ event, user, selectedTeam, openRightPanel }) => 
           <div className="grid grid-cols-2 gap-2.5">
             <ActionButton type="goalie" label="Замена вр." icon="swap" onClick={() => setGoalieSheet({ side: 'home', existingChange: null })} />
             <ActionButton type="goalie" label="Замена вр." icon="swap" onClick={() => setGoalieSheet({ side: 'away', existingChange: null })} />
+          </div>
+          {/* Послематчевая серия буллитов: по одному броску за нажатие, победителю
+              серии при сохранении допишется шайба, матч получит метку «Б». */}
+          <div className="grid grid-cols-2 gap-2.5">
+            <ActionButton type="shootout" label="Буллит" icon="target" onClick={() => handleOpenAddEvent('shootout', homeTeamIdForBlock)} />
+            <ActionButton type="shootout" label="Буллит" icon="target" onClick={() => handleOpenAddEvent('shootout', awayTeamIdForBlock)} />
           </div>
         </>
       )}
@@ -1283,6 +1383,8 @@ export const MatchProtocol = ({ event, user, selectedTeam, openRightPanel }) => 
         rosters={rosters}
         editRole={editRole}
         myTeamId={myTeamId}
+        shootoutNextTime={shootoutNextTime}
+        endGoalies={endGoalies}
         onClose={() => setEventSheet(null)}
         onSave={handleEventDraftSave}
       />

@@ -41,6 +41,19 @@ const isPenaltyShotRow = (ev) => !!ev && (
   || (ev.event_type === 'goal' && ev.goal_strength === 'ps')
 );
 
+// ─── ПОСЛЕМАТЧЕВАЯ СЕРИЯ БУЛЛИТОВ ────────────────────────────────────────────
+// Один бросок серии = одно событие периода 'SO' с типом-исходом (та же модель,
+// что у LMS). В счёт матча броски не входят: победителю серии при публикации
+// дописывается одна шайба (см. publishMatchResults). Времени у броска нет —
+// порядок в серии задаёт MatchProtocol через shootoutNextTime.
+const SO_OUTCOMES = [
+  { value: 'shootout_goal', label: 'Реализован' },
+  { value: 'shootout_miss', label: 'Не реализован' },
+];
+const SO_GOALIE_NONE = 'none';
+
+const isShootoutRow = (ev) => !!ev && (ev.event_type === 'shootout_goal' || ev.event_type === 'shootout_miss');
+
 const SELECTION_CHIPS = [
   { value: 'scorer', label: 'Автор' },
   { value: 'assist', label: 'Ассист' },
@@ -115,16 +128,23 @@ export function MatchEventSheet({
   myTeamId,
   onClose,
   onSave,
+  // Серия буллитов: порядковое «время» следующего броска и вратари, стоявшие в
+  // воротах на конец матча (по журналу смен) — дефолт для поля «Вратарь».
+  shootoutNextTime = 0,
+  endGoalies = null,
 }) {
   const isEdit = !!existingEvent;
   const actualMode = existingEvent
-    ? (isPenaltyShotRow(existingEvent) ? 'penalty_shot'
+    ? (isShootoutRow(existingEvent) ? 'shootout'
+      : isPenaltyShotRow(existingEvent) ? 'penalty_shot'
       : existingEvent.event_type === 'penalty' ? 'penalty' : 'goal')
     : (mode || 'goal');
   const actualTeamId = existingEvent?.team_id ?? scoringTeamId ?? null;
   // Штрафной бросок раскладывается как штраф — одна команда, без карусели +/-:
   // эпизод разыгрывается один на один, полезность на нём не считается.
+  // Бросок серии буллитов — так же: бьющий, исход и вратарь, без +/- и без времени.
   const isPS = actualMode === 'penalty_shot';
+  const isSO = actualMode === 'shootout';
   const isGoal = actualMode === 'goal';
 
   // Соперник правит только свою сторону. Для гола actualTeamId = забившая команда:
@@ -158,6 +178,9 @@ export function MatchEventSheet({
   const [activeChip, setActiveChip] = useState('scorer'); // 'scorer' | 'assist' | 'pm'
   const [pmHome, setPmHome] = useState([]);
   const [pmAway, setPmAway] = useState([]);
+  // Серия буллитов: исход броска и вратарь, против которого он исполнялся.
+  const [soOutcome, setSoOutcome] = useState('shootout_goal');
+  const [soGoalieId, setSoGoalieId] = useState(SO_GOALIE_NONE);
 
   // ── Конечная карусель (для goal-mode) ─────────────────────────────────
   // 2 слайда: [scoring, conceding]. Стартуем на scoring (индекс 0).
@@ -226,7 +249,14 @@ export function MatchEventSheet({
       const total = Number(existingEvent.time_seconds) || 0;
       setMinutes(pad2(Math.floor(total / 60)));
       setSeconds(pad2(total % 60));
-      if (isPenaltyShotRow(existingEvent)) {
+      if (isShootoutRow(existingEvent)) {
+        setSoOutcome(existingEvent.event_type);
+        setSoGoalieId(existingEvent.against_goalie_id ?? SO_GOALIE_NONE);
+        setScorerId(existingEvent.scorer_id || null);
+        setAssistIds([]); setGoalStrength('equal'); setFromShot(true);
+        setPenaltyIdx(0); setPenaltyPlayerId(null);
+        setPmHome([]); setPmAway([]);
+      } else if (isPenaltyShotRow(existingEvent)) {
         setPsOutcome(existingEvent.event_type);
         setScorerId(existingEvent.scorer_id || null);
         setAssistIds([]); setGoalStrength('ps'); setFromShot(true);
@@ -255,6 +285,12 @@ export function MatchEventSheet({
       setPenaltyIdx(0); setPenaltyPlayerId(null);
       setPsOutcome('pending_ps');
       setPmHome([]); setPmAway([]);
+      setSoOutcome('shootout_goal');
+      // Новый бросок: вратарь по умолчанию — кто стоял в воротах пропускающей
+      // стороны на конец матча. Замену вратаря на серию делают вручную.
+      const concedingIsHome = (scoringTeamId ?? null) !== (rosters?.home_team_id ?? null);
+      const defaultGoalie = concedingIsHome ? endGoalies?.home : endGoalies?.away;
+      setSoGoalieId(defaultGoalie ?? SO_GOALIE_NONE);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isOpen, existingEvent?.id]);
@@ -264,6 +300,13 @@ export function MatchEventSheet({
   const concedingRoster = isHomeScoring ? (rosters?.away || []) : (rosters?.home || []);
   const scoringPlayers = scoringRoster;
   const concedingPlayers = concedingRoster.filter(p => p.position_in_line !== 'G');
+  // Вратари пропускающей стороны — для поля «Вратарь» у броска серии. У внешнего
+  // соперника заявки нет, список пуст — поле не показываем вовсе.
+  const concedingGoalies = concedingRoster.filter(p => p.position_in_line === 'G');
+  const soGoalieOptions = [
+    { value: SO_GOALIE_NONE, label: 'Не указан' },
+    ...concedingGoalies.map(g => ({ value: g.player_id, label: `#${g.jersey_number ?? '?'} ${g.last_name || ''}`.trim() })),
+  ];
 
   // Псевдонимы pmHome/pmAway → pmScoring/pmConceding с учётом стороны
   const pmScoring   = isHomeScoring ? pmHome : pmAway;
@@ -282,16 +325,18 @@ export function MatchEventSheet({
   const concedingLogo = isHomeScoring ? awayLogo : homeLogo;
 
   // Заголовок шторки
-  const title = isPS
-    ? 'Штрафной бросок'
-    : isGoal
-      ? (isEdit ? 'Редактирование гола' : 'Добавление гола')
-      : (isEdit ? 'Редактирование штрафа' : 'Добавление штрафа');
+  const title = isSO
+    ? (isEdit ? 'Редактирование буллита' : 'Буллит серии')
+    : isPS
+      ? 'Штрафной бросок'
+      : isGoal
+        ? (isEdit ? 'Редактирование гола' : 'Добавление гола')
+        : (isEdit ? 'Редактирование штрафа' : 'Добавление штрафа');
 
   // ── Тапы по игрокам ────────────────────────────────────────────────────
   const handleScoringPlayerTap = (playerId) => {
     if (!canEditScoring) return;
-    if (isPS) {
+    if (isPS || isSO) {
       setScorerId(prev => (prev === playerId ? null : playerId));
       return;
     }
@@ -321,7 +366,7 @@ export function MatchEventSheet({
 
   // ── Бейдж и заливка для конкретного игрока ─────────────────────────────
   const scoringPlayerProps = (playerId) => {
-    if (isPS) {
+    if (isPS || isSO) {
       return { roleBadge: scorerId === playerId ? 'author' : null, fill: null };
     }
     if (!isGoal) {
@@ -360,7 +405,19 @@ export function MatchEventSheet({
     const { period, time_seconds } = totalToPeriod(totalSec, regulation);
 
     let payload;
-    if (isPS) {
+    if (isSO) {
+      // Бросок серии: период всегда 'SO', «время» — порядковый слот в серии
+      // (у нового — следующий свободный, у существующего — как был).
+      payload = {
+        period: 'SO',
+        time_seconds: isEdit ? (Number(existingEvent.time_seconds) || 0) : shootoutNextTime,
+        event_type: soOutcome,
+        team_id: actualTeamId,
+        scorer_id: scorerId || null,
+        against_goalie_id: soGoalieId === SO_GOALIE_NONE ? null : soGoalieId,
+        from_shot: true,
+      };
+    } else if (isPS) {
       // Тип события и есть исход броска. goal_strength 'ps' держим всегда: при
       // переключении в «реализован» строка становится обычным голом с ИС «ШБ».
       payload = {
@@ -409,7 +466,18 @@ export function MatchEventSheet({
           {title}
         </h3>
 
-        {/* Время + Ситуация / Тип штрафа + Флаг «с броска» — в одну строку */}
+        {/* Бросок серии: времени нет — исход и вратарь пропускающей стороны.
+            Вратаря спрашиваем только если у той стороны есть заявка (у внешнего
+            соперника её нет — поле прячем, в БД уйдёт NULL). */}
+        {isSO ? (
+          <div className={clsx("grid gap-3 items-end", concedingGoalies.length > 0 ? "grid-cols-2" : "grid-cols-1")}>
+            <SelectInputLP label="Исход" options={SO_OUTCOMES} value={soOutcome} onChange={setSoOutcome} size="md" activeColor={activeBrandColor} />
+            {concedingGoalies.length > 0 && (
+              <SelectInputLP label="Вратарь" options={soGoalieOptions} value={soGoalieId} onChange={setSoGoalieId} size="md" activeColor={activeBrandColor} />
+            )}
+          </div>
+        ) : (
+        /* Время + Ситуация / Тип штрафа + Флаг «с броска» — в одну строку */
         <div className={clsx("grid gap-3 items-end", isGoal ? "grid-cols-[2fr_3fr_auto]" : "grid-cols-[2fr_3fr]", isOpponent && "opacity-50 pointer-events-none")}>
           <TimeMMSSInputLP label="Время" value={timeValue} onChange={handleTimeChange} size="md" activeColor={activeBrandColor} disabled={isOpponent} />
           {isGoal ? (
@@ -437,8 +505,10 @@ export function MatchEventSheet({
             </div>
           )}
         </div>
+        )}
 
-        {/* Блок команд: для гола — карусель (забившая ↔ пропустившая), для штрафа — обычный блок */}
+        {/* Блок команд: для гола — карусель (забившая ↔ пропустившая), для штрафа
+            и броска серии — обычный блок одной команды */}
         {isGoal ? (
           <div className="flex flex-col gap-2 bg-surface-base rounded-2xl pb-4">
             {/* Шапка-капсула: chevron слева | лого + название | chevron справа.

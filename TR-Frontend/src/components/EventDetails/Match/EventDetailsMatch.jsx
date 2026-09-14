@@ -52,7 +52,7 @@ export const EventDetailsMatch = ({ event, user: userProp, selectedTeam: selecte
 
   const [matchData, setMatchData] = useState({
     attendees: [], draftLines: [], isPublished: false,
-    teamRoster: [], staffMembers: [], referees: [], h2hData: null,
+    teamRoster: [], staffMembers: [], referees: [],
   });
   const [loading, setLoading] = useState(true);
 
@@ -109,7 +109,7 @@ export const EventDetailsMatch = ({ event, user: userProp, selectedTeam: selecte
     const cached = localStorage.getItem(cacheKey);
     if (cached) { setMatchData(JSON.parse(cached)); setLoading(false); }
     else {
-      setMatchData({ attendees: [], draftLines: [], isPublished: false, teamRoster: [], staffMembers: [], referees: [], h2hData: null });
+      setMatchData({ attendees: [], draftLines: [], isPublished: false, teamRoster: [], staffMembers: [], referees: [] });
       setLoading(true);
     }
   }, [localEvent?.event_id, cacheKey]);
@@ -120,15 +120,14 @@ export const EventDetailsMatch = ({ event, user: userProp, selectedTeam: selecte
     try {
       const apiUrl  = import.meta.env.VITE_API_URL || '';
       const headers = getAuthHeaders();
-      const [attRes, linesRes, rosterRes, staffRes, h2hRes] = await Promise.all([
+      const [attRes, linesRes, rosterRes, staffRes] = await Promise.all([
         fetch(`${apiUrl}/api/matches/${localEvent.event_id}/attendance?eventType=${localEvent.event_type}&teamId=${localEvent.my_team_id}`, { headers }),
         fetch(`${apiUrl}/api/matches/${localEvent.event_id}/lines?teamId=${localEvent.my_team_id}`, { headers }),
         fetch(`${apiUrl}/api/matches/${localEvent.event_id}/available-roster?teamId=${localEvent.my_team_id}`, { headers }),
         fetch(`${apiUrl}/api/matches/${localEvent.event_id}/staff?teamId=${localEvent.my_team_id}`, { headers }),
-        fetch(`${apiUrl}/api/matches/${localEvent.event_id}/h2h?teamId=${localEvent.my_team_id}`, { headers }),
       ]);
-      const [attData, linesData, rosterData, staffData, h2hData] = await Promise.all([
-        attRes.json(), linesRes.json(), rosterRes.json(), staffRes.json(), h2hRes.json(),
+      const [attData, linesData, rosterData, staffData] = await Promise.all([
+        attRes.json(), linesRes.json(), rosterRes.json(), staffRes.json(),
       ]);
       const freshData = {
         attendees:    attData.success    ? attData.attendees          : [],
@@ -137,7 +136,6 @@ export const EventDetailsMatch = ({ event, user: userProp, selectedTeam: selecte
         teamRoster:   rosterData.success ? (rosterData.roster || []) : [],
         staffMembers: rosterData.success ? (rosterData.staff  || []) : [],
         referees:     staffData.success  ? staffData.staff            : [],
-        h2hData:      h2hData.success    ? h2hData.h2h                : null,
       };
       setMatchData(freshData);
       localStorage.setItem(cacheKey, JSON.stringify(freshData));
@@ -363,7 +361,6 @@ export const EventDetailsMatch = ({ event, user: userProp, selectedTeam: selecte
                   event={localEvent}
                   setLocalEvent={setLocalEvent}
                   referees={matchData.referees}
-                  h2hData={matchData.h2hData}
                   homeName={homeName}
                   awayName={awayName}
                   homeLogo={homeLogo}

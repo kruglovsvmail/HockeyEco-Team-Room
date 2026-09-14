@@ -21,7 +21,6 @@ export const MatchInfo = ({
   event,
   setLocalEvent,
   referees   = [],
-  h2hData    = null,
   homeName,
   awayName,
   homeLogo,
@@ -141,9 +140,14 @@ export const MatchInfo = ({
   const scoreColorClass = (isLive || (isFinished && isTech)) ? 'text-red-500' : 'text-content-main';
 
   // ── Турнирная информация ──────────────────────────────────────────────────
+  // Сезон в базе есть только у официальных матчей (seasons.name через дивизион).
+  // У товарищеских и матчей внешних турниров сезона нет — показываем расчётный
+  // по дате матча. Хоккейный сезон начинается летом, поэтому январь–июнь относятся
+  // к сезону, начавшемуся в прошлом году: матч 12.02.2027 → «2026/27», а не «2027/28».
   const targetDate  = localEvent?.event_date || localEvent?.game_date;
-  const seasonYear  = targetDate ? dayjs(targetDate).format('YYYY') : dayjs().format('YYYY');
-  const seasonValue = localEvent.season_name || `${seasonYear}/${dayjs(targetDate).add(1, 'year').format('YY')}`;
+  const matchDay    = targetDate ? dayjs(targetDate) : dayjs();
+  const seasonStart = matchDay.month() >= 6 ? matchDay.year() : matchDay.year() - 1;
+  const seasonValue = localEvent.season_name || `${seasonStart}/${String(seasonStart + 1).slice(-2)}`;
 
   const isFriendly = localEvent.game_type === 'friendly_pwa' || localEvent.game_type === 'friendly_ext';
 
@@ -183,27 +187,6 @@ export const MatchInfo = ({
   const mainRefs            = referees.filter(r => r.role === 'main-1' || r.role === 'main-2');
   const linesmenRefs        = referees.filter(r => r.role === 'linesman-1' || r.role === 'linesman-2');
   const hasRefereesAssigned = mainRefs.length > 0 || linesmenRefs.length > 0;
-
-  // ── H2H расчёты ──────────────────────────────────────────────────────────
-  let lastGames = [];
-  if (h2hData?.games) {
-    const finishedGames = h2hData.games.filter(g => g.status === 'finished');
-    lastGames = finishedGames.slice(0, 5).reverse();
-  }
-
-  const sparklinePoints = lastGames.map((game, idx) => {
-    const isGameHome = String(game.home_team_id) === String(localEvent.my_team_id);
-    const myScore    = isGameHome ? game.home_score : game.away_score;
-    const oppScore   = isGameHome ? game.away_score : game.home_score;
-    const x = 16 + idx * 42;
-    let y = 20; let dotColor = '#9ca3af';
-    if (myScore > oppScore) { y = 6;  dotColor = '#10b981'; }
-    else if (myScore < oppScore) { y = 34; dotColor = '#ef4444'; }
-    return { x, y, dotColor };
-  });
-  const pathD = sparklinePoints.length > 0
-    ? `M ${sparklinePoints.map(p => `${p.x} ${p.y}`).join(' L ')}`
-    : '';
 
   const handleShare = async (e, url) => {
     e.stopPropagation();
@@ -425,57 +408,6 @@ export const MatchInfo = ({
             </div>
           )}
         </ContainerContent>
-
-        {/* ══════════════════════════════════════════════
-            БЛОК H2H: ИСТОРИЯ ОЧНЫХ ВСТРЕЧ
-        ══════════════════════════════════════════════ */}
-        {h2hData && (
-          <ContainerContent title="История встреч">
-            <div className="flex flex-col w-full text-left p-3">
-              <div className="grid grid-cols-4 gap-2 text-center">
-                {[
-                  { label: 'Игр',     value: h2hData.summary?.total  || 0 },
-                  { label: 'Победы',  value: h2hData.summary?.wins   || 0 },
-                  { label: 'Ничьи',   value: h2hData.summary?.draws  || 0 },
-                  { label: 'Пораж.',  value: h2hData.summary?.losses || 0 },
-                ].map(({ label, value }) => (
-                  <div key={label} className="rounded-xl py-2 flex flex-col justify-center">
-                    <span className="text-[10px] font-medium text-content-subtle uppercase tracking-wider">{label}</span>
-                    <span className="text-[18px] font-bold text-content-muted mt-1">{value}</span>
-                  </div>
-                ))}
-              </div>
-
-              {lastGames.length > 0 ? (
-                <div className="flex flex-col gap-2 mt-2">
-                  <div className="flex justify-between items-center px-0.5 text-[10px] font-medium text-content-subtle">
-                    <span className="uppercase tracking-wider">Форма команды (последние матчи)</span>
-                    <div className="flex gap-2 font-mono font-bold text-[10px] uppercase tracking-widest">
-                      <span className="text-success">В</span>
-                      <span className="text-content-muted">Н</span>
-                      <span className="text-danger">П</span>
-                    </div>
-                  </div>
-                  <div className="w-full rounded-xl p-2 h-14 relative flex items-center justify-center">
-                    <svg viewBox="0 0 200 40" className="w-full h-full overflow-visible">
-                      <line x1="0" y1="6"  x2="200" y2="6"  stroke="currentColor" className="text-surface-border opacity-20" strokeDasharray="3,3" />
-                      <line x1="0" y1="20" x2="200" y2="20" stroke="currentColor" className="text-surface-border opacity-40" strokeDasharray="2,2" />
-                      <line x1="0" y1="34" x2="200" y2="34" stroke="currentColor" className="text-surface-border opacity-20" strokeDasharray="3,3" />
-                      {pathD && <path d={pathD} fill="none" stroke="var(--color-content-subtle)" strokeWidth="1.25" className="opacity-30" strokeLinecap="round" strokeLinejoin="round" />}
-                      {sparklinePoints.map((pt, i) => (
-                        <circle key={`spark-dot-${i}`} cx={pt.x} cy={pt.y} r="4" fill={pt.dotColor} stroke="var(--color-surface-base)" strokeWidth="1.5" />
-                      ))}
-                    </svg>
-                  </div>
-                </div>
-              ) : (
-                <div className="text-center py-4 text-[10px] font-medium uppercase tracking-wider text-content-subtle">
-                  История очных встреч отсутствует
-                </div>
-              )}
-            </div>
-          </ContainerContent>
-        )}
 
       </div>
     </FadeIn>

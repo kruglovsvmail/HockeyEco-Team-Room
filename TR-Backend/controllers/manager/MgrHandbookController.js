@@ -1,4 +1,41 @@
 import pool from '../../config/db.js';
+import s3 from '../../config/s3.js';
+import { processAvatar } from '../../utils/imageProcessor.js';
+
+// Заливка в S3 — та же копия, что живёт в ClubController/TeamController.
+const uploadBufferToS3 = async (file, bucketKey) => {
+  const params = {
+    Bucket: process.env.S3_BUCKET || 'hockeyeco-s3-storage',
+    Key: bucketKey,
+    Body: file.buffer,
+    ContentType: file.mimetype,
+    ACL: 'public-read'
+  };
+
+  if (s3 && typeof s3.send === 'function') {
+    const { PutObjectCommand } = await import('@aws-sdk/client-s3');
+    return s3.send(new PutObjectCommand(params));
+  }
+  if (s3 && typeof s3.putObject === 'function') {
+    const request = s3.putObject(params);
+    return typeof request.promise === 'function' ? request.promise() : request;
+  }
+  throw new Error('S3 Client не настроен на сервере');
+};
+
+// Справочник соперников и турниров — локальный у каждой команды (external_opponents.team_id,
+// team_external_tournaments.team_id). Права middleware проверяет по teamId из запроса,
+// а вот принадлежность самой записи этой команде — уже здесь: иначе менеджер одной
+// команды, подставив чужой id, правил бы справочник другой.
+const getTeamId = (req) => Number(req.body?.teamId || req.query?.teamId) || null;
+
+const tournamentBelongsToTeam = async (tournamentId, teamId, client = pool) => {
+  const { rowCount } = await client.query(
+    'SELECT 1 FROM team_external_tournaments WHERE id = $1 AND team_id = $2',
+    [tournamentId, teamId]
+  );
+  return rowCount > 0;
+};
 
 /**
  * GET /api/manager/handbooks/arenas
@@ -143,8 +180,8 @@ export const getExternalTournaments = async (req, res) => {
     }
 
     let query = `
-      SELECT id, name, is_active 
-      FROM team_external_tournaments 
+      SELECT id, name, logo_url, is_active
+      FROM team_external_tournaments
       WHERE is_active = true AND team_id = $1
     `;
     const params = [teamId];
@@ -172,21 +209,24 @@ export const getExternalTournamentOpponents = async (req, res) => {
   try {
     const { tournamentId } = req.params;
     const { search } = req.query;
+    const teamId = getTeamId(req);
 
-    if (!tournamentId) {
-      return res.status(400).json({ success: false, error: 'Не указан ID целевого турнира' });
+    if (!tournamentId || !teamId) {
+      return res.status(400).json({ success: false, error: 'Не указан ID целевого турнира или команды' });
     }
 
+    // Турнир — из справочника этой команды: JOIN по team_id отсекает чужие.
     let query = `
       SELECT eo.id, eo.name, eo.short_name, eo.city, eo.logo_url, eo.status
       FROM external_tournaments_opponents eto
+      JOIN team_external_tournaments tet ON tet.id = eto.tournament_id AND tet.team_id = $2
       JOIN external_opponents eo ON eto.external_opponent_id = eo.id
       WHERE eto.tournament_id = $1
     `;
-    const params = [tournamentId];
+    const params = [tournamentId, teamId];
 
     if (search && search.trim()) {
-      query += ` AND (eo.name ILIKE $2 OR eo.city ILIKE $2)`;
+      query += ` AND (eo.name ILIKE $3 OR eo.city ILIKE $3)`;
       params.push(`%${search.trim()}%`);
     }
 
@@ -248,15 +288,16 @@ export const updateExternalOpponent = async (req, res) => {
   try {
     const { id } = req.params;
     const { name, short_name, city, status } = req.body;
+    const teamId = getTeamId(req);
 
-    if (!name || !city) {
-      return res.status(400).json({ success: false, error: 'Название и город обязательны для обновления' });
+    if (!name || !city || !teamId) {
+      return res.status(400).json({ success: false, error: 'Название, город и команда обязательны для обновления' });
     }
 
     const query = `
       UPDATE external_opponents
       SET name = $1, short_name = $2, city = $3, status = COALESCE($4, status)
-      WHERE id = $5
+      WHERE id = $5 AND team_id = $6
       RETURNING id, status;
     `;
     const result = await pool.query(query, [
@@ -264,11 +305,12 @@ export const updateExternalOpponent = async (req, res) => {
       (short_name || name.trim().slice(0, 3)).toUpperCase(),
       city.trim(),
       status ? status.trim() : null,
-      id
+      id,
+      teamId
     ]);
 
     if (result.rows.length === 0) {
-      return res.status(404).json({ success: false, error: 'Соперник не найден в базе данных' });
+      return res.status(404).json({ success: false, error: 'Соперник не найден в справочнике этой команды' });
     }
 
     return res.json({ success: true, message: 'Данные соперника успешно обновлены', opponent: result.rows[0] });
@@ -285,16 +327,28 @@ export const updateExternalOpponent = async (req, res) => {
 export const deleteExternalOpponent = async (req, res) => {
   try {
     const { id } = req.params;
+    const teamId = getTeamId(req);
+
+    if (!teamId) {
+      return res.status(400).json({ success: false, error: 'Контекст команды обязателен при удалении' });
+    }
 
     const checkQuery = `SELECT COUNT(*)::int as count FROM games WHERE away_external_id = $1`;
     const checkRes = await pool.query(checkQuery, [id]);
-    
+
     if (checkRes.rows[0].count > 0) {
       return res.status(400).json({ success: false, error: 'Удаление невозможно: за данным соперником закреплены матчи в расписании' });
     }
 
-    const deleteQuery = `DELETE FROM external_opponents WHERE id = $1;`;
-    await pool.query(deleteQuery, [id]);
+    // Связки с турнирами уходят каскадом (FK external_tournaments_opponents → external_opponents).
+    const deleteRes = await pool.query(
+      `DELETE FROM external_opponents WHERE id = $1 AND team_id = $2 RETURNING id;`,
+      [id, teamId]
+    );
+
+    if (deleteRes.rows.length === 0) {
+      return res.status(404).json({ success: false, error: 'Соперник не найден или принадлежит другой команде' });
+    }
 
     return res.json({ success: true, message: 'Соперник успешно удален из справочника команды' });
   } catch (err) {
@@ -316,7 +370,7 @@ export const getTournamentsExtended = async (req, res) => {
     }
 
     let query = `
-      SELECT tet.id, tet.name, tet.is_active,
+      SELECT tet.id, tet.name, tet.logo_url, tet.is_active,
              (SELECT COUNT(*)::int FROM games WHERE external_tournament_id = tet.id) as games_count,
              (SELECT COUNT(*)::int FROM games WHERE external_tournament_id = tet.id AND status = 'finished') as finished_games_count,
              (SELECT COUNT(*)::int FROM external_tournaments_opponents WHERE tournament_id = tet.id) as opponents_count
@@ -355,7 +409,7 @@ export const createExternalTournament = async (req, res) => {
     const query = `
       INSERT INTO team_external_tournaments (team_id, name, is_active)
       VALUES ($1, $2, $3)
-      RETURNING id, name, is_active;
+      RETURNING id, name, logo_url, is_active;
     `;
     const result = await pool.query(query, [teamId, name.trim(), is_active !== false]);
     return res.json({ success: true, tournament: result.rows[0] });
@@ -445,8 +499,12 @@ export const getTournamentRosterMap = async (req, res) => {
       return res.status(400).json({ success: false, error: 'Контекст команды (teamId) не передан для составления карты' });
     }
 
+    if (!(await tournamentBelongsToTeam(tournamentId, teamId))) {
+      return res.status(404).json({ success: false, error: 'Турнир не найден в справочнике этой команды' });
+    }
+
     const query = `
-      SELECT eo.id, eo.name, eo.city, eo.status,
+      SELECT eo.id, eo.name, eo.city, eo.logo_url, eo.status,
              EXISTS(
                SELECT 1 FROM external_tournaments_opponents 
                WHERE tournament_id = $1 AND external_opponent_id = eo.id
@@ -477,14 +535,35 @@ export const getTournamentRosterMap = async (req, res) => {
 export const saveTournamentRoster = async (req, res) => {
   const { tournamentId } = req.params;
   const { opponentIds } = req.body;
+  const teamId = getTeamId(req);
 
-  if (!Array.isArray(opponentIds)) {
-    return res.status(400).json({ success: false, error: 'Неверный формат идентификаторов участников' });
+  if (!Array.isArray(opponentIds) || !teamId) {
+    return res.status(400).json({ success: false, error: 'Неверный формат идентификаторов участников или не передана команда' });
+  }
+  if (opponentIds.some(id => !Number.isInteger(Number(id)))) {
+    return res.status(400).json({ success: false, error: 'Идентификаторы участников должны быть числами' });
   }
 
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
+
+    if (!(await tournamentBelongsToTeam(tournamentId, teamId, client))) {
+      await client.query('ROLLBACK');
+      return res.status(404).json({ success: false, error: 'Турнир не найден в справочнике этой команды' });
+    }
+
+    // В состав турнира попадают только соперники из справочника этой же команды.
+    if (opponentIds.length > 0) {
+      const ownRes = await client.query(
+        `SELECT COUNT(*)::int AS count FROM external_opponents WHERE id = ANY($1::int[]) AND team_id = $2`,
+        [opponentIds, teamId]
+      );
+      if (ownRes.rows[0].count !== new Set(opponentIds.map(Number)).size) {
+        await client.query('ROLLBACK');
+        return res.status(400).json({ success: false, error: 'Часть соперников не принадлежит справочнику этой команды' });
+      }
+    }
 
     // Перед удалением пачки убеждаемся, что не удалим жестко заблокированные игры
     const lockCheck = await client.query(`
@@ -519,3 +598,52 @@ export const saveTournamentRoster = async (req, res) => {
     client.release();
   }
 };
+// =========================================================================
+// 🖼 ЛОГОТИПЫ СОПЕРНИКОВ И ТУРНИРОВ
+// Колонки logo_url у обеих таблиц были с самого начала и уже читаются календарём
+// (opponent_logo_url / division_logo_url) и фильтром статистики — не хватало
+// только загрузки. Картинка ужимается до 400×400 и уходит в S3 как WebP, как
+// фото участников команды. Удаления нет — только замена: в колонку ложится ключ
+// нового файла, прежний остаётся в S3 (как и у всех прочих картинок приложения).
+// =========================================================================
+
+// Общий обработчик для обеих таблиц: одна и та же последовательность, разница
+// только в таблице и префиксе ключа в S3.
+const saveHandbookLogo = async (req, res, { table, keyPrefix, label }) => {
+  try {
+    const { id } = req.params;
+    const teamId = getTeamId(req);
+
+    if (!teamId) {
+      return res.status(400).json({ success: false, error: 'Контекст команды обязателен' });
+    }
+    if (!req.file) {
+      return res.status(400).json({ success: false, error: 'Файл логотипа не передан' });
+    }
+
+    const ownRes = await pool.query(`SELECT 1 FROM ${table} WHERE id = $1 AND team_id = $2`, [id, teamId]);
+    if (ownRes.rowCount === 0) {
+      return res.status(404).json({ success: false, error: `${label} не найден в справочнике этой команды` });
+    }
+
+    const bucketKey = `uploads/${keyPrefix}_${id}_logo_${Date.now()}.webp`;
+    const processedBuffer = await processAvatar(req.file.buffer);
+    await uploadBufferToS3({ buffer: processedBuffer, mimetype: 'image/webp' }, bucketKey);
+    const logoUrl = `/${bucketKey}`;
+
+    await pool.query(`UPDATE ${table} SET logo_url = $1 WHERE id = $2 AND team_id = $3`, [logoUrl, id, teamId]);
+
+    return res.json({ success: true, logo_url: logoUrl });
+  } catch (err) {
+    console.error(`[Handbook Logo Upload Error: ${table}]`, err);
+    return res.status(500).json({ success: false, error: 'Ошибка сервера при загрузке логотипа' });
+  }
+};
+
+/** POST /api/manager/handbooks/external-opponents/:id/logo (multipart, поле logo) */
+export const uploadExternalOpponentLogo = (req, res) =>
+  saveHandbookLogo(req, res, { table: 'external_opponents', keyPrefix: 'ext_opponents', label: 'Соперник' });
+
+/** POST /api/manager/handbooks/external-tournaments/:id/logo (multipart, поле logo) */
+export const uploadExternalTournamentLogo = (req, res) =>
+  saveHandbookLogo(req, res, { table: 'team_external_tournaments', keyPrefix: 'ext_tournaments', label: 'Турнир' });

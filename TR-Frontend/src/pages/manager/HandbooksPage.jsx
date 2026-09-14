@@ -8,8 +8,17 @@ import { ConfirmSheet } from '../../ui/ConfirmSheet';
 import { FadeIn } from '../../ui/FadeIn';
 import { Icon } from '../../ui/Icon';
 import { PageLoader } from '../../ui/Loader';
-import { getAuthHeaders, getTeamUiColor } from '../../utils/helpers';
+import { getAuthHeaders, getTeamUiColor, getImageUrl } from '../../utils/helpers';
 import { TeamPageHeader, TeamPageHeaderSpacer } from '../../components/TeamPageHeader';
+
+// Плитка логотипа в списке; без логотипа — иконка по типу записи (команда / кубок).
+const ListLogo = ({ logoUrl, fallbackIcon }) => (
+  <div className="w-11 h-11 rounded-2xl bg-surface-level2 flex items-center justify-center shrink-0 overflow-hidden">
+    {logoUrl
+      ? <img src={getImageUrl(logoUrl)} alt="" className="w-full h-full object-contain p-1" />
+      : <Icon name={fallbackIcon} className="w-5 h-5 text-content-subtle" />}
+  </div>
+);
 
 // Раздел живёт оверлеем над страницей команды (TeamLayout), а не через Outlet,
 // поэтому контекст приходит пропсами. onClose — стрелка «назад» в общей шапке.
@@ -184,13 +193,19 @@ export function HandbooksPage({ user, selectedTeam, openRightPanel, onClose }) {
                     onClick={() => handleEditOpen(opp)}
                     className="w-full p-4 bg-surface-level1 border border-surface-border rounded-3xl flex items-center justify-between shadow-md text-left transition-all hover:bg-surface-level2/40 active:scale-[0.99]"
                   >
-                    <div className="flex flex-col min-w-0 pr-2">
-                      <span className="text-[14px] font-bold text-content-main truncate">{opp.name}</span>
-                      <span className="text-[10px] text-content-muted font-medium uppercase tracking-wider mt-0.5">{opp.city} ({opp.short_name})</span>
-                      <div className="flex items-center gap-1.5 mt-2.5">
-                        <span className="text-[10px] font-bold uppercase px-2 py-1 rounded-xl bg-surface-level2 text-content-muted">
-                          Матчей: {opp.games_count || 0} , из них завершенные: {opp.finished_games_count || 0}
-                        </span>
+                    <div className="flex items-center gap-3 min-w-0 pr-2">
+                      <ListLogo logoUrl={opp.logo_url} fallbackIcon="team" />
+                      <div className="flex flex-col min-w-0">
+                        <span className="text-[14px] font-bold text-content-main truncate">{opp.name}</span>
+                        <span className="text-[10px] text-content-muted font-medium uppercase tracking-wider mt-0.5">{opp.city} ({opp.short_name})</span>
+                        <div className="flex items-center gap-1.5 mt-2.5 flex-wrap">
+                          <span className="text-[10px] font-bold uppercase px-2 py-1 rounded-xl bg-surface-level2 text-content-muted">
+                            Матчей: {opp.games_count || 0}, завершено: {opp.finished_games_count || 0}
+                          </span>
+                          {opp.status === 'archive' && (
+                            <span className="text-[10px] font-bold uppercase px-2 py-1 rounded-xl bg-surface-level2 text-content-muted">Архив</span>
+                          )}
+                        </div>
                       </div>
                     </div>
                     <Icon name="chevron_right" className="w-5 h-5 text-content-subtle shrink-0" />
@@ -206,15 +221,21 @@ export function HandbooksPage({ user, selectedTeam, openRightPanel, onClose }) {
                     onClick={() => handleEditOpen(tour)}
                     className="w-full p-4 bg-surface-level1 rounded-3xl flex items-center justify-between shadow-md text-left transition-all active:scale-[0.99]"
                   >
-                    <div className="flex flex-col min-w-0 pr-4 flex-1">
-                      <span className="text-[14px] font-bold text-content-main line-clamp-2 leading-snug">{tour.name}</span>
-                      <div className="flex items-center gap-2 mt-2">
-                        <span className={clsx("text-[10px] font-black uppercase px-2 py-1 rounded-xl", tour.is_active ? "bg-surface-level2 text-success" : "bg-surface-level2 text-content-muted")}>
-                          {tour.is_active ? '● Активен' : 'Архив'}
-                        </span>
-                        <span className="text-[10px] font-black uppercase px-2 py-1 rounded-xl bg-surface-level2 text-content-muted">
-                          Команд лиги: {tour.opponents_count || 0}
-                        </span>
+                    <div className="flex items-center gap-3 min-w-0 pr-4 flex-1">
+                      <ListLogo logoUrl={tour.logo_url} fallbackIcon="trophy" />
+                      <div className="flex flex-col min-w-0">
+                        <span className="text-[14px] font-bold text-content-main line-clamp-2 leading-snug">{tour.name}</span>
+                        <div className="flex items-center gap-2 mt-2 flex-wrap">
+                          <span className={clsx("text-[10px] font-black uppercase px-2 py-1 rounded-xl", tour.is_active ? "bg-surface-level2 text-success" : "bg-surface-level2 text-content-muted")}>
+                            {tour.is_active ? '● Активен' : 'Архив'}
+                          </span>
+                          <span className="text-[10px] font-black uppercase px-2 py-1 rounded-xl bg-surface-level2 text-content-muted">
+                            Соперников: {tour.opponents_count || 0}
+                          </span>
+                          <span className="text-[10px] font-black uppercase px-2 py-1 rounded-xl bg-surface-level2 text-content-muted">
+                            Матчей: {tour.games_count || 0}
+                          </span>
+                        </div>
                       </div>
                     </div>
                     <Icon name="chevron_right" className="w-5 h-5 text-content-subtle shrink-0" />

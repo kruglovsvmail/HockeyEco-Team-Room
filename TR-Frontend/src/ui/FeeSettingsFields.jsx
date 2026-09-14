@@ -17,6 +17,10 @@ import { FEE_PENDING_TEXT } from '../utils/eventFee';
 //   split      — общая сумма события делится между отметившимися плательщиками.
 // Поля порога и «вратари бесплатно» имеют смысл только в долевом режиме,
 // поэтому в фиксированном не показываются вовсе.
+//
+// lockedThresholds — порог показа взноса и дедлайн снятия отметки задаются при
+// создании события; в шторке редактирования они только показываются текстом:
+// степперы с длинными подписями в узкой шторке ломали вёрстку.
 // =============================================================================
 
 const MODE_OPTIONS = [
@@ -24,12 +28,21 @@ const MODE_OPTIONS = [
   { value: 'split',      label: 'Сумма' },
 ];
 
+// Строка «подпись — значение» для параметров, которые здесь не редактируются.
+const LockedRow = ({ label, value }) => (
+  <div className="flex items-center justify-between gap-3 py-1.5">
+    <span className="text-[12px] font-bold text-content-muted uppercase tracking-wider">{label}</span>
+    <span className="text-[14px] font-bold text-content-main text-right shrink-0">{value}</span>
+  </div>
+);
+
 export const FeeSettingsFields = ({
   value,
   onChange,
   disabled = false,
   activeColor = null,
   isMeeting = false,
+  lockedThresholds = false,
 }) => {
   const {
     costMode = 'per_person',
@@ -72,7 +85,7 @@ export const FeeSettingsFields = ({
           onChange={(mode) => !disabled && patch({ costMode: mode })}
           activeColor={activeColor}
         />
-        <span className="text-[12px] font-тщкьфд text-content-muted leading-tight pl-1">
+        <span className="text-[12px] font-normal text-content-muted leading-tight pl-1">
           {isSplit
             ? `Введите стоимость всего события — она разделится между отметившимися. Чем больше ${isMeeting ? 'участников' : 'игроков'}, тем дешевле каждому.`
             : `Фиксированная сумма с каждого ${who}, от числа отметившихся не зависит.`}
@@ -116,46 +129,67 @@ export const FeeSettingsFields = ({
             </div>
           )}
 
-          <div className="flex flex-col gap-1.5 mt-6">
-            <StepperLP
-              inline
-              label="Минимум человек для показа взноса"
-              value={minParticipants}
-              onChange={(val) => patch({ minParticipants: Math.max(val, 1) })}
-              min={1}
-              max={40}
-              suffix="чел."
-              disabled={disabled}
-              activeColor={activeColor}
-            />
-            <span className="text-[11px] text-content-subtle leading-relaxed pl-1">
-              {/* Формулировку берём из того же места, что и карточка события,
-                  чтобы руководитель видел ровно то, что увидит игрок. */}
-              Пока отметившихся меньше, взнос будет скрыт.
-            </span>
-          </div>
+          {!lockedThresholds && (
+            <div className="flex flex-col gap-1.5 mt-6">
+              <StepperLP
+                inline
+                label="Минимум человек для показа взноса"
+                value={minParticipants}
+                onChange={(val) => patch({ minParticipants: Math.max(val, 1) })}
+                min={1}
+                max={40}
+                suffix="чел."
+                disabled={disabled}
+                activeColor={activeColor}
+              />
+              <span className="text-[11px] text-content-subtle leading-relaxed pl-1">
+                {/* Формулировку берём из того же места, что и карточка события,
+                    чтобы руководитель видел ровно то, что увидит игрок. */}
+                Пока отметившихся меньше, взнос будет скрыт.
+              </span>
+            </div>
+          )}
         </>
       )}
 
       {/* Ноль часов — дедлайна нет вовсе: снять отметку можно до самого начала. */}
-      <div className="flex flex-col gap-1.5 mt-6">
-        <StepperLP
-          inline
-          label="Крайний срок снятия отметки до события"
-          value={deadlineHours ?? 0}
-          onChange={(val) => patch({ deadlineHours: val })}
-          min={0}
-          max={72}
-          suffix="ч"
-          disabled={disabled}
-          activeColor={activeColor}
-        />
-        <span className="text-[11px] text-content-subtle leading-relaxed pl-1">
-          {Number(deadlineHours) > 0
-            ? `Кто снимет отметку позже, всё равно будет учитыается в расчете общей суммы.`
-            : 'Дедлайна нет — снять отметку можно до самого начала события.'}
-        </span>
-      </div>
+      {!lockedThresholds && (
+        <div className="flex flex-col gap-1.5 mt-6">
+          <StepperLP
+            inline
+            label="Крайний срок снятия отметки до события"
+            value={deadlineHours ?? 0}
+            onChange={(val) => patch({ deadlineHours: val })}
+            min={0}
+            max={72}
+            suffix="ч"
+            disabled={disabled}
+            activeColor={activeColor}
+          />
+          <span className="text-[11px] text-content-subtle leading-relaxed pl-1">
+            {Number(deadlineHours) > 0
+              ? `Кто снимет отметку позже, всё равно будет учитываться в расчёте общей суммы.`
+              : 'Дедлайна нет — снять отметку можно до самого начала события.'}
+          </span>
+        </div>
+      )}
+
+      {/* Те же два параметра текстом — когда редактировать их здесь нельзя. Порог
+          показа имеет смысл только в долевом режиме, как и его степпер выше. */}
+      {lockedThresholds && (
+        <div className="flex flex-col mt-4 pt-3 border-t border-surface-border">
+          {isSplit && !isFree && (
+            <LockedRow value={`Для показа взноса мин. ${minParticipants} чел.`} />
+          )}
+          <LockedRow
+
+            value={Number(deadlineHours) > 0 ? `Деадлайн за ${deadlineHours} часа до начала` : 'До самого начала'}
+          />
+          <span className="text-[11px] text-content-subtle leading-relaxed mt-1">
+            Эти параметры задаются при создании события.
+          </span>
+        </div>
+      )}
     </div>
   );
 };

@@ -232,7 +232,12 @@ const EventCard = ({
       return <Icon name="handshake" className="w-6 h-6 text-content-muted ml-2" />;
     }
     
+    // Внешний турнир: календарь отдаёт его логотип как division_logo_url
+    // (см. games_cte в CalendarController); без логотипа — кубок.
     if (event.game_type === 'tournament_ext') {
+      if (event.division_logo_url) {
+        return <img src={getImageUrl(event.division_logo_url)} alt="Турнир" className="w-6 h-6 object-contain ml-2 opacity-80" />;
+      }
       return <Icon name="trophy" className="w-6 h-6 text-content-muted ml-2" />;
     }
     

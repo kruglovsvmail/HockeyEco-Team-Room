@@ -3,7 +3,7 @@ import { TextInputLP } from '../../ui/Input-LP';
 import { FadeIn } from '../../ui/FadeIn';
 import { Icon } from '../../ui/Icon';
 import { PageLoader } from '../../ui/Loader';
-import { getAuthHeaders } from '../../utils/helpers';
+import { getAuthHeaders, getImageUrl } from '../../utils/helpers';
 
 export function ExternalTournamentSelector({ data }) {
   // ИСПРАВЛЕНО: Извлекаем teamId из настроек вызова панели
@@ -67,11 +67,18 @@ export function ExternalTournamentSelector({ data }) {
               onClick={() => onSelect(tournament)}
               className="w-full p-4 bg-surface-level1 border border-surface-border rounded-2xl text-left flex items-center justify-between outline-none cursor-pointer hover:border-brand/30 transition-all active:scale-[0.99]"
             >
-              <div className="flex flex-col min-w-0 pr-2 text-left">
-                <span className="text-[14px] font-bold text-content-main truncate">{tournament.name}</span>
-                <span className="text-[10px] text-green-500 font-black uppercase tracking-wider mt-1 block">
-                  ● Активный чемпионат
-                </span>
+              <div className="flex items-center gap-3 min-w-0 pr-2 text-left">
+                <div className="w-9 h-9 rounded-xl bg-surface-level2 flex items-center justify-center shrink-0 overflow-hidden">
+                  {tournament.logo_url
+                    ? <img src={getImageUrl(tournament.logo_url)} alt="" className="w-full h-full object-contain p-1" />
+                    : <Icon name="trophy" className="w-4 h-4 text-content-subtle" />}
+                </div>
+                <div className="flex flex-col min-w-0">
+                  <span className="text-[14px] font-bold text-content-main truncate">{tournament.name}</span>
+                  <span className="text-[10px] text-success font-black uppercase tracking-wider mt-1 block">
+                    ● Активный турнир
+                  </span>
+                </div>
               </div>
               <Icon name="chevron_right" className="w-4 h-4 text-content-subtle shrink-0" />
             </button>

@@ -358,6 +358,10 @@ export const createEvent = async (req, res) => {
       let confirmDeadline = null;
       let stageLabel = null;
 
+      // Этап матча — колонка games.stage_type. У товарищеских всегда 'friendly'
+      // (так его и ждёт боксскор), у внешнего турнира — регулярка либо плей-офф.
+      let safeStageType = 'friendly';
+
       if (matchType === 'friendly') {
         if (!selectedOpponent) {
           return res.status(400).json({ success: false, error: 'Команда соперника обязательна для проведения игры' });
@@ -369,27 +373,61 @@ export const createEvent = async (req, res) => {
           awayTeamId = selectedOpponent.id;
           confirmDeadline = parseDateTime(deadlineDate, deadlineTime);
         } else {
+          // Внешний соперник — только из справочника своей команды: id приходит
+          // с клиента, и без этой проверки в матч можно подставить чужого.
+          const oppRes = await pool.query(
+            'SELECT 1 FROM external_opponents WHERE id = $1 AND team_id = $2',
+            [Number(selectedOpponent.id) || 0, teamId]
+          );
+          if (oppRes.rowCount === 0) {
+            return res.status(400).json({ success: false, error: 'Соперник не найден в справочнике вашей команды' });
+          }
           gameType = 'friendly_ext';
           awayExternalId = selectedOpponent.id;
           status = 'scheduled';
         }
         stageLabel = 'Товарищеский матч';
-      } 
+      }
       else if (matchType === 'tournament_ext') {
         if (!selectedExtTournament || !selectedExtOpponent) {
           return res.status(400).json({ success: false, error: 'Необходимо указать сторонний турнир и соперника по сетке' });
+        }
+
+        // Турнир — свой и активный, соперник — свой и заявлен в этот турнир
+        // (external_tournaments_opponents). Селекторы на клиенте показывают ровно
+        // это, но полагаться на них нельзя.
+        const tourRes = await pool.query(
+          'SELECT 1 FROM team_external_tournaments WHERE id = $1 AND team_id = $2 AND is_active = true',
+          [Number(selectedExtTournament.id) || 0, teamId]
+        );
+        if (tourRes.rowCount === 0) {
+          return res.status(400).json({ success: false, error: 'Турнир не найден среди активных турниров вашей команды' });
+        }
+        const pairRes = await pool.query(
+          `SELECT 1
+             FROM external_tournaments_opponents eto
+             JOIN external_opponents eo ON eo.id = eto.external_opponent_id
+            WHERE eto.tournament_id = $1 AND eto.external_opponent_id = $2 AND eo.team_id = $3`,
+          [Number(selectedExtTournament.id) || 0, Number(selectedExtOpponent.id) || 0, teamId]
+        );
+        if (pairRes.rowCount === 0) {
+          return res.status(400).json({ success: false, error: 'Соперник не заявлен в этот турнир — добавьте его в состав турнира в разделе «Вне платформы»' });
         }
 
         gameType = 'tournament_ext';
         status = 'scheduled';
         externalTournamentId = selectedExtTournament.id;
         awayExternalId = selectedExtOpponent.id;
+        safeStageType = stageType === 'playoff' ? 'playoff' : 'regular';
 
-        if (stageType === 'regular') {
+        if (safeStageType === 'regular') {
           stageLabel = regularRound ? `${regularRound}-й круг` : 'Регулярный чемпионат';
-        } else if (stageType === 'playoff') {
-          stageLabel = selectedPlayoffOption === 'Другое' ? customStageLabel : selectedPlayoffOption;
+        } else {
+          stageLabel = (selectedPlayoffOption === 'Другое' ? customStageLabel : selectedPlayoffOption) || 'Плей-офф';
         }
+      }
+      else {
+        return res.status(400).json({ success: false, error: 'Указан неизвестный тип матча' });
       }
 
       // Добавлено сохранение полей custom_timezone ($20), location ($21) и location_url ($22) в таблицу games
@@ -427,7 +465,7 @@ export const createEvent = async (req, res) => {
         cost, 
         videoYtUrl || null,
         videoVkUrl || null,
-        stageType || 'friendly',
+        safeStageType,
         stageLabel,
         seriesNumber ? parseInt(seriesNumber) : null,
         // Команда, создавшая событие, всегда инициатор — независимо от типа матча

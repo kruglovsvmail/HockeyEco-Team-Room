@@ -2,11 +2,26 @@ import React, { useState, useEffect } from 'react';
 import { SegmentedControl } from '../../ui/SegmentedControl';
 import { TextInputLP } from '../../ui/Input-LP';
 import { ButtonLP } from '../../ui/Button-LP';
+import { ImageUploaderLP } from '../../ui/ImageUploaderLP';
 import { BottomSheet } from '../../ui/BottomSheet';
 import { FadeIn } from '../../ui/FadeIn';
 import { Icon } from '../../ui/Icon';
 import { PageLoader } from '../../ui/Loader';
 import { getAuthHeaders, getImageUrl } from '../../utils/helpers';
+
+// Логотип нового соперника — отдельным multipart-запросом уже после создания
+// карточки (до POST у неё нет id). Та же ручка, что у справочника «Вне платформы».
+const uploadOpponentLogo = async (opponentId, teamId, file) => {
+  const body = new FormData();
+  body.append('logo', file);
+  const res = await fetch(
+    `${import.meta.env.VITE_API_URL}/api/manager/handbooks/external-opponents/${opponentId}/logo?teamId=${teamId}`,
+    { method: 'POST', headers: getAuthHeaders(), body }
+  );
+  const json = await res.json().catch(() => ({}));
+  if (!res.ok || !json.success) throw new Error(json.error || 'Не удалось загрузить логотип');
+  return json.logo_url;
+};
 
 // Логотип соперника в списке выбора — заглушка «нет лого», если файл не загружен
 function OpponentLogo({ logoUrl, name }) {
@@ -40,7 +55,18 @@ export function OpponentSelectorFriendly({ data }) {
   const [newOpponentName, setNewOpponentName] = useState('');
   const [newOpponentShort, setNewOpponentShort] = useState('');
   const [newOpponentCity, setNewOpponentCity] = useState('');
+  // Файл логотипа ждёт создания карточки. ImageUploaderLP держит превью у себя и
+  // сбрасывает его только по смене currentImageUrl — поэтому при каждом открытии
+  // шторки квадрат перемонтируется через key, иначе прошлое превью осталось бы.
+  const [newOpponentLogo, setNewOpponentLogo] = useState(null);
+  const [sheetOpenCount, setSheetOpenCount] = useState(0);
   const [isCreating, setIsCreating] = useState(false);
+
+  const openNewOpponentSheet = () => {
+    setNewOpponentLogo(null);
+    setSheetOpenCount(n => n + 1);
+    setIsNewOpponentSheetOpen(true);
+  };
 
   useEffect(() => {
     if (!teamId) return;
@@ -106,11 +132,24 @@ export function OpponentSelectorFriendly({ data }) {
       if (res.ok) {
         const json = await res.json();
         if (json.success && json.opponent) {
+          let opponent = json.opponent;
+          // Карточка уже создана — логотип докидываем к ней отдельным запросом.
+          // Не получилось залить — соперник всё равно выбран, логотип добавят
+          // потом в справочнике «Вне платформы».
+          if (newOpponentLogo) {
+            try {
+              const logoUrl = await uploadOpponentLogo(opponent.id, teamId, newOpponentLogo);
+              opponent = { ...opponent, logo_url: logoUrl };
+            } catch (err) {
+              console.error('Логотип соперника не загружен:', err);
+            }
+          }
           setIsNewOpponentSheetOpen(false);
           setNewOpponentName('');
           setNewOpponentShort('');
           setNewOpponentCity('');
-          onSelect({ ...json.opponent, isPwa: false });
+          setNewOpponentLogo(null);
+          onSelect({ ...opponent, isPwa: false });
         }
       }
     } catch (err) {
@@ -205,7 +244,7 @@ export function OpponentSelectorFriendly({ data }) {
               variant="outline" 
               icon="user_plus" 
               activeColor={currentTeamColor} 
-              onClick={() => setIsNewOpponentSheetOpen(true)}
+              onClick={openNewOpponentSheet}
             >
               + Новый соперник
             </ButtonLP>
@@ -215,13 +254,29 @@ export function OpponentSelectorFriendly({ data }) {
 
       <BottomSheet isOpen={isNewOpponentSheetOpen} onClose={() => setIsNewOpponentSheetOpen(false)}>
         <form onSubmit={handleCreateNewOpponentSubmit} className="flex flex-col gap-4 text-left pb-6">
-          <h3 className="text-[18px] font-black uppercase tracking-wider text-content-main mb-1">Новый соперник в справочник команды</h3>
-          
-          <TextInputLP placeholder="Полное название команды" value={newOpponentName} onChange={setNewOpponentName} activeColor={currentTeamColor} />
-          <div className="grid grid-cols-2 gap-10">
-            <TextInputLP placeholder="Город" value={newOpponentCity} onChange={setNewOpponentCity} activeColor={currentTeamColor} />
-            <TextInputLP placeholder="Аббревиатура" value={newOpponentShort} onChange={setNewOpponentShort} activeColor={currentTeamColor} />
+          <h3 className="text-[18px] font-black uppercase tracking-wider text-content-main mb-1">Новый соперник в справочник</h3>
+
+          {/* Логотип слева, поля справа — та же раскладка, что у профиля клуба.
+              Логотип необязателен: без него в списках будет заглушка «нет лого». */}
+          <div className="grid grid-cols-[72px_1fr] gap-4 items-center">
+            <ImageUploaderLP
+              key={sheetOpenCount}
+              currentImageUrl={null}
+              onChange={setNewOpponentLogo}
+              showDelete={false}
+              sizeClass="w-[72px] h-[72px]"
+            />
+            <div className="flex flex-col gap-4 min-w-0">
+              <TextInputLP placeholder="Полное название команды" value={newOpponentName} onChange={setNewOpponentName} activeColor={currentTeamColor} />
+              <div className="grid grid-cols-2 gap-6">
+                <TextInputLP placeholder="Город" value={newOpponentCity} onChange={setNewOpponentCity} activeColor={currentTeamColor} />
+                <TextInputLP placeholder="Аббревиатура" value={newOpponentShort} onChange={setNewOpponentShort} activeColor={currentTeamColor} />
+              </div>
+            </div>
           </div>
+          <span className="text-[11px] text-content-subtle leading-relaxed -mt-1">
+            Логотип — по желанию: PNG или WebP, ужимается до 400×400. Заменить можно в справочнике «Вне платформы».
+          </span>
 
           <div className="mt-4">
             <ButtonLP type="submit" variant="primary" isLoading={isCreating} disabled={!newOpponentName.trim() || !newOpponentCity.trim()} activeColor={currentTeamColor}>

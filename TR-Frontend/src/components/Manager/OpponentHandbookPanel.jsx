@@ -3,9 +3,24 @@ import clsx from 'clsx';
 import { TextInputLP } from '../../ui/Input-LP';
 import { CheckboxLP } from '../../ui/Checkbox-LP';
 import { ButtonLP } from '../../ui/Button-LP';
+import { ImageUploaderLP } from '../../ui/ImageUploaderLP';
 import { Icon } from '../../ui/Icon';
 import { FadeIn, StaggerContainer } from '../../ui/FadeIn';
 import { getAuthHeaders, getTeamUiColor } from '../../utils/helpers';
+
+// Логотип грузится отдельным multipart-запросом (поле logo), teamId — в адресе:
+// multer разбирает тело уже после проверки прав, и из body его там не достать.
+const logoEndpoint = (opponentId, teamId) =>
+  `${import.meta.env.VITE_API_URL}/api/manager/handbooks/external-opponents/${opponentId}/logo?teamId=${teamId}`;
+
+const uploadOpponentLogo = async (opponentId, teamId, file) => {
+  const body = new FormData();
+  body.append('logo', file);
+  const res = await fetch(logoEndpoint(opponentId, teamId), { method: 'POST', headers: getAuthHeaders(), body });
+  const json = await res.json().catch(() => ({}));
+  if (!res.ok || !json.success) throw new Error(json.error || 'Не удалось загрузить логотип');
+  return json.logo_url;
+};
 
 // Переиспользуемый матовый блок с поддержкой индивидуального редактирования и лоадера сохранения
 const CustomBlock = ({ title, icon, isEditing, onAction, isSaving, children }) => {
@@ -57,9 +72,14 @@ export function OpponentHandbookPanel({ data, onClose }) {
   const [oppShort, setOppShort] = useState('');
   const [oppCity, setOppCity] = useState('');
   const [oppIsActive, setOppIsActive] = useState(true);
-  
+  // Текущий логотип (ссылка в S3) и файл, выбранный до создания карточки: у нового
+  // соперника ещё нет id, куда грузить, — файл ждёт, пока POST его не вернёт.
+  const [oppLogoUrl, setOppLogoUrl] = useState(null);
+  const [pendingLogoFile, setPendingLogoFile] = useState(null);
+  const [logoError, setLogoError] = useState('');
+
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [savingBlock, setSavingBlock] = useState(null); // 'name' | 'city' | 'short' | 'status'
+  const [savingBlock, setSavingBlock] = useState(null); // 'name' | 'city' | 'short' | 'status' | 'logo'
 
   // Режимы редактирования блоков (карандашики)
   const [isEditName, setIsEditName] = useState(!editingOpponent);
@@ -91,6 +111,7 @@ export function OpponentHandbookPanel({ data, onClose }) {
       setOppShort(editingOpponent.short_name || '');
       setOppCity(editingOpponent.city || '');
       setOppIsActive(editingOpponent.status !== 'archive');
+      setOppLogoUrl(editingOpponent.logo_url || null);
       setIsEditName(false);
       setIsEditCity(false);
       setIsEditShort(false);
@@ -100,12 +121,36 @@ export function OpponentHandbookPanel({ data, onClose }) {
       setOppShort('');
       setOppCity('');
       setOppIsActive(true);
+      setOppLogoUrl(null);
       setIsEditName(true);
       setIsEditCity(true);
       setIsEditShort(true);
       setIsEditStatus(true);
     }
+    setPendingLogoFile(null);
+    setLogoError('');
   }, [editingOpponent]);
+
+  // Логотип у существующего соперника сохраняется сразу, без карандашика: выбрал
+  // файл — улетел. У нового — только запоминаем, зальём после создания.
+  const handleLogoPick = async (file) => {
+    setLogoError('');
+    if (!editingOpponent) {
+      setPendingLogoFile(file);
+      return;
+    }
+    setSavingBlock('logo');
+    try {
+      const url = await uploadOpponentLogo(editingOpponent.id, selectedTeam.id, file);
+      setOppLogoUrl(url);
+      loadData();
+    } catch (err) {
+      setLogoError(err.message);
+    } finally {
+      setSavingBlock(null);
+    }
+  };
+
 
   useEffect(() => {
     const handleClosePanel = () => onClose();
@@ -164,6 +209,15 @@ export function OpponentHandbookPanel({ data, onClose }) {
       });
 
       if (res.ok) {
+        // Карточка уже создана — логотип докидываем к ней отдельным запросом.
+        // Не получилось залить — соперник всё равно есть, логотип добавят позже.
+        if (pendingLogoFile) {
+          const json = await res.json().catch(() => ({}));
+          const newId = json?.opponent?.id;
+          if (newId) {
+            try { await uploadOpponentLogo(newId, selectedTeam.id, pendingLogoFile); } catch (err) { console.error(err); }
+          }
+        }
         loadData();
         onClose();
       }
@@ -263,9 +317,36 @@ export function OpponentHandbookPanel({ data, onClose }) {
             )}
           </CustomBlock>
 
-          {/* БЛОК 4: СТАТУС СОПЕРНИКА В БАЗЕ ДАННЫХ */}
-          <CustomBlock 
-            title="Статус соперника" 
+          {/* БЛОК 4: ЛОГОТИП — без карандашика, сохраняется при выборе файла;
+              удаления нет, только замена. Показывается в календаре, карточке
+              матча и шторках выбора соперника. */}
+          <CustomBlock
+            title="Логотип"
+            icon="shield_alert"
+            isSaving={savingBlock === 'logo'}
+          >
+            <div className="flex items-center gap-4 pt-1">
+              <ImageUploaderLP
+                currentImageUrl={oppLogoUrl}
+                onChange={handleLogoPick}
+                showDelete={false}
+                sizeClass="w-[72px] h-[72px]"
+              />
+              <div className="flex flex-col gap-1 min-w-0">
+                <span className="text-[14px] font-bold text-content-main">
+                  {oppLogoUrl || pendingLogoFile ? 'Логотип выбран' : 'Логотипа нет'}
+                </span>
+                <span className="text-[11px] text-content-subtle leading-relaxed">
+                  PNG или WebP. Нажмите на квадрат, чтобы выбрать файл.
+                </span>
+                {logoError && <span className="text-[11px] font-bold text-danger">{logoError}</span>}
+              </div>
+            </div>
+          </CustomBlock>
+
+          {/* БЛОК 5: СТАТУС СОПЕРНИКА В БАЗЕ ДАННЫХ */}
+          <CustomBlock
+            title="Статус соперника"
             icon="calendar"
             isEditing={isEditStatus}
             isSaving={savingBlock === 'status'}

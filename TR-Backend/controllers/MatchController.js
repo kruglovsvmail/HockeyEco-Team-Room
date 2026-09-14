@@ -34,116 +34,6 @@ export const getMatchStaff = async (req, res) => {
 };
 
 // =============================================================================
-// ИСТОРИЯ ОЧНЫХ ПРОТИВОСТОЯНИЙ H2H
-// =============================================================================
-export const getMatchH2H = async (req, res) => {
-  try {
-    const { eventId } = req.params;
-
-    const gameRes = await pool.query(
-      'SELECT home_team_id, away_team_id, away_external_id FROM "public"."games" WHERE id = $1',
-      [eventId]
-    );
-
-    if (gameRes.rows.length === 0) {
-      return res.status(404).json({ success: false, error: 'Матч не найден' });
-    }
-
-    const { home_team_id, away_team_id, away_external_id } = gameRes.rows[0];
-
-    const myTeamCheck = await pool.query(
-      `SELECT team_id FROM "public"."team_members" 
-       WHERE user_id = $1 AND team_id IN ($2, $3) AND left_at IS NULL LIMIT 1`,
-      [req.user.id, home_team_id, away_team_id]
-    );
-    const myTeamId = myTeamCheck.rows[0]?.team_id || home_team_id;
-
-    let gamesQuery = '';
-    let queryParams = [];
-
-    if (away_external_id) {
-      gamesQuery = `
-        SELECT 
-          g.id::int,
-          g.game_date::timestamptz,
-          g.home_team_id::int,
-          g.away_team_id::int,
-          g.home_score::int,
-          g.away_score::int,
-          g.end_type::varchar,
-          g.status::varchar,
-          COALESCE(l.name, ext_tour.name, 'Товарищеский матч')::varchar AS tournament_name
-        FROM "public"."games" g
-        LEFT JOIN "public"."divisions" d ON g.division_id = d.id
-        LEFT JOIN "public"."seasons" s ON d.season_id = s.id
-        LEFT JOIN "public"."leagues" l ON s.league_id = l.id
-        LEFT JOIN "public"."team_external_tournaments" ext_tour ON g.external_tournament_id = ext_tour.id
-        WHERE g.status IN ('finished', 'live')
-          AND g.home_team_id = $1 AND g.away_external_id = $2
-        ORDER BY g.game_date DESC;
-      `;
-      queryParams = [home_team_id, away_external_id];
-    } else {
-      gamesQuery = `
-        SELECT 
-          g.id::int,
-          g.game_date::timestamptz,
-          g.home_team_id::int,
-          g.away_team_id::int,
-          g.home_score::int,
-          g.away_score::int,
-          g.end_type::varchar,
-          g.status::varchar,
-          COALESCE(l.name, ext_tour.name, 'Товарищеский матч')::varchar AS tournament_name
-        FROM "public"."games" g
-        LEFT JOIN "public"."divisions" d ON g.division_id = d.id
-        LEFT JOIN "public"."seasons" s ON d.season_id = s.id
-        LEFT JOIN "public"."leagues" l ON s.league_id = l.id
-        LEFT JOIN "public"."team_external_tournaments" ext_tour ON g.external_tournament_id = ext_tour.id
-        WHERE g.status IN ('finished', 'live')
-          AND (
-            (g.home_team_id = $1 AND g.away_team_id = $2)
-            OR (g.home_team_id = $2 AND g.away_team_id = $1)
-          )
-        ORDER BY g.game_date DESC;
-      `;
-      queryParams = [home_team_id, away_team_id];
-    }
-
-    const { rows } = await pool.query(gamesQuery, queryParams);
-
-    let total = 0;
-    let wins = 0;
-    let draws = 0;
-    let losses = 0;
-
-    rows.forEach(game => {
-      if (game.status !== 'finished') return;
-      total++;
-      
-      const isHome = String(game.home_team_id) === String(myTeamId);
-      const myScore = isHome ? game.home_score : game.away_score;
-      const oppScore = isHome ? game.away_score : game.home_score;
-      
-      if (myScore > oppScore) wins++;
-      else if (myScore < oppScore) losses++;
-      else draws++;
-    });
-
-    res.json({
-      success: true,
-      h2h: {
-        summary: { total, wins, draws, losses },
-        games: rows
-      }
-    });
-  } catch (err) {
-    console.error('Ошибка получения истории встреч H2H:', err);
-    res.status(500).json({ success: false, error: 'Ошибка сервера' });
-  }
-};
-
-// =============================================================================
 // БЛОК ОБНОВЛЕНИЯ МЕДИА-ССЫЛОК (Блок 1)
 // =============================================================================
 export const updateMatchMedia = async (req, res) => {
@@ -1031,6 +921,9 @@ export const getMatchProtocol = async (req, res) => {
         ge.penalty_minutes::int,
         ge.penalty_class::varchar,
         ge.penalty_violation::varchar,
+        -- Вратарь, против которого исполнялся буллит серии: при повторном сохранении
+        -- события фронт отправляет его обратно как есть, иначе он бы обнулялся.
+        ge.against_goalie_id::int,
 
         -- +/- по сторонам (нужно для пред-заполнения формы редактирования)
         COALESCE((

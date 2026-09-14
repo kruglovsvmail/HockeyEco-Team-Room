@@ -700,12 +700,15 @@ export const EditEventPanel = ({ data, onClose }) => {
         >
           {editingBlock === 'finances' ? (
             <div className="flex flex-col gap-4 pt-1">
+              {/* Порог показа взноса и дедлайн снятия отметки здесь не редактируются —
+                  показываются текстом (степперы с длинными подписями в шторке не помещались). */}
               <FeeSettingsFields
                 value={feeSettings}
                 onChange={setFeeSettings}
                 isMeeting={eventType === 'team_meeting' || eventType === 'club_meeting'}
                 disabled={savingBlock === 'finances'}
                 activeColor={activeBrandColor}
+                lockedThresholds
               />
 
               {isMatch && (

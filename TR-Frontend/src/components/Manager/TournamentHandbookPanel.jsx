@@ -3,12 +3,27 @@ import clsx from 'clsx';
 import { TextInputLP } from '../../ui/Input-LP';
 import { CheckboxLP } from '../../ui/Checkbox-LP';
 import { ButtonLP } from '../../ui/Button-LP';
+import { ImageUploaderLP } from '../../ui/ImageUploaderLP';
 import { SegmentedControl } from '../../ui/SegmentedControl';
 import { Icon } from '../../ui/Icon';
 import { PageLoader } from '../../ui/Loader';
 import { FadeIn, StaggerContainer } from '../../ui/FadeIn';
 import { HintPopover } from '../../ui/HintPopover';
-import { getAuthHeaders, getTeamUiColor } from '../../utils/helpers';
+import { getAuthHeaders, getTeamUiColor, getImageUrl } from '../../utils/helpers';
+
+// Логотип грузится отдельным multipart-запросом (поле logo), teamId — в адресе:
+// multer разбирает тело уже после проверки прав, и из body его там не достать.
+const logoEndpoint = (tournamentId, teamId) =>
+  `${import.meta.env.VITE_API_URL}/api/manager/handbooks/external-tournaments/${tournamentId}/logo?teamId=${teamId}`;
+
+const uploadTournamentLogo = async (tournamentId, teamId, file) => {
+  const body = new FormData();
+  body.append('logo', file);
+  const res = await fetch(logoEndpoint(tournamentId, teamId), { method: 'POST', headers: getAuthHeaders(), body });
+  const json = await res.json().catch(() => ({}));
+  if (!res.ok || !json.success) throw new Error(json.error || 'Не удалось загрузить логотип');
+  return json.logo_url;
+};
 
 const CustomBlock = ({ title, icon, isEditing, onAction, isSaving, children }) => {
   return (
@@ -49,6 +64,15 @@ const CustomBlock = ({ title, icon, isEditing, onAction, isSaving, children }) =
   );
 };
 
+// Плитка логотипа соперника в списке состава турнира; без логотипа — иконка команды.
+const RosterLogo = ({ logoUrl }) => (
+  <div className="w-9 h-9 rounded-xl bg-surface-level2 flex items-center justify-center shrink-0 overflow-hidden">
+    {logoUrl
+      ? <img src={getImageUrl(logoUrl)} alt="" className="w-full h-full object-contain p-1" />
+      : <Icon name="team" className="w-4 h-4 text-content-subtle" />}
+  </div>
+);
+
 export function TournamentHandbookPanel({ data, onClose }) {
   const { editingTournament, loadData, onInitiateDelete, selectedTeam } = data;
 
@@ -56,6 +80,11 @@ export function TournamentHandbookPanel({ data, onClose }) {
 
   const [tourName, setTourName] = useState('');
   const [tourIsActive, setTourIsActive] = useState(true);
+  // Текущий логотип (ссылка в S3) и файл, выбранный до создания турнира: у нового
+  // турнира ещё нет id, куда грузить, — файл ждёт, пока POST его не вернёт.
+  const [tourLogoUrl, setTourLogoUrl] = useState(null);
+  const [pendingLogoFile, setPendingLogoFile] = useState(null);
+  const [logoError, setLogoError] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   const [isRosterLoading, setIsRosterLoading] = useState(false);
@@ -93,6 +122,7 @@ export function TournamentHandbookPanel({ data, onClose }) {
     if (editingTournament) {
       setTourName(editingTournament.name || '');
       setTourIsActive(editingTournament.is_active ?? true);
+      setTourLogoUrl(editingTournament.logo_url || null);
       CancelIsEditName(false);
       setIsEditStatus(false);
       setActivePanelTab('info');
@@ -102,12 +132,36 @@ export function TournamentHandbookPanel({ data, onClose }) {
     } else {
       setTourName('');
       setTourIsActive(true);
+      setTourLogoUrl(null);
       setLeagueRoosterTeams([]);
       CancelIsEditName(true);
       setIsEditStatus(true);
       setActivePanelTab('info');
     }
+    setPendingLogoFile(null);
+    setLogoError('');
   }, [editingTournament, selectedTeam]);
+
+  // Логотип у существующего турнира сохраняется сразу, без карандашика: выбрал
+  // файл — улетел. У нового — только запоминаем, зальём после создания.
+  const handleLogoPick = async (file) => {
+    setLogoError('');
+    if (!editingTournament) {
+      setPendingLogoFile(file);
+      return;
+    }
+    setSavingBlock('logo');
+    try {
+      const url = await uploadTournamentLogo(editingTournament.id, selectedTeam.id, file);
+      setTourLogoUrl(url);
+      loadData();
+    } catch (err) {
+      setLogoError(err.message);
+    } finally {
+      setSavingBlock(null);
+    }
+  };
+
 
   useEffect(() => {
     const handleClosePanel = () => onClose();
@@ -228,6 +282,15 @@ export function TournamentHandbookPanel({ data, onClose }) {
         body: JSON.stringify({ teamId: selectedTeam.id, name: tourName.trim(), is_active: tourIsActive })
       });
       if (res.ok) {
+        // Турнир уже создан — логотип докидываем к нему отдельным запросом.
+        // Не получилось залить — турнир всё равно есть, логотип добавят позже.
+        if (pendingLogoFile) {
+          const json = await res.json().catch(() => ({}));
+          const newId = json?.tournament?.id;
+          if (newId) {
+            try { await uploadTournamentLogo(newId, selectedTeam.id, pendingLogoFile); } catch (err) { console.error(err); }
+          }
+        }
         loadData();
         onClose();
       }
@@ -304,8 +367,35 @@ export function TournamentHandbookPanel({ data, onClose }) {
                 )}
               </CustomBlock>
 
-              <CustomBlock 
-                title="Статус турнира" 
+              {/* Логотип — без карандашика, сохраняется при выборе файла; удаления нет,
+                  только замена. Показывается в календаре у матчей турнира и в фильтре
+                  статистики игрока. */}
+              <CustomBlock
+                title="Логотип"
+                icon="trophy"
+                isSaving={savingBlock === 'logo'}
+              >
+                <div className="flex items-center gap-4 pt-1">
+                  <ImageUploaderLP
+                    currentImageUrl={tourLogoUrl}
+                    onChange={handleLogoPick}
+                    showDelete={false}
+                    sizeClass="w-[72px] h-[72px]"
+                  />
+                  <div className="flex flex-col gap-1 min-w-0">
+                    <span className="text-[14px] font-bold text-content-main">
+                      {tourLogoUrl || pendingLogoFile ? 'Логотип выбран' : 'Логотипа нет'}
+                    </span>
+                    <span className="text-[11px] text-content-subtle leading-relaxed">
+                      PNG или WebP. Нажмите на квадрат, чтобы выбрать файл.
+                    </span>
+                    {logoError && <span className="text-[11px] font-bold text-danger">{logoError}</span>}
+                  </div>
+                </div>
+              </CustomBlock>
+
+              <CustomBlock
+                title="Статус турнира"
                 icon="calendar"
                 isEditing={isEditStatus}
                 isSaving={savingBlock === 'status'}
@@ -378,15 +468,16 @@ export function TournamentHandbookPanel({ data, onClose }) {
             
             {/* ЗАБЛОКИРОВАННАЯ ОТ СКРОЛЛА ПАНЕЛЬ ПОИСКА И ЧЕКБОКСА */}
             <div className="px-5 py-4 bg-surface-level1 border border-surface-border rounded-2xl shadow-md mx-5 mt-2 mb-4 shrink-0 flex flex-col gap-3">
-              <input 
-                type="text"
-                placeholder="Быстрый поиск соперника или города..."
+              {/* Тот же поисковый инпут, что и в остальных справочниках (HandbooksPage,
+                  заявки на сезон) — свой голый <input> здесь выбивался из стиля. */}
+              <TextInputLP
+                placeholder="Название команды или город..."
                 value={teamSearch}
-                onChange={(e) => setTeamSearch(e.target.value)}
-                className="w-full px-4 py-2.5 bg-surface-level2 border border-surface-border rounded-xl text-[14px] font-bold text-content-main outline-none placeholder:text-content-muted focus:border-brand/40 transition-colors"
+                onChange={setTeamSearch}
+                activeColor={activeBrandColor}
               />
-              
-              <div className="mt-2">
+
+              <div className="mt-1">
                 <CheckboxLP 
                   checked={showOnlySelected} 
                   onChange={setShowOnlySelected} 
@@ -417,9 +508,12 @@ export function TournamentHandbookPanel({ data, onClose }) {
                               )}
                               style={{ borderColor: `${activeBrandColor}30` }}
                             >
-                              <div className="flex flex-col min-w-0 pr-2 text-left">
-                                <span className="text-[14px] font-black text-content-main truncate">{team.name}</span>
-                                <span className="text-[10px] text-content-muted font-bold uppercase mt-0.5 tracking-wider">{team.city}</span>
+                              <div className="flex items-center gap-3 min-w-0 pr-2 text-left">
+                                <RosterLogo logoUrl={team.logo_url} />
+                                <div className="flex flex-col min-w-0">
+                                  <span className="text-[14px] font-black text-content-main truncate">{team.name}</span>
+                                  <span className="text-[10px] text-content-muted font-bold uppercase mt-0.5 tracking-wider">{team.city}</span>
+                                </div>
                               </div>
                               <CheckboxLP 
                                 checked={true} 
@@ -443,9 +537,12 @@ export function TournamentHandbookPanel({ data, onClose }) {
                         )}
                         style={team.is_in_tournament ? { borderColor: `${activeBrandColor}30` } : {}}
                       >
-                        <div className="flex flex-col min-w-0 pr-2 text-left">
-                          <span className="text-[14px] font-black text-content-main truncate">{team.name}</span>
-                          <span className="text-[10px] text-content-muted font-bold uppercase mt-0.5 tracking-wider">{team.city}</span>
+                        <div className="flex items-center gap-3 min-w-0 pr-2 text-left">
+                          <RosterLogo logoUrl={team.logo_url} />
+                          <div className="flex flex-col min-w-0">
+                            <span className="text-[14px] font-black text-content-main truncate">{team.name}</span>
+                            <span className="text-[10px] text-content-muted font-bold uppercase mt-0.5 tracking-wider">{team.city}</span>
+                          </div>
                         </div>
                         <CheckboxLP 
                           checked={team.is_in_tournament || false} 

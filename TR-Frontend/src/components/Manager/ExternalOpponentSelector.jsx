@@ -3,7 +3,7 @@ import { TextInputLP } from '../../ui/Input-LP';
 import { FadeIn } from '../../ui/FadeIn';
 import { Icon } from '../../ui/Icon';
 import { PageLoader } from '../../ui/Loader';
-import { getAuthHeaders } from '../../utils/helpers';
+import { getAuthHeaders, getImageUrl } from '../../utils/helpers';
 
 export function ExternalOpponentSelector({ data }) {
   // ИСПРАВЛЕНО: Извлекаем teamId для авторизации в requireTeamPermission
@@ -67,18 +67,25 @@ export function ExternalOpponentSelector({ data }) {
               onClick={() => onSelect(opponent)}
               className="w-full p-4 bg-surface-level1 border border-surface-border rounded-2xl text-left flex items-center justify-between outline-none cursor-pointer hover:border-brand/30 transition-all active:scale-[0.99]"
             >
-              <div className="flex flex-col min-w-0 pr-2 text-left">
-                <span className="text-[14px] font-bold text-content-main truncate">{opponent.name}</span>
-                <span className="text-[10px] text-content-muted mt-0.5 truncate">
-                  {opponent.city} ({opponent.short_name})
-                </span>
+              <div className="flex items-center gap-3 min-w-0 pr-2 text-left">
+                <div className="w-9 h-9 rounded-xl bg-surface-level2 flex items-center justify-center shrink-0 overflow-hidden">
+                  {opponent.logo_url
+                    ? <img src={getImageUrl(opponent.logo_url)} alt="" className="w-full h-full object-contain p-1" />
+                    : <Icon name="team" className="w-4 h-4 text-content-subtle" />}
+                </div>
+                <div className="flex flex-col min-w-0">
+                  <span className="text-[14px] font-bold text-content-main truncate">{opponent.name}</span>
+                  <span className="text-[10px] text-content-muted mt-0.5 truncate">
+                    {opponent.city} ({opponent.short_name})
+                  </span>
+                </div>
               </div>
               <Icon name="chevron_right" className="w-4 h-4 text-content-subtle shrink-0" />
             </button>
           ))
         ) : (
-          <div className="text-center py-12 text-[14px] font-bold text-content-muted opacity-50">
-            Соперников не найдено
+          <div className="text-center py-12 px-4 text-[14px] font-bold text-content-muted opacity-50 leading-relaxed">
+            {search ? 'Соперников не найдено' : 'В составе турнира пока нет команд — добавьте их во вкладке «Команды» карточки турнира (⋯ → «Вне платформы»)'}
           </div>
         )}
       </div>
