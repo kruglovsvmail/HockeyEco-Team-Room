@@ -23,6 +23,7 @@ import analyticsRoutes from './routes/analyticsRoutes.js';
 import subscriptionRoutes from './routes/subscriptionRoutes.js';
 import policyRoutes from './routes/policyRoutes.js';
 import drillRoutes from './routes/drillRoutes.js';
+import leagueNoticeRoutes from './routes/leagueNoticeRoutes.js';
 import { processScheduledNotifications, processBirthdays, pollLmsGames, notifyReserveOffers } from './services/pushService.js';
 import { lockPastEventFees } from './utils/eventFees.js';
 import { rotateReserveOffers } from './utils/communityReserve.js';
@@ -87,6 +88,8 @@ app.use('/api/push', pushRoutes);
 app.use('/api/analytics', analyticsRoutes);
 app.use('/api/subscription', subscriptionRoutes);
 app.use('/api/policy', policyRoutes);
+// Уведомления команде от лиги (игрок введён в команду из LMS)
+app.use('/api/league-notices', leagueNoticeRoutes);
 // Тренерская — личная библиотека упражнений
 app.use('/api/drills', drillRoutes);
 app.use(profileRouter);

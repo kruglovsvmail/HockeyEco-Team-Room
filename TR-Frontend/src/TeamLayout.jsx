@@ -12,6 +12,7 @@ import { Sidebar } from './components/Sidebar';
 import { Header } from './components/Header';
 import { ConsentModal } from './components/ConsentModal';
 import { WelcomeTrialModal } from './components/WelcomeTrialModal';
+import { LeagueRosterNoticeModal } from './components/LeagueRosterNoticeModal';
 import { Icon } from './ui/Icon';
 import { PageLoader } from './ui/Loader';
 import { FadeIn } from './ui/FadeIn';
@@ -169,6 +170,38 @@ function TeamLayoutContent() {
     sessionStorage.removeItem('teampwa_welcome_trial');
     setShowWelcomeTrial(false);
   };
+
+  // Уведомления от лиги: лига из LMS ввела игрока в команду (режим общей базы), и
+  // владелец с руководителем должны об этом узнать при первом заходе. Показываем по
+  // одному, старые первыми; закрытое отмечаем на сервере, чтобы не показать снова.
+  const [leagueNotices, setLeagueNotices] = useState([]);
+  const leagueNoticesCheckedAt = useRef(0);
+
+  const fetchLeagueNotices = useCallback(async () => {
+    if (!getToken() || !navigator.onLine) return;
+    leagueNoticesCheckedAt.current = Date.now();
+    try {
+      const res = await fetch(`${import.meta.env.VITE_API_URL}/api/league-notices/pending`, { headers: getAuthHeaders() });
+      const json = await res.json();
+      if (json.success) setLeagueNotices(json.notices || []);
+    } catch (err) {
+      // Окно-уведомление не стоит того, чтобы шуметь при сбое сети
+    }
+  }, []);
+
+  const dismissLeagueNotice = useCallback(async () => {
+    const current = leagueNotices[0];
+    if (!current) return;
+    setLeagueNotices(prev => prev.filter(n => n.id !== current.id));
+    try {
+      await fetch(`${import.meta.env.VITE_API_URL}/api/league-notices/${current.id}/seen`, {
+        method: 'POST',
+        headers: getAuthHeaders(),
+      });
+    } catch (err) {
+      // Не отметилось — покажем ещё раз при следующем заходе, это лучше, чем потерять
+    }
+  }, [leagueNotices]);
 
   const [rightPanel, setRightPanel] = useState({ isOpen: false, type: null, data: null, title: '', previous: null });
   const [panel100, setPanel100] = useState({ isOpen: false, type: null, data: null, title: '' });
@@ -685,6 +718,21 @@ function TeamLayoutContent() {
       })
       .catch(() => {});
   }, [user?.id]);
+
+  // Уведомления от лиги проверяем при входе и при возвращении в приложение: PWA
+  // неделями живёт без перезагрузки, и «первый заход» для него — это возврат из фона.
+  // Не чаще раза в минуту: фокус скачет при каждом переключении вкладок.
+  useEffect(() => {
+    if (!user?.id) return;
+    fetchLeagueNotices();
+
+    const handleRefresh = () => {
+      if (Date.now() - leagueNoticesCheckedAt.current < 60_000) return;
+      fetchLeagueNotices();
+    };
+    window.addEventListener('app-global-refresh', handleRefresh);
+    return () => window.removeEventListener('app-global-refresh', handleRefresh);
+  }, [user?.id, fetchLeagueNotices]);
 
   const handleTeamChange = (team) => {
     setSelectedTeam(team);
@@ -1209,6 +1257,13 @@ function TeamLayoutContent() {
         isOpen={showWelcomeTrial && !needsConsent}
         expiresAt={user?.subscriptionExpiresAt || user?.subscription_expires_at}
         onClose={dismissWelcomeTrial}
+      />
+
+      {/* Лига ввела игрока в команду — последнее в очереди окон при входе: сначала
+          согласие с политикой и приветствие, потом уже новости от лиги */}
+      <LeagueRosterNoticeModal
+        notice={!needsConsent && !showWelcomeTrial ? (leagueNotices[0] || null) : null}
+        onClose={dismissLeagueNotice}
       />
 
     </div>
