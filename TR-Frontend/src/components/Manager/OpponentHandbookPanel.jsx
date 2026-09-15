@@ -50,13 +50,9 @@ const CustomBlock = ({ title, icon, isEditing, onAction, isSaving, children }) =
             onClick={onAction} 
             className="transition-colors p-1 text-content-subtle hover:text-brand outline-none cursor-pointer flex items-center justify-center rounded-lg hover:bg-surface-level2"
           >
-            {isEditing ? (
-              <svg className="w-4 h-4 text-brand" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3.5}>
-                <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
-              </svg>
-            ) : (
-              <Icon name="edit" className="w-4 h-4" />
-            )}
+            {/* Крестик — отмена правки, черновик откатывается; сохранение — кнопкой
+                внизу блока, как в остальных панелях с карандашиком. */}
+            <Icon name={isEditing ? 'close' : 'edit'} className={clsx('w-4 h-4', isEditing && 'text-brand')} />
           </button>
         )}
       </div>
@@ -65,6 +61,19 @@ const CustomBlock = ({ title, icon, isEditing, onAction, isSaving, children }) =
   );
 };
 
+// Кнопка сохранения блока — та же, что в остальных панелях с карандашиком.
+const SaveButton = ({ onClick, disabled, activeColor }) => (
+  <ButtonLP
+    variant="primary"
+    onClick={onClick}
+    disabled={disabled}
+    activeColor={activeColor}
+    className="w-full flex items-center justify-center gap-2 mt-4 py-2.5"
+  >
+    <span>Сохранить</span>
+  </ButtonLP>
+);
+
 export function OpponentHandbookPanel({ data, onClose }) {
   const { editingOpponent, loadData, onInitiateDelete, selectedTeam } = data;
 
@@ -72,6 +81,9 @@ export function OpponentHandbookPanel({ data, onClose }) {
   const [oppShort, setOppShort] = useState('');
   const [oppCity, setOppCity] = useState('');
   const [oppIsActive, setOppIsActive] = useState(true);
+  // Сохранённые значения: к ним откатывается черновик по крестику, и из них берутся
+  // поля, которые сейчас не правятся, когда сохраняется один блок.
+  const [saved, setSaved] = useState({ name: '', short: '', city: '', isActive: true });
   // Текущий логотип (ссылка в S3) и файл, выбранный до создания карточки: у нового
   // соперника ещё нет id, куда грузить, — файл ждёт, пока POST его не вернёт.
   const [oppLogoUrl, setOppLogoUrl] = useState(null);
@@ -111,6 +123,12 @@ export function OpponentHandbookPanel({ data, onClose }) {
       setOppShort(editingOpponent.short_name || '');
       setOppCity(editingOpponent.city || '');
       setOppIsActive(editingOpponent.status !== 'archive');
+      setSaved({
+        name: editingOpponent.name || '',
+        short: editingOpponent.short_name || '',
+        city: editingOpponent.city || '',
+        isActive: editingOpponent.status !== 'archive',
+      });
       setOppLogoUrl(editingOpponent.logo_url || null);
       setIsEditName(false);
       setIsEditCity(false);
@@ -121,6 +139,7 @@ export function OpponentHandbookPanel({ data, onClose }) {
       setOppShort('');
       setOppCity('');
       setOppIsActive(true);
+      setSaved({ name: '', short: '', city: '', isActive: true });
       setOppLogoUrl(null);
       setIsEditName(true);
       setIsEditCity(true);
@@ -158,35 +177,49 @@ export function OpponentHandbookPanel({ data, onClose }) {
     return () => window.removeEventListener('close-manager-right-panel', handleClosePanel);
   }, [onClose]);
 
-  // Атомарное сохранение отдельного измененного параметра при редактировании
+  // Черновики, их сеттеры и флаги правки по ключу блока — сохранение и откат
+  // одним кодом на все четыре блока.
+  const FIELD_OF = { name: 'name', city: 'city', short: 'short', status: 'isActive' };
+  const draftByKey = { name: oppName, city: oppCity, short: oppShort, status: oppIsActive };
+  const setDraftByKey = { name: setOppName, city: setOppCity, short: setOppShort, status: setOppIsActive };
+  const setEditByKey = { name: setIsEditName, city: setIsEditCity, short: setIsEditShort, status: setIsEditStatus };
+
+  // Сохранение одного блока: в запрос уходит его черновик плюс сохранённые значения
+  // остальных полей — незакрытые правки соседних блоков в базу не утекают.
   const handleSaveField = async (blockKey) => {
-    if (!oppName.trim() || !oppCity.trim() || !selectedTeam?.id) return;
+    if (!selectedTeam?.id) return;
+    const next = { ...saved, [FIELD_OF[blockKey]]: draftByKey[blockKey] };
+    if (!String(next.name).trim() || !String(next.city).trim()) return;
     setSavingBlock(blockKey);
     try {
       const res = await fetch(`${import.meta.env.VITE_API_URL}/api/manager/handbooks/external-opponents/${editingOpponent.id}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
-        body: JSON.stringify({ 
-          teamId: selectedTeam.id, 
-          name: oppName.trim(), 
-          short_name: oppShort.trim().toUpperCase(), 
-          city: oppCity.trim(),
-          status: oppIsActive ? 'active' : 'archive'
+        body: JSON.stringify({
+          teamId: selectedTeam.id,
+          name: String(next.name).trim(),
+          short_name: String(next.short).trim().toUpperCase(),
+          city: String(next.city).trim(),
+          status: next.isActive ? 'active' : 'archive'
         })
       });
 
       if (res.ok) {
+        setSaved(next);
+        setEditByKey[blockKey](false);
         loadData();
-        if (blockKey === 'name') setIsEditName(false);
-        if (blockKey === 'city') setIsEditCity(false);
-        if (blockKey === 'short') setIsEditShort(false);
-        if (blockKey === 'status') setIsEditStatus(false);
       }
     } catch (err) {
       console.error(err);
     } finally {
       setSavingBlock(null);
     }
+  };
+
+  // Крестик в шапке блока: черновик откатывается к сохранённому значению.
+  const handleCancelField = (blockKey) => {
+    setDraftByKey[blockKey](saved[FIELD_OF[blockKey]]);
+    setEditByKey[blockKey](false);
   };
 
   // Метод создания новой карточки соперника (POST)
@@ -248,17 +281,22 @@ export function OpponentHandbookPanel({ data, onClose }) {
             isEditing={isEditName}
             isSaving={savingBlock === 'name'}
             onAction={editingOpponent ? () => {
-              if (isEditName) handleSaveField('name');
+              if (isEditName) handleCancelField('name');
               else setIsEditName(true);
             } : null}
           >
             {isEditName ? (
-              <TextInputLP 
-                placeholder="Например: Динамо" 
-                value={oppName} 
-                onChange={setOppName} 
-                activeColor={activeBrandColor}
-              />
+              <>
+                <TextInputLP
+                  placeholder="Например: Динамо"
+                  value={oppName}
+                  onChange={setOppName}
+                  activeColor={activeBrandColor}
+                />
+                {editingOpponent && (
+                  <SaveButton onClick={() => handleSaveField('name')} disabled={!oppName.trim() || savingBlock === 'name'} activeColor={activeBrandColor} />
+                )}
+              </>
             ) : (
               <div className="text-[18px] font-black text-brand tracking-wide pt-1">
                 {oppName || '—'}
@@ -273,17 +311,22 @@ export function OpponentHandbookPanel({ data, onClose }) {
             isEditing={isEditCity}
             isSaving={savingBlock === 'city'}
             onAction={editingOpponent ? () => {
-              if (isEditCity) handleSaveField('city');
+              if (isEditCity) handleCancelField('city');
               else setIsEditCity(true);
             } : null}
           >
             {isEditCity ? (
-              <TextInputLP 
-                placeholder="Введите город команды" 
-                value={oppCity} 
-                onChange={setOppCity} 
-                activeColor={activeBrandColor}
-              />
+              <>
+                <TextInputLP
+                  placeholder="Введите город команды"
+                  value={oppCity}
+                  onChange={setOppCity}
+                  activeColor={activeBrandColor}
+                />
+                {editingOpponent && (
+                  <SaveButton onClick={() => handleSaveField('city')} disabled={!oppCity.trim() || savingBlock === 'city'} activeColor={activeBrandColor} />
+                )}
+              </>
             ) : (
               <div className="text-[14px] font-black text-content-main tracking-wide pt-1">
                 {oppCity || '—'}
@@ -298,18 +341,23 @@ export function OpponentHandbookPanel({ data, onClose }) {
             isEditing={isEditShort}
             isSaving={savingBlock === 'short'}
             onAction={editingOpponent ? () => {
-              if (isEditShort) handleSaveField('short');
+              if (isEditShort) handleCancelField('short');
               else setIsEditShort(true);
             } : null}
           >
             {isEditShort ? (
-              <TextInputLP 
-                maxLength={4}
-                placeholder="например: ДИН" 
-                value={oppShort} 
-                onChange={(val) => setOppShort(val.toUpperCase())} 
-                activeColor={activeBrandColor}
-              />
+              <>
+                <TextInputLP
+                  maxLength={4}
+                  placeholder="например: ДИН"
+                  value={oppShort}
+                  onChange={(val) => setOppShort(val.toUpperCase())}
+                  activeColor={activeBrandColor}
+                />
+                {editingOpponent && (
+                  <SaveButton onClick={() => handleSaveField('short')} disabled={savingBlock === 'short'} activeColor={activeBrandColor} />
+                )}
+              </>
             ) : (
               <div className="text-[14px] font-black text-content-main tracking-wide pt-1">
                 {oppShort || '—'}
@@ -351,18 +399,21 @@ export function OpponentHandbookPanel({ data, onClose }) {
             isEditing={isEditStatus}
             isSaving={savingBlock === 'status'}
             onAction={editingOpponent ? () => {
-              if (isEditStatus) handleSaveField('status');
+              if (isEditStatus) handleCancelField('status');
               else setIsEditStatus(true);
             } : null}
           >
             {isEditStatus ? (
               <div className="pt-1">
-                <CheckboxLP 
-                  checked={oppIsActive} 
-                  onChange={setOppIsActive} 
-                  label="Активный соперник" 
+                <CheckboxLP
+                  checked={oppIsActive}
+                  onChange={setOppIsActive}
+                  label="Активный соперник"
                   activeColor={activeBrandColor}
                 />
+                {editingOpponent && (
+                  <SaveButton onClick={() => handleSaveField('status')} disabled={savingBlock === 'status'} activeColor={activeBrandColor} />
+                )}
               </div>
             ) : (
               <div className="text-[14px] font-black text-content-main tracking-wide pt-1 flex items-center gap-1.5">

@@ -35,6 +35,18 @@ const InfoRow = ({ label, value, highlight = false }) => (
   </div>
 );
 
+// Кнопка сохранения блока — та же, что в остальных панелях с карандашиком.
+const SaveButton = ({ onClick, disabled }) => (
+  <ButtonLP
+    variant="primary"
+    onClick={onClick}
+    disabled={disabled}
+    className="w-full flex items-center justify-center gap-2 mt-4 py-2.5"
+  >
+    <span>Сохранить</span>
+  </ButtonLP>
+);
+
 // Переиспользуемый кастомный матовый блок с поддержкой индивидуального редактирования и лоадера сохранения
 const CustomBlock = ({ title, icon, isEditing, onAction, isSaving, children }) => {
   return (
@@ -63,13 +75,9 @@ const CustomBlock = ({ title, icon, isEditing, onAction, isSaving, children }) =
             onClick={onAction} 
             className="transition-colors p-1 text-content-subtle hover:text-brand outline-none cursor-pointer flex items-center justify-center rounded-lg hover:bg-surface-level2"
           >
-            {isEditing ? (
-              <svg className="w-4 h-4 text-brand" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3.5}>
-                <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
-              </svg>
-            ) : (
-              <Icon name="edit" className="w-4 h-4" />
-            )}
+            {/* Крестик — отмена правки, черновик откатывается; сохранение — кнопкой
+                внизу блока, как в остальных панелях с карандашиком. */}
+            <Icon name={isEditing ? 'close' : 'edit'} className={`w-4 h-4 ${isEditing ? 'text-brand' : ''}`} />
           </button>
         )}
       </div>
@@ -237,7 +245,6 @@ export function ProfilePage() {
       if (json.success) {
         triggerToast('Данные успешно синхронизированы', 'success');
 
-        if (blockKey === 'personal') setIsEditPersonal(false);
         if (blockKey === 'hockey') setIsEditHockey(false);
         if (blockKey === 'contacts') setIsEditContacts(false);
 
@@ -253,6 +260,16 @@ export function ProfilePage() {
     } finally {
       setSavingBlock(null);
     }
+  };
+
+  // Сохранение блока «Параметры и игровой хват»
+  const handleSaveHockey = () => {
+    editingRef.current.hockey = false;
+    handleSaveBlock('hockey', {
+      height: draftHockey.height ? parseInt(draftHockey.height, 10) : null,
+      weight: draftHockey.weight ? parseInt(draftHockey.weight, 10) : null,
+      grip: draftHockey.grip
+    });
   };
 
   // Сохранение блока контактов.
@@ -593,14 +610,12 @@ export function ProfilePage() {
                 icon="jersey"
                 isEditing={isEditHockey}
                 isSaving={savingBlock === 'hockey'}
+                // Крестик — отмена: черновик сбрасывается к сохранённым значениям
                 onAction={() => {
                   if (isEditHockey) {
                     editingRef.current.hockey = false;
-                    handleSaveBlock('hockey', { 
-                      height: draftHockey.height ? parseInt(draftHockey.height, 10) : null, 
-                      weight: draftHockey.weight ? parseInt(draftHockey.weight, 10) : null, 
-                      grip: draftHockey.grip
-                    });
+                    setDraftHockey({ height, weight, grip });
+                    setIsEditHockey(false);
                   } else {
                     setDraftHockey({ height, weight, grip });
                     editingRef.current.hockey = true;
@@ -629,10 +644,11 @@ export function ProfilePage() {
                           { value: 'left', label: 'Левый хват (L)' },
                           { value: 'right', label: 'Правый хват (R)' }
                         ]} 
-                        value={draftHockey.grip} 
-                        onChange={(v) => setDraftHockey(p => ({ ...p, grip: v }))} 
+                        value={draftHockey.grip}
+                        onChange={(v) => setDraftHockey(p => ({ ...p, grip: v }))}
                       />
                     </div>
+                    <SaveButton onClick={handleSaveHockey} disabled={savingBlock === 'hockey'} />
                   </div>
                 ) : (
                   <div className="flex flex-col">
@@ -653,7 +669,10 @@ export function ProfilePage() {
                 // возвращаться в редактирование полей нельзя — заявка уже создана на сервере
                 onAction={phoneVerify ? null : () => {
                   if (isEditContacts) {
-                    handleSaveContacts();
+                    // Крестик — отмена: черновик сбрасывается к сохранённым значениям
+                    editingRef.current.contacts = false;
+                    setDraftContacts({ email, phone });
+                    setIsEditContacts(false);
                   } else {
                     setDraftContacts({ email, phone });
                     editingRef.current.contacts = true;
@@ -670,7 +689,7 @@ export function ProfilePage() {
 
 
 
-                      <div className="text-[15px] font-sтщкьфд text-content-muted leading-relaxed">
+                      <div className="text-[15px] font-normal text-content-muted leading-relaxed">
                         Для подтверждения номера телефона, необходимо позвонить на номер ниже с телефона, который подтверждаете. Звонок бесплатный: робот произнесёт короткое сообщение и сам завершит вызов, отвечать не нужно.
                       </div>
                     </div>
@@ -708,7 +727,7 @@ export function ProfilePage() {
                   <div className="space-y-3 pt-1">
                     <TextInputLP label="Почта" value={draftContacts.email} onChange={(v) => setDraftContacts(p => ({ ...p, email: v }))} placeholder="example@mail.ru" />
                     <PhoneInputLP label="Телефон" value={draftContacts.phone} onChange={(v) => setDraftContacts(p => ({ ...p, phone: v }))} placeholder="900 000 00 00" />
-
+                    <SaveButton onClick={handleSaveContacts} disabled={savingBlock === 'contacts'} />
                   </div>
                 ) : (
                   <div className="flex flex-col">
@@ -728,7 +747,10 @@ export function ProfilePage() {
                 icon="lock"
                 isEditing={isEditPassword}
                 isSaving={savingBlock === 'password'}
-                onAction={() => setIsEditPassword(!isEditPassword)}
+                onAction={() => {
+                  if (isEditPassword) { setOldPassword(''); setNewPassword(''); }
+                  setIsEditPassword(!isEditPassword);
+                }}
               >
                 {isEditPassword ? (
                   <form onSubmit={handleChangePassword} className="space-y-6 pt-2 pb-2">
@@ -754,7 +776,10 @@ export function ProfilePage() {
                 icon="save"
                 isEditing={isEditPin}
                 isSaving={savingBlock === 'pin'}
-                onAction={() => setIsEditPin(!isEditPin)}
+                onAction={() => {
+                  if (isEditPin) setPinCode('');
+                  setIsEditPin(!isEditPin);
+                }}
               >
                 {isEditPin ? (
                   <form onSubmit={handleSavePin} className="space-y-3 pt-1">

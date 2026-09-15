@@ -49,13 +49,9 @@ const CustomBlock = ({ title, icon, isEditing, onAction, isSaving, children }) =
             onClick={onAction} 
             className="transition-colors p-1 text-content-subtle hover:text-brand outline-none cursor-pointer flex items-center justify-center rounded-lg hover:bg-surface-level2"
           >
-            {isEditing ? (
-              <svg className="w-4 h-4 text-brand" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3.5}>
-                <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
-              </svg>
-            ) : (
-              <Icon name="edit" className="w-4 h-4" />
-            )}
+            {/* Крестик — отмена правки, черновик откатывается; сохранение — кнопкой
+                внизу блока, как в остальных панелях с карандашиком. */}
+            <Icon name={isEditing ? 'close' : 'edit'} className={clsx('w-4 h-4', isEditing && 'text-brand')} />
           </button>
         )}
       </div>
@@ -73,6 +69,19 @@ const RosterLogo = ({ logoUrl }) => (
   </div>
 );
 
+// Кнопка сохранения блока — та же, что в остальных панелях с карандашиком.
+const SaveButton = ({ onClick, disabled, activeColor }) => (
+  <ButtonLP
+    variant="primary"
+    onClick={onClick}
+    disabled={disabled}
+    activeColor={activeColor}
+    className="w-full flex items-center justify-center gap-2 mt-4 py-2.5"
+  >
+    <span>Сохранить</span>
+  </ButtonLP>
+);
+
 export function TournamentHandbookPanel({ data, onClose }) {
   const { editingTournament, loadData, onInitiateDelete, selectedTeam } = data;
 
@@ -80,6 +89,9 @@ export function TournamentHandbookPanel({ data, onClose }) {
 
   const [tourName, setTourName] = useState('');
   const [tourIsActive, setTourIsActive] = useState(true);
+  // Сохранённые значения: к ним откатывается черновик по крестику, и из них берётся
+  // второе поле, когда сохраняется один блок.
+  const [saved, setSaved] = useState({ name: '', isActive: true });
   // Текущий логотип (ссылка в S3) и файл, выбранный до создания турнира: у нового
   // турнира ещё нет id, куда грузить, — файл ждёт, пока POST его не вернёт.
   const [tourLogoUrl, setTourLogoUrl] = useState(null);
@@ -94,7 +106,7 @@ export function TournamentHandbookPanel({ data, onClose }) {
   const [showOnlySelected, setShowOnlySelected] = useState(false);
 
   const [savingBlock, setSavingBlock] = useState(null);
-  const [isEditName, CancelIsEditName] = useState(!editingTournament);
+  const [isEditName, setIsEditName] = useState(!editingTournament);
   const [isEditStatus, setIsEditStatus] = useState(!editingTournament);
 
   // Ссылки для управления таймером задержки (Debounce) и отменой летящих запросов (AbortController)
@@ -122,8 +134,9 @@ export function TournamentHandbookPanel({ data, onClose }) {
     if (editingTournament) {
       setTourName(editingTournament.name || '');
       setTourIsActive(editingTournament.is_active ?? true);
+      setSaved({ name: editingTournament.name || '', isActive: editingTournament.is_active ?? true });
       setTourLogoUrl(editingTournament.logo_url || null);
-      CancelIsEditName(false);
+      setIsEditName(false);
       setIsEditStatus(false);
       setActivePanelTab('info');
       if (selectedTeam?.id) {
@@ -132,9 +145,10 @@ export function TournamentHandbookPanel({ data, onClose }) {
     } else {
       setTourName('');
       setTourIsActive(true);
+      setSaved({ name: '', isActive: true });
       setTourLogoUrl(null);
       setLeagueRoosterTeams([]);
-      CancelIsEditName(true);
+      setIsEditName(true);
       setIsEditStatus(true);
       setActivePanelTab('info');
     }
@@ -249,25 +263,38 @@ export function TournamentHandbookPanel({ data, onClose }) {
     });
   };
 
+  // Сохранение одного блока: его черновик плюс сохранённое значение второго поля —
+  // незакрытая правка соседнего блока в базу не утекает.
   const handleSaveField = async (blockKey) => {
-    if (!tourName.trim() || !selectedTeam?.id) return;
+    if (!selectedTeam?.id) return;
+    const next = blockKey === 'name'
+      ? { ...saved, name: tourName }
+      : { ...saved, isActive: tourIsActive };
+    if (!String(next.name).trim()) return;
     setSavingBlock(blockKey);
     try {
       const res = await fetch(`${import.meta.env.VITE_API_URL}/api/manager/handbooks/external-tournaments/${editingTournament.id}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
-        body: JSON.stringify({ teamId: selectedTeam.id, name: tourName.trim(), is_active: tourIsActive })
+        body: JSON.stringify({ teamId: selectedTeam.id, name: String(next.name).trim(), is_active: next.isActive })
       });
       if (res.ok) {
-        loadData();
-        if (blockKey === 'name') CancelIsEditName(false);
+        setSaved(next);
+        if (blockKey === 'name') setIsEditName(false);
         if (blockKey === 'status') setIsEditStatus(false);
+        loadData();
       }
     } catch (err) {
       console.error(err);
     } finally {
       setSavingBlock(null);
     }
+  };
+
+  // Крестик в шапке блока: черновик откатывается к сохранённому значению.
+  const handleCancelField = (blockKey) => {
+    if (blockKey === 'name') { setTourName(saved.name); setIsEditName(false); }
+    if (blockKey === 'status') { setTourIsActive(saved.isActive); setIsEditStatus(false); }
   };
 
   const handleCreateSubmit = async (e) => {
@@ -349,17 +376,22 @@ export function TournamentHandbookPanel({ data, onClose }) {
                 isEditing={isEditName}
                 isSaving={savingBlock === 'name'}
                 onAction={editingTournament ? () => {
-                  if (isEditName) handleSaveField('name');
-                  else CancelIsEditName(true);
+                  if (isEditName) handleCancelField('name');
+                  else setIsEditName(true);
                 } : null}
               >
                 {isEditName ? (
-                  <TextInputLP 
-                    placeholder="Например: ТХЛ (25/26)" 
-                    value={tourName} 
-                    onChange={setTourName} 
-                    activeColor={activeBrandColor}
-                  />
+                  <>
+                    <TextInputLP
+                      placeholder="Например: ТХЛ (25/26)"
+                      value={tourName}
+                      onChange={setTourName}
+                      activeColor={activeBrandColor}
+                    />
+                    {editingTournament && (
+                      <SaveButton onClick={() => handleSaveField('name')} disabled={!tourName.trim() || savingBlock === 'name'} activeColor={activeBrandColor} />
+                    )}
+                  </>
                 ) : (
                   <div className="text-[18px] font-black text-brand tracking-wide pt-1">
                     {tourName || '—'}
@@ -400,18 +432,21 @@ export function TournamentHandbookPanel({ data, onClose }) {
                 isEditing={isEditStatus}
                 isSaving={savingBlock === 'status'}
                 onAction={editingTournament ? () => {
-                  if (isEditStatus) handleSaveField('status');
+                  if (isEditStatus) handleCancelField('status');
                   else setIsEditStatus(true);
                 } : null}
               >
                 {isEditStatus ? (
                   <div className="pt-1">
-                    <CheckboxLP 
-                      checked={tourIsActive} 
-                      onChange={setTourIsActive} 
-                      label="Текущий активный" 
+                    <CheckboxLP
+                      checked={tourIsActive}
+                      onChange={setTourIsActive}
+                      label="Текущий активный"
                       activeColor={activeBrandColor}
                     />
+                    {editingTournament && (
+                      <SaveButton onClick={() => handleSaveField('status')} disabled={savingBlock === 'status'} activeColor={activeBrandColor} />
+                    )}
                   </div>
                 ) : (
                   <div className="text-[14px] font-black text-content-main tracking-wide pt-1 flex items-center gap-1.5">
