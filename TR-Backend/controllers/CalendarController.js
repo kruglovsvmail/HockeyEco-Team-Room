@@ -195,8 +195,10 @@ export const getEvents = async (req, res) => {
           COALESCE(my_team.ui_color, my_team.color_home_1)::varchar AS team_color,
           
           (CASE WHEN g.home_team_id = ut.team_id THEN g.away_team_id ELSE g.home_team_id END)::int AS opponent_team_id,
-          COALESCE(opp_team.name, ext_opp.name)::varchar AS opponent_name,
-          COALESCE(opp_team.logo_url, ext_opp.logo_url)::varchar AS opponent_logo_url,
+          -- Соперник в матче лиги — по слепку его заявки на дивизион (snap_*), снятому
+          -- LMS при допуске; своя команда показывается живой, как везде в кабинете
+          COALESCE(tt_opp.snap_name, opp_team.name, ext_opp.name)::varchar AS opponent_name,
+          COALESCE(tt_opp.snap_logo_url, opp_team.logo_url, ext_opp.logo_url)::varchar AS opponent_logo_url,
           
           (CASE WHEN g.home_team_id = ut.team_id THEN g.home_player_fee ELSE g.away_player_fee END)::numeric AS fixed_fee,
           g.home_score::int AS home_score,

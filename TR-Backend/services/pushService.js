@@ -31,12 +31,15 @@ export async function getMatchInfo(eventId, teamId = null) {
     `SELECT g.game_date, g.home_team_id, g.away_team_id, g.custom_timezone,
             COALESCE(a.name, g.location, 'Место не указано') AS arena,
             a.timezone AS arena_tz,
-            ht.name AS home_name, at_t.name AS away_name,
+            COALESCE(tt_h.snap_name, ht.name) AS home_name, COALESCE(tt_a.snap_name, at_t.name) AS away_name,
             eo.name AS ext_opponent_name
      FROM games g
      LEFT JOIN arenas a ON a.id = g.arena_id
      LEFT JOIN teams ht ON ht.id = g.home_team_id
      LEFT JOIN teams at_t ON at_t.id = g.away_team_id
+     -- Название по слепку заявки на дивизион (snap_name), снятому LMS при допуске
+     LEFT JOIN tournament_teams tt_h ON tt_h.division_id = g.division_id AND tt_h.team_id = g.home_team_id
+     LEFT JOIN tournament_teams tt_a ON tt_a.division_id = g.division_id AND tt_a.team_id = g.away_team_id
      LEFT JOIN external_opponents eo ON eo.id = g.away_external_id
      WHERE g.id = $1`, [eventId]
   );
@@ -628,11 +631,13 @@ export async function pollLmsGames() {
              g.push_game_date, g.push_arena_id,
              COALESCE(a.name, g.location, 'Место не указано') AS arena_name,
              a.timezone AS arena_tz,
-             ht.name AS home_name, at_t.name AS away_name
+             COALESCE(tt_h.snap_name, ht.name) AS home_name, COALESCE(tt_a.snap_name, at_t.name) AS away_name
       FROM games g
       LEFT JOIN arenas a ON a.id = g.arena_id
       LEFT JOIN teams ht ON ht.id = g.home_team_id
       LEFT JOIN teams at_t ON at_t.id = g.away_team_id
+      LEFT JOIN tournament_teams tt_h ON tt_h.division_id = g.division_id AND tt_h.team_id = g.home_team_id
+      LEFT JOIN tournament_teams tt_a ON tt_a.division_id = g.division_id AND tt_a.team_id = g.away_team_id
       WHERE g.game_type = 'official'
         AND g.home_team_id IS NOT NULL
         AND g.away_team_id IS NOT NULL

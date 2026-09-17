@@ -461,9 +461,10 @@ export const getMemberTeamStats = async (req, res) => {
         g.id, g.game_date, g.game_type,
         CASE WHEN g.home_team_id = $1 THEN g.home_score ELSE g.away_score END AS my_score,
         CASE WHEN g.home_team_id = $1 THEN g.away_score ELSE g.home_score END AS opp_score,
+        -- Соперник — по слепку его заявки на дивизион (snap_*), снятому LMS при допуске
         CASE WHEN g.home_team_id = $1
-          THEN COALESCE(t_away.short_name, t_away.name, eo.short_name, eo.name, g.external_title)
-          ELSE COALESCE(t_home.short_name, t_home.name)
+          THEN COALESCE(tt_away.snap_short_name, tt_away.snap_name, t_away.short_name, t_away.name, eo.short_name, eo.name, g.external_title)
+          ELSE COALESCE(tt_home.snap_short_name, tt_home.snap_name, t_home.short_name, t_home.name)
         END AS opponent_name,
         (gr.id IS NOT NULL) AS attended,
         d.id AS division_id, d.name AS division_name, d.logo_url AS division_logo, s.name AS season_name, l.short_name AS league_name,
@@ -479,6 +480,8 @@ ${pgsFields}
       LEFT JOIN leagues l ON s.league_id = l.id
       LEFT JOIN teams t_home ON g.home_team_id = t_home.id
       LEFT JOIN teams t_away ON g.away_team_id = t_away.id
+      LEFT JOIN tournament_teams tt_home ON tt_home.division_id = g.division_id AND tt_home.team_id = g.home_team_id
+      LEFT JOIN tournament_teams tt_away ON tt_away.division_id = g.division_id AND tt_away.team_id = g.away_team_id
       LEFT JOIN external_opponents eo ON g.away_external_id = eo.id
       WHERE g.status = 'finished' AND g.game_type = 'official' AND (g.home_team_id = $1 OR g.away_team_id = $1)
 

@@ -65,12 +65,14 @@ class TournamentController {
           g.is_technical,
           g.home_team_id,
           g.away_team_id,
-          t_home.name as home_team_name,
-          t_home.short_name as home_team_short_name,
-          t_home.logo_url as home_team_logo,
-          t_away.name as away_team_name,
-          t_away.short_name as away_team_short_name,
-          t_away.logo_url as away_team_logo,
+          -- Название, аббревиатура и лого — по слепку заявки на дивизион (snap_*),
+          -- снятому LMS при допуске; пока слепка нет — живое из teams
+          COALESCE(tt_home.snap_name, t_home.name) as home_team_name,
+          COALESCE(tt_home.snap_short_name, t_home.short_name) as home_team_short_name,
+          COALESCE(tt_home.snap_logo_url, t_home.logo_url) as home_team_logo,
+          COALESCE(tt_away.snap_name, t_away.name) as away_team_name,
+          COALESCE(tt_away.snap_short_name, t_away.short_name) as away_team_short_name,
+          COALESCE(tt_away.snap_logo_url, t_away.logo_url) as away_team_logo,
           COALESCE(a.name, g.location) as arena_name,
           a.city as arena_city,
           a.address as arena_address,
@@ -85,6 +87,8 @@ class TournamentController {
         FROM games g
         LEFT JOIN teams t_home ON g.home_team_id = t_home.id
         LEFT JOIN teams t_away ON g.away_team_id = t_away.id
+        LEFT JOIN tournament_teams tt_home ON tt_home.division_id = g.division_id AND tt_home.team_id = g.home_team_id
+        LEFT JOIN tournament_teams tt_away ON tt_away.division_id = g.division_id AND tt_away.team_id = g.away_team_id
         LEFT JOIN arenas a ON g.arena_id = a.id
         WHERE g.division_id = $1
         ORDER BY 
@@ -121,11 +125,13 @@ class TournamentController {
       const query = `
         SELECT 
           ds.*,
-          t.name as team_name,
-          t.short_name as team_short_name,
-          t.logo_url as team_logo
+          -- Слепок заявки (snap_*) важнее живого профиля команды
+          COALESCE(tt.snap_name, t.name) as team_name,
+          COALESCE(tt.snap_short_name, t.short_name) as team_short_name,
+          COALESCE(tt.snap_logo_url, t.logo_url) as team_logo
         FROM division_standings ds
         JOIN teams t ON ds.team_id = t.id
+        LEFT JOIN tournament_teams tt ON tt.division_id = ds.division_id AND tt.team_id = ds.team_id
         WHERE ds.division_id = $1
         ORDER BY ds.rank ASC, ds.points DESC
       `;
@@ -170,15 +176,17 @@ class TournamentController {
           pm.team1_wins,
           pm.team2_wins,
           pm.winner_id,
-          t1.name as team1_name,
-          t1.logo_url as team1_logo,
-          t2.name as team2_name,
-          t2.logo_url as team2_logo
+          COALESCE(tt1.snap_name, t1.name) as team1_name,
+          COALESCE(tt1.snap_logo_url, t1.logo_url) as team1_logo,
+          COALESCE(tt2.snap_name, t2.name) as team2_name,
+          COALESCE(tt2.snap_logo_url, t2.logo_url) as team2_logo
         FROM playoff_brackets pb
         JOIN playoff_rounds pr ON pb.id = pr.bracket_id
         LEFT JOIN playoff_matchups pm ON pr.id = pm.round_id
         LEFT JOIN teams t1 ON pm.team1_id = t1.id
         LEFT JOIN teams t2 ON pm.team2_id = t2.id
+        LEFT JOIN tournament_teams tt1 ON tt1.division_id = pb.division_id AND tt1.team_id = pm.team1_id
+        LEFT JOIN tournament_teams tt2 ON tt2.division_id = pb.division_id AND tt2.team_id = pm.team2_id
         WHERE pb.division_id = $1
         ORDER BY pb.is_main DESC, pb.id ASC, pr.order_index ASC, pm.matchup_number ASC
       `;
@@ -228,8 +236,8 @@ class TournamentController {
             -- должно оставаться тем, что допустили (см. updateTournamentRosterStatus в LMS)
             COALESCE(tr.photo_snapshot_url, tm.photo_url) AS photo_url,
             tt.team_id AS team_id,
-            t.name AS team_name,
-            t.logo_url AS team_logo,
+            COALESCE(tt.snap_name, t.name) AS team_name,
+            COALESCE(tt.snap_logo_url, t.logo_url) AS team_logo,
             COALESCE(s.games_played, 0)                          AS games_played,
             COALESCE(s.goals, 0)                                 AS goals,
             COALESCE(s.assists, 0)                               AS assists,
@@ -285,8 +293,8 @@ class TournamentController {
             -- должно оставаться тем, что допустили (см. updateTournamentRosterStatus в LMS)
             COALESCE(tr.photo_snapshot_url, tm.photo_url) AS photo_url,
             tt.team_id AS team_id,
-            t.name AS team_name,
-            t.logo_url AS team_logo,
+            COALESCE(tt.snap_name, t.name) AS team_name,
+            COALESCE(tt.snap_logo_url, t.logo_url) AS team_logo,
             COALESCE(s.games_played, 0)                          AS games_played,
             COALESCE(s.goals_against, 0)                         AS goals_against,
             COALESCE(s.saves, 0)                                 AS saves,

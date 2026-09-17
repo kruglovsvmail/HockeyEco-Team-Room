@@ -28,7 +28,7 @@ export const getPlayerProfile = async (req, res) => {
                        'divisionName', sub.division_name
                      ) AS photo
               FROM (
-                SELECT tr.photo_snapshot_url AS photo_url, t.logo_url AS team_logo, t.id AS team_id,
+                SELECT tr.photo_snapshot_url AS photo_url, COALESCE(tt.snap_logo_url, t.logo_url) AS team_logo, t.id AS team_id,
                        d.logo_url AS division_logo, d.name AS division_name
                 FROM "public".tournament_rosters tr
                 JOIN "public".tournament_teams tt ON tt.id = tr.tournament_team_id
@@ -276,15 +276,17 @@ export const getPlayerProfile = async (req, res) => {
         g.home_team_id,
         g.away_team_id,
 
-        t_home.short_name as home_team,
-        t_home.name as home_team_full,
-        t_home.logo_url as home_team_logo,
-        t_home.city as home_team_city,
+        -- Команды — по слепку заявки на дивизион (snap_*), снятому LMS при допуске:
+        -- история матчей должна показывать то название и лого, под которыми играли
+        COALESCE(tt_home.snap_short_name, t_home.short_name) as home_team,
+        COALESCE(tt_home.snap_name, t_home.name) as home_team_full,
+        COALESCE(tt_home.snap_logo_url, t_home.logo_url) as home_team_logo,
+        COALESCE(tt_home.snap_city, t_home.city) as home_team_city,
 
-        COALESCE(t_away.short_name, eo.short_name) as away_team,
-        COALESCE(t_away.name, eo.name) as away_team_full,
-        COALESCE(t_away.logo_url, eo.logo_url) as away_team_logo,
-        COALESCE(t_away.city, eo.city) as away_team_city,
+        COALESCE(tt_away.snap_short_name, t_away.short_name, eo.short_name) as away_team,
+        COALESCE(tt_away.snap_name, t_away.name, eo.name) as away_team_full,
+        COALESCE(tt_away.snap_logo_url, t_away.logo_url, eo.logo_url) as away_team_logo,
+        COALESCE(tt_away.snap_city, t_away.city, eo.city) as away_team_city,
 
         gr.team_id as player_team_id,
         gr.position_in_line as position
@@ -295,6 +297,8 @@ export const getPlayerProfile = async (req, res) => {
       LEFT JOIN "public"."leagues" l ON s.league_id = l.id
       JOIN "public"."teams" t_home ON g.home_team_id = t_home.id
       LEFT JOIN "public"."teams" t_away ON g.away_team_id = t_away.id
+      LEFT JOIN "public"."tournament_teams" tt_home ON tt_home.division_id = g.division_id AND tt_home.team_id = g.home_team_id
+      LEFT JOIN "public"."tournament_teams" tt_away ON tt_away.division_id = g.division_id AND tt_away.team_id = g.away_team_id
       LEFT JOIN "public"."external_opponents" eo ON g.away_external_id = eo.id
       WHERE gr.player_id = $1 AND g.status = 'finished'
       ORDER BY g.game_date DESC
