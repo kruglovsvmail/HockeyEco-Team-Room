@@ -814,6 +814,8 @@ const loadApplicationLeagueId = async (client, appId) => {
 
 // Согласие общее на все заявки человека в лиге, поэтому его замена возвращает на
 // проверку допуск во всех действующих заявках этой лиги, а не только в той, откуда грузили.
+// Но только там, где дивизион согласие требует: заявке без req_consent этот документ
+// безразличен, и трогать её допуск не за что.
 const resetAdmissionForLeagueConsent = async (client, leagueId, userId) => {
   const { rows } = await client.query(`
     SELECT DISTINCT tt.id
@@ -821,6 +823,7 @@ const resetAdmissionForLeagueConsent = async (client, leagueId, userId) => {
       JOIN divisions d ON d.id = tt.division_id
       JOIN seasons s ON s.id = d.season_id
      WHERE s.league_id = $1
+       AND d.req_consent = true
        AND (EXISTS (SELECT 1 FROM tournament_rosters tr
                      WHERE tr.tournament_team_id = tt.id AND tr.player_id = $2 AND tr.period_end IS NULL)
          OR EXISTS (SELECT 1 FROM tournament_team_roles ttr
