@@ -171,8 +171,8 @@ const APPLICATION_SELECT_SQL = `
                  'id', tr.id, 'player_id', tr.player_id, 'jersey_number', tr.jersey_number,
                  'position', tr.position, 'is_captain', tr.is_captain, 'is_assistant', tr.is_assistant,
                  'application_status', tr.application_status,
-                 'medical_url', tpd.medical_url, 'insurance_url', tpd.insurance_url, 'consent_url', tpd.consent_url,
-                 'medical_expires_at', tpd.medical_expires_at, 'insurance_expires_at', tpd.insurance_expires_at, 'consent_expires_at', tpd.consent_expires_at,
+                 'medical_url', tpd.medical_url, 'insurance_url', tpd.insurance_url, 'consent_url', ulc.consent_url,
+                 'medical_expires_at', tpd.medical_expires_at, 'insurance_expires_at', tpd.insurance_expires_at, 'consent_expires_at', ulc.consent_expires_at,
                  'first_name', u.first_name, 'last_name', u.last_name,
                  'user_avatar_url', u.avatar_url,
                  'team_member_photo_url', tm.photo_url,
@@ -196,9 +196,13 @@ const APPLICATION_SELECT_SQL = `
              FROM tournament_rosters tr
              JOIN users u ON tr.player_id = u.id
              -- Документы допуска лежат на паре «заявка + человек»: у играющего
-             -- представителя они одни и те же и в составе, и в штабе
+             -- представителя они одни и те же и в составе, и в штабе. Согласие на ПД —
+             -- на паре «человек + лига» (user_league_consents): сменил команду внутри
+             -- лиги — согласие переехало с ним
              LEFT JOIN tournament_person_docs tpd
                     ON tpd.tournament_team_id = tt.id AND tpd.user_id = u.id
+             LEFT JOIN user_league_consents ulc
+                    ON ulc.user_id = u.id AND ulc.league_id = s.league_id
              LEFT JOIN team_members tm ON tm.user_id = u.id AND tm.team_id = tt.team_id
              LEFT JOIN user_qualifications uq
                     ON uq.user_id = u.id AND uq.league_id = s.league_id AND uq.ended_at IS NULL
@@ -216,8 +220,8 @@ const APPLICATION_SELECT_SQL = `
                  'team_member_photo_url', tm.photo_url,
                  -- Те же документы допуска, что и у игроков: дивизион требует их с
                  -- представителей по тем же флагам req_med_cert / req_insurance / req_consent
-                 'medical_url', tpd.medical_url, 'insurance_url', tpd.insurance_url, 'consent_url', tpd.consent_url,
-                 'medical_expires_at', tpd.medical_expires_at, 'insurance_expires_at', tpd.insurance_expires_at, 'consent_expires_at', tpd.consent_expires_at,
+                 'medical_url', tpd.medical_url, 'insurance_url', tpd.insurance_url, 'consent_url', ulc.consent_url,
+                 'medical_expires_at', tpd.medical_expires_at, 'insurance_expires_at', tpd.insurance_expires_at, 'consent_expires_at', ulc.consent_expires_at,
                  -- Допуск представителя. Лежит отдельно от ролей (ролей у человека может быть
                  -- несколько, а допуск один), строка заводится по первому щелчку тумблера
                  -- лигой — поэтому её отсутствие и есть «не допущен».
@@ -227,6 +231,8 @@ const APPLICATION_SELECT_SQL = `
              JOIN users u ON ttr.user_id = u.id
              LEFT JOIN tournament_person_docs tpd
                     ON tpd.tournament_team_id = tt.id AND tpd.user_id = u.id
+             LEFT JOIN user_league_consents ulc
+                    ON ulc.user_id = u.id AND ulc.league_id = s.league_id
              LEFT JOIN tournament_staff_admission tsa
                     ON tsa.tournament_team_id = tt.id AND tsa.user_id = u.id
              LEFT JOIN team_members tm ON tm.user_id = u.id AND tm.team_id = tt.team_id
@@ -672,6 +678,12 @@ export const addPlayersToApplication = async (req, res) => {
           VALUES ${insertValues.join(', ')}
         `, insertParams);
       }
+
+      // Новый игрок заводится «на проверке», но тот же человек может быть уже допущен как
+      // представитель — а допуск у человека один на обе сущности. Команда внесла его в
+      // состав сама, значит у лиги появились непроверенные номер и амплуа: снимаем допуск
+      // и представителю тоже, как при любой правке команды (utils/admissionReset.js).
+      await resetAdmissionForPersons(client, appId, playerIds);
     }
 
     await client.query('COMMIT');
@@ -783,6 +795,42 @@ const personDocKey = (appId, userId, type) => `uploads/tournament_person_${appId
 // Ключ файлов, загруженных до переезда документов: они лежат от строки ростера.
 const legacyDocKey = (type) => new RegExp(`^uploads/tournament_rosters_\\d+_${type}`);
 
+// Согласие на ПД принадлежит паре «человек + лига» (user_league_consents) и переезжает
+// с человеком между командами, поэтому прежний файл мог быть загружен под другой заявкой
+// или подписан на сайте лиги. Своим считаем любой файл согласия этого человека.
+const consentDocKey = (userId) => new RegExp(`^uploads/tournament_person_\\d+_${userId}_consent`);
+
+// Лига заявки — адрес согласия
+const loadApplicationLeagueId = async (client, appId) => {
+  const { rows } = await client.query(`
+    SELECT s.league_id
+      FROM tournament_teams tt
+      JOIN divisions d ON d.id = tt.division_id
+      JOIN seasons s ON s.id = d.season_id
+     WHERE tt.id = $1
+  `, [appId]);
+  return rows[0]?.league_id ?? null;
+};
+
+// Согласие общее на все заявки человека в лиге, поэтому его замена возвращает на
+// проверку допуск во всех действующих заявках этой лиги, а не только в той, откуда грузили.
+const resetAdmissionForLeagueConsent = async (client, leagueId, userId) => {
+  const { rows } = await client.query(`
+    SELECT DISTINCT tt.id
+      FROM tournament_teams tt
+      JOIN divisions d ON d.id = tt.division_id
+      JOIN seasons s ON s.id = d.season_id
+     WHERE s.league_id = $1
+       AND (EXISTS (SELECT 1 FROM tournament_rosters tr
+                     WHERE tr.tournament_team_id = tt.id AND tr.player_id = $2 AND tr.period_end IS NULL)
+         OR EXISTS (SELECT 1 FROM tournament_team_roles ttr
+                     WHERE ttr.tournament_team_id = tt.id AND ttr.user_id = $2 AND ttr.left_at IS NULL))
+  `, [leagueId, userId]);
+  for (const row of rows) {
+    await resetAdmissionForPersons(client, row.id, [userId]);
+  }
+};
+
 // Прежний файл документа в S3 после замены. Вызывать строго ПОСЛЕ успешной записи в БД:
 // иначе сбой на UPDATE оставил бы заявку со ссылкой на уже удалённый файл.
 const deleteReplacedPersonDoc = async (previousUrl, newUrl, appId, userId, type) => {
@@ -791,7 +839,9 @@ const deleteReplacedPersonDoc = async (previousUrl, newUrl, appId, userId, type)
 
   // Трогаем только файлы этого же слота документа — своего формата ключа или старого,
   // от строки ростера. Ссылка на что-то постороннее удаляться не должна.
-  const isOwn = key.startsWith(personDocKey(appId, userId, type)) || legacyDocKey(type).test(key);
+  const isOwn = key.startsWith(personDocKey(appId, userId, type))
+    || legacyDocKey(type).test(key)
+    || (type === 'consent' && consentDocKey(userId).test(key));
   if (!isOwn) return;
 
   await s3
@@ -818,17 +868,26 @@ const assertPersonInApplication = async (client, appId, userId) => {
   }
 };
 
-const loadPersonDocs = async (client, appId, userId) => {
+// Справка и страховка — на паре «заявка + человек», согласие — на паре «человек + лига»
+const loadPersonDocs = async (client, appId, userId, leagueId) => {
   const { rows } = await client.query(
-    `SELECT medical_url, insurance_url, consent_url FROM tournament_person_docs
-      WHERE tournament_team_id = $1 AND user_id = $2`,
-    [appId, userId]
+    `SELECT tpd.medical_url, tpd.insurance_url, ulc.consent_url
+       FROM (SELECT $1::int AS app_id, $2::int AS user_id) k
+       LEFT JOIN tournament_person_docs tpd
+              ON tpd.tournament_team_id = k.app_id AND tpd.user_id = k.user_id
+       LEFT JOIN user_league_consents ulc
+              ON ulc.user_id = k.user_id AND ulc.league_id = $3`,
+    [appId, userId, leagueId]
   );
   return rows[0] || {};
 };
 
 // Запись документов одного человека. Строка заводится по факту первой загрузки.
-const savePersonDocs = async (client, appId, userId, patch) => {
+//
+// Согласие уходит в user_league_consents. В старые колонки consent_* заявки оно пишется
+// параллельно — страховка на время переезда: откат кода читал бы их и ничего бы не
+// потерял. Читать их уже никто не должен.
+const savePersonDocs = async (client, appId, userId, leagueId, patch) => {
   const columns = Object.keys(patch);
   if (columns.length === 0) return;
 
@@ -843,6 +902,25 @@ const savePersonDocs = async (client, appId, userId, patch) => {
     ON CONFLICT ON CONSTRAINT tournament_person_docs_unique
     DO UPDATE SET ${updates.join(', ')}, updated_at = NOW()
   `, values);
+
+  if (!leagueId) return;
+  if ('consent_url' in patch && patch.consent_url) {
+    const hasExpires = 'consent_expires_at' in patch;
+    await client.query(`
+      INSERT INTO user_league_consents (user_id, league_id, consent_url, consent_expires_at, source)
+      VALUES ($1, $2, $3, $4, 'team_room')
+      ON CONFLICT (user_id, league_id)
+      DO UPDATE SET consent_url = EXCLUDED.consent_url,
+                    consent_expires_at = CASE WHEN $5::boolean THEN EXCLUDED.consent_expires_at ELSE user_league_consents.consent_expires_at END,
+                    source = EXCLUDED.source,
+                    updated_at = NOW()
+    `, [userId, leagueId, patch.consent_url, hasExpires ? (patch.consent_expires_at || null) : null, hasExpires]);
+  } else if ('consent_expires_at' in patch) {
+    await client.query(`
+      UPDATE user_league_consents SET consent_expires_at = $3, updated_at = NOW()
+       WHERE user_id = $1 AND league_id = $2
+    `, [userId, leagueId, patch.consent_expires_at || null]);
+  }
 };
 
 // POST /:teamId/applications/:appId/docs/:userId (multipart: insurance?, medical?, consent?)
@@ -855,10 +933,11 @@ export const uploadPersonDocs = async (req, res) => {
 
     await assertApplicationEditable(pool, appId, teamId);
     await assertPersonInApplication(pool, appId, userId);
+    const leagueId = await loadApplicationLeagueId(pool, appId);
 
     // Ссылки на текущие файлы забираем до записи: после UPDATE узнать, что лежало
     // раньше, уже неоткуда, а старые объекты надо убрать из бакета.
-    const previous = await loadPersonDocs(pool, appId, userId);
+    const previous = await loadPersonDocs(pool, appId, userId, leagueId);
 
     const files = req.files || {};
     const patch = {};
@@ -876,13 +955,17 @@ export const uploadPersonDocs = async (req, res) => {
       if (expires !== undefined) patch[`${type}_expires_at`] = expires || null;
     }
 
-    await savePersonDocs(pool, appId, userId, patch);
+    await savePersonDocs(pool, appId, userId, leagueId, patch);
 
     // Панель документов сохраняет каждое действие сразу и по одному документу за раз
     // (см. PlayerDocsModal — общей кнопки «Сохранить» там нет). Значит непустой patch
     // это всегда осознанная замена файла или сдвиг срока, и допуск уходит на перепроверку.
+    // Согласие общее на лигу — перепроверка нужна во всех заявках человека в ней.
     if (Object.keys(patch).length > 0) {
       await resetAdmissionForPersons(pool, appId, [userId]);
+      if (leagueId && ('consent_url' in patch || 'consent_expires_at' in patch)) {
+        await resetAdmissionForLeagueConsent(pool, leagueId, userId);
+      }
     }
 
     for (const type of DOC_TYPES) {
