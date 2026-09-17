@@ -171,8 +171,8 @@ const APPLICATION_SELECT_SQL = `
                  'id', tr.id, 'player_id', tr.player_id, 'jersey_number', tr.jersey_number,
                  'position', tr.position, 'is_captain', tr.is_captain, 'is_assistant', tr.is_assistant,
                  'application_status', tr.application_status,
-                 'medical_url', tpd.medical_url, 'insurance_url', tpd.insurance_url, 'consent_url', ulc.consent_url,
-                 'medical_expires_at', tpd.medical_expires_at, 'insurance_expires_at', tpd.insurance_expires_at, 'consent_expires_at', ulc.consent_expires_at,
+                 'medical_url', tpd.medical_url, 'insurance_url', tpd.insurance_url, 'consent_url', usc.consent_url,
+                 'medical_expires_at', tpd.medical_expires_at, 'insurance_expires_at', tpd.insurance_expires_at, 'consent_expires_at', usc.consent_expires_at,
                  'first_name', u.first_name, 'last_name', u.last_name,
                  'user_avatar_url', u.avatar_url,
                  'team_member_photo_url', tm.photo_url,
@@ -197,12 +197,12 @@ const APPLICATION_SELECT_SQL = `
              JOIN users u ON tr.player_id = u.id
              -- Документы допуска лежат на паре «заявка + человек»: у играющего
              -- представителя они одни и те же и в составе, и в штабе. Согласие на ПД —
-             -- на паре «человек + лига» (user_league_consents): сменил команду внутри
-             -- лиги — согласие переехало с ним
+             -- на паре «человек + сезон» (user_season_consents): сменил команду внутри
+             -- сезона — согласие переехало с ним
              LEFT JOIN tournament_person_docs tpd
                     ON tpd.tournament_team_id = tt.id AND tpd.user_id = u.id
-             LEFT JOIN user_league_consents ulc
-                    ON ulc.user_id = u.id AND ulc.league_id = s.league_id
+             LEFT JOIN user_season_consents usc
+                    ON usc.user_id = u.id AND usc.season_id = s.id
              LEFT JOIN team_members tm ON tm.user_id = u.id AND tm.team_id = tt.team_id
              LEFT JOIN user_qualifications uq
                     ON uq.user_id = u.id AND uq.league_id = s.league_id AND uq.ended_at IS NULL
@@ -220,8 +220,8 @@ const APPLICATION_SELECT_SQL = `
                  'team_member_photo_url', tm.photo_url,
                  -- Те же документы допуска, что и у игроков: дивизион требует их с
                  -- представителей по тем же флагам req_med_cert / req_insurance / req_consent
-                 'medical_url', tpd.medical_url, 'insurance_url', tpd.insurance_url, 'consent_url', ulc.consent_url,
-                 'medical_expires_at', tpd.medical_expires_at, 'insurance_expires_at', tpd.insurance_expires_at, 'consent_expires_at', ulc.consent_expires_at,
+                 'medical_url', tpd.medical_url, 'insurance_url', tpd.insurance_url, 'consent_url', usc.consent_url,
+                 'medical_expires_at', tpd.medical_expires_at, 'insurance_expires_at', tpd.insurance_expires_at, 'consent_expires_at', usc.consent_expires_at,
                  -- Допуск представителя. Лежит отдельно от ролей (ролей у человека может быть
                  -- несколько, а допуск один), строка заводится по первому щелчку тумблера
                  -- лигой — поэтому её отсутствие и есть «не допущен».
@@ -231,8 +231,8 @@ const APPLICATION_SELECT_SQL = `
              JOIN users u ON ttr.user_id = u.id
              LEFT JOIN tournament_person_docs tpd
                     ON tpd.tournament_team_id = tt.id AND tpd.user_id = u.id
-             LEFT JOIN user_league_consents ulc
-                    ON ulc.user_id = u.id AND ulc.league_id = s.league_id
+             LEFT JOIN user_season_consents usc
+                    ON usc.user_id = u.id AND usc.season_id = s.id
              LEFT JOIN tournament_staff_admission tsa
                     ON tsa.tournament_team_id = tt.id AND tsa.user_id = u.id
              LEFT JOIN team_members tm ON tm.user_id = u.id AND tm.team_id = tt.team_id
@@ -795,40 +795,38 @@ const personDocKey = (appId, userId, type) => `uploads/tournament_person_${appId
 // Ключ файлов, загруженных до переезда документов: они лежат от строки ростера.
 const legacyDocKey = (type) => new RegExp(`^uploads/tournament_rosters_\\d+_${type}`);
 
-// Согласие на ПД принадлежит паре «человек + лига» (user_league_consents) и переезжает
+// Согласие на ПД принадлежит паре «человек + сезон» (user_season_consents) и переезжает
 // с человеком между командами, поэтому прежний файл мог быть загружен под другой заявкой
 // или подписан на сайте лиги. Своим считаем любой файл согласия этого человека.
 const consentDocKey = (userId) => new RegExp(`^uploads/tournament_person_\\d+_${userId}_consent`);
 
-// Лига заявки — адрес согласия
-const loadApplicationLeagueId = async (client, appId) => {
+// Сезон заявки — адрес согласия
+const loadApplicationSeasonId = async (client, appId) => {
   const { rows } = await client.query(`
-    SELECT s.league_id
+    SELECT d.season_id
       FROM tournament_teams tt
       JOIN divisions d ON d.id = tt.division_id
-      JOIN seasons s ON s.id = d.season_id
      WHERE tt.id = $1
   `, [appId]);
-  return rows[0]?.league_id ?? null;
+  return rows[0]?.season_id ?? null;
 };
 
-// Согласие общее на все заявки человека в лиге, поэтому его замена возвращает на
-// проверку допуск во всех действующих заявках этой лиги, а не только в той, откуда грузили.
-// Но только там, где дивизион согласие требует: заявке без req_consent этот документ
-// безразличен, и трогать её допуск не за что.
-const resetAdmissionForLeagueConsent = async (client, leagueId, userId) => {
+// Согласие общее на все заявки человека в сезоне, поэтому его замена возвращает на
+// проверку допуск во всех действующих заявках этого сезона, а не только в той, откуда
+// грузили. Но только там, где дивизион согласие требует: заявке без req_consent этот
+// документ безразличен, и трогать её допуск не за что.
+const resetAdmissionForSeasonConsent = async (client, seasonId, userId) => {
   const { rows } = await client.query(`
     SELECT DISTINCT tt.id
       FROM tournament_teams tt
       JOIN divisions d ON d.id = tt.division_id
-      JOIN seasons s ON s.id = d.season_id
-     WHERE s.league_id = $1
+     WHERE d.season_id = $1
        AND d.req_consent = true
        AND (EXISTS (SELECT 1 FROM tournament_rosters tr
                      WHERE tr.tournament_team_id = tt.id AND tr.player_id = $2 AND tr.period_end IS NULL)
          OR EXISTS (SELECT 1 FROM tournament_team_roles ttr
                      WHERE ttr.tournament_team_id = tt.id AND ttr.user_id = $2 AND ttr.left_at IS NULL))
-  `, [leagueId, userId]);
+  `, [seasonId, userId]);
   for (const row of rows) {
     await resetAdmissionForPersons(client, row.id, [userId]);
   }
@@ -871,26 +869,26 @@ const assertPersonInApplication = async (client, appId, userId) => {
   }
 };
 
-// Справка и страховка — на паре «заявка + человек», согласие — на паре «человек + лига»
-const loadPersonDocs = async (client, appId, userId, leagueId) => {
+// Справка и страховка — на паре «заявка + человек», согласие — на паре «человек + сезон»
+const loadPersonDocs = async (client, appId, userId, seasonId) => {
   const { rows } = await client.query(
-    `SELECT tpd.medical_url, tpd.insurance_url, ulc.consent_url
+    `SELECT tpd.medical_url, tpd.insurance_url, usc.consent_url
        FROM (SELECT $1::int AS app_id, $2::int AS user_id) k
        LEFT JOIN tournament_person_docs tpd
               ON tpd.tournament_team_id = k.app_id AND tpd.user_id = k.user_id
-       LEFT JOIN user_league_consents ulc
-              ON ulc.user_id = k.user_id AND ulc.league_id = $3`,
-    [appId, userId, leagueId]
+       LEFT JOIN user_season_consents usc
+              ON usc.user_id = k.user_id AND usc.season_id = $3`,
+    [appId, userId, seasonId]
   );
   return rows[0] || {};
 };
 
 // Запись документов одного человека. Строка заводится по факту первой загрузки.
 //
-// Согласие уходит в user_league_consents. В старые колонки consent_* заявки оно пишется
+// Согласие уходит в user_season_consents. В старые колонки consent_* заявки оно пишется
 // параллельно — страховка на время переезда: откат кода читал бы их и ничего бы не
 // потерял. Читать их уже никто не должен.
-const savePersonDocs = async (client, appId, userId, leagueId, patch) => {
+const savePersonDocs = async (client, appId, userId, seasonId, patch) => {
   const columns = Object.keys(patch);
   if (columns.length === 0) return;
 
@@ -906,23 +904,23 @@ const savePersonDocs = async (client, appId, userId, leagueId, patch) => {
     DO UPDATE SET ${updates.join(', ')}, updated_at = NOW()
   `, values);
 
-  if (!leagueId) return;
+  if (!seasonId) return;
   if ('consent_url' in patch && patch.consent_url) {
     const hasExpires = 'consent_expires_at' in patch;
     await client.query(`
-      INSERT INTO user_league_consents (user_id, league_id, consent_url, consent_expires_at, source)
+      INSERT INTO user_season_consents (user_id, season_id, consent_url, consent_expires_at, source)
       VALUES ($1, $2, $3, $4, 'team_room')
-      ON CONFLICT (user_id, league_id)
+      ON CONFLICT (user_id, season_id)
       DO UPDATE SET consent_url = EXCLUDED.consent_url,
-                    consent_expires_at = CASE WHEN $5::boolean THEN EXCLUDED.consent_expires_at ELSE user_league_consents.consent_expires_at END,
+                    consent_expires_at = CASE WHEN $5::boolean THEN EXCLUDED.consent_expires_at ELSE user_season_consents.consent_expires_at END,
                     source = EXCLUDED.source,
                     updated_at = NOW()
-    `, [userId, leagueId, patch.consent_url, hasExpires ? (patch.consent_expires_at || null) : null, hasExpires]);
+    `, [userId, seasonId, patch.consent_url, hasExpires ? (patch.consent_expires_at || null) : null, hasExpires]);
   } else if ('consent_expires_at' in patch) {
     await client.query(`
-      UPDATE user_league_consents SET consent_expires_at = $3, updated_at = NOW()
-       WHERE user_id = $1 AND league_id = $2
-    `, [userId, leagueId, patch.consent_expires_at || null]);
+      UPDATE user_season_consents SET consent_expires_at = $3, updated_at = NOW()
+       WHERE user_id = $1 AND season_id = $2
+    `, [userId, seasonId, patch.consent_expires_at || null]);
   }
 };
 
@@ -936,11 +934,11 @@ export const uploadPersonDocs = async (req, res) => {
 
     await assertApplicationEditable(pool, appId, teamId);
     await assertPersonInApplication(pool, appId, userId);
-    const leagueId = await loadApplicationLeagueId(pool, appId);
+    const seasonId = await loadApplicationSeasonId(pool, appId);
 
     // Ссылки на текущие файлы забираем до записи: после UPDATE узнать, что лежало
     // раньше, уже неоткуда, а старые объекты надо убрать из бакета.
-    const previous = await loadPersonDocs(pool, appId, userId, leagueId);
+    const previous = await loadPersonDocs(pool, appId, userId, seasonId);
 
     const files = req.files || {};
     const patch = {};
@@ -958,16 +956,16 @@ export const uploadPersonDocs = async (req, res) => {
       if (expires !== undefined) patch[`${type}_expires_at`] = expires || null;
     }
 
-    await savePersonDocs(pool, appId, userId, leagueId, patch);
+    await savePersonDocs(pool, appId, userId, seasonId, patch);
 
     // Панель документов сохраняет каждое действие сразу и по одному документу за раз
     // (см. PlayerDocsModal — общей кнопки «Сохранить» там нет). Значит непустой patch
     // это всегда осознанная замена файла или сдвиг срока, и допуск уходит на перепроверку.
-    // Согласие общее на лигу — перепроверка нужна во всех заявках человека в ней.
+    // Согласие общее на сезон — перепроверка нужна во всех заявках человека в нём.
     if (Object.keys(patch).length > 0) {
       await resetAdmissionForPersons(pool, appId, [userId]);
-      if (leagueId && ('consent_url' in patch || 'consent_expires_at' in patch)) {
-        await resetAdmissionForLeagueConsent(pool, leagueId, userId);
+      if (seasonId && ('consent_url' in patch || 'consent_expires_at' in patch)) {
+        await resetAdmissionForSeasonConsent(pool, seasonId, userId);
       }
     }
 
