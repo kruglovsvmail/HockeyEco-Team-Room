@@ -1,8 +1,14 @@
 import React, { useState, useEffect } from 'react';
+import clsx from 'clsx';
 import { ImageUploaderLP } from '../../ui/ImageUploaderLP';
 import { ButtonLP } from '../../ui/Button-LP';
-import { TextInputLP } from '../../ui/Input-LP'; 
+import { TextInputLP } from '../../ui/Input-LP';
+import { BottomSheet } from '../../ui/BottomSheet';
 import { getAuthHeaders, getTeamUiColor, DEFAULT_BRAND_COLOR } from '../../utils/helpers';
+
+// Описание длиннее трёх строк сворачивается в превью с кнопкой «Развернуть».
+// Точно измерить, влез ли текст, без DOM нельзя — считаем по абзацам и длине.
+const isLongDescription = (text) => !!text && (text.split('\n').length > 3 || text.length > 160);
 
 export function EditTeamProfilePanel({ teamId, onRefresh, activeBrandColor, onClose }) {
   // Расширенный стейт формы, включающий существующие URL-адреса медиафайлов из БД
@@ -12,12 +18,22 @@ export function EditTeamProfilePanel({ teamId, onRefresh, activeBrandColor, onCl
     ui_color: '',
     color_home_1: '#ffffff', color_home_2: '#ffffff',
     color_away_1: '#ffffff', color_away_2: '#ffffff',
-    logo_url: null, jersey_dark_url: null, jersey_light_url: null
+    logo_url: null, jersey_dark_url: null, jersey_light_url: null, team_photo_url: null
   });
 
   const [logoFile, setLogoFile] = useState(null);
   const [jerseyDarkFile, setJerseyDarkFile] = useState(null);
   const [jerseyLightFile, setJerseyLightFile] = useState(null);
+  const [teamPhotoFile, setTeamPhotoFile] = useState(null);
+  // Крестик на общем фото — удалить сохранённое при следующем «Сохранить изменения»
+  const [deleteTeamPhoto, setDeleteTeamPhoto] = useState(false);
+
+  // Описание: превью на три строки в панели, редактирование — в нижней шторке.
+  // Шторка сохраняет описание сразу, отдельно от остальной формы.
+  const [isDescExpanded, setIsDescExpanded] = useState(false);
+  const [isDescSheetOpen, setIsDescSheetOpen] = useState(false);
+  const [descDraft, setDescDraft] = useState('');
+  const [isDescSaving, setIsDescSaving] = useState(false);
 
   const [isSaving, setIsSaving] = useState(false);
   const [errorMessage, setErrorMessage] = useState('');
@@ -57,7 +73,8 @@ export function EditTeamProfilePanel({ teamId, onRefresh, activeBrandColor, onCl
                 color_away_2: dbTeam.color_away_2 || '#ffffff',
                 logo_url: dbTeam.logo_url,
                 jersey_dark_url: dbTeam.jersey_dark_url,
-                jersey_light_url: dbTeam.jersey_light_url
+                jersey_light_url: dbTeam.jersey_light_url,
+                team_photo_url: dbTeam.team_photo_url
               });
             }
           }
@@ -70,9 +87,48 @@ export function EditTeamProfilePanel({ teamId, onRefresh, activeBrandColor, onCl
       setLogoFile(null);
       setJerseyDarkFile(null);
       setJerseyLightFile(null);
+      setTeamPhotoFile(null);
+      setDeleteTeamPhoto(false);
+      setIsDescExpanded(false);
       setErrorMessage('');
     }
   }, [teamId]);
+
+  const openDescSheet = () => {
+    setDescDraft(formData.description || '');
+    setIsDescSheetOpen(true);
+  };
+
+  // Сохраняем только описание — бэкенд обновляет лишь присланные поля
+  const handleSaveDescription = async () => {
+    if (!teamId) return;
+    setIsDescSaving(true);
+    setErrorMessage('');
+    const bodyData = new FormData();
+    bodyData.append('description', descDraft);
+    try {
+      const res = await fetch(`${import.meta.env.VITE_API_URL}/api/teams/${teamId}/profile`, {
+        method: 'PUT',
+        headers: { 'Authorization': getAuthHeaders().Authorization },
+        body: bodyData
+      });
+      const data = await res.json();
+      if (res.ok && data.success) {
+        setFormData(prev => ({ ...prev, description: descDraft }));
+        setIsDescSheetOpen(false);
+        if (onRefresh) await onRefresh();
+      } else {
+        setErrorMessage(data.error || 'Ошибка при сохранении описания');
+        setIsDescSheetOpen(false);
+      }
+    } catch (err) {
+      console.error(err);
+      setErrorMessage('Ошибка соединения с сервером');
+      setIsDescSheetOpen(false);
+    } finally {
+      setIsDescSaving(false);
+    }
+  };
 
   const handleSaveProfile = async (e) => {
     e.preventDefault();
@@ -95,6 +151,8 @@ export function EditTeamProfilePanel({ teamId, onRefresh, activeBrandColor, onCl
     if (logoFile) bodyData.append('logo', logoFile);
     if (jerseyDarkFile) bodyData.append('jersey_dark', jerseyDarkFile);
     if (jerseyLightFile) bodyData.append('jersey_light', jerseyLightFile);
+    if (teamPhotoFile) bodyData.append('team_photo', teamPhotoFile);
+    else if (deleteTeamPhoto) bodyData.append('delete_team_photo', 'true');
 
     try {
       const res = await fetch(`${import.meta.env.VITE_API_URL}/api/teams/${teamId}/profile`, {
@@ -178,16 +236,59 @@ export function EditTeamProfilePanel({ teamId, onRefresh, activeBrandColor, onCl
           </div>
         </div>
 
-        {/* ПОЛЕ ОПИСАНИЯ КЛУБА */}
+        {/* ОПИСАНИЕ КОМАНДЫ — превью на три строки, тап по тексту открывает шторку
+            с большим полем. Абзацы и переносы строк сохраняются (whitespace-pre-line). */}
         <div className="w-full bg-surface-level1 p-4 rounded-2xl border border-surface-border shadow-sm">
-          <TextInputLP 
-            type="textarea"
-            rows={3}
-            placeholder="О команде (фарм-клуб организации, основан в 2020 году)..."
-            value={formData.description}
-            onChange={val => setFormData(prev => ({ ...prev, description: val }))}
-            activeColor={dynamicBrandColor}
-            size="sm"
+          <div className="flex items-center justify-between mb-2">
+            <span className="text-[10px] font-black text-content-muted uppercase tracking-widest select-none">
+              О команде
+            </span>
+            {isLongDescription(formData.description) && (
+              <button
+                type="button"
+                onClick={() => setIsDescExpanded(v => !v)}
+                className="text-[11px] font-bold text-content-muted hover:text-brand underline underline-offset-4 outline-none cursor-pointer transition-colors"
+              >
+                {isDescExpanded ? 'Свернуть' : 'Развернуть'}
+              </button>
+            )}
+          </div>
+          <button
+            type="button"
+            onClick={openDescSheet}
+            className="w-full text-left outline-none cursor-pointer active:opacity-70 transition-opacity"
+          >
+            {formData.description ? (
+              <p className={clsx(
+                'text-[14px] text-content-main whitespace-pre-line leading-snug break-words',
+                !isDescExpanded && 'line-clamp-3'
+              )}>
+                {formData.description}
+              </p>
+            ) : (
+              <p className="text-[13px] text-content-muted">
+                Расскажите о команде: история, достижения, состав. Нажмите, чтобы написать.
+              </p>
+            )}
+          </button>
+        </div>
+
+        {/* ОБЩЕЕ ФОТО КОМАНДЫ — широкий кадр, показывается на странице команды в лиге
+            и на сайте. Крестик убирает фото при сохранении формы. */}
+        <div className="w-full bg-surface-level1 p-4 rounded-2xl border border-surface-border shadow-sm">
+          <span className="text-[10px] font-black text-content-muted uppercase tracking-widest block mb-3 select-none">
+            Общее фото
+          </span>
+          <ImageUploaderLP
+            currentImageUrl={formData.team_photo_url}
+            onChange={(file) => { setTeamPhotoFile(file); setDeleteTeamPhoto(false); }}
+            onDelete={() => {
+              setTeamPhotoFile(null);
+              setDeleteTeamPhoto(true);
+              setFormData(prev => ({ ...prev, team_photo_url: null }));
+            }}
+            showDelete={!!(formData.team_photo_url || teamPhotoFile)}
+            sizeClass="w-full h-44"
           />
         </div>
 
@@ -329,6 +430,39 @@ export function EditTeamProfilePanel({ teamId, onRefresh, activeBrandColor, onCl
         </div>
 
       </form>
+
+      {/* Шторка редактирования описания — большое поле и своя кнопка сохранения,
+          закреплённая внизу шторки: поле прокручивается, кнопка остаётся на месте */}
+      <BottomSheet
+        isOpen={isDescSheetOpen}
+        onClose={() => setIsDescSheetOpen(false)}
+        footer={(
+          <ButtonLP
+            type="button"
+            onClick={handleSaveDescription}
+            isLoading={isDescSaving}
+            className="!h-12 !text-[14px]"
+            activeColor={dynamicBrandColor}
+          >
+            Сохранить
+          </ButtonLP>
+        )}
+      >
+        <div className="flex flex-col gap-4 py-2">
+          <div className="flex flex-col gap-1">
+            <h3 className="text-[18px] font-black text-content-main">О команде</h3>
+
+          </div>
+          <TextInputLP
+            type="textarea"
+            rows={20}
+            placeholder="О команде (фарм-клуб организации, основан в 2020 году)..."
+            value={descDraft}
+            onChange={setDescDraft}
+            activeColor={dynamicBrandColor}
+          />
+        </div>
+      </BottomSheet>
     </div>
   );
 }

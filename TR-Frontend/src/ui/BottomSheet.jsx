@@ -3,7 +3,10 @@ import { createPortal } from 'react-dom';
 import clsx from 'clsx';
 import { getPortalRoot } from '../utils/helpers';
 
-export function BottomSheet({ isOpen, onClose, children }) {
+// footer — то, что должно быть видно всегда, не уезжая со скроллом содержимого
+// (кнопка «Сохранить» под длинным полем). Рисуется под прокручиваемой областью,
+// поэтому ей отдаётся меньше высоты, чтобы шторка целиком помещалась на экране.
+export function BottomSheet({ isOpen, onClose, children, footer = null }) {
   const panelRef = useRef(null);
   const handleRef = useRef(null); // Реф для хэндла свайпа
   
@@ -166,15 +169,31 @@ export function BottomSheet({ isOpen, onClose, children }) {
         </div>
 
         <div
-          className="overflow-hidden transition-[height] duration-200 ease-[cubic-bezier(0.32,0.72,0,1)] max-h-[85dvh]"
+          className={clsx(
+            "overflow-hidden transition-[height] duration-200 ease-[cubic-bezier(0.32,0.72,0,1)]",
+            footer ? "max-h-[70dvh]" : "max-h-[85dvh]"
+          )}
           style={{ height: contentHeight === 'auto' ? 'auto' : `${contentHeight}px` }}
         >
-          <div className="overflow-y-auto scrollbar-hide max-h-[85dvh] overscroll-none">
-            <div ref={contentRef} className="px-6" style={{ paddingBottom: 'calc(3rem + env(safe-area-inset-bottom))' }}>
+          <div className={clsx("overflow-y-auto scrollbar-hide overscroll-none", footer ? "max-h-[70dvh]" : "max-h-[85dvh]")}>
+            <div
+              ref={contentRef}
+              className="px-6"
+              style={{ paddingBottom: footer ? '1rem' : 'calc(3rem + env(safe-area-inset-bottom))' }}
+            >
               {children}
             </div>
           </div>
         </div>
+
+        {footer && (
+          <div
+            className="shrink-0 px-6 pt-3 border-t border-sheet-border"
+            style={{ paddingBottom: 'calc(1.25rem + env(safe-area-inset-bottom))' }}
+          >
+            {footer}
+          </div>
+        )}
       </div>
     </>,
     getPortalRoot()

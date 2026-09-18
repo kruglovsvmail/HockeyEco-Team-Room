@@ -75,7 +75,8 @@ router.put(
   upload.fields([
     { name: 'logo', maxCount: 1 },
     { name: 'jersey_dark', maxCount: 1 },
-    { name: 'jersey_light', maxCount: 1 }
+    { name: 'jersey_light', maxCount: 1 },
+    { name: 'team_photo', maxCount: 1 }
   ]),
   updateTeamProfile
 );

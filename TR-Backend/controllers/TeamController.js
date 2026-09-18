@@ -84,7 +84,7 @@ export const getMyTeams = async (req, res) => {
         // 1. Р‘Р°Р·РѕРІС‹Р№ СЃРїРёСЃРѕРє РєРѕРјР°РЅРґ РїРѕР»СЊР·РѕРІР°С‚РµР»СЏ
         const teamsQuery = `
             SELECT DISTINCT t.id, t.name, t.short_name, t.logo_url, t.city, t.description,
-                            t.jersey_dark_url, t.jersey_light_url, t.ui_color,
+                            t.jersey_dark_url, t.jersey_light_url, t.team_photo_url, t.ui_color,
                             t.color_home_1, t.color_home_2,
                             t.color_away_1, t.color_away_2,
                             -- Владельцев у команды может быть двое, и оба равны в правах
@@ -817,12 +817,13 @@ export const updateTeamProfile = async (req, res) => {
     const { 
       name, short_name, city, description, 
       ui_color, color_home_1, color_home_2, color_away_1, color_away_2,
-      delete_logo, delete_jersey_dark, delete_jersey_light
+      delete_logo, delete_jersey_dark, delete_jersey_light, delete_team_photo
     } = req.body;
 
     let logo_url = undefined;
     let jersey_dark_url = undefined;
     let jersey_light_url = undefined;
+    let team_photo_url = undefined;
 
     if (req.files?.['logo']?.[0]) {
       const file = req.files['logo'][0];
@@ -854,6 +855,17 @@ export const updateTeamProfile = async (req, res) => {
       jersey_light_url = null;
     }
 
+    // Общее фото команды — показывается на странице команды в лиге и на сайте
+    if (req.files?.['team_photo']?.[0]) {
+      const file = req.files['team_photo'][0];
+      const ext = path.extname(file.originalname) || '.jpg';
+      const key = `uploads/teams_${teamId}_team_photo_${Date.now()}${ext}`;
+      await uploadBufferToS3(file, key);
+      team_photo_url = `/${key}`;
+    } else if (delete_team_photo === 'true') {
+      team_photo_url = null;
+    }
+
     const updateFields = [];
     const queryValues = [];
     let counter = 1;
@@ -881,6 +893,7 @@ export const updateTeamProfile = async (req, res) => {
     if (logo_url !== undefined) pushField('logo_url', logo_url);
     if (jersey_dark_url !== undefined) pushField('jersey_dark_url', jersey_dark_url);
     if (jersey_light_url !== undefined) pushField('jersey_light_url', jersey_light_url);
+    if (team_photo_url !== undefined) pushField('team_photo_url', team_photo_url);
 
     if (updateFields.length === 0) {
       return res.status(400).json({ error: 'No fields to update' });
