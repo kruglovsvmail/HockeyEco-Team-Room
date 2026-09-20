@@ -44,6 +44,8 @@
  * и снятый ею отказ команда правками себе не отменяет.
  */
 
+import { logPersonEvents } from './personLog.js';
+
 // Строки допуска обнуляются везде одинаково. Правая часть SET читает СТАРЫЕ значения
 // строки, поэтому photo_snapshot_prev_url = photo_snapshot_url — это сдвиг слепка,
 // а не присваивание самому себе.
@@ -72,7 +74,19 @@ const STAFF_RESET_SQL = `
                updated_at = NOW()
          WHERE tournament_team_id = $1
            AND user_id = ANY($2::int[])
-           AND is_admitted = true`;
+           AND is_admitted = true
+        RETURNING user_id`;
+
+// В журнал (utils/personLog.js) — по записи на человека, у которого допуск реально был
+// снят, а не на таблицу: у играющего тренера сбрасываются обе записи, событие одно.
+// actorId — чей шаг это вызвал (руководитель команды), reason — какой именно: 'card'
+// (номер/амплуа/нашивки), 'docs', 'consent', 'staff' (роли), 'added' (внесён в состав).
+const logResets = async (clientOrPool, appId, userIds, { actorId, reason }) => {
+    const unique = [...new Set(userIds)];
+    await logPersonEvents(clientOrPool, unique.map(userId => ({
+        appId, userId, action: 'admission_reset', details: { auto: true, reason }, actorId,
+    })));
+};
 
 /**
  * Сброс по конкретным строкам состава. Нужен там, где правка адресована строке:
@@ -81,7 +95,7 @@ const STAFF_RESET_SQL = `
  * Штаб цепляем той же парой «заявка + человек», вытащенной из этих же строк: если игрок
  * заявлен ещё и представителем, оба допуска обязаны уйти вместе.
  */
-export const resetAdmissionByRosterIds = async (clientOrPool, rosterIds) => {
+export const resetAdmissionByRosterIds = async (clientOrPool, rosterIds, { actorId = null, reason = 'card' } = {}) => {
     const ids = [...new Set((rosterIds || []).map(Number).filter(Number.isInteger))];
     if (ids.length === 0) return 0;
 
@@ -101,7 +115,8 @@ export const resetAdmissionByRosterIds = async (clientOrPool, rosterIds) => {
         byApp.get(row.tournament_team_id).push(row.player_id);
     }
     for (const [appId, userIds] of byApp) {
-        await clientOrPool.query(STAFF_RESET_SQL, [appId, userIds]);
+        const staffRes = await clientOrPool.query(STAFF_RESET_SQL, [appId, userIds]);
+        await logResets(clientOrPool, appId, [...userIds, ...staffRes.rows.map(r => r.user_id)], { actorId, reason });
     }
 
     return rows.length;
@@ -116,20 +131,22 @@ export const resetAdmissionByRosterIds = async (clientOrPool, rosterIds) => {
  * или нет строки в штабе (чистый игрок). Лишний UPDATE просто не найдёт строк — отдельно
  * отфильтровывать не надо.
  */
-export const resetAdmissionForPersons = async (clientOrPool, appId, userIds) => {
+export const resetAdmissionForPersons = async (clientOrPool, appId, userIds, { actorId = null, reason = 'docs' } = {}) => {
     const ids = [...new Set((userIds || []).map(Number).filter(Number.isInteger))];
     if (ids.length === 0) return 0;
 
-    const { rowCount } = await clientOrPool.query(`
+    const { rows } = await clientOrPool.query(`
         UPDATE tournament_rosters
            SET ${RESET_SET}
          WHERE tournament_team_id = $1
            AND player_id = ANY($2::int[])
            AND ${RESET_WHERE}
+        RETURNING player_id AS user_id
     `, [appId, ids]);
 
     const staffRes = await clientOrPool.query(STAFF_RESET_SQL, [appId, ids]);
+    await logResets(clientOrPool, appId, [...rows, ...staffRes.rows].map(r => r.user_id), { actorId, reason });
 
-    return rowCount + staffRes.rowCount;
+    return rows.length + staffRes.rowCount;
 };
 
