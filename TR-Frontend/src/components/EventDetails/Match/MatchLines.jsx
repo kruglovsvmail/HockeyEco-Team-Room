@@ -16,6 +16,7 @@ import { PageLoader } from '../../../ui/Loader';
 import { FadeIn } from '../../../ui/FadeIn';
 import { toBlob } from 'html-to-image';
 import { MatchLinesShareCard } from './MatchLinesShareCard';
+import { RosterStaffSheet } from './RosterStaffSheet';
 import dayjs from 'dayjs';
 import utc from 'dayjs/plugin/utc';
 import timezone from 'dayjs/plugin/timezone';
@@ -111,6 +112,7 @@ export const MatchLines = ({ event, initialAttendees = [], initialDraftLines = [
   const [removingSlot, setRemovingSlot] = useState(null);
 
   const [isRosterSheetOpen, setIsRosterSheetOpen] = useState(false);
+  const [isStaffSheetOpen, setIsStaffSheetOpen] = useState(false);
   const [selectedPlayer, setSelectedPlayer] = useState(null);
   const [editJersey, setEditJersey] = useState('');
   const [editCaptain, setEditCaptain] = useState(false);
@@ -334,7 +336,9 @@ export const MatchLines = ({ event, initialAttendees = [], initialDraftLines = [
     }
   };
 
-  const handleSubmitOfficialRoster = async (e) => {
+  // Кнопка «Отправить» на вкладке только открывает шторку выбора представителей —
+  // сама отправка идёт из неё (RosterStaffSheet), вместе с выбранными staffIds.
+  const handleSubmitOfficialRoster = async (staffIds) => {
     if (timeToMatch < DEADLINES.ROSTER_SUBMIT_MINUTES) {
       return;
     }
@@ -345,11 +349,12 @@ export const MatchLines = ({ event, initialAttendees = [], initialDraftLines = [
       const res = await fetch(`${apiUrl}/api/matches/${event.event_id}/submit-roster`, {
         method: 'POST',
         headers: { ...headers, 'Content-Type': 'application/json' },
-        body: JSON.stringify({ teamId: event.my_team_id })
+        body: JSON.stringify({ teamId: event.my_team_id, staffIds })
       });
       const data = await res.json();
       if (data.success) {
         setIsPublished(true);
+        setIsStaffSheetOpen(false);
         setToast({
           isOpen: true,
           // Расстановки не было — сервер собрал заявку из отметившихся на матч.
@@ -1037,7 +1042,7 @@ export const MatchLines = ({ event, initialAttendees = [], initialDraftLines = [
                     </HintPopover>
                   ) : (
                     <button
-                      onClick={(e) => handleSubmitOfficialRoster(e)}
+                      onClick={() => setIsStaffSheetOpen(true)}
                       disabled={isSubmittingRoster}
                       style={{ color: isPublished ? '#fff' : activeBrandColor, borderColor: activeBrandColor, backgroundColor: isPublished ? activeBrandColor : undefined }}
                       className={clsx(
@@ -1321,6 +1326,17 @@ export const MatchLines = ({ event, initialAttendees = [], initialDraftLines = [
           </div>
         )}
       </BottomSheet>
+
+      {/* ШТОРКА ОТПРАВКИ ЗАЯВКИ: ВЫБОР ПРЕДСТАВИТЕЛЕЙ НА МАТЧ */}
+      <RosterStaffSheet
+        isOpen={isStaffSheetOpen}
+        onClose={() => { if (!isSubmittingRoster) setIsStaffSheetOpen(false); }}
+        event={event}
+        activeColor={hasTeamColor ? event.team_color : null}
+        isSubmitting={isSubmittingRoster}
+        isPublished={isPublished}
+        onSubmit={handleSubmitOfficialRoster}
+      />
 
       <Toast
         isOpen={toast.isOpen}

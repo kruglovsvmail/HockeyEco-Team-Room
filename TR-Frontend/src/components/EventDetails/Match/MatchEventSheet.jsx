@@ -14,11 +14,13 @@ const GOAL_STRENGTHS = [
   { value: 'en',    label: 'Пуст. ворота' },
 ];
 
+// Дисциплинарный (10) команду в меньшинстве не оставляет — только минуты в статистику
 const PENALTIES = [
-  { label: '2:00', penalty_class: 'minor',           penalty_minutes: 2  },
-  { label: '4:00', penalty_class: 'double_minor',    penalty_minutes: 4  },
-  { label: '5+20', penalty_class: 'major',           penalty_minutes: 25 },
-  { label: 'ШБ',  penalty_class: 'penalty_shot',    penalty_minutes: 0  },
+  { label: '2:00',  penalty_class: 'minor',           penalty_minutes: 2  },
+  { label: '4:00',  penalty_class: 'double_minor',    penalty_minutes: 4  },
+  { label: '10:00', penalty_class: 'misconduct',      penalty_minutes: 10 },
+  { label: '5+20',  penalty_class: 'major',           penalty_minutes: 25 },
+  { label: 'ШБ',   penalty_class: 'penalty_shot',    penalty_minutes: 0  },
 ];
 
 // ─── ШТРАФНОЙ БРОСОК ПО ХОДУ МАТЧА ───────────────────────────────────────────

@@ -16,7 +16,7 @@ import {
   confirmFriendlyMatch,
   cancelFriendlyMatch 
 } from '../controllers/MatchAttendanceController.js';
-import { getMatchLines, saveMatchLines, submitMatchRoster, updateLinePlayer } from '../controllers/MatchLinesController.js';
+import { getMatchLines, saveMatchLines, submitMatchRoster, updateLinePlayer, getRosterStaffCandidates } from '../controllers/MatchLinesController.js';
 import { uploadMatchFormationImage } from '../controllers/FormationImageController.js';
 import upload from '../config/upload.js';
 import {
@@ -92,7 +92,10 @@ router.post('/:eventId/lines/formation-image', verifyToken, requireTeamPermissio
 // Обновить параметры конкретного игрока в черновике (номер, C, A) — доступно руководителям по подписке
 router.put('/:eventId/line-player', verifyToken, requireTeamPermission('MATCH_LINES_EDIT_PLAYER_PARAMS'), updateLinePlayer);
 
-// Отправить официальную электронную заявку состава в лигу
+// Кандидаты в представители на матч и текущий выбор — для шторки отправки заявки
+router.get('/:eventId/roster-staff', verifyToken, requireTeamPermission('MATCH_ROSTER_SUBMIT'), getRosterStaffCandidates);
+
+// Отправить официальную электронную заявку состава в лигу (игроки + выбранные представители)
 router.post('/:eventId/submit-roster', verifyToken, requireTeamPermission('MATCH_ROSTER_SUBMIT'), submitMatchRoster);
 
 // ==========================================

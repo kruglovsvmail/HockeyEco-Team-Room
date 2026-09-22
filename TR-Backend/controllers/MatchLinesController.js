@@ -297,6 +297,131 @@ export const resyncRosterWithAttendance = async (client, { eventId, teamId }) =>
   }
 };
 
+// ─────────────────────────── ПРЕДСТАВИТЕЛИ НА МАТЧ ───────────────────────────
+// Кто из штаба едет на матч, команда выбирает руками при отправке заявки — это своя
+// таблица game_team_staff, а не вся заявка на сезон разом. Кандидаты: в официальном
+// матче — допущенные лигой представители из заявки на сезон, в товарищеском — штаб
+// команды (team_roles). Выбор идёт по человеку: все его роли едут в протокол вместе.
+//
+// Пересборка заявки по расстановке или явке (rebuildGameRoster) представителей не
+// трогает: они не зависят ни от звеньев, ни от отметок, и выбор руководителя должен
+// пережить любую правку состава.
+//
+// Порядок ролей — как они печатаются в протоколе: руководитель, администратор, тренеры.
+const STAFF_ROLES = ['team_manager', 'team_admin', 'head_coach', 'coach'];
+
+const loadStaffCandidates = async (client, { teamId, gameType, divisionId }) => {
+  if (gameType === 'official' && divisionId) {
+    // Дисквалифицированных не прячем, а отдаём с наказанием: в шторке они видны,
+    // но не выбираются — руководитель должен понимать, почему тренера нет на выбор.
+    const { rows } = await client.query(`
+      SELECT u.id AS user_id, u.first_name, u.last_name, u.avatar_url, tm.photo_url AS team_photo,
+             array_agg(ttr.tournament_role::varchar ORDER BY array_position($3::varchar[], ttr.tournament_role::varchar)) AS roles,
+             user_active_disqualifications(u.id, s.league_id) AS active_disqualifications
+        FROM tournament_team_roles ttr
+        JOIN tournament_teams tt ON tt.id = ttr.tournament_team_id
+        JOIN divisions d ON d.id = tt.division_id
+        JOIN seasons s ON s.id = d.season_id
+        JOIN users u ON u.id = ttr.user_id
+        JOIN tournament_staff_admission tsa
+          ON tsa.tournament_team_id = ttr.tournament_team_id AND tsa.user_id = ttr.user_id
+         AND tsa.is_admitted = true
+        LEFT JOIN team_members tm ON tm.user_id = u.id AND tm.team_id = tt.team_id AND tm.left_at IS NULL
+       WHERE tt.team_id = $1 AND tt.division_id = $2 AND ttr.left_at IS NULL
+       GROUP BY u.id, u.first_name, u.last_name, u.avatar_url, tm.photo_url, s.league_id
+       ORDER BY u.last_name ASC, u.first_name ASC
+    `, [teamId, divisionId, STAFF_ROLES]);
+    return rows;
+  }
+
+  const { rows } = await client.query(`
+    SELECT u.id AS user_id, u.first_name, u.last_name, u.avatar_url, tm.photo_url AS team_photo,
+           array_agg(trole.role::varchar ORDER BY array_position($2::varchar[], trole.role::varchar)) AS roles,
+           '[]'::json AS active_disqualifications
+      FROM team_roles trole
+      JOIN team_members tm ON tm.id = trole.member_id
+      JOIN users u ON u.id = tm.user_id
+     WHERE tm.team_id = $1 AND tm.left_at IS NULL AND trole.left_at IS NULL
+       AND trole.role::varchar = ANY($2::varchar[])
+     GROUP BY u.id, u.first_name, u.last_name, u.avatar_url, tm.photo_url
+     ORDER BY u.last_name ASC, u.first_name ASC
+  `, [teamId, STAFF_ROLES]);
+  return rows;
+};
+
+const isDisqualified = (person) => Array.isArray(person.active_disqualifications) && person.active_disqualifications.length > 0;
+
+/**
+ * Записывает выбранных представителей на матч. Список — целиком: пустой массив значит
+ * «без представителей», это разрешено. Проверяет, что каждый выбранный есть среди
+ * кандидатов и не дисквалифицирован. Возвращает текст ошибки или null.
+ *
+ * Работает внутри уже открытой транзакции вызывающего.
+ */
+const saveGameTeamStaff = async (client, { eventId, teamId, gameType, divisionId, staffIds }) => {
+  const candidates = await loadStaffCandidates(client, { teamId, gameType, divisionId });
+  const byId = new Map(candidates.map(c => [Number(c.user_id), c]));
+
+  const ids = [...new Set(staffIds.map(Number).filter(Number.isFinite))];
+  const unknown = ids.filter(id => !byId.has(id));
+  if (unknown.length > 0) {
+    return gameType === 'official'
+      ? 'Среди выбранных есть тот, кого нет среди допущенных представителей заявки на сезон'
+      : 'Среди выбранных есть тот, кого нет в штабе команды';
+  }
+
+  const disqualified = ids.map(id => byId.get(id)).filter(isDisqualified);
+  if (disqualified.length > 0) {
+    const names = disqualified.map(p => `${p.last_name} ${p.first_name}`).join(', ');
+    return `Нельзя заявить на матч дисквалифицированных представителей: ${names}`;
+  }
+
+  await client.query(`DELETE FROM game_team_staff WHERE game_id = $1 AND team_id = $2`, [eventId, teamId]);
+  if (ids.length === 0) return null;
+
+  const values = [];
+  const params = [];
+  let i = 1;
+  ids.forEach(id => {
+    byId.get(id).roles.forEach(role => {
+      values.push(`($${i++}, $${i++}, $${i++}, $${i++})`);
+      params.push(eventId, teamId, id, role);
+    });
+  });
+  await client.query(
+    `INSERT INTO game_team_staff (game_id, team_id, user_id, role) VALUES ${values.join(', ')}`,
+    params
+  );
+  return null;
+};
+
+// Шторка выбора представителей: кандидаты и те, кто уже выбран на этот матч.
+export const getRosterStaffCandidates = async (req, res) => {
+  try {
+    const { eventId } = req.params;
+    const { teamId } = req.query;
+
+    if (!teamId) {
+      return res.status(400).json({ success: false, error: 'teamId обязателен' });
+    }
+
+    const gameQuery = await pool.query(`SELECT game_type, division_id FROM games WHERE id = $1`, [eventId]);
+    if (gameQuery.rowCount === 0) return res.status(404).json({ success: false, error: 'Матч не найден' });
+
+    const { game_type, division_id } = gameQuery.rows[0];
+    const candidates = await loadStaffCandidates(pool, { teamId, gameType: game_type, divisionId: division_id });
+    const selected = await pool.query(
+      `SELECT DISTINCT user_id FROM game_team_staff WHERE game_id = $1 AND team_id = $2`,
+      [eventId, teamId]
+    );
+
+    res.json({ success: true, candidates, selected: selected.rows.map(r => r.user_id) });
+  } catch (err) {
+    console.error('Ошибка получения представителей на матч:', err);
+    res.status(500).json({ success: false, error: 'Ошибка сервера' });
+  }
+};
+
 export const getMatchLines = async (req, res) => {
   try {
     const { eventId } = req.params;
@@ -683,7 +808,7 @@ export const submitMatchRoster = async (req, res) => {
   try {
     const initiatorId = req.user.id;
     const { eventId } = req.params;
-    const { teamId } = req.body;
+    const { teamId, staffIds } = req.body;
 
     if (!teamId) {
       return res.status(400).json({ success: false, error: 'teamId обязателен' });
@@ -720,6 +845,19 @@ export const submitMatchRoster = async (req, res) => {
         success: false,
         error: 'Заявку не из кого собрать: расстановка пуста и на матч никто не отметился',
       });
+    }
+
+    // Представители — тем же запросом, что и игроки: шторка отправки отдаёт выбор целиком,
+    // пустой массив — «без представителей». Массива нет вовсе — приложение старой версии
+    // из кэша, прежний выбор не трогаем.
+    if (Array.isArray(staffIds)) {
+      const staffError = await saveGameTeamStaff(client, {
+        eventId, teamId, gameType: game_type, divisionId: division_id, staffIds,
+      });
+      if (staffError) {
+        await client.query('ROLLBACK');
+        return res.status(400).json({ success: false, error: staffError });
+      }
     }
 
     await client.query('COMMIT');
