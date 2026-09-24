@@ -7,11 +7,18 @@ import { recalculatePlayerGameStats } from '../utils/playerGameStatsCalculator.j
 
 // Матч считается начавшимся, когда в протоколе появились события: с этого момента
 // состав трогать нельзя — на строки заявки уже ссылается статистика.
+//
+// Стартовая запись журнала вратарей (0:00) матч не начинает. Её заводит сама панель
+// секретаря LMS при открытии, если в заявке у команды один вратарь (autofillGoalieLog), —
+// хоть за сутки до игры: руководству лиги панель открыта в любое время. Считать её
+// началом матча — значит закрыть обеим командам заявку от одного открытия панели. Смену
+// заявки эта запись переживает: панель сама перепишет вратаря, если его в заявке не стало.
+// Смена вратаря по ходу игры (позже 0:00) — уже начавшийся матч.
 const isMatchStarted = async (client, eventId) => {
   const { rowCount } = await client.query(`
     SELECT 1 FROM game_events WHERE game_id = $1
     UNION
-    SELECT 1 FROM game_goalie_log WHERE game_id = $1
+    SELECT 1 FROM game_goalie_log WHERE game_id = $1 AND time_seconds > 0
     UNION
     SELECT 1 FROM game_plus_minus gpm JOIN game_events ge ON gpm.event_id = ge.id WHERE ge.game_id = $1
     LIMIT 1
