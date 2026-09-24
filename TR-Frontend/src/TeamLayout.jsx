@@ -85,6 +85,24 @@ const routeTypeOfEvent = (eventType = '') => {
   return 'match';
 };
 
+// Чьими глазами собрана карточка события: команда, клуб или сообщество. Матч двух своих
+// команд календарь отдаёт двумя карточками с одним event_id — по одной на команду, у
+// каждой своя шапка, цвета, взнос и отметка. Отличить их можно только по стороне.
+const cardSide = (card) => `${card?.my_team_id ?? ''}|${card?.my_club_id ?? ''}|${card?.my_community_id ?? ''}`;
+
+// Карточка события из ответа календаря. preferredSide — сторона, чьими глазами событие
+// уже открыто: её и берём, иначе шапка молча переехала бы к другой команде. Если своей
+// стороны нет, годится только единственная карточка; fallbackToFirst — для открытия по
+// ссылке, где стороны ещё нет вовсе, и любая карточка лучше, чем уйти на главную.
+const pickEventCard = (cards, eventId, eventType, preferredSide, { fallbackToFirst = false } = {}) => {
+  const sameEvent = (cards || []).filter(
+    c => String(c.event_id) === String(eventId) && routeTypeOfEvent(c.event_type) === eventType
+  );
+  const mine = preferredSide ? sameEvent.find(c => cardSide(c) === preferredSide) : null;
+  if (mine) return mine;
+  return sameEvent.length === 1 || fallbackToFirst ? (sameEvent[0] || null) : null;
+};
+
 // Есть ли внутри приложения куда возвращаться. React Router нумерует свои записи истории
 // в window.history.state.idx, и 0 — это первая запись вкладки: человек пришёл прямо по
 // ссылке, шаг назад увёл бы его из приложения (обратно в мессенджер), а не в календарь.
@@ -373,6 +391,12 @@ function TeamLayoutContent() {
   // как и раньше, уводим на «/».
   const [isHydratingEvent, setIsHydratingEvent] = useState(false);
 
+  // Выбранная команда — для открытия по ссылке: матч двух своих команд показываем глазами
+  // той, в которой человек сейчас. Через ref, чтобы смена выбранной команды не
+  // перезапускала дотягивание карточки.
+  const selectedTeamRef = useRef(selectedTeam);
+  selectedTeamRef.current = selectedTeam;
+
   useEffect(() => {
     if (!eventMatch || eventForOverlay) return;
 
@@ -397,9 +421,9 @@ function TeamLayoutContent() {
           { headers: getAuthHeaders() }
         );
         const data = await res.json();
-        const card = (data?.cards || []).find(
-          c => String(c.event_id) === String(eventId) && routeTypeOfEvent(c.event_type) === eventType
-        );
+        const team = selectedTeamRef.current;
+        const teamId = team?.id ?? team?.team_id;
+        const card = pickEventCard(data?.cards, eventId, eventType, teamId ? `${teamId}||` : null, { fallbackToFirst: true });
         if (cancelled) return;
 
         if (!card) {
@@ -514,9 +538,10 @@ function TeamLayoutContent() {
           { headers: getAuthHeaders() }
         );
         const data = await res.json();
-        const card = (data?.cards || []).find(
-          c => String(c.event_id) === String(eventId) && routeTypeOfEvent(c.event_type) === eventType
-        );
+        // Перечитываем ту же сторону, чьими глазами событие открыто: у матча двух своих
+        // команд карточек две, и первая попавшаяся подменила бы шапку и цвета чужими
+        const open = JSON.parse(sessionStorage.getItem(`tr_event_${eventType}_${eventId}`) || 'null');
+        const card = pickEventCard(data?.cards, eventId, eventType, open ? cardSide(open) : null);
         if (card) handleEventUpdate(card);
       } catch (err) {
         console.error('Не удалось обновить карточку события:', err);
@@ -859,7 +884,13 @@ function TeamLayoutContent() {
   // рендерящиеся вне поддерева Outlet) остаются на глобальном цвете бренда вместо цвета команды.
   const isColorsEnabled = localStorage.getItem('tr_use_team_colors') !== 'false';
   const teamUiColor = getTeamUiColor(selectedTeam);
-  const hasTeamColor = isColorsEnabled && !!teamUiColor;
+  // Раздел «Турниры / Лиги» общий для всех команд: там смотрят любую лигу, а не
+  // выбранную команду, поэтому командный цвет на него не распространяем — ни на саму
+  // страницу, ни на шапку, ни на её панели (выбор турнира, матч, профиль игрока),
+  // которые рисуются здесь, вне поддерева страницы. Остаётся личный цвет из
+  // Настроек, а если его не выбирали — заводской.
+  const isPersonalColorSection = !!matchPath('/tournaments', location.pathname);
+  const hasTeamColor = isColorsEnabled && !!teamUiColor && !isPersonalColorSection;
 
   // Цвет клуба здесь намеренно НЕ подмешиваем: он живёт локально на странице клуба
   // (ClubPage) и в её панелях, которые красят себя сами.

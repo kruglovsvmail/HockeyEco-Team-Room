@@ -5,7 +5,7 @@ import clsx from 'clsx';
 import { FadeIn } from '../ui/FadeIn';
 import { Icon } from '../ui/Icon';
 import { TournamentPageHeader } from '../components/Tournaments/TournamentPageHeader';
-import { getAuthHeaders, getPlayoffStageDisplayLabel, getTeamUiColor } from '../utils/helpers';
+import { getAuthHeaders, getPlayoffStageDisplayLabel } from '../utils/helpers';
 import { PageLoader } from '../ui/Loader';
 import { TournamentCardGame } from '../components/Tournaments/TournamentCardGame';
 import { TournamentTable } from '../components/Tournaments/TournamentTable';
@@ -22,7 +22,6 @@ const TOURNAMENT_TABS = [
 export function TournamentsPage() {
   const { selectedTeam, teams, openRightPanel, openPanel100, registerHeaderMenu } = useOutletContext();
   const selectedTeamId = selectedTeam?.id;
-  const cacheKey = `tr_cached_team_${selectedTeamId}`;
 
   usePageVisit('tournaments');
 
@@ -44,26 +43,11 @@ export function TournamentsPage() {
   const [isStatsLoading, setIsStatsLoading] = useState(false);
   const [statsStageType, setStatsStageType] = useState('all'); // 'all' / 'regular' / 'playoff'
 
-  const [activeTeamDetails, setActiveTeamDetails] = useState(() => {
-    if (selectedTeamId) {
-      const cached = localStorage.getItem(cacheKey);
-      if (cached) return JSON.parse(cached).fullDetails || null;
-    }
-    return null;
-  });
-
   const [activeTournament, setActiveTournament] = useState(null);
 
-  useEffect(() => {
-    if (!selectedTeamId) return;
-    const cached = localStorage.getItem(cacheKey);
-    if (cached) setActiveTeamDetails(JSON.parse(cached).fullDetails || null);
-  }, [selectedTeamId, cacheKey]);
-
-  const isColorsEnabled = localStorage.getItem('tr_use_team_colors') !== 'false';
-  const teamColorSource = getTeamUiColor(activeTeamDetails) || getTeamUiColor(selectedTeam);
-  const hasTeamColor = isColorsEnabled && !!teamColorSource;
-  const activeBrandColor = hasTeamColor ? teamColorSource : 'var(--color-brand)';
+  // Командного цвета в разделе нет: он показывает любую лигу, а не выбранную команду.
+  // Акцент — личный цвет из Настроек (или заводской), командную подмену --color-brand
+  // на этом маршруте снимает TeamLayout, поэтому цвет вниз не передаём.
 
   // Открыть панель выбора прямо в эффекте восстановления нельзя: её обработчик объявлен
   // ниже по файлу. Поэтому отмечаем намерение флагом, а открывает отдельный эффект.
@@ -195,11 +179,9 @@ export function TournamentsPage() {
       teams: teams || [],
       activeDivisionId: activeTournament?.division_id,
       activeTournament,
-      onSelect: handleTournamentSelect,
-      hasTeamColor,
-      activeBrandColor
+      onSelect: handleTournamentSelect
     }, 'Выбор турнира');
-  }, [teams, activeTournament, handleTournamentSelect, hasTeamColor, activeBrandColor, openRightPanel]);
+  }, [teams, activeTournament, handleTournamentSelect, openRightPanel]);
 
   useEffect(() => {
     if (!needsPicker) return;
@@ -225,8 +207,6 @@ export function TournamentsPage() {
     openPanel100('tournamentGameDetails', {
       game,
       myTeamId: selectedTeamId,
-      hasTeamColor,
-      activeBrandColor,
     }, 'Матч');
   };
 
@@ -264,15 +244,10 @@ export function TournamentsPage() {
   const currentGoalies = statsData[statsStageType]?.goalies || [];
 
   return (
-    <FadeIn 
-      className="h-full relative overflow-hidden flex flex-col"
-      style={hasTeamColor ? { '--color-brand': activeBrandColor } : {}}
-    >
-      <TournamentPageHeader 
+    <FadeIn className="h-full relative overflow-hidden flex flex-col">
+      <TournamentPageHeader
         activeTournament={activeTournament}
         onClick={handleOpenSelector}
-        hasTeamColor={hasTeamColor}
-        activeBrandColor={activeBrandColor}
         tabs={TOURNAMENT_TABS}
         activeTab={activeTab}
         onTabChange={setActiveTab}
@@ -392,11 +367,9 @@ export function TournamentsPage() {
                                 </div>
                               )}
                               
-                              <TournamentPlayoff 
+                              <TournamentPlayoff
                                 bracket={bracket}
                                 games={games}
-                                hasTeamColor={hasTeamColor}
-                                activeBrandColor={activeBrandColor}
                               />
                             </div>
                           ))}
@@ -416,8 +389,6 @@ export function TournamentsPage() {
                     goalies={currentGoalies}
                     stageType={statsStageType}
                     onStageTypeChange={setStatsStageType}
-                    hasTeamColor={hasTeamColor}
-                    activeBrandColor={activeBrandColor}
                     divisionId={activeTournament?.division_id}
                     openRightPanel={openRightPanel}
                   />

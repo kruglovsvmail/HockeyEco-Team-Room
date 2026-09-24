@@ -760,6 +760,11 @@ class TournamentController {
    *
    * Неопубликованные дивизионы не отдаются никому: пока лига не нажала «опубликовать»,
    * турнира для приложения не существует — даже для заявленных в него команд.
+   *
+   * Порядок дивизионов внутри сезона: сначала те, где играли позже всех (идущий матч
+   * тоже считается сыгранным), потом по числу допущенных команд — больше выше, потом
+   * по алфавиту. Дивизионы без единого сыгранного матча — после всех, где уже играли.
+   * Фронт порядок не меняет, только делит список на дивизионы и турниры.
    */
   async getLeagueStructure(req, res) {
     try {
@@ -779,11 +784,22 @@ class TournamentController {
                      EXISTS (SELECT 1 FROM team_members tm WHERE tm.team_id = tt.team_id AND tm.user_id = $2 AND tm.left_at IS NULL)
                      OR EXISTS (SELECT 1 FROM team_owners tow WHERE tow.team_id = tt.team_id AND tow.user_id = $2)
                    )
-               ) AS is_mine
+               ) AS is_mine,
+               (
+                 SELECT MAX(g.game_date)
+                 FROM games g
+                 WHERE g.division_id = d.id AND g.status IN ('live', 'finished')
+               ) AS last_game_at,
+               (
+                 SELECT COUNT(*)
+                 FROM tournament_teams tt_count
+                 WHERE tt_count.division_id = d.id AND tt_count.status = 'approved'
+               )::int AS teams_count
         FROM seasons s
         LEFT JOIN divisions d ON d.season_id = s.id AND d.is_published = true
         WHERE s.league_id = $1
-        ORDER BY s.start_date DESC NULLS LAST, s.id DESC, d.name
+        ORDER BY s.start_date DESC NULLS LAST, s.id DESC,
+                 last_game_at DESC NULLS LAST, teams_count DESC, d.name, d.id
       `, [leagueId, req.user.id]);
 
       // Собираем плоскую выборку в сезоны с вложенными дивизионами.

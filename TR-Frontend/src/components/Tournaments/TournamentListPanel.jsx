@@ -5,12 +5,14 @@ import { BottomSheet } from '../../ui/BottomSheet';
 import { TextInputLP } from '../../ui/Input-LP';
 import { Icon } from '../../ui/Icon';
 import { SegmentedControl } from '../../ui/SegmentedControl';
+import { PageLoader } from '../../ui/Loader';
 
 const LEAGUES_PAGE_SIZE = 20;
 const sameId = (left, right) => left != null && right != null && String(left) === String(right);
-const selectionStyle = (color) => color ? { backgroundColor: `${color}1a`, color } : undefined;
 
-const FilterButton = ({ title, value, onClick, disabled, expanded, activeBrandColor }) => (
+// Цвет панели нигде не задаётся вручную: раздел «Турниры / Лиги» всегда в личном
+// цвете (TeamLayout снимает на нём командный), поэтому хватает классов бренда.
+const FilterButton = ({ title, value, onClick, disabled, expanded }) => (
   <button
     type="button"
     onClick={onClick}
@@ -21,14 +23,14 @@ const FilterButton = ({ title, value, onClick, disabled, expanded, activeBrandCo
     className="min-w-0 rounded-2xl bg-surface-level1 px-3 py-2.5 text-left shadow-sm disabled:opacity-40 disabled:cursor-not-allowed focus-visible:ring-2 focus-visible:ring-brand"
   >
     <span className="block text-[11px] font-semibold text-content-muted mb-1">{title}</span>
-    <span className="flex items-center justify-between gap-2 text-brand" style={activeBrandColor ? { color: activeBrandColor } : undefined}>
+    <span className="flex items-center justify-between gap-2 text-brand">
       <span className="min-w-0 text-[14px] font-bold truncate">{value}</span>
       <Icon name="chevron" className="w-3 h-3 shrink-0" />
     </span>
   </button>
 );
 
-const OptionRow = ({ title, subtitle, logoUrl, showLogo, checked, onClick, activeBrandColor }) => (
+const OptionRow = ({ title, subtitle, logoUrl, showLogo, checked, onClick }) => (
   <button
     type="button"
     onClick={onClick}
@@ -37,7 +39,6 @@ const OptionRow = ({ title, subtitle, logoUrl, showLogo, checked, onClick, activ
       'w-full flex items-center gap-3 px-4 py-3 min-h-[52px] rounded-2xl transition-colors text-left focus-visible:ring-2 focus-visible:ring-brand',
       checked ? 'bg-brand-opacity' : 'bg-surface-level1 active:bg-surface-level2'
     )}
-    style={checked ? selectionStyle(activeBrandColor) : undefined}
   >
     {showLogo && (
       <div className="w-12 h-12 shrink-0 flex items-center justify-center">
@@ -47,29 +48,26 @@ const OptionRow = ({ title, subtitle, logoUrl, showLogo, checked, onClick, activ
       </div>
     )}
     <span className="flex flex-col min-w-0 flex-1">
-      <span
-        className={clsx('text-[14px] font-bold whitespace-normal break-words leading-snug', checked ? 'text-brand' : 'text-content-main')}
-        style={checked && activeBrandColor ? { color: activeBrandColor } : undefined}
-      >
+      <span className={clsx('text-[14px] font-bold whitespace-normal break-words leading-snug', checked ? 'text-brand' : 'text-content-main')}>
         {title}
       </span>
       {subtitle && <span className="text-[11px] font-semibold text-content-muted mt-1 break-words">{subtitle}</span>}
     </span>
     <span className="w-5 shrink-0">
-      {checked && <Icon name="check" className="w-5 h-5 text-brand" style={activeBrandColor ? { color: activeBrandColor } : undefined} />}
+      {checked && <Icon name="check" className="w-5 h-5 text-brand" />}
     </span>
   </button>
 );
 
+// Общий лоадер приложения с летящей шайбой
 const Loading = () => (
-  <div role="status" aria-label="Загрузка" className="flex justify-center py-8">
-    <div className="w-5 h-5 border-2 border-brand border-t-transparent rounded-full animate-spin" />
+  <div role="status" aria-label="Загрузка" className="py-8">
+    <PageLoader />
   </div>
 );
 
-export function TournamentListPanel({ teams = [], activeDivisionId, activeTournament, onSelect, hasTeamColor, activeBrandColor }) {
+export function TournamentListPanel({ teams = [], activeDivisionId, activeTournament, onSelect }) {
   const hasTeams = teams.length > 0;
-  const brandColor = hasTeamColor ? activeBrandColor : undefined;
   const initialTournamentRef = useRef(activeTournament);
   const [scope, setScope] = useState(hasTeams ? 'my' : 'all');
   const [league, setLeague] = useState(() => activeTournament?.league_id ? {
@@ -251,8 +249,8 @@ export function TournamentListPanel({ teams = [], activeDivisionId, activeTourna
   return (
     <div className="flex flex-col h-full min-h-0">
       <div className="grid grid-cols-[minmax(0,1fr)_minmax(96px,0.65fr)] gap-2 px-4 pt-4 pb-2 shrink-0">
-        <FilterButton title="Лига" value={league ? (league.short_name || league.name) : 'Выбрать лигу'} onClick={() => setOpenSheet('league')} expanded={openSheet === 'league'} activeBrandColor={brandColor} />
-        <FilterButton title="Сезон" value={season?.name || 'Выбрать'} disabled={!league || isStructureLoading || seasons.length === 0} onClick={() => setOpenSheet('season')} expanded={openSheet === 'season'} activeBrandColor={brandColor} />
+        <FilterButton title="Лига" value={league ? (league.short_name || league.name) : 'Выбрать лигу'} onClick={() => setOpenSheet('league')} expanded={openSheet === 'league'} />
+        <FilterButton title="Сезон" value={season?.name || 'Выбрать'} disabled={!league || isStructureLoading || seasons.length === 0} onClick={() => setOpenSheet('season')} expanded={openSheet === 'season'} />
       </div>
 
       <div ref={listRef} className="flex-1 min-h-0 overflow-y-auto overscroll-contain scrollbar-hide px-4 pb-6" aria-busy={isStructureLoading || isRestoringLeague}>
@@ -267,9 +265,7 @@ export function TournamentListPanel({ teams = [], activeDivisionId, activeTourna
           <p className="py-10 text-center text-[14px] font-bold text-content-subtle leading-relaxed px-2">В этом сезоне нет опубликованных соревнований</p>
         ) : groups.filter(group => group.items.length > 0).map(group => (
           <section key={group.title} aria-label={group.title} className="mt-4">
-            <div className="flex items-center justify-between gap-2 px-1 mb-2 text-[11px] font-bold uppercase tracking-widest text-content-muted">
-              <h4>{group.title}</h4><span>{group.items.length}</span>
-            </div>
+            <h4 className="px-1 mb-2 text-[11px] font-bold uppercase tracking-widest text-content-muted">{group.title}</h4>
             <div className="rounded-2xl bg-surface-level1 shadow-sm overflow-hidden divide-y divide-surface-border">
               {group.items.map(division => {
                 const isActive = sameId(activeDivisionId, division.id);
@@ -281,9 +277,8 @@ export function TournamentListPanel({ teams = [], activeDivisionId, activeTourna
                     aria-pressed={isActive}
                     onClick={() => handleDivisionSelect(division)}
                     className={clsx('w-full min-h-[56px] flex items-center justify-between gap-3 px-4 py-3 text-left transition-colors focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-brand', isActive ? 'bg-brand-opacity text-brand' : 'text-content-main active:bg-surface-level2')}
-                    style={isActive ? selectionStyle(brandColor) : undefined}
                   >
-                    <span className="min-w-0 text-[14px] font-bold break-words leading-snug">{division.shortName || division.name}</span>
+                    <span className="min-w-0 text-[14px] font-bold break-words leading-snug">{division.name}</span>
                     {isActive && <Icon name="check" className="w-5 h-5 shrink-0" />}
                   </button>
                 );
@@ -296,10 +291,10 @@ export function TournamentListPanel({ teams = [], activeDivisionId, activeTourna
       <BottomSheet isOpen={openSheet === 'league'} onClose={() => setOpenSheet(null)}>
         <div role="dialog" aria-modal="true" aria-label="Выбор лиги" className="flex flex-col gap-4">
           <h3 className="text-[16px] font-black tracking-widest text-content-main uppercase">Выбор лиги</h3>
-          {hasTeams && <SegmentedControl options={[{ value: 'my', label: 'Мои лиги' }, { value: 'all', label: 'Все лиги' }]} value={scope} onChange={value => { setScope(value); setSearch(''); }} activeColor={brandColor} />}
+          {hasTeams && <SegmentedControl options={[{ value: 'my', label: 'Мои лиги' }, { value: 'all', label: 'Все лиги' }]} value={scope} onChange={value => { setScope(value); setSearch(''); }} />}
           {scope === 'all' && <TextInputLP label="" value={search} onChange={setSearch} placeholder="Название лиги или город" />}
           <div className="flex flex-col gap-2 max-h-[50vh] overflow-y-auto overscroll-contain scrollbar-hide" onScroll={handleLeaguesScroll} aria-busy={isLeaguesLoading}>
-            {leagues.map(item => <OptionRow key={item.id} title={item.name} subtitle={item.city} logoUrl={item.logo_url} showLogo checked={sameId(league?.id, item.id)} onClick={() => handleLeagueSelect(item)} activeBrandColor={brandColor} />)}
+            {leagues.map(item => <OptionRow key={item.id} title={item.name} subtitle={item.city} logoUrl={item.logo_url} showLogo checked={sameId(league?.id, item.id)} onClick={() => handleLeagueSelect(item)} />)}
             {isLeaguesLoading && <Loading />}
             {leaguesError && <div role="alert" className="text-center text-[13px] text-content-muted py-3"><p>{leaguesError}</p><button type="button" className="min-h-[44px] text-brand font-bold" onClick={() => loadLeagues(leaguesOffset, search, scope)}>Повторить</button></div>}
             {!isLeaguesLoading && !leaguesError && leagues.length === 0 && <p className="text-[13px] font-semibold text-content-muted leading-relaxed text-center py-6">{search.trim() ? 'По этому запросу лиг не нашлось.' : scope === 'my' ? 'У ваших команд пока нет лиг. Посмотрите список «Все лиги».' : 'Здесь пока нет ни одной лиги.'}</p>}
@@ -312,7 +307,7 @@ export function TournamentListPanel({ teams = [], activeDivisionId, activeTourna
         <div role="dialog" aria-modal="true" aria-label="Выбор сезона" className="flex flex-col gap-4">
           <h3 className="text-[16px] font-black tracking-widest text-content-main uppercase">Выбор сезона</h3>
           <div className="flex flex-col gap-2 max-h-[50vh] overflow-y-auto overscroll-contain scrollbar-hide">
-            {seasons.map(item => <OptionRow key={item.id} title={item.name} checked={sameId(season?.id, item.id)} onClick={() => { setSeason(item); setOpenSheet(null); }} activeBrandColor={brandColor} />)}
+            {seasons.map(item => <OptionRow key={item.id} title={item.name} checked={sameId(season?.id, item.id)} onClick={() => { setSeason(item); setOpenSheet(null); }} />)}
           </div>
         </div>
       </BottomSheet>

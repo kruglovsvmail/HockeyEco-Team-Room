@@ -42,7 +42,9 @@ export const EventDetailsMatch = ({ event, user: userProp, selectedTeam: selecte
   const [activeTab, setActiveTab]   = useState('info');
   const [localEvent, setLocalEvent] = useState(event);
 
-  useEffect(() => { setLocalEvent(event); }, [event?.event_id]);
+  // Матч двух своих команд — две карточки с одним event_id, по одной на команду. Сменилась
+  // команда, чьими глазами открыт матч, — это другая карточка: своя шапка, цвета и взнос
+  useEffect(() => { setLocalEvent(event); }, [event?.event_id, event?.my_team_id]);
 
   const isColorsEnabled  = localStorage.getItem('tr_use_team_colors') !== 'false';
   const hasTeamColor     = isColorsEnabled && !!localEvent?.team_color;
