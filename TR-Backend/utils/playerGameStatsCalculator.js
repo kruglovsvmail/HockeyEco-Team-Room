@@ -165,10 +165,12 @@ goals AS (
         -- и в счёте матча. С послематчевой серией (so_goals) ничего общего не имеет.
         COUNT(*) FILTER (WHERE ge.goal_strength = 'ps')              AS g_ps,
         -- Шайба, заброшенная индивидуально: в протоколе нет ни первой, ни второй
-        -- передачи. Реализованный штрафной бросок сюда попадает — передач у него
-        -- не бывает по определению. Передачу, которую секретарь не внёс, от
-        -- сольного прохода не отличить: показатель верит протоколу.
-        COUNT(*) FILTER (WHERE ge.assist1_id IS NULL AND ge.assist2_id IS NULL) AS g_unassisted
+        -- передачи. Считаются только шайбы из игры: реализованный штрафной бросок
+        -- сюда не идёт, хоть передач у него и не бывает, — у него свой показатель
+        -- (goals_ps). Передачу, которую секретарь не внёс, от сольного прохода не
+        -- отличить: показатель верит протоколу.
+        COUNT(*) FILTER (WHERE ge.assist1_id IS NULL AND ge.assist2_id IS NULL
+                           AND ge.goal_strength IS DISTINCT FROM 'ps')       AS g_unassisted
     FROM game_events ge
     CROSS JOIN ctx c
     WHERE ge.game_id = c.game_id

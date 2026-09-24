@@ -1,8 +1,9 @@
 import pool from '../config/db.js';
 import { sendPushToTeamExcept, getMatchInfo } from '../services/pushService.js';
 import { recalculatePlayerGameStats } from '../utils/playerGameStatsCalculator.js';
-
-const EDIT_WINDOW_HOURS = 72;
+// Окно общее с поздней заявкой (utils/lateRoster.js): заявку задним числом можно
+// поменять ровно столько, сколько открыт ввод результатов
+import { RESULTS_EDIT_WINDOW_HOURS as EDIT_WINDOW_HOURS } from '../utils/permissions.js';
 
 // Периоды и типы событий, которые команда вносит сама. Послематчевые буллиты —
 // отдельный период 'SO' и свои два типа (та же модель, что у LMS): период и тип

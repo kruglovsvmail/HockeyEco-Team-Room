@@ -81,7 +81,7 @@ const sanitizePosition = (pos) => {
   return validKeys.includes(sanitized) ? sanitized : 'LW';
 };
 
-export const MatchLines = ({ event, initialAttendees = [], initialDraftLines = [], initialIsPublished = false, initialStaffMembers = [], initialFormationFile = null, refreshData }) => {
+export const MatchLines = ({ event, initialAttendees = [], initialDraftLines = [], initialIsPublished = false, initialStaffMembers = [], initialFormationFile = null, lateRoster = null, refreshData }) => {
   const [attendees, setAttendees] = useState(initialAttendees);
   const [draftLines, setDraftLines] = useState(initialDraftLines);
   const [isPublished, setIsPublished] = useState(initialIsPublished);
@@ -246,6 +246,51 @@ export const MatchLines = ({ event, initialAttendees = [], initialDraftLines = [
     return userRoles.some(role => allowedShareRoles.includes(role));
   }, [userRoles]);
 
+  // ── ЗАЯВКА ПОСЛЕ НАЧАЛА МАТЧА ──────────────────────────────────────────────
+  // lateRoster приходит с сервера вместе с расстановкой. null — матч ещё не начался или
+  // он официальный: кнопки живут по дедлайнам, как раньше. Иначе заявку меняют по правилу
+  // поздней заявки (TR-Backend/utils/lateRoster.js): те, кто вносит результаты, пока в
+  // протоколе нет записей с игроками команды и не закрылся ввод результатов.
+  const hasLateRosterRole = useMemo(() => {
+    if (userRoles.includes('admin')) return true;
+    const allowedRoles = (PERMISSIONS.MATCH_FILL_RESULTS?.allowedRoles || []).map(r => String(r).toLowerCase());
+    return userRoles.some(role => allowedRoles.includes(role));
+  }, [userRoles]);
+  const hasLateRosterAccess = checkAccess('MATCH_FILL_RESULTS', event?.my_team_id);
+
+  // Что мешает поздней правке — статус подсказки; null — ничего не мешает
+  const lateRosterBlock = (() => {
+    if (!lateRoster) return null;
+    if (!hasLateRosterRole) return 'late_roster_no_rights';
+    if (!hasLateRosterAccess) return 'no_subscription';
+    if (lateRoster.allowed) return null;
+    if (lateRoster.reason === 'team_records') {
+      return lateRoster.isInitiator ? 'late_roster_team_records' : 'late_roster_team_records_opponent';
+    }
+    return `late_roster_${lateRoster.reason}`;
+  })();
+
+  // Почему серая кнопка и что показать в подсказке: до начала матча — подписка, затем
+  // дедлайн (порядок прежний), после начала — правило поздней заявки. null — доступно.
+  const submitBlock = lateRoster
+    ? lateRosterBlock
+    : !hasRosterSubmitAccess ? 'no_subscription'
+    : timeToMatch < DEADLINES.ROSTER_SUBMIT_MINUTES ? getDeadlineHintStatus('deadline_roster_submit')
+    : null;
+  const linesBlock = lateRoster
+    ? lateRosterBlock
+    : !hasLinesManageAccess ? 'no_subscription'
+    : timeToMatch <= DEADLINES.MIDDLE_EDIT_MINUTES ? getDeadlineHintStatus('deadline_lines_edit')
+    : null;
+  const playerParamsBlock = lateRoster
+    ? lateRosterBlock
+    : !hasPlayerParamsAccess ? 'no_subscription'
+    : timeToMatch < DEADLINES.ROSTER_SUBMIT_MINUTES ? getDeadlineHintStatus('deadline_player_params')
+    : isPlayerParamsLocked ? 'league_params_locked'
+    : null;
+  // Кнопку «Состав» до начала видят тренеры; после начала — ещё и те, кто вносит результаты
+  const showLinesButton = hasCoachAccess || (!!lateRoster && hasLateRosterRole);
+
   const unassignedPlayers = useMemo(() => {
     return attendees.filter(a => !draftLines.some(l => String(l.player_id) === String(a.id || a.user_id)));
   }, [attendees, draftLines]);
@@ -289,7 +334,7 @@ export const MatchLines = ({ event, initialAttendees = [], initialDraftLines = [
   }, [isEditMode, attendees]);
 
   const handlePublish = async () => {
-    if (timeToMatch < DEADLINES.MIDDLE_EDIT_MINUTES) {
+    if (lateRoster ? lateRosterBlock : timeToMatch < DEADLINES.MIDDLE_EDIT_MINUTES) {
       return;
     }
     setIsPublishing(true);
@@ -339,7 +384,7 @@ export const MatchLines = ({ event, initialAttendees = [], initialDraftLines = [
   // Кнопка «Отправить» на вкладке только открывает шторку выбора представителей —
   // сама отправка идёт из неё (RosterStaffSheet), вместе с выбранными staffIds.
   const handleSubmitOfficialRoster = async (staffIds) => {
-    if (timeToMatch < DEADLINES.ROSTER_SUBMIT_MINUTES) {
+    if (lateRoster ? lateRosterBlock : timeToMatch < DEADLINES.ROSTER_SUBMIT_MINUTES) {
       return;
     }
     setIsSubmittingRoster(true);
@@ -391,7 +436,7 @@ export const MatchLines = ({ event, initialAttendees = [], initialDraftLines = [
       setActiveSelection(null);
       refreshData(); 
     } else {
-      if (timeToMatch <= DEADLINES.MIDDLE_EDIT_MINUTES) {
+      if (lateRoster ? lateRosterBlock : timeToMatch <= DEADLINES.MIDDLE_EDIT_MINUTES) {
         return;
       }
       setIsEditMode(true);
@@ -780,16 +825,8 @@ export const MatchLines = ({ event, initialAttendees = [], initialDraftLines = [
 
     // Статус подсказки считаем ДО разметки: от него зависит, кто в ряду будет флекс-элементом
     // (обёртка HintPopover или сам слот) и, значит, кому отдать геометрию SLOT_BOX_STYLE.
-    // Порядок приоритетов сохранён: подписка важнее временного дедлайна.
-    const hintStatus = (!isEditMode && player && hasAdminAccess)
-      ? (!hasPlayerParamsAccess
-          ? 'no_subscription'
-          : timeToMatch < DEADLINES.ROSTER_SUBMIT_MINUTES
-            ? getDeadlineHintStatus('deadline_player_params')
-            : isPlayerParamsLocked
-              ? 'league_params_locked'
-              : null)
-      : null;
+    // Сама причина — playerParamsBlock (подписка важнее временного дедлайна).
+    const hintStatus = (!isEditMode && player && hasAdminAccess) ? playerParamsBlock : null;
     const isHintWrapped = hintStatus != null;
 
     const slotContent = (
@@ -813,9 +850,10 @@ export const MatchLines = ({ event, initialAttendees = [], initialDraftLines = [
           if (isEditMode) {
             handleSlotClick(lineNum, pos);
           } else if (player) {
-            // ЖЕСТКИЙ БЛОК: нет подписки, наступил дедлайн или организаторы запретили и номер,
-            // и нашивки — шторку не инициируем, вместо неё игрок видит подсказку с причиной
-            if (!hasPlayerParamsAccess || timeToMatch < DEADLINES.ROSTER_SUBMIT_MINUTES || isPlayerParamsLocked) {
+            // ЖЕСТКИЙ БЛОК: нет подписки, наступил дедлайн, организаторы запретили и номер,
+            // и нашивки или поздняя заявка закрыта — шторку не инициируем, вместо неё
+            // игрок видит подсказку с причиной
+            if (playerParamsBlock) {
               return;
             }
             handleViewPlayerClick(player, e);
@@ -1000,7 +1038,7 @@ export const MatchLines = ({ event, initialAttendees = [], initialDraftLines = [
       </style>
 
       {/* КНОПКИ УПРАВЛЕНИЯ ПЯТЕРКАМИ С УЧЕТОМ СТАТУСА ТАРИФА ПОДПИСКИ ИЛИ ВРЕМЕННЫХ ДЕДЛАЙНОВ */}
-      {(isEditMode || hasCoachAccess || hasAdminAccess || (hasShareRoleAccess && draftLines.length > 0)) && (
+      {(isEditMode || showLinesButton || hasAdminAccess || (hasShareRoleAccess && draftLines.length > 0)) && (
         <div className="flex justify-center items-center gap-2.5 pb-2 mb-4 w-full bg-transparent flex-wrap">
           {isEditMode ? (
             <>
@@ -1029,37 +1067,8 @@ export const MatchLines = ({ event, initialAttendees = [], initialDraftLines = [
           ) : (
             <>
               {hasAdminAccess && (
-                hasRosterSubmitAccess ? (
-                  timeToMatch < DEADLINES.ROSTER_SUBMIT_MINUTES ? (
-                    <HintPopover status={getDeadlineHintStatus('deadline_roster_submit')} className="flex-1">
-                      <button
-                        type="button"
-                        className="flex w-full justify-center items-center gap-1 px-3 py-2 rounded-full text-[14px] font-semibold bg-surface-base border border-content-subtle text-content-muted opacity-40 cursor-pointer select-none outline-none"
-                      >
-                        <Icon name="roster" className="w-4 h-4 shrink-0" />
-                        Отправить
-                      </button>
-                    </HintPopover>
-                  ) : (
-                    <button
-                      onClick={() => setIsStaffSheetOpen(true)}
-                      disabled={isSubmittingRoster}
-                      style={{ color: isPublished ? '#fff' : activeBrandColor, borderColor: activeBrandColor, backgroundColor: isPublished ? activeBrandColor : undefined }}
-                      className={clsx(
-                        "flex flex-1 justify-center items-center gap-1 px-3 py-2 rounded-full text-[14px] font-semibold bg-surface-base border transition-all outline-none select-none active:scale-95 cursor-pointer",
-                        !isPublished && "bg-surface-base hover:opacity-80"
-                      )}
-                    >
-                      {isSubmittingRoster ? (
-                        <div className={clsx("w-3.5 h-3.5 rounded-full border-2 border-t-transparent animate-spin shrink-0", isPublished ? "border-white" : "border-current")} />
-                      ) : (
-                        <Icon name="roster" className="w-3.5 h-3.5 shrink-0" />
-                      )}
-                      {isPublished ? 'Отправлено' : 'Отправить'}
-                    </button>
-                  )
-                ) : (
-                  <HintPopover status="no_subscription" className="flex-1">
+                submitBlock ? (
+                  <HintPopover status={submitBlock} className="flex-1">
                     <button
                       type="button"
                       className="flex w-full justify-center items-center gap-1 px-3 py-2 rounded-full text-[14px] font-semibold bg-surface-base border border-content-subtle text-content-muted opacity-40 cursor-pointer select-none outline-none"
@@ -1068,6 +1077,23 @@ export const MatchLines = ({ event, initialAttendees = [], initialDraftLines = [
                       Отправить
                     </button>
                   </HintPopover>
+                ) : (
+                  <button
+                    onClick={() => setIsStaffSheetOpen(true)}
+                    disabled={isSubmittingRoster}
+                    style={{ color: isPublished ? '#fff' : activeBrandColor, borderColor: activeBrandColor, backgroundColor: isPublished ? activeBrandColor : undefined }}
+                    className={clsx(
+                      "flex flex-1 justify-center items-center gap-1 px-3 py-2 rounded-full text-[14px] font-semibold bg-surface-base border transition-all outline-none select-none active:scale-95 cursor-pointer",
+                      !isPublished && "bg-surface-base hover:opacity-80"
+                    )}
+                  >
+                    {isSubmittingRoster ? (
+                      <div className={clsx("w-3.5 h-3.5 rounded-full border-2 border-t-transparent animate-spin shrink-0", isPublished ? "border-white" : "border-current")} />
+                    ) : (
+                      <Icon name="roster" className="w-3.5 h-3.5 shrink-0" />
+                    )}
+                    {isPublished ? 'Отправлено' : 'Отправить'}
+                  </button>
                 )
               )}
 
@@ -1099,30 +1125,9 @@ export const MatchLines = ({ event, initialAttendees = [], initialDraftLines = [
                 )
               )}
 
-              {hasCoachAccess && (
-                hasLinesManageAccess ? (
-                  timeToMatch <= DEADLINES.MIDDLE_EDIT_MINUTES ? (
-                    <HintPopover status={getDeadlineHintStatus('deadline_lines_edit')} className="flex-1">
-                      <button
-                        type="button"
-                        className="flex w-full justify-center items-center gap-1 px-3 py-2 rounded-full text-[14px] font-semibold border border-content-subtle bg-surface-base text-content-muted opacity-40 cursor-pointer select-none outline-none"
-                      >
-                        <Icon name="users" className="w-4 h-4 shrink-0" />
-                        Состав
-                      </button>
-                    </HintPopover>
-                  ) : (
-                    <button
-                      onClick={(e) => handleHeaderActionClick(e)}
-                      style={{ color: activeBrandColor, borderColor: activeBrandColor }}
-                      className="flex flex-1 justify-center items-center gap-1 px-3 py-2 rounded-full text-[14px] font-semibold border bg-surface-base transition-all active:scale-95 hover:opacity-80 outline-none cursor-pointer select-none"
-                    >
-                      <Icon name="users" className="w-4 h-4 shrink-0" />
-                      Состав
-                    </button>
-                  )
-                ) : (
-                  <HintPopover status="no_subscription" className="flex-1">
+              {showLinesButton && (
+                linesBlock ? (
+                  <HintPopover status={linesBlock} className="flex-1">
                     <button
                       type="button"
                       className="flex w-full justify-center items-center gap-1 px-3 py-2 rounded-full text-[14px] font-semibold border border-content-subtle bg-surface-base text-content-muted opacity-40 cursor-pointer select-none outline-none"
@@ -1131,6 +1136,15 @@ export const MatchLines = ({ event, initialAttendees = [], initialDraftLines = [
                       Состав
                     </button>
                   </HintPopover>
+                ) : (
+                  <button
+                    onClick={(e) => handleHeaderActionClick(e)}
+                    style={{ color: activeBrandColor, borderColor: activeBrandColor }}
+                    className="flex flex-1 justify-center items-center gap-1 px-3 py-2 rounded-full text-[14px] font-semibold border bg-surface-base transition-all active:scale-95 hover:opacity-80 outline-none cursor-pointer select-none"
+                  >
+                    <Icon name="users" className="w-4 h-4 shrink-0" />
+                    Состав
+                  </button>
                 )
               )}
             </>

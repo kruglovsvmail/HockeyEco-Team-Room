@@ -51,7 +51,7 @@ export const EventDetailsMatch = ({ event, user: userProp, selectedTeam: selecte
   const cacheKey = `tr_cached_match_${localEvent?.event_id}_team_${localEvent?.my_team_id || 'no_team'}`;
 
   const [matchData, setMatchData] = useState({
-    attendees: [], draftLines: [], isPublished: false,
+    attendees: [], draftLines: [], isPublished: false, lateRoster: null,
     teamRoster: [], staffMembers: [], referees: [],
   });
   const [loading, setLoading] = useState(true);
@@ -109,7 +109,7 @@ export const EventDetailsMatch = ({ event, user: userProp, selectedTeam: selecte
     const cached = localStorage.getItem(cacheKey);
     if (cached) { setMatchData(JSON.parse(cached)); setLoading(false); }
     else {
-      setMatchData({ attendees: [], draftLines: [], isPublished: false, teamRoster: [], staffMembers: [], referees: [] });
+      setMatchData({ attendees: [], draftLines: [], isPublished: false, lateRoster: null, teamRoster: [], staffMembers: [], referees: [] });
       setLoading(true);
     }
   }, [localEvent?.event_id, cacheKey]);
@@ -133,6 +133,8 @@ export const EventDetailsMatch = ({ event, user: userProp, selectedTeam: selecte
         attendees:    attData.success    ? attData.attendees          : [],
         draftLines:   linesData.success  ? (linesData.lines   || []) : [],
         isPublished:  linesData.success  ? !!linesData.isPublished   : false,
+        // Можно ли поменять заявку после начала матча (null — матч не начался или официальный)
+        lateRoster:   linesData.success  ? (linesData.lateRoster ?? null) : null,
         teamRoster:   rosterData.success ? (rosterData.roster || []) : [],
         staffMembers: rosterData.success ? (rosterData.staff  || []) : [],
         referees:     staffData.success  ? staffData.staff            : [],
@@ -400,6 +402,7 @@ export const EventDetailsMatch = ({ event, user: userProp, selectedTeam: selecte
                       initialIsPublished={matchData.isPublished}
                       initialStaffMembers={matchData.staffMembers}
                       initialFormationFile={formationFile}
+                      lateRoster={matchData.lateRoster ?? null}
                       refreshData={fetchAllMatchData}
                     />
                   </FadeIn>

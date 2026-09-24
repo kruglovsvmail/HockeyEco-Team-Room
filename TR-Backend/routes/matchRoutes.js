@@ -83,11 +83,15 @@ router.post('/:eventId/cancel', verifyToken, cancelFriendlyMatch);
 // Получить опубликованные пятерки на матч (черновик)
 router.get('/:eventId/lines', verifyToken, requireTeamPermission('INTERNAL_VIEW'), getMatchLines);
 
-// Сохранить черновик пятерок на матч (чистая тактика тренера, разрешено без подписки)
-router.post('/:eventId/lines', verifyToken, requireTeamPermission('MATCH_LINES_MANAGE'), saveMatchLines);
+// Сохранить черновик пятерок на матч (чистая тактика тренера, разрешено без подписки).
+// MATCH_FILL_RESULTS — для поздней заявки: после начала неофициального матча расстановку
+// правят те, кто вносит результаты (utils/lateRoster.js). Какое из двух прав нужно
+// сейчас, решает контроллер — до начала матча менеджер сюда по-прежнему не пройдёт.
+router.post('/:eventId/lines', verifyToken, requireTeamPermission(['MATCH_LINES_MANAGE', 'MATCH_FILL_RESULTS']), saveMatchLines);
 
-// Загрузить/перезаписать картинку состава в S3 (генерируется на клиенте после сохранения)
-router.post('/:eventId/lines/formation-image', verifyToken, requireTeamPermission('MATCH_LINES_MANAGE'), upload.single('image'), uploadMatchFormationImage);
+// Загрузить/перезаписать картинку состава в S3 (генерируется на клиенте после сохранения).
+// Права те же, что у сохранения расстановки: картинка — её снимок.
+router.post('/:eventId/lines/formation-image', verifyToken, requireTeamPermission(['MATCH_LINES_MANAGE', 'MATCH_FILL_RESULTS']), upload.single('image'), uploadMatchFormationImage);
 
 // Обновить параметры конкретного игрока в черновике (номер, C, A) — доступно руководителям по подписке
 router.put('/:eventId/line-player', verifyToken, requireTeamPermission('MATCH_LINES_EDIT_PLAYER_PARAMS'), updateLinePlayer);

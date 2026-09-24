@@ -4,420 +4,315 @@ import { getAuthHeaders, getImageUrl } from '../../utils/helpers';
 import { BottomSheet } from '../../ui/BottomSheet';
 import { TextInputLP } from '../../ui/Input-LP';
 import { Icon } from '../../ui/Icon';
-
-// Выбор турнира для раздела «Турниры / Лиги».
-//
-// Раздел стал информационным: сюда заходят посмотреть чужую турнирную таблицу,
-// статистику игрока или расписание любой лиги — в том числе те, у кого своей команды
-// нет вовсе. Раньше панель показывала турниры одной команды, теперь выбор идёт цепочкой
-// фильтров: область → лига → сезон → дивизионы.
-//
-// Сами фильтры — компактные строки «текст плюс шеврон» в брендовом цвете, как фильтр
-// типа тренировки в «Статистике команды». Каждая открывает свою нижнюю шторку со
-// списком вариантов. Шторки портируются на z-[110] и спокойно ложатся поверх этой
-// панели, которая живёт на z-[40].
+import { SegmentedControl } from '../../ui/SegmentedControl';
 
 const LEAGUES_PAGE_SIZE = 20;
+const sameId = (left, right) => left != null && right != null && String(left) === String(right);
+const selectionStyle = (color) => color ? { backgroundColor: `${color}1a`, color } : undefined;
 
-// Компактный триггер фильтра — тот же вид, что у фильтра тренировок в статистике команды
-const FilterButton = ({ label, onClick, disabled, activeBrandColor }) => (
+const FilterButton = ({ title, value, onClick, disabled, expanded, activeBrandColor }) => (
   <button
     type="button"
     onClick={onClick}
     disabled={disabled}
-    className={clsx(
-      "flex items-center gap-1 min-w-0 text-brand cursor-pointer active:opacity-70",
-      disabled && "opacity-40 cursor-not-allowed"
-    )}
-    style={activeBrandColor ? { color: activeBrandColor } : undefined}
+    aria-label={`${title}: ${value}`}
+    aria-haspopup="dialog"
+    aria-expanded={expanded}
+    className="min-w-0 rounded-2xl bg-surface-level1 px-3 py-2.5 text-left shadow-sm disabled:opacity-40 disabled:cursor-not-allowed focus-visible:ring-2 focus-visible:ring-brand"
   >
-    <span className="text-[12px] font-bold truncate max-w-[140px]">{label}</span>
-    <Icon name="chevron" className="w-3 h-3 shrink-0" />
+    <span className="block text-[11px] font-semibold text-content-muted mb-1">{title}</span>
+    <span className="flex items-center justify-between gap-2 text-brand" style={activeBrandColor ? { color: activeBrandColor } : undefined}>
+      <span className="min-w-0 text-[14px] font-bold truncate">{value}</span>
+      <Icon name="chevron" className="w-3 h-3 shrink-0" />
+    </span>
   </button>
 );
 
-// Строка варианта внутри шторки
 const OptionRow = ({ title, subtitle, logoUrl, showLogo, checked, onClick, activeBrandColor }) => (
   <button
     type="button"
     onClick={onClick}
+    aria-pressed={checked}
     className={clsx(
-      "w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-colors outline-none text-left",
-      checked ? "bg-brand-opacity" : "bg-surface-level2 active:scale-[0.99]"
+      'w-full flex items-center gap-3 px-4 py-3 min-h-[52px] rounded-2xl transition-colors text-left focus-visible:ring-2 focus-visible:ring-brand',
+      checked ? 'bg-brand-opacity' : 'bg-surface-level1 active:bg-surface-level2'
     )}
-    style={checked && activeBrandColor ? { backgroundColor: `${activeBrandColor}1a` } : undefined}
+    style={checked ? selectionStyle(activeBrandColor) : undefined}
   >
     {showLogo && (
-      <div className="w-9 h-9 rounded-full bg-surface-level1 shrink-0 overflow-hidden flex items-center justify-center">
+      <div className="w-12 h-12 shrink-0 flex items-center justify-center">
         {logoUrl
-          ? <img src={getImageUrl(logoUrl)} alt="" className="w-full h-full object-cover" />
-          : <Icon name="trophy" className="w-4 h-4 text-content-subtle" />}
+          ? <img src={getImageUrl(logoUrl)} alt="" className="w-full h-full object-contain" />
+          : <Icon name="trophy" className="w-7 h-7 text-content-subtle" />}
       </div>
     )}
-
-    <div className="flex flex-col min-w-0 flex-1">
+    <span className="flex flex-col min-w-0 flex-1">
       <span
-        className={clsx("text-[14px] font-bold truncate", checked ? "text-brand" : "text-content-main")}
+        className={clsx('text-[14px] font-bold whitespace-normal break-words leading-snug', checked ? 'text-brand' : 'text-content-main')}
         style={checked && activeBrandColor ? { color: activeBrandColor } : undefined}
       >
         {title}
       </span>
-      {subtitle && <span className="text-[11px] font-semibold text-content-muted truncate">{subtitle}</span>}
-    </div>
-
-    {checked && (
-      <Icon name="check" className="w-5 h-5 text-brand shrink-0"
-            style={activeBrandColor ? { color: activeBrandColor } : undefined} />
-    )}
+      {subtitle && <span className="text-[11px] font-semibold text-content-muted mt-1 break-words">{subtitle}</span>}
+    </span>
+    <span className="w-5 shrink-0">
+      {checked && <Icon name="check" className="w-5 h-5 text-brand" style={activeBrandColor ? { color: activeBrandColor } : undefined} />}
+    </span>
   </button>
 );
 
-export function TournamentListPanel({
-  teams = [],
-  activeDivisionId,
-  onSelect,
-  hasTeamColor,
-  activeBrandColor
-}) {
+const Loading = () => (
+  <div role="status" aria-label="Загрузка" className="flex justify-center py-8">
+    <div className="w-5 h-5 border-2 border-brand border-t-transparent rounded-full animate-spin" />
+  </div>
+);
+
+export function TournamentListPanel({ teams = [], activeDivisionId, activeTournament, onSelect, hasTeamColor, activeBrandColor }) {
   const hasTeams = teams.length > 0;
   const brandColor = hasTeamColor ? activeBrandColor : undefined;
-
-  // Область поиска. У человека с командами по умолчанию «мои» — ему почти всегда нужен
-  // свой турнир; у безкомандного выбора нет, сразу все лиги.
-  const [scope, setScope] = useState(() => (hasTeams ? { type: 'my' } : { type: 'all' }));
-
-  const [league, setLeague] = useState(null);
+  const initialTournamentRef = useRef(activeTournament);
+  const [scope, setScope] = useState(hasTeams ? 'my' : 'all');
+  const [league, setLeague] = useState(() => activeTournament?.league_id ? {
+    id: activeTournament.league_id,
+    name: activeTournament.league_name,
+    short_name: activeTournament.league_short_name,
+    logo_url: activeTournament.league_logo
+  } : null);
   const [season, setSeason] = useState(null);
   const [seasons, setSeasons] = useState([]);
   const [isStructureLoading, setIsStructureLoading] = useState(false);
-
+  const [structureError, setStructureError] = useState('');
+  const [isRestoringLeague, setIsRestoringLeague] = useState(!!activeTournament?.league_name && !activeTournament?.league_id);
   const [leagues, setLeagues] = useState([]);
   const [leaguesOffset, setLeaguesOffset] = useState(0);
   const [hasMoreLeagues, setHasMoreLeagues] = useState(false);
   const [isLeaguesLoading, setIsLeaguesLoading] = useState(false);
+  const [leaguesError, setLeaguesError] = useState('');
   const [search, setSearch] = useState('');
+  const [openSheet, setOpenSheet] = useState(null);
+  const leaguesRequestRef = useRef(0);
+  const leaguesLoadingRef = useRef(false);
+  const structureRequestRef = useRef(0);
+  const restoreVersionRef = useRef(0);
+  const listRef = useRef(null);
+  const activeRowRef = useRef(null);
 
-  const [openSheet, setOpenSheet] = useState(null); // 'scope' | 'league' | 'season'
+  // Старые сохранённые турниры содержат название лиги, но ещё не её id.
+  // Восстанавливаем их через существующий справочник, не меняя API.
+  useEffect(() => {
+    const saved = initialTournamentRef.current;
+    if (saved?.league_id || !saved?.league_name) return;
+    const controller = new AbortController();
+    const version = restoreVersionRef.current;
+    const restore = async () => {
+      try {
+        const params = new URLSearchParams({ scope: 'all', search: saved.league_name, limit: '50' });
+        const res = await fetch(`${import.meta.env.VITE_API_URL}/api/tournaments/leagues?${params}`, {
+          headers: getAuthHeaders(), signal: controller.signal
+        });
+        const data = await res.json();
+        if (!res.ok || !data.success || version !== restoreVersionRef.current) return;
+        const match = data.leagues.find(item => item.name === saved.league_name);
+        if (match) setLeague(match);
+      } catch (err) {
+        if (err.name !== 'AbortError') console.error('Ошибка восстановления лиги:', err);
+      } finally {
+        if (!controller.signal.aborted) setIsRestoringLeague(false);
+      }
+    };
+    restore();
+    return () => controller.abort();
+  }, []);
 
-  // Гонка запросов: пока летит страница лиг, человек успевает поменять фильтр.
-  // По номеру запроса отбрасываем ответы, которые к текущему состоянию уже не относятся.
-  const requestIdRef = useRef(0);
+  const loadStructure = useCallback(async (leagueId) => {
+    const requestId = ++structureRequestRef.current;
+    setIsStructureLoading(true);
+    setStructureError('');
+    setSeasons([]);
+    setSeason(null);
+    try {
+      const res = await fetch(`${import.meta.env.VITE_API_URL}/api/tournaments/leagues/${leagueId}/structure`, { headers: getAuthHeaders() });
+      const data = await res.json();
+      if (!res.ok || !data.success) throw new Error('Не удалось загрузить соревнования');
+      if (requestId !== structureRequestRef.current) return;
+      const nextSeasons = data.seasons || [];
+      const saved = initialTournamentRef.current;
+      // Дивизион и сезон имеют общие id во всей платформе, поэтому совпадение
+      // безопасно даже при переключении на другую лигу.
+      const restored = nextSeasons.find(item => sameId(item.id, saved?.season_id))
+        || nextSeasons.find(item => item.divisions.some(division => sameId(division.id, saved?.division_id)));
+      setSeasons(nextSeasons);
+      setSeason(restored || nextSeasons.find(item => item.isActive) || nextSeasons[0] || null);
+    } catch (err) {
+      if (requestId === structureRequestRef.current) setStructureError('Не удалось загрузить соревнования. Попробуйте ещё раз.');
+    } finally {
+      if (requestId === structureRequestRef.current) setIsStructureLoading(false);
+    }
+  }, []);
 
-  const scopeLabel = scope.type === 'all'
-    ? 'Все лиги'
-    : scope.type === 'my'
-      ? 'Мои лиги'
-      : (teams.find(t => t.id === scope.teamId)?.short_name
-         || teams.find(t => t.id === scope.teamId)?.name
-         || 'Команда');
+  const leagueId = league?.id;
+  useEffect(() => {
+    if (leagueId) loadStructure(leagueId);
+    return () => { structureRequestRef.current += 1; };
+  }, [leagueId, loadStructure]);
 
   const loadLeagues = useCallback(async (offset, searchValue, scopeValue) => {
-    const requestId = ++requestIdRef.current;
+    const requestId = ++leaguesRequestRef.current;
+    leaguesLoadingRef.current = true;
     setIsLeaguesLoading(true);
-
+    setLeaguesError('');
     try {
-      const params = new URLSearchParams({
-        scope: scopeValue.type === 'all' ? 'all' : 'my',
-        limit: String(LEAGUES_PAGE_SIZE),
-        offset: String(offset)
-      });
-      if (scopeValue.type === 'team') params.set('teamId', String(scopeValue.teamId));
+      const params = new URLSearchParams({ scope: scopeValue, limit: String(LEAGUES_PAGE_SIZE), offset: String(offset) });
       if (searchValue.trim()) params.set('search', searchValue.trim());
-
-      const res = await fetch(`${import.meta.env.VITE_API_URL}/api/tournaments/leagues?${params}`, {
-        headers: getAuthHeaders()
-      });
+      const res = await fetch(`${import.meta.env.VITE_API_URL}/api/tournaments/leagues?${params}`, { headers: getAuthHeaders() });
       const data = await res.json();
-      if (requestId !== requestIdRef.current || !data.success) return;
-
-      setLeagues(prev => (offset === 0 ? data.leagues : [...prev, ...data.leagues]));
+      if (!res.ok || !data.success) throw new Error('Не удалось загрузить лиги');
+      if (requestId !== leaguesRequestRef.current) return;
+      setLeagues(prev => offset === 0 ? data.leagues : [...prev, ...data.leagues]);
       setHasMoreLeagues(data.hasMore);
       setLeaguesOffset(offset + data.leagues.length);
     } catch (err) {
-      console.error('Ошибка загрузки списка лиг:', err);
+      if (requestId === leaguesRequestRef.current) setLeaguesError('Не удалось загрузить лиги. Попробуйте ещё раз.');
     } finally {
-      if (requestId === requestIdRef.current) setIsLeaguesLoading(false);
+      if (requestId === leaguesRequestRef.current) {
+        setIsLeaguesLoading(false);
+        leaguesLoadingRef.current = false;
+      }
     }
   }, []);
 
-  // Первая загрузка и перезагрузка при смене области
-  useEffect(() => {
-    setLeagues([]);
-    setLeaguesOffset(0);
-    loadLeagues(0, '', scope);
-  }, [scope, loadLeagues]);
-
-  // Поиск с задержкой: без неё каждая буква уходила бы отдельным запросом
   useEffect(() => {
     if (openSheet !== 'league') return;
+    setLeagues([]);
+    setLeaguesOffset(0);
+    setHasMoreLeagues(false);
+    setLeaguesError('');
+    setIsLeaguesLoading(true);
+    leaguesLoadingRef.current = true;
+    const timer = setTimeout(() => loadLeagues(0, search, scope), search.trim() ? 300 : 0);
+    return () => {
+      clearTimeout(timer);
+      leaguesRequestRef.current += 1;
+      leaguesLoadingRef.current = false;
+    };
+  }, [openSheet, scope, search, loadLeagues]);
 
-    const timer = setTimeout(() => {
-      setLeagues([]);
-      setLeaguesOffset(0);
-      loadLeagues(0, search, scope);
-    }, 300);
-
-    return () => clearTimeout(timer);
-  }, [search]); // eslint-disable-line react-hooks/exhaustive-deps
-
-  // Сезоны и дивизионы выбранной лиги
-  const loadStructure = useCallback(async (leagueId) => {
-    setIsStructureLoading(true);
-    try {
-      const res = await fetch(`${import.meta.env.VITE_API_URL}/api/tournaments/leagues/${leagueId}/structure`, {
-        headers: getAuthHeaders()
-      });
-      const data = await res.json();
-      if (!data.success) return;
-
-      setSeasons(data.seasons);
-      // Сезон подставляем сам: активный, иначе самый свежий. Экономит тап, поменять можно.
-      setSeason(data.seasons.find(s => s.isActive) || data.seasons[0] || null);
-    } catch (err) {
-      console.error('Ошибка загрузки сезонов лиги:', err);
-    } finally {
-      setIsStructureLoading(false);
+  useEffect(() => {
+    const list = listRef.current;
+    const row = activeRowRef.current;
+    if (!list || !row || isStructureLoading) return;
+    const bounds = list.getBoundingClientRect();
+    const selected = row.getBoundingClientRect();
+    if (selected.top < bounds.top || selected.bottom > bounds.bottom) {
+      list.scrollTop += selected.top - bounds.top - (list.clientHeight - selected.height) / 2;
     }
-  }, []);
-
-  const handleScopeSelect = (nextScope) => {
-    setScope(nextScope);
-    setLeague(null);
-    setSeason(null);
-    setSeasons([]);
-    setSearch('');
-    setOpenSheet(null);
-  };
+  }, [season?.id, isStructureLoading]);
 
   const handleLeagueSelect = (nextLeague) => {
+    restoreVersionRef.current += 1;
+    setIsRestoringLeague(false);
+    if (!sameId(nextLeague.id, league?.id)) {
+      setSeasons([]);
+      setSeason(null);
+      setIsStructureLoading(true);
+    }
     setLeague(nextLeague);
-    setSeason(null);
-    setSeasons([]);
     setOpenSheet(null);
-    loadStructure(nextLeague.id);
   };
 
   const handleDivisionSelect = (division) => {
-    // Форма объекта повторяет ответ getTeamTournaments — на неё опирается вся остальная
-    // страница и её шапка, менять её ради нового источника нельзя.
     onSelect({
       division_id: division.id,
       division_name: division.name,
       division_short_name: division.shortName,
       division_logo: division.logoUrl,
-      league_name: league?.name || '',
-      league_short_name: league?.short_name || '',
-      season_id: season?.id || null,
-      season_name: season?.name || ''
+      league_id: league.id,
+      league_name: league.name || '',
+      league_short_name: league.short_name || '',
+      league_logo: league.logo_url || null,
+      season_id: season.id,
+      season_name: season.name || ''
     });
   };
 
-  // Подгрузка следующей порции при прокрутке к низу списка лиг
-  const handleLeaguesScroll = (e) => {
-    if (isLeaguesLoading || !hasMoreLeagues) return;
-    const { scrollTop, scrollHeight, clientHeight } = e.currentTarget;
-    if (scrollHeight - scrollTop - clientHeight < 120) {
-      loadLeagues(leaguesOffset, search, scope);
-    }
+  const loadMoreLeagues = () => {
+    if (!leaguesLoadingRef.current && hasMoreLeagues && !leaguesError) loadLeagues(leaguesOffset, search, scope);
   };
-
-  const divisions = season ? (seasons.find(s => s.id === season.id)?.divisions || []) : [];
+  const handleLeaguesScroll = (event) => {
+    const { scrollTop, scrollHeight, clientHeight } = event.currentTarget;
+    if (scrollHeight - scrollTop - clientHeight < 120) loadMoreLeagues();
+  };
+  const divisions = season?.divisions || [];
+  const groups = [
+    { title: 'Дивизионы', items: divisions.filter(item => !item.isTournament) },
+    { title: 'Турниры', items: divisions.filter(item => item.isTournament) }
+  ];
 
   return (
-    <div className="flex flex-col h-full">
-
-      {/* Строка фильтров. В ней лига показана КОРОТКИМ названием — строка узкая, и полное
-          в неё не помещается. Полное с логотипом человек видит в шторке выбора. */}
-      <div className="flex items-center gap-4 flex-wrap px-4 py-3 border-b border-surface-border shrink-0">
-        <FilterButton
-          label={scopeLabel}
-          onClick={() => setOpenSheet('scope')}
-          activeBrandColor={brandColor}
-        />
-        <FilterButton
-          label={league ? (league.short_name || league.name) : 'Выбрать лигу'}
-          onClick={() => setOpenSheet('league')}
-          activeBrandColor={brandColor}
-        />
-        <FilterButton
-          label={season ? season.name : 'Сезон'}
-          disabled={!league || seasons.length === 0}
-          onClick={() => setOpenSheet('season')}
-          activeBrandColor={brandColor}
-        />
+    <div className="flex flex-col h-full min-h-0">
+      <div className="grid grid-cols-[minmax(0,1fr)_minmax(96px,0.65fr)] gap-2 px-4 pt-4 pb-2 shrink-0">
+        <FilterButton title="Лига" value={league ? (league.short_name || league.name) : 'Выбрать лигу'} onClick={() => setOpenSheet('league')} expanded={openSheet === 'league'} activeBrandColor={brandColor} />
+        <FilterButton title="Сезон" value={season?.name || 'Выбрать'} disabled={!league || isStructureLoading || seasons.length === 0} onClick={() => setOpenSheet('season')} expanded={openSheet === 'season'} activeBrandColor={brandColor} />
       </div>
 
-      {/* Результат: дивизионы и турниры выбранного сезона */}
-      <div className="flex-1 overflow-y-auto scrollbar-hide p-4">
-        {isStructureLoading ? (
-          <div className="flex justify-center py-10">
-            <div className="w-5 h-5 border-2 border-brand border-t-transparent rounded-full animate-spin" />
+      <div ref={listRef} className="flex-1 min-h-0 overflow-y-auto overscroll-contain scrollbar-hide px-4 pb-6" aria-busy={isStructureLoading || isRestoringLeague}>
+        {isStructureLoading || isRestoringLeague ? <Loading /> : structureError ? (
+          <div role="alert" className="py-10 text-center text-[13px] text-content-muted">
+            <p>{structureError}</p>
+            <button type="button" onClick={() => loadStructure(league.id)} className="mt-3 min-h-[44px] text-brand font-bold">Повторить</button>
           </div>
         ) : !league ? (
-          <div className="py-10 text-center text-[14px] font-bold text-content-subtle leading-relaxed px-4">
-            Выберите лигу, чтобы увидеть её турниры и дивизионы
-          </div>
+          <p className="py-10 text-center text-[14px] font-bold text-content-subtle leading-relaxed px-2">Выберите лигу, чтобы увидеть её турниры и дивизионы</p>
         ) : divisions.length === 0 ? (
-          <div className="py-10 text-center text-[14px] font-bold text-content-subtle leading-relaxed px-4">
-            В этом сезоне нет опубликованных турниров
-          </div>
-        ) : (
-          <div className="flex flex-col gap-3">
-            {divisions.map((division) => {
-              const isActive = activeDivisionId === division.id;
-              return (
-                <button
-                  key={division.id}
-                  onClick={() => handleDivisionSelect(division)}
-                  className={clsx(
-                    "flex items-center gap-4 p-3 rounded-3xl border transition-all text-left outline-none active:scale-95",
-                    isActive
-                      ? "bg-brand-opacity border-brand"
-                      : "bg-surface-level1 border-surface-border hover:border-brand/30"
-                  )}
-                  /* Безопасное инлайн-наложение Hex-кодов прозрачности для активного элемента списка */
-                  style={isActive && hasTeamColor ? {
-                    backgroundColor: `${activeBrandColor}1a`,
-                    borderColor: activeBrandColor
-                  } : {}}
-                >
-                  <div className="w-10 h-10 shrink-0 overflow-hidden">
-                    <img src={getImageUrl(division.logoUrl)} className="w-full h-full object-contain" alt="" />
-                  </div>
-
-                  <div className="flex flex-col min-w-0 flex-1">
-                    <span className="text-[14px] font-black uppercase tracking-wide text-content-main">
-                      {league.short_name || league.name}
-                    </span>
-                    <h4 className="text-[14px] font-semibold text-content-muted truncate leading-tight">
-                      {division.shortName || division.name}
-                    </h4>
-                    <span className="text-[14px] font-bold text-content-muted mt-1">
-                      {[
-                        season?.name,
-                        division.isTournament ? 'Турнир' : null,
-                        division.isMine ? 'моя команда' : null
-                      ].filter(Boolean).join(' · ')}
-                    </span>
-                  </div>
-
-                  {isActive && (
-                    <Icon name="check" className="w-5 h-5 text-brand"
-                          style={hasTeamColor ? { color: activeBrandColor } : {}} />
-                  )}
-                </button>
-              );
-            })}
-          </div>
-        )}
+          <p className="py-10 text-center text-[14px] font-bold text-content-subtle leading-relaxed px-2">В этом сезоне нет опубликованных соревнований</p>
+        ) : groups.filter(group => group.items.length > 0).map(group => (
+          <section key={group.title} aria-label={group.title} className="mt-4">
+            <div className="flex items-center justify-between gap-2 px-1 mb-2 text-[11px] font-bold uppercase tracking-widest text-content-muted">
+              <h4>{group.title}</h4><span>{group.items.length}</span>
+            </div>
+            <div className="rounded-2xl bg-surface-level1 shadow-sm overflow-hidden divide-y divide-surface-border">
+              {group.items.map(division => {
+                const isActive = sameId(activeDivisionId, division.id);
+                return (
+                  <button
+                    key={division.id}
+                    ref={isActive ? activeRowRef : null}
+                    type="button"
+                    aria-pressed={isActive}
+                    onClick={() => handleDivisionSelect(division)}
+                    className={clsx('w-full min-h-[56px] flex items-center justify-between gap-3 px-4 py-3 text-left transition-colors focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-brand', isActive ? 'bg-brand-opacity text-brand' : 'text-content-main active:bg-surface-level2')}
+                    style={isActive ? selectionStyle(brandColor) : undefined}
+                  >
+                    <span className="min-w-0 text-[14px] font-bold break-words leading-snug">{division.shortName || division.name}</span>
+                    {isActive && <Icon name="check" className="w-5 h-5 shrink-0" />}
+                  </button>
+                );
+              })}
+            </div>
+          </section>
+        ))}
       </div>
 
-      {/* ── Шторка: область поиска ───────────────────────────────────────── */}
-      <BottomSheet isOpen={openSheet === 'scope'} onClose={() => setOpenSheet(null)}>
-        <div className="flex flex-col gap-4">
-          <h3 className="text-[16px] font-black tracking-widest text-content-main uppercase">Область поиска</h3>
-
-          <div className="flex flex-col gap-2 max-h-[50vh] overflow-y-auto scrollbar-hide">
-            <OptionRow
-              title="Все лиги"
-              subtitle="Любой турнир на платформе"
-              checked={scope.type === 'all'}
-              onClick={() => handleScopeSelect({ type: 'all' })}
-              activeBrandColor={brandColor}
-            />
-
-            {hasTeams && (
-              <OptionRow
-                title="Мои лиги"
-                subtitle="Только там, где заявлены мои команды"
-                checked={scope.type === 'my'}
-                onClick={() => handleScopeSelect({ type: 'my' })}
-                activeBrandColor={brandColor}
-              />
-            )}
-
-            {teams.map(team => (
-              <OptionRow
-                key={team.id}
-                title={team.name}
-                subtitle="Лиги одной команды"
-                logoUrl={team.logo_url}
-                showLogo
-                checked={scope.type === 'team' && scope.teamId === team.id}
-                onClick={() => handleScopeSelect({ type: 'team', teamId: team.id })}
-                activeBrandColor={brandColor}
-              />
-            ))}
-          </div>
-        </div>
-      </BottomSheet>
-
-      {/* ── Шторка: лига. Здесь полное название и логотип ────────────────── */}
       <BottomSheet isOpen={openSheet === 'league'} onClose={() => setOpenSheet(null)}>
-        <div className="flex flex-col gap-4">
-          <h3 className="text-[16px] font-black tracking-widest text-content-main uppercase">Лига</h3>
-
-          {/* Поиск нужен, только когда лиг много: в режиме своих команд их одна-две */}
-          {scope.type === 'all' && (
-            <TextInputLP
-              label=""
-              value={search}
-              onChange={setSearch}
-              placeholder="Название, аббревиатура или город"
-            />
-          )}
-
-          <div
-            className="flex flex-col gap-2 max-h-[50vh] overflow-y-auto scrollbar-hide"
-            onScroll={handleLeaguesScroll}
-          >
-            {leagues.map(item => (
-              <OptionRow
-                key={item.id}
-                title={item.name}
-                subtitle={[item.short_name, item.city].filter(Boolean).join(' · ')}
-                logoUrl={item.logo_url}
-                showLogo
-                checked={league?.id === item.id}
-                onClick={() => handleLeagueSelect(item)}
-                activeBrandColor={brandColor}
-              />
-            ))}
-
-            {isLeaguesLoading && (
-              <div className="flex justify-center py-4">
-                <div className="w-5 h-5 border-2 border-brand border-t-transparent rounded-full animate-spin" />
-              </div>
-            )}
-
-            {!isLeaguesLoading && leagues.length === 0 && (
-              <p className="text-[13px] font-semibold text-content-muted leading-relaxed text-center py-6">
-                {search.trim() ? 'По этому запросу лиг не нашлось.' : 'Здесь пока нет ни одной лиги.'}
-              </p>
-            )}
+        <div role="dialog" aria-modal="true" aria-label="Выбор лиги" className="flex flex-col gap-4">
+          <h3 className="text-[16px] font-black tracking-widest text-content-main uppercase">Выбор лиги</h3>
+          {hasTeams && <SegmentedControl options={[{ value: 'my', label: 'Мои лиги' }, { value: 'all', label: 'Все лиги' }]} value={scope} onChange={value => { setScope(value); setSearch(''); }} activeColor={brandColor} />}
+          {scope === 'all' && <TextInputLP label="" value={search} onChange={setSearch} placeholder="Название лиги или город" />}
+          <div className="flex flex-col gap-2 max-h-[50vh] overflow-y-auto overscroll-contain scrollbar-hide" onScroll={handleLeaguesScroll} aria-busy={isLeaguesLoading}>
+            {leagues.map(item => <OptionRow key={item.id} title={item.name} subtitle={item.city} logoUrl={item.logo_url} showLogo checked={sameId(league?.id, item.id)} onClick={() => handleLeagueSelect(item)} activeBrandColor={brandColor} />)}
+            {isLeaguesLoading && <Loading />}
+            {leaguesError && <div role="alert" className="text-center text-[13px] text-content-muted py-3"><p>{leaguesError}</p><button type="button" className="min-h-[44px] text-brand font-bold" onClick={() => loadLeagues(leaguesOffset, search, scope)}>Повторить</button></div>}
+            {!isLeaguesLoading && !leaguesError && leagues.length === 0 && <p className="text-[13px] font-semibold text-content-muted leading-relaxed text-center py-6">{search.trim() ? 'По этому запросу лиг не нашлось.' : scope === 'my' ? 'У ваших команд пока нет лиг. Посмотрите список «Все лиги».' : 'Здесь пока нет ни одной лиги.'}</p>}
+            {!isLeaguesLoading && !leaguesError && hasMoreLeagues && <button type="button" onClick={loadMoreLeagues} className="min-h-[44px] text-brand text-[13px] font-bold">Показать ещё</button>}
           </div>
         </div>
       </BottomSheet>
 
-      {/* ── Шторка: сезон ────────────────────────────────────────────────── */}
       <BottomSheet isOpen={openSheet === 'season'} onClose={() => setOpenSheet(null)}>
-        <div className="flex flex-col gap-4">
-          <h3 className="text-[16px] font-black tracking-widest text-content-main uppercase">Сезон</h3>
-
-          <div className="flex flex-col gap-2 max-h-[50vh] overflow-y-auto scrollbar-hide">
-            {seasons.map(item => (
-              <OptionRow
-                key={item.id}
-                title={item.name}
-                subtitle={[
-                  item.isActive ? 'текущий' : null,
-                  `${item.divisions.length} ${item.divisions.length === 1 ? 'турнир' : 'турниров'}`
-                ].filter(Boolean).join(' · ')}
-                checked={season?.id === item.id}
-                onClick={() => { setSeason(item); setOpenSheet(null); }}
-                activeBrandColor={brandColor}
-              />
-            ))}
+        <div role="dialog" aria-modal="true" aria-label="Выбор сезона" className="flex flex-col gap-4">
+          <h3 className="text-[16px] font-black tracking-widest text-content-main uppercase">Выбор сезона</h3>
+          <div className="flex flex-col gap-2 max-h-[50vh] overflow-y-auto overscroll-contain scrollbar-hide">
+            {seasons.map(item => <OptionRow key={item.id} title={item.name} checked={sameId(season?.id, item.id)} onClick={() => { setSeason(item); setOpenSheet(null); }} activeBrandColor={brandColor} />)}
           </div>
         </div>
       </BottomSheet>

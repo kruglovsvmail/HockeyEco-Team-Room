@@ -541,6 +541,10 @@ export const MatchProtocol = ({ event, user, selectedTeam, openRightPanel }) => 
 
   // ── Кэшированный ростер (для inline-композера) ───────────────────────────
   const [rosters, setRosters] = useState({ home: [], away: [], home_team_id: null, away_team_id: null });
+  // Заявки уже пришли с сервера — до этого пустой список ещё не значит «заявки нет»
+  const [rostersLoaded, setRostersLoaded] = useState(false);
+  // Своя заявка на матч пуста — игроков для голов и штрафов выбрать не из кого
+  const myRosterEmpty = rostersLoaded && (mySide === 'home' ? rosters.home : rosters.away).length === 0;
 
   // Клиентское обогащение «сырого» события (id игроков) именами/номерами/фото
   // из уже загруженного ростера — повторяет JOIN'ы backend'а getMatchProtocol,
@@ -633,6 +637,7 @@ export const MatchProtocol = ({ event, user, selectedTeam, openRightPanel }) => 
           home_team_id: j.home_team_id,
           away_team_id: j.away_team_id,
         });
+        setRostersLoaded(true);
       })
       .catch(() => {});
   }, [event?.event_id, event?.my_team_id, canFillResults, canAccessOfficialPM]);
@@ -1324,6 +1329,15 @@ export const MatchProtocol = ({ event, user, selectedTeam, openRightPanel }) => 
       {/* Кнопки «Настройки» / «Ввод результатов» показываем только когда ход матча
           уже загружен — иначе они висят над лоадером и дёргают лейаут. */}
       {!loading && canFillResults && <FillResultsPanel />}
+
+      {/* Заявку забыли отправить. После начала неофициального матча её можно подать
+          задним числом (TR-Backend/utils/lateRoster.js) — говорим, где это сделать. */}
+      {!loading && canFillResults && myRosterEmpty && (
+        <div className="p-3 mb-4 rounded-xl bg-surface-level2 text-content-muted text-[13px] font-medium leading-relaxed">
+          Заявка вашей команды не отправлена — игроков для голов и штрафов выбрать не из кого.
+          Отправьте её во вкладке «Формация».
+        </div>
+      )}
 
       {/* Стартовые вратари — над лентой, только в режиме ввода результатов */}
       {!loading && canFillResults && isEditMode && <StartingGoaliesLine />}

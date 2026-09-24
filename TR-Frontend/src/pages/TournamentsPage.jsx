@@ -194,6 +194,7 @@ export function TournamentsPage() {
     openRightPanel('tournamentSelector', {
       teams: teams || [],
       activeDivisionId: activeTournament?.division_id,
+      activeTournament,
       onSelect: handleTournamentSelect,
       hasTeamColor,
       activeBrandColor

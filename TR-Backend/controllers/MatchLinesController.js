@@ -2,6 +2,8 @@ import pool from '../config/db.js';
 import { checkPermissionInternal } from '../utils/checkPermission.js';
 import { DEADLINES, PERMISSIONS } from '../utils/permissions.js';
 import { sendPushToTeamExcept, getMatchInfo } from '../services/pushService.js';
+import { getLateRosterState, LATE_ROSTER_ERRORS } from '../utils/lateRoster.js';
+import { recalculatePlayerGameStats } from '../utils/playerGameStatsCalculator.js';
 
 // Матч считается начавшимся, когда в протоколе появились события: с этого момента
 // состав трогать нельзя — на строки заявки уже ссылается статистика.
@@ -25,6 +27,30 @@ const hasSubmittedRoster = async (client, eventId, teamId) => {
     [eventId, teamId]
   );
   return rowCount > 0;
+};
+
+// ─────────────────────────── ЗАЯВКА ПОСЛЕ НАЧАЛА МАТЧА ───────────────────────────
+// После начала неофициального матча заявку меняют по правилу поздней заявки
+// (utils/lateRoster.js), а не по дедлайнам: права как у ввода результатов, срок как у
+// него же, и в протоколе не должно быть записей с игроками команды.
+
+// Отказ правила: текст — для тоста, ключ причины — чтобы приложение могло его разобрать
+const lateRosterDenied = (res, state) => res.status(403).json({
+  success: false,
+  error: LATE_ROSTER_ERRORS[state.reason],
+  lateRosterReason: state.reason,
+});
+
+// Сыгранный матч игроку засчитывает именно заявка (roster в playerGameStatsCalculator),
+// поэтому поздняя правка у опубликованного матча требует пересобрать боксскор. У ещё
+// не опубликованного пересчёт просто ничего не запишет. Вызывается после COMMIT, своей
+// транзакцией: ошибка пересчёта заявку не откатывает — боксскор соберётся и позже.
+const refreshBoxscoreAfterLateRoster = async (gameId) => {
+  try {
+    await recalculatePlayerGameStats(gameId);
+  } catch (err) {
+    console.error(`[Match Lines] боксскор матча ${gameId} не пересчитан после поздней заявки:`, err);
+  }
 };
 
 // ─────────────────────────── АВТОЗАЯВКА ПО ЯВКЕ ───────────────────────────
@@ -496,10 +522,15 @@ export const getMatchLines = async (req, res) => {
     // поправил протокол) — кнопка снова становится «Отправить», чтобы расхождение было видно.
     const { submitted, inSync } = await compareRosterWithSource(pool, { eventId, teamId });
 
-    res.json({ 
-      success: true, 
+    // Матч уже начался — можно ли этому пользователю ещё поменять заявку и почему нет.
+    // До начала матча и у официальных матчей null: там кнопки живут по дедлайнам.
+    const lateRoster = await getLateRosterState(pool, { gameId: eventId, teamId, userId: req.user.id });
+
+    res.json({
+      success: true,
       isPublished: submitted && inSync,
-      lines: result.rows 
+      lines: result.rows,
+      lateRoster,
     });
 
   } catch (err) {
@@ -519,23 +550,33 @@ export const saveMatchLines = async (req, res) => {
       return res.status(400).json({ success: false, error: 'Некорректные данные' });
     }
 
-    const hasAccess = await checkPermissionInternal(initiatorId, teamId, 'MATCH_LINES_MANAGE', client);
-    if (!hasAccess) {
-      return res.status(403).json({ success: false, error: 'У вас нет прав для сохранения расстановки звеньев' });
+    // Неофициальный матч уже начался — вместо тренерского права и дедлайна действует
+    // правило поздней заявки: расстановку правят те, кто вносит результаты.
+    const late = await getLateRosterState(client, { gameId: eventId, teamId, userId: initiatorId });
+    if (late && !late.allowed) return lateRosterDenied(res, late);
+
+    if (!late) {
+      const hasAccess = await checkPermissionInternal(initiatorId, teamId, 'MATCH_LINES_MANAGE', client);
+      if (!hasAccess) {
+        return res.status(403).json({ success: false, error: 'У вас нет прав для сохранения расстановки звеньев' });
+      }
     }
 
     const gameQuery = await client.query(`SELECT game_date, game_type, division_id FROM games WHERE id = $1`, [eventId]);
     if (gameQuery.rowCount === 0) return res.status(404).json({ success: false, error: 'Матч не найден' });
 
     const { game_date, game_type, division_id } = gameQuery.rows[0];
-    const diffMinutes = (new Date(game_date) - new Date()) / 1000 / 60;
 
-    if (diffMinutes < DEADLINES.MIDDLE_EDIT_MINUTES) {
-      return res.status(403).json({ success: false, error: `Время изменения расстановки вышло (менее ${DEADLINES.MIDDLE_EDIT_MINUTES} минут до старта)` });
-    }
+    if (!late) {
+      const diffMinutes = (new Date(game_date) - new Date()) / 1000 / 60;
 
-    if (await isMatchStarted(client, eventId)) {
-      return res.status(403).json({ success: false, error: 'Матч уже начался, изменение расстановки невозможно' });
+      if (diffMinutes < DEADLINES.MIDDLE_EDIT_MINUTES) {
+        return res.status(403).json({ success: false, error: `Время изменения расстановки вышло (менее ${DEADLINES.MIDDLE_EDIT_MINUTES} минут до старта)` });
+      }
+
+      if (await isMatchStarted(client, eventId)) {
+        return res.status(403).json({ success: false, error: 'Матч уже начался, изменение расстановки невозможно' });
+      }
     }
 
     await client.query('BEGIN');
@@ -660,14 +701,20 @@ export const saveMatchLines = async (req, res) => {
 
     await client.query('COMMIT');
 
-    getMatchInfo(eventId, teamId).then(info => {
-      sendPushToTeamExcept(teamId, req.user.id, 'lines', {
-        title: 'Состав на матч обновлён',
-        body: info.text,
-        url: `/event/match/${eventId}`,
-        tag: `lines-${eventId}`,
-      });
-    }).catch(() => {});
+    if (late) {
+      // Матч уже сыгран: рассылка «состав обновлён» команде ни к чему, а вот
+      // статистику матча надо свести с новой заявкой
+      await refreshBoxscoreAfterLateRoster(eventId);
+    } else {
+      getMatchInfo(eventId, teamId).then(info => {
+        sendPushToTeamExcept(teamId, req.user.id, 'lines', {
+          title: 'Состав на матч обновлён',
+          body: info.text,
+          url: `/event/match/${eventId}`,
+          tag: `lines-${eventId}`,
+        });
+      }).catch(() => {});
+    }
 
     res.json({ success: true, rosterResubmitted: !!resubmitSource });
 
@@ -691,13 +738,19 @@ export const updateLinePlayer = async (req, res) => {
       return res.status(400).json({ success: false, error: 'Некорректные данные' });
     }
 
-    const hasAccess = await checkPermissionInternal(initiatorId, teamId, 'MATCH_LINES_EDIT_PLAYER_PARAMS', client);
-    if (!hasAccess) {
-      return res.status(403).json({ success: false, error: 'Недостаточно прав доступа или требуется активная подписка руководителя' });
-    }
+    // Неофициальный матч уже начался — правило поздней заявки вместо дедлайна
+    const late = await getLateRosterState(client, { gameId: eventId, teamId, userId: initiatorId });
+    if (late && !late.allowed) return lateRosterDenied(res, late);
 
-    if (await isMatchStarted(client, eventId)) {
-      return res.status(403).json({ success: false, error: 'Матч уже начался, изменение параметров игроков заблокировано' });
+    if (!late) {
+      const hasAccess = await checkPermissionInternal(initiatorId, teamId, 'MATCH_LINES_EDIT_PLAYER_PARAMS', client);
+      if (!hasAccess) {
+        return res.status(403).json({ success: false, error: 'Недостаточно прав доступа или требуется активная подписка руководителя' });
+      }
+
+      if (await isMatchStarted(client, eventId)) {
+        return res.status(403).json({ success: false, error: 'Матч уже начался, изменение параметров игроков заблокировано' });
+      }
     }
 
     // Вместе с матчем забираем и разрешения организаторов: в официальном матче лига решает,
@@ -716,10 +769,13 @@ export const updateLinePlayer = async (req, res) => {
     if (gameQuery.rowCount === 0) return res.status(404).json({ success: false, error: 'Матч не найден' });
 
     const { game_date, game_type, division_id, allow_jersey, allow_letters } = gameQuery.rows[0];
-    const diffMinutes = (new Date(game_date) - new Date()) / 1000 / 60;
-    
-    if (diffMinutes < DEADLINES.ROSTER_SUBMIT_MINUTES) {
-      return res.status(403).json({ success: false, error: `Время изменения вышло (менее ${DEADLINES.ROSTER_SUBMIT_MINUTES} минут до старта)` });
+
+    if (!late) {
+      const diffMinutes = (new Date(game_date) - new Date()) / 1000 / 60;
+
+      if (diffMinutes < DEADLINES.ROSTER_SUBMIT_MINUTES) {
+        return res.status(403).json({ success: false, error: `Время изменения вышло (менее ${DEADLINES.ROSTER_SUBMIT_MINUTES} минут до старта)` });
+      }
     }
 
     await client.query('BEGIN');
@@ -792,6 +848,8 @@ export const updateLinePlayer = async (req, res) => {
       : null;
 
     await client.query('COMMIT');
+    // Капитанство уходит в статистику матча — после поздней правки сводим её заново
+    if (late) await refreshBoxscoreAfterLateRoster(eventId);
     res.json({ success: true, rosterResubmitted: !!resubmitSource });
 
   } catch (err) {
@@ -814,23 +872,33 @@ export const submitMatchRoster = async (req, res) => {
       return res.status(400).json({ success: false, error: 'teamId обязателен' });
     }
 
-    const hasAccess = await checkPermissionInternal(initiatorId, teamId, 'MATCH_ROSTER_SUBMIT', client);
-    if (!hasAccess) {
-      return res.status(403).json({ success: false, error: 'У вас нет прав для отправки заявки или требуется продление подписки' });
+    // Неофициальный матч уже начался — заявку подают по правилу поздней заявки:
+    // те, кто вносит результаты, пока в протоколе нет записей с игроками команды
+    const late = await getLateRosterState(client, { gameId: eventId, teamId, userId: initiatorId });
+    if (late && !late.allowed) return lateRosterDenied(res, late);
+
+    if (!late) {
+      const hasAccess = await checkPermissionInternal(initiatorId, teamId, 'MATCH_ROSTER_SUBMIT', client);
+      if (!hasAccess) {
+        return res.status(403).json({ success: false, error: 'У вас нет прав для отправки заявки или требуется продление подписки' });
+      }
     }
 
     const gameQuery = await client.query(`SELECT game_date, game_type, division_id FROM games WHERE id = $1`, [eventId]);
     if (gameQuery.rowCount === 0) return res.status(404).json({ success: false, error: 'Матч не найден' });
 
     const { game_date, game_type, division_id } = gameQuery.rows[0];
-    const diffMinutes = (new Date(game_date) - new Date()) / 1000 / 60;
 
-    if (diffMinutes < DEADLINES.ROSTER_SUBMIT_MINUTES) {
-      return res.status(403).json({ success: false, error: `Время подачи заявки вышло (менее ${DEADLINES.ROSTER_SUBMIT_MINUTES} минут до старта)` });
-    }
+    if (!late) {
+      const diffMinutes = (new Date(game_date) - new Date()) / 1000 / 60;
 
-    if (await isMatchStarted(client, eventId)) {
-      return res.status(403).json({ success: false, error: 'Матч уже начался, изменение заявки невозможно' });
+      if (diffMinutes < DEADLINES.ROSTER_SUBMIT_MINUTES) {
+        return res.status(403).json({ success: false, error: `Время подачи заявки вышло (менее ${DEADLINES.ROSTER_SUBMIT_MINUTES} минут до старта)` });
+      }
+
+      if (await isMatchStarted(client, eventId)) {
+        return res.status(403).json({ success: false, error: 'Матч уже начался, изменение заявки невозможно' });
+      }
     }
 
     await client.query('BEGIN');
@@ -861,6 +929,7 @@ export const submitMatchRoster = async (req, res) => {
     }
 
     await client.query('COMMIT');
+    if (late) await refreshBoxscoreAfterLateRoster(eventId);
 
     res.json({ success: true, source, message: 'Официальная заявка отправлена' });
 

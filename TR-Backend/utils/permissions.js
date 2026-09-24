@@ -35,9 +35,14 @@ export const ROLES = {
 
 // Системные лимиты времени (в минутах до начала матча)
 export const DEADLINES = {
-  MIDDLE_EDIT_MINUTES: 1,  
-  ROSTER_SUBMIT_MINUTES: 1 
+  MIDDLE_EDIT_MINUTES: 1,
+  ROSTER_SUBMIT_MINUTES: 1
 };
+
+// Окно ввода результатов неофициального матча — часов после его начала. В этом же окне
+// команда может подать или поменять заявку задним числом (TR-Backend/utils/lateRoster.js).
+// У матчей внешних турниров окна нет.
+export const RESULTS_EDIT_WINDOW_HOURS = 72;
 
 /**
  * Декларативный справочник доступов и ограничений подписки.
