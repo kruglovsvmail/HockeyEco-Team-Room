@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, Suspense, lazy, useCallback } from 'react';
-import { getAuthHeaders, getImageUrl, uiFixed, getTrainingTypeIcon } from '../../../utils/helpers';
+import { getAuthHeaders, getImageUrl, uiFixed, getTrainingTypeIcon, eventRouteType } from '../../../utils/helpers';
 import { Icon } from '../../../ui/Icon';
 import { FeeRow } from '../../../ui/FeeRow';
 import { ChipTabs } from '../../../ui/ChipTabs';
@@ -246,6 +246,7 @@ export const EventDetailsTraining = ({ event, openRightPanel }) => {
         attendees:    attData.success    ? attData.attendees              : [],
         teamRoster:   rosterData.success ? (rosterData.roster   || [])   : [],
         staffMembers: rosterData.success ? (rosterData.staff    || [])   : [],
+        hasFormation: attData.success    ? !!attData.hasFormation         : false,
       };
 
       setTrainingData(freshData);
@@ -269,16 +270,22 @@ export const EventDetailsTraining = ({ event, openRightPanel }) => {
   // его отметку и приносит список без него. 'tr-events-updated' приходит уже по
   // ответу сервера, так что этот список заведомо полный. Саму карточку по тому
   // же сигналу перечитывает SyncEventOnUpdate в конце компонента.
+  // После удаления тренировки перечитывать нечего — сервер ответит 404.
   useEffect(() => {
-    const onUpdate = () => { fetchAllTrainingData(); };
+    const onUpdate = (e) => { if (!e.detail?.eventDeleted) fetchAllTrainingData(); };
     window.addEventListener('tr-events-updated', onUpdate);
     return () => window.removeEventListener('tr-events-updated', onUpdate);
   }, [fetchAllTrainingData]);
 
   // Предзагрузка картинки расстановки из S3 заранее (на уровне страницы деталей, а не вкладки «Расстановка»).
+  // Только когда расстановка сохранена: иначе картинки нет, и S3 отвечает 403 — на
+  // каждое открытие тренировки и каждое перечитывание отметок по красной строке в консоли.
   const [formationFile, setFormationFile] = useState(null);
   useEffect(() => {
-    if ((!localEvent?.my_team_id && !eventClubId) || !localEvent?.event_id) { setFormationFile(null); return; }
+    if ((!localEvent?.my_team_id && !eventClubId) || !localEvent?.event_id || !trainingData.hasFormation) {
+      setFormationFile(null);
+      return;
+    }
     const owner = isClubEvent ? `club-${eventClubId}` : `team-${localEvent.my_team_id}`;
     const url = getImageUrl(`/roster-formation/${owner}-formation_training-${localEvent.event_id}.png`);
     let cancelled = false;
@@ -620,8 +627,8 @@ export const EventDetailsTraining = ({ event, openRightPanel }) => {
 function SyncEventOnUpdate({ eventId, eventType, setLocalEvent }) {
   useEffect(() => {
     const onUpdate = () => {
-      const routeType = eventType?.includes('training') ? 'training' : eventType?.includes('meeting') ? 'meeting' : 'match';
-      const key = `tr_event_${routeType}_${eventId}`;
+      // Ключ кэша — по маршруту события, тем же, под которым его кладёт TeamLayout
+      const key = `tr_event_${eventRouteType(eventType)}_${eventId}`;
       const cached = sessionStorage.getItem(key);
       if (cached) setLocalEvent(JSON.parse(cached));
     };

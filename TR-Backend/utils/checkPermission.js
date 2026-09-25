@@ -38,6 +38,52 @@ export const isClubEventType = (eventType) => String(eventType || '').startsWith
 export const isCommunityEventType = (eventType) => String(eventType || '').startsWith('community_');
 
 /**
+ * Тип события — в том же порядке, в каком его читает requireEventPermission:
+ * сначала тело, потом query. По типу гейт решает, в чьём контексте проверять права,
+ * а контроллер — в какой таблице искать событие. Прочитай они тип из разных мест —
+ * и одним запросом можно пройти гейт по своей команде, а удалить клубную тренировку.
+ * Не строка (массив из query, объект) — типа нет: угадывать тут нечего.
+ */
+export const getEventTypeFromRequest = (req) => {
+  const value = req?.body?.eventType || req?.query?.eventType;
+  return typeof value === 'string' ? value : null;
+};
+
+/**
+ * Контекст запроса к событию: тип события и id того, кому событие такого типа
+ * принадлежит.
+ *
+ * Гейт проверяет роль в teamId / clubId / communityId из запроса, но не то, что
+ * событие из адреса принадлежит именно этой команде, клубу или сообществу. Это
+ * проверяет контроллер, сравнивая id отсюда с колонкой владельца события. Поэтому
+ * контекст здесь ровно такой, каким его видел гейт:
+ *   • тот же порядок чтения: тело, query, params. В путях маршрутов событий
+ *     контекста нет, так что и для гейта это «тело, потом query»;
+ *   • один id, выбранный по типу, как у гейта: club_* — клуб, community_* —
+ *     сообщество, остальное — команда. Прочие id из запроса отброшены: по ним
+ *     нашлось бы событие или ушёл бы пуш там, где права никто не проверял;
+ *   • id, не похожий на номер записи, — null: событие просто не найдётся.
+ *
+ * Годится только для маршрутов, где контекст приходит телом или query. Где он
+ * в пути (/:communityId/…), гейт первыми читает params — там берут req.params.
+ */
+export const getEventScope = (req) => {
+  const eventType = getEventTypeFromRequest(req);
+  const toId = (value) => (Number.isInteger(value) && value > 0 ? value : null);
+  const scope = { eventType, teamId: null, clubId: null, communityId: null };
+
+  if (isCommunityEventType(eventType)) {
+    scope.communityId = toId(getCommunityIdFromRequest(req));
+  } else if (isClubEventType(eventType)) {
+    scope.clubId = toId(getClubIdFromRequest(req));
+  } else {
+    scope.teamId = toId(getTeamIdFromRequest(req));
+  }
+
+  return scope;
+};
+
+/**
  * Сопоставление ролей пользователя с декларативным правилом из permissions.js.
  * Вынесено отдельно, потому что командная и клубная ветки отличаются только
  * способом сбора ролей, а логика подписки у них общая.

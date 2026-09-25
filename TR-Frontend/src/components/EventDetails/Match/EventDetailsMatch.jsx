@@ -159,8 +159,10 @@ export const EventDetailsMatch = ({ event, user: userProp, selectedTeam: selecte
   // на карточке календаря прямо перед входом в событие, и тогда загрузка при
   // монтировании обгоняет отметку и приносит список без человека. Сигнал
   // приходит уже по ответу сервера, так что этот список заведомо полный.
+  // После удаления матча перечитывать нечего — сервер ответит 404.
   useEffect(() => {
-    const onUpdate = () => {
+    const onUpdate = (e) => {
+      if (e.detail?.eventDeleted) return;
       fetchAllMatchData();
       const key = `tr_event_match_${localEvent?.event_id}`;
       const cached = sessionStorage.getItem(key);
@@ -174,9 +176,14 @@ export const EventDetailsMatch = ({ event, user: userProp, selectedTeam: selecte
 
   // Предзагрузка картинки состава из S3 заранее (на уровне страницы деталей, а не вкладки «Состав»).
   // Готовый файл прокидывается в MatchLines, чтобы шеринг был мгновенным без проверки при клике на вкладку.
+  // Только когда состав сохранён: иначе картинки нет, и S3 отвечает 403 — на каждое
+  // открытие матча и каждое перечитывание его данных по красной строке в консоли.
   const [formationFile, setFormationFile] = useState(null);
   useEffect(() => {
-    if (!localEvent?.my_team_id || !localEvent?.event_id) { setFormationFile(null); return; }
+    if (!localEvent?.my_team_id || !localEvent?.event_id || !matchData.draftLines?.length) {
+      setFormationFile(null);
+      return;
+    }
     const url = getImageUrl(`/roster-formation/team-${localEvent.my_team_id}-formation_game-${localEvent.event_id}.png`);
     let cancelled = false;
     (async () => {

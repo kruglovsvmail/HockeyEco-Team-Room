@@ -1,7 +1,34 @@
 import pool from '../config/db.js';
-import { getTeamIdFromRequest, getClubIdFromRequest } from '../utils/checkPermission.js';
-import { sendPushToEventScopeExcept, cancelScheduledNotifications, getTrainingInfo, formatFeeChange, formatSplitCostChange } from '../services/pushService.js';
+import { getEventScope } from '../utils/checkPermission.js';
+import { sendPushToEventScopeExcept, cancelScheduledNotifications, getTrainingInfo, formatFeeChange, formatSplitCostChange, eventUrl } from '../services/pushService.js';
 import { parseFeeSettings, buildFeeUpdate } from '../utils/eventFees.js';
+
+// Командная и клубная тренировка: таблица и чья она. Тренировки сообщества правятся
+// в CommunityEventController, сюда они не ходят. Любой другой тип — ошибка запроса,
+// а не клубная тренировка по умолчанию: раньше всё, что не team_training, писалось
+// в club_training, и тренер команды с типом community_training правил клубные.
+const TRAINING_OWNERS = {
+  team_training: { table: 'team_training', ownerColumn: 'team_id', scopeKey: 'teamId' },
+  club_training: { table: 'club_training', ownerColumn: 'club_id', scopeKey: 'clubId' },
+};
+
+// Тренировка из адреса — только если она принадлежит команде или клубу, в которых
+// гейт проверил права. Гейт (requireEventPermission) смотрит роль в teamId / clubId
+// из запроса, но не то, что тренировка — именно их: без условия на колонку владельца
+// тренер команды A, прислав teamId=A и id тренировки команды B, переносил её, менял
+// взнос и удалял. Чужая тренировка отсюда выходит «не найденной». Законно чужой она
+// не бывает: совместных нет, и календарь открывает каждую только у её владельца.
+const loadTraining = async (eventId, scope, columns = 'id') => {
+  const owner = TRAINING_OWNERS[scope.eventType];
+  const ownerId = owner && scope[owner.scopeKey];
+  if (!ownerId) return null;
+
+  const { rows } = await pool.query(
+    `SELECT ${columns} FROM "public"."${owner.table}" WHERE id = $1 AND ${owner.ownerColumn} = $2`,
+    [eventId, ownerId]
+  );
+  return rows[0] || null;
+};
 
 // =============================================================================
 // ОБНОВЛЕНИЕ РАСПИСАНИЯ ТРЕНИРОВКИ (дата, время, локация)
@@ -17,9 +44,9 @@ import { parseFeeSettings, buildFeeUpdate } from '../utils/eventFees.js';
 export const updateTrainingSchedule = async (req, res) => {
   try {
     const { eventId } = req.params;
-    const { eventType, date, time, arena_id, location, location_url, custom_timezone } = req.body;
-    const teamId = getTeamIdFromRequest(req);
-    const clubId = getClubIdFromRequest(req);
+    const { date, time, arena_id, location, location_url, custom_timezone } = req.body;
+    const scope = getEventScope(req);
+    const { eventType, teamId, clubId } = scope;
 
     if (!teamId && !clubId) {
       return res.status(400).json({ success: false, error: 'Параметр teamId или clubId обязателен' });
@@ -31,16 +58,12 @@ export const updateTrainingSchedule = async (req, res) => {
       return res.status(400).json({ success: false, error: 'Необходимо указать дату и время тренировки' });
     }
 
-    // ── Читаем текущее состояние из БД ─────────────────────────────────────
-    const table = eventType === 'team_training' ? 'team_training' : 'club_training';
-    const currentRes = await pool.query(
-      `SELECT arena_id, location, location_url, custom_timezone FROM "public"."${table}" WHERE id = $1`,
-      [eventId]
-    );
-    if (currentRes.rowCount === 0) {
+    // ── Читаем текущее состояние из БД — заодно убеждаемся, что тренировка своя ──
+    const current = await loadTraining(eventId, scope, 'arena_id, location, location_url, custom_timezone');
+    if (!current) {
       return res.status(404).json({ success: false, error: 'Тренировка не найдена' });
     }
-    const current = currentRes.rows[0];
+    const { table } = TRAINING_OWNERS[eventType];
 
     // ── Определяем финальные значения локации ──────────────────────────────
     // arena_id: если пришёл явно из тела — используем его (в т.ч. null для сброса),
@@ -99,7 +122,7 @@ export const updateTrainingSchedule = async (req, res) => {
       sendPushToEventScopeExcept({ teamId, clubId }, req.user.id, 'schedule', {
         title: 'Тренировка изменена',
         body: `Новое расписание: ${info.text}`,
-        url: `/event/${eventType}/${eventId}`, tag: `event-update-${eventId}`,
+        url: eventUrl(eventType, eventId), tag: `event-update-${eventId}`,
       });
     }).catch(() => {});
 
@@ -117,9 +140,8 @@ export const updateTrainingSchedule = async (req, res) => {
 export const updateTrainingFinances = async (req, res) => {
   try {
     const { eventId } = req.params;
-    const { eventType } = req.body;
-    const teamId = getTeamIdFromRequest(req);
-    const clubId = getClubIdFromRequest(req);
+    const scope = getEventScope(req);
+    const { eventType, teamId, clubId } = scope;
 
     if (!teamId && !clubId) {
       return res.status(400).json({ success: false, error: 'Параметр teamId или clubId обязателен' });
@@ -131,17 +153,13 @@ export const updateTrainingFinances = async (req, res) => {
     // player_fee: null = не назначен, 0 = бесплатно, N = сумма (режим per_person).
     // В режиме split сумма живёт в total_cost, а cost не используется — но обе
     // колонки сохраняются, чтобы переключение режима туда-обратно не теряло цифры.
-    const table = eventType === 'team_training' ? 'team_training' : 'club_training';
     const patch = parseFeeSettings(req.body, { goalieAware: true });
 
-    const check = await pool.query(
-      `SELECT id, cost, cost_mode, total_cost FROM "public"."${table}" WHERE id = $1`,
-      [eventId]
-    );
-    if (check.rowCount === 0) {
+    const prev = await loadTraining(eventId, scope, 'id, cost, cost_mode, total_cost');
+    if (!prev) {
       return res.status(404).json({ success: false, error: 'Тренировка не найдена' });
     }
-    const prev = check.rows[0];
+    const { table } = TRAINING_OWNERS[eventType];
 
     const upd = buildFeeUpdate(patch, 1);
     if (!upd.isEmpty) {
@@ -170,7 +188,7 @@ export const updateTrainingFinances = async (req, res) => {
           body: nextMode === 'split'
             ? formatSplitCostChange(oldTotal, nextTotal, `тренировки ${info.text}`)
             : formatFeeChange(oldFee, nextFee, `тренировки ${info.text}`),
-          url: `/event/${eventType}/${eventId}`,
+          url: eventUrl(eventType, eventId),
           tag: `fee-${eventId}`,
         });
       }).catch(() => {});
@@ -200,9 +218,9 @@ const TRAINING_TYPES = ['general', 'shooting', 'fitness', 'dribbling', 'tactics'
 export const updateTrainingType = async (req, res) => {
   try {
     const { eventId } = req.params;
-    const { eventType, training_type } = req.body;
-    const teamId = getTeamIdFromRequest(req);
-    const clubId = getClubIdFromRequest(req);
+    const { training_type } = req.body;
+    const scope = getEventScope(req);
+    const { eventType, teamId, clubId } = scope;
 
     if (!teamId && !clubId) {
       return res.status(400).json({ success: false, error: 'Параметр teamId или clubId обязателен' });
@@ -216,15 +234,15 @@ export const updateTrainingType = async (req, res) => {
       return res.status(400).json({ success: false, error: 'Неизвестный тип тренировки' });
     }
 
-    const table = eventType === 'team_training' ? 'team_training' : 'club_training';
-
-    const result = await pool.query(
-      `UPDATE "public"."${table}" SET training_type = $1 WHERE id = $2 RETURNING id`,
-      [training_type, eventId]
-    );
-    if (result.rowCount === 0) {
+    if (!(await loadTraining(eventId, scope))) {
       return res.status(404).json({ success: false, error: 'Тренировка не найдена' });
     }
+    const { table } = TRAINING_OWNERS[eventType];
+
+    await pool.query(
+      `UPDATE "public"."${table}" SET training_type = $1 WHERE id = $2`,
+      [training_type, eventId]
+    );
 
     res.json({ success: true, message: 'Тип тренировки обновлён' });
   } catch (err) {
@@ -240,10 +258,12 @@ export const updateTrainingType = async (req, res) => {
 export const deleteTraining = async (req, res) => {
   try {
     const { eventId } = req.params;
-    // eventType может прийти как в query (DELETE без body), так и в body
-    const eventType = req.query.eventType || req.body?.eventType;
-    const teamId = getTeamIdFromRequest(req);
-    const clubId = getClubIdFromRequest(req);
+    // eventType может прийти как в query (DELETE без body), так и в body. Порядок —
+    // как у гейта: тело, потом query. Раньше здесь query читался первым, и тело
+    // «team_training» проводило через проверку команды, а query «club_training»
+    // удалял клубную тренировку.
+    const scope = getEventScope(req);
+    const { eventType, teamId, clubId } = scope;
 
     if (!teamId && !clubId) {
       return res.status(400).json({ success: false, error: 'Параметр teamId или clubId обязателен' });
@@ -257,8 +277,17 @@ export const deleteTraining = async (req, res) => {
       return res.status(400).json({ success: false, error: 'Некорректный формат идентификатора тренировки' });
     }
 
-    if (eventType !== 'team_training' && eventType !== 'club_training') {
+    if (!TRAINING_OWNERS[eventType]) {
       return res.status(400).json({ success: false, error: 'Неизвестный тип тренировки' });
+    }
+
+    // Своя ли тренировка — прежде всего остального: и деталей для пуша, и сбора
+    // слепков её плана
+    if (!(await loadTraining(numericId, scope))) {
+      return res.status(404).json({
+        success: false,
+        error: eventType === 'club_training' ? 'Клубная тренировка не найдена' : 'Тренировка не найдена',
+      });
     }
 
     // Сохраняем детали ДО удаления для текста уведомления
@@ -266,27 +295,21 @@ export const deleteTraining = async (req, res) => {
 
     // Разовые упражнения плана держат содержимое в drill_snapshots, а сами пункты плана
     // уходят каскадом вместе с тренировкой. Слепок каскад не заденет — он не привязан к
-    // событию, — поэтому чистим его здесь, пока пункты ещё на месте. Слепки библиотечных
-    // упражнений не трогаем: они общие для всех тренировок, замороженных одной правкой.
+    // событию, — поэтому номера слепков запоминаем здесь, пока пункты ещё на месте, а
+    // стираем после удаления тренировки. Раньше нельзя: пока на слепок ссылается пункт,
+    // внешний ключ (ON DELETE RESTRICT) удалить его не даст и уронит всё удаление.
+    // Слепки библиотечных упражнений не трогаем: они общие для всех тренировок,
+    // замороженных одной правкой.
     const isClub = eventType === 'club_training';
     const planTable = isClub ? 'club_training_plan' : 'team_training_plan';
     const planColumn = isClub ? 'club_training_id' : 'team_training_id';
 
-    await pool.query(`
-      DELETE FROM drill_snapshots WHERE id IN (
-        SELECT drill_snapshot_id FROM "public"."${planTable}"
-        WHERE ${planColumn} = $1 AND is_adhoc AND drill_snapshot_id IS NOT NULL
-      )
+    const { rows: adhocRows } = await pool.query(`
+      SELECT drill_snapshot_id FROM "public"."${planTable}"
+      WHERE ${planColumn} = $1 AND is_adhoc AND drill_snapshot_id IS NOT NULL
     `, [numericId]);
 
     if (eventType === 'team_training') {
-      const check = await pool.query(
-        'SELECT id FROM "public"."team_training" WHERE id = $1',
-        [numericId]
-      );
-      if (check.rowCount === 0) {
-        return res.status(404).json({ success: false, error: 'Тренировка не найдена' });
-      }
       await pool.query(
         'DELETE FROM "public"."team_training_attendance" WHERE team_training_id = $1',
         [numericId]
@@ -296,14 +319,7 @@ export const deleteTraining = async (req, res) => {
         [numericId]
       );
 
-    } else if (eventType === 'club_training') {
-      const check = await pool.query(
-        'SELECT id FROM "public"."club_training" WHERE id = $1',
-        [numericId]
-      );
-      if (check.rowCount === 0) {
-        return res.status(404).json({ success: false, error: 'Клубная тренировка не найдена' });
-      }
+    } else {
       await pool.query(
         'DELETE FROM "public"."club_training_attendance" WHERE club_training_id = $1',
         [numericId]
@@ -312,9 +328,14 @@ export const deleteTraining = async (req, res) => {
         'DELETE FROM "public"."club_training" WHERE id = $1',
         [numericId]
       );
+    }
 
-    } else {
-      return res.status(400).json({ success: false, error: 'Неизвестный тип тренировки' });
+    // Сбой чистки удаление не отменяет: тренировки уже нет, а лишний слепок никому не мешает
+    if (adhocRows.length > 0) {
+      await pool.query(
+        'DELETE FROM drill_snapshots WHERE id = ANY($1::int[])',
+        [adhocRows.map(r => r.drill_snapshot_id)]
+      ).catch(err => console.error('Ошибка очистки слепков разовых упражнений:', err.message));
     }
 
     cancelScheduledNotifications(numericId).catch(() => {});

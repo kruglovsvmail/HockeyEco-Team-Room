@@ -1,9 +1,37 @@
 import pool from '../config/db.js';
-import { checkPermissionInternal } from '../utils/checkPermission.js';
+import { checkPermissionInternal, getTeamIdFromRequest } from '../utils/checkPermission.js';
 import { DEADLINES, PERMISSIONS } from '../utils/permissions.js';
-import { sendPushToTeamExcept, getMatchInfo } from '../services/pushService.js';
+import { sendPushToTeamExcept, getMatchInfo, eventUrl } from '../services/pushService.js';
 import { getLateRosterState, LATE_ROSTER_ERRORS } from '../utils/lateRoster.js';
 import { recalculatePlayerGameStats } from '../utils/playerGameStatsCalculator.js';
+
+// Матч для правки расстановки и заявки — только если команда из запроса в нём играет.
+// requireTeamPermission проверяет роль в teamId, но не то, что матч — её. После начала
+// неофициального матча участие сторожит правило поздней заявки, а до начала и у
+// официальных не сторожило ничего: тренер любой команды расставлял звенья и подавал
+// заявку в чужой матч, в том числе лиговый, а калькулятор статистики берёт все строки
+// game_rosters матча и засчитал бы её игрокам сыгранную игру. Две команды у матча
+// законны — поэтому «хозяева или гости». Чужой матч отсюда выходит «не найденным».
+//
+// Заодно забираем разрешения организаторов: в официальном матче лига решает, можно ли
+// команде менять игровой номер и нашивки именно на игру (нужно updateLinePlayer).
+// Настройка по умолчанию выключена, поэтому COALESCE к false — у матчей вне лиги её нет.
+const loadTeamMatch = async (client, eventId, teamId) => {
+  const tid = Number(teamId);
+  if (!Number.isInteger(tid) || tid <= 0) return null;
+
+  const { rows } = await client.query(`
+    SELECT g.game_date, g.game_type, g.division_id,
+           COALESCE(l.allow_match_jersey_change, false) AS allow_jersey,
+           COALESCE(l.allow_match_letters_change, false) AS allow_letters
+      FROM games g
+      LEFT JOIN divisions d ON d.id = g.division_id
+      LEFT JOIN seasons s ON s.id = d.season_id
+      LEFT JOIN leagues l ON l.id = s.league_id
+     WHERE g.id = $1 AND $2::int IN (g.home_team_id, g.away_team_id)
+  `, [eventId, tid]);
+  return rows[0] || null;
+};
 
 // Матч считается начавшимся, когда в протоколе появились события: с этого момента
 // состав трогать нельзя — на строки заявки уже ссылается статистика.
@@ -432,16 +460,18 @@ const saveGameTeamStaff = async (client, { eventId, teamId, gameType, divisionId
 export const getRosterStaffCandidates = async (req, res) => {
   try {
     const { eventId } = req.params;
-    const { teamId } = req.query;
+    // Команда — та, что проверил гейт (тело раньше query), а не голый query: иначе
+    // GET с телом проходил гейт по своей команде, а штаб отдавал чужой
+    const teamId = getTeamIdFromRequest(req);
 
     if (!teamId) {
       return res.status(400).json({ success: false, error: 'teamId обязателен' });
     }
 
-    const gameQuery = await pool.query(`SELECT game_type, division_id FROM games WHERE id = $1`, [eventId]);
-    if (gameQuery.rowCount === 0) return res.status(404).json({ success: false, error: 'Матч не найден' });
+    const game = await loadTeamMatch(pool, eventId, teamId);
+    if (!game) return res.status(404).json({ success: false, error: 'Матч не найден' });
 
-    const { game_type, division_id } = gameQuery.rows[0];
+    const { game_type, division_id } = game;
     const candidates = await loadStaffCandidates(pool, { teamId, gameType: game_type, divisionId: division_id });
     const selected = await pool.query(
       `SELECT DISTINCT user_id FROM game_team_staff WHERE game_id = $1 AND team_id = $2`,
@@ -458,23 +488,20 @@ export const getRosterStaffCandidates = async (req, res) => {
 export const getMatchLines = async (req, res) => {
   try {
     const { eventId } = req.params;
-    const { teamId } = req.query;
+    // Команда — та, что проверил гейт (тело раньше query): см. getRosterStaffCandidates
+    const teamId = getTeamIdFromRequest(req);
 
     if (!teamId) {
       return res.status(400).json({ success: false, error: 'teamId обязателен' });
     }
 
     // Извлечение game_type вместо устаревшего stage_type
-    const gameCheck = await pool.query(
-      `SELECT game_type, division_id FROM games WHERE id = $1`,
-      [eventId]
-    );
-
-    if (gameCheck.rowCount === 0) {
+    const game = await loadTeamMatch(pool, eventId, teamId);
+    if (!game) {
       return res.status(404).json({ success: false, error: 'Матч не найден' });
     }
 
-    const { game_type, division_id } = gameCheck.rows[0];
+    const { game_type, division_id } = game;
     let query = '';
     let params = [eventId, teamId];
 
@@ -569,10 +596,10 @@ export const saveMatchLines = async (req, res) => {
       }
     }
 
-    const gameQuery = await client.query(`SELECT game_date, game_type, division_id FROM games WHERE id = $1`, [eventId]);
-    if (gameQuery.rowCount === 0) return res.status(404).json({ success: false, error: 'Матч не найден' });
+    const game = await loadTeamMatch(client, eventId, teamId);
+    if (!game) return res.status(404).json({ success: false, error: 'Матч не найден' });
 
-    const { game_date, game_type, division_id } = gameQuery.rows[0];
+    const { game_date, game_type, division_id } = game;
 
     if (!late) {
       const diffMinutes = (new Date(game_date) - new Date()) / 1000 / 60;
@@ -717,7 +744,7 @@ export const saveMatchLines = async (req, res) => {
         sendPushToTeamExcept(teamId, req.user.id, 'lines', {
           title: 'Состав на матч обновлён',
           body: info.text,
-          url: `/event/match/${eventId}`,
+          url: eventUrl('match', eventId),
           tag: `lines-${eventId}`,
         });
       }).catch(() => {});
@@ -760,22 +787,11 @@ export const updateLinePlayer = async (req, res) => {
       }
     }
 
-    // Вместе с матчем забираем и разрешения организаторов: в официальном матче лига решает,
-    // можно ли команде менять игровой номер и нашивки именно на игру. Настройка по умолчанию
-    // выключена, поэтому COALESCE к false — у матчей вне лиги её нет вовсе.
-    const gameQuery = await client.query(`
-      SELECT g.game_date, g.game_type, g.division_id,
-             COALESCE(l.allow_match_jersey_change, false) AS allow_jersey,
-             COALESCE(l.allow_match_letters_change, false) AS allow_letters
-        FROM games g
-        LEFT JOIN divisions d ON d.id = g.division_id
-        LEFT JOIN seasons s ON s.id = d.season_id
-        LEFT JOIN leagues l ON l.id = s.league_id
-       WHERE g.id = $1
-    `, [eventId]);
-    if (gameQuery.rowCount === 0) return res.status(404).json({ success: false, error: 'Матч не найден' });
+    // Вместе с матчем приходят и разрешения организаторов на номер и нашивки (см. loadTeamMatch)
+    const game = await loadTeamMatch(client, eventId, teamId);
+    if (!game) return res.status(404).json({ success: false, error: 'Матч не найден' });
 
-    const { game_date, game_type, division_id, allow_jersey, allow_letters } = gameQuery.rows[0];
+    const { game_date, game_type, division_id, allow_jersey, allow_letters } = game;
 
     if (!late) {
       const diffMinutes = (new Date(game_date) - new Date()) / 1000 / 60;
@@ -891,10 +907,10 @@ export const submitMatchRoster = async (req, res) => {
       }
     }
 
-    const gameQuery = await client.query(`SELECT game_date, game_type, division_id FROM games WHERE id = $1`, [eventId]);
-    if (gameQuery.rowCount === 0) return res.status(404).json({ success: false, error: 'Матч не найден' });
+    const game = await loadTeamMatch(client, eventId, teamId);
+    if (!game) return res.status(404).json({ success: false, error: 'Матч не найден' });
 
-    const { game_date, game_type, division_id } = gameQuery.rows[0];
+    const { game_date, game_type, division_id } = game;
 
     if (!late) {
       const diffMinutes = (new Date(game_date) - new Date()) / 1000 / 60;

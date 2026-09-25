@@ -1,7 +1,32 @@
 import pool from '../config/db.js';
-import { getTeamIdFromRequest, getClubIdFromRequest } from '../utils/checkPermission.js';
-import { sendPushToEventScopeExcept, cancelScheduledNotifications, getMeetingInfo, formatFeeChange, formatSplitCostChange } from '../services/pushService.js';
+import { getEventScope } from '../utils/checkPermission.js';
+import { sendPushToEventScopeExcept, cancelScheduledNotifications, getMeetingInfo, formatFeeChange, formatSplitCostChange, eventUrl } from '../services/pushService.js';
 import { parseFeeSettings, buildFeeUpdate } from '../utils/eventFees.js';
+
+// Командное и клубное собрание: таблица и чьё оно. Любой другой тип — ошибка
+// запроса, а не клубное собрание по умолчанию: раньше всё, что не team_meeting,
+// писалось в club_meeting, и руководитель команды правил клубные собрания.
+const MEETING_OWNERS = {
+  team_meeting: { table: 'team_meeting', ownerColumn: 'team_id', scopeKey: 'teamId' },
+  club_meeting: { table: 'club_meeting', ownerColumn: 'club_id', scopeKey: 'clubId' },
+};
+
+// Собрание из адреса — только если оно принадлежит команде или клубу, в которых гейт
+// проверил права. Гейт (requireEventPermission) смотрит роль в teamId / clubId из
+// запроса, но не то, что собрание — именно их: без условия на колонку владельца
+// руководитель команды A, прислав teamId=A и id собрания команды B, переносил его,
+// менял взнос и удалял. Чужое собрание отсюда выходит «не найденным».
+const loadMeeting = async (eventId, scope, columns = 'id') => {
+  const owner = MEETING_OWNERS[scope.eventType];
+  const ownerId = owner && scope[owner.scopeKey];
+  if (!ownerId) return null;
+
+  const { rows } = await pool.query(
+    `SELECT ${columns} FROM "public"."${owner.table}" WHERE id = $1 AND ${owner.ownerColumn} = $2`,
+    [eventId, ownerId]
+  );
+  return rows[0] || null;
+};
 
 // =============================================================================
 // ОБНОВЛЕНИЕ РАСПИСАНИЯ СОБРАНИЯ (дата, время, локация)
@@ -14,9 +39,9 @@ import { parseFeeSettings, buildFeeUpdate } from '../utils/eventFees.js';
 export const updateMeetingSchedule = async (req, res) => {
   try {
     const { eventId } = req.params;
-    const { eventType, date, time, arena_id, location, location_url, custom_timezone } = req.body;
-    const teamId = getTeamIdFromRequest(req);
-    const clubId = getClubIdFromRequest(req);
+    const { date, time, arena_id, location, location_url, custom_timezone } = req.body;
+    const scope = getEventScope(req);
+    const { eventType, teamId, clubId } = scope;
 
     if (!teamId && !clubId) {
       return res.status(400).json({ success: false, error: 'Параметр teamId или clubId обязателен' });
@@ -28,15 +53,12 @@ export const updateMeetingSchedule = async (req, res) => {
       return res.status(400).json({ success: false, error: 'Необходимо указать дату и время собрания' });
     }
 
-    const table = eventType === 'team_meeting' ? 'team_meeting' : 'club_meeting';
-    const currentRes = await pool.query(
-      `SELECT arena_id, location, location_url, custom_timezone FROM "public"."${table}" WHERE id = $1`,
-      [eventId]
-    );
-    if (currentRes.rowCount === 0) {
+    // Текущее состояние из БД — заодно убеждаемся, что собрание своё
+    const current = await loadMeeting(eventId, scope, 'arena_id, location, location_url, custom_timezone');
+    if (!current) {
       return res.status(404).json({ success: false, error: 'Собрание не найдено' });
     }
-    const current = currentRes.rows[0];
+    const { table } = MEETING_OWNERS[eventType];
 
     const finalArenaId = arena_id !== undefined ? (arena_id || null) : current.arena_id;
     const isManual = !finalArenaId;
@@ -86,7 +108,7 @@ export const updateMeetingSchedule = async (req, res) => {
       sendPushToEventScopeExcept({ teamId, clubId }, req.user.id, 'schedule', {
         title: 'Собрание изменено',
         body: `Новое расписание: ${info.text}`,
-        url: `/event/${eventType}/${eventId}`, tag: `event-update-${eventId}`,
+        url: eventUrl(eventType, eventId), tag: `event-update-${eventId}`,
       });
     }).catch(() => {});
 
@@ -104,9 +126,8 @@ export const updateMeetingSchedule = async (req, res) => {
 export const updateMeetingFinances = async (req, res) => {
   try {
     const { eventId } = req.params;
-    const { eventType } = req.body;
-    const teamId = getTeamIdFromRequest(req);
-    const clubId = getClubIdFromRequest(req);
+    const scope = getEventScope(req);
+    const { eventType, teamId, clubId } = scope;
 
     if (!teamId && !clubId) {
       return res.status(400).json({ success: false, error: 'Параметр teamId или clubId обязателен' });
@@ -117,17 +138,13 @@ export const updateMeetingFinances = async (req, res) => {
 
     // goalieAware: false — на собрании нет деления на вратарей и полевых,
     // колонки goalies_free у этих таблиц не существует.
-    const table = eventType === 'team_meeting' ? 'team_meeting' : 'club_meeting';
     const patch = parseFeeSettings(req.body, { goalieAware: false });
 
-    const check = await pool.query(
-      `SELECT id, cost, cost_mode, total_cost FROM "public"."${table}" WHERE id = $1`,
-      [eventId]
-    );
-    if (check.rowCount === 0) {
+    const prev = await loadMeeting(eventId, scope, 'id, cost, cost_mode, total_cost');
+    if (!prev) {
       return res.status(404).json({ success: false, error: 'Собрание не найдено' });
     }
-    const prev = check.rows[0];
+    const { table } = MEETING_OWNERS[eventType];
 
     const upd = buildFeeUpdate(patch, 1);
     if (!upd.isEmpty) {
@@ -154,7 +171,7 @@ export const updateMeetingFinances = async (req, res) => {
           body: nextMode === 'split'
             ? formatSplitCostChange(oldTotal, nextTotal, `собрания ${info.text}`)
             : formatFeeChange(oldFee, nextFee, `собрания ${info.text}`),
-          url: `/event/${eventType}/${eventId}`,
+          url: eventUrl(eventType, eventId),
           tag: `fee-${eventId}`,
         });
       }).catch(() => {});
@@ -174,10 +191,12 @@ export const updateMeetingFinances = async (req, res) => {
 export const deleteMeeting = async (req, res) => {
   try {
     const { eventId } = req.params;
-    // eventType может прийти как в query (DELETE без body), так и в body
-    const eventType = req.query.eventType || req.body?.eventType;
-    const teamId = getTeamIdFromRequest(req);
-    const clubId = getClubIdFromRequest(req);
+    // eventType может прийти как в query (DELETE без body), так и в body. Порядок —
+    // как у гейта: тело, потом query. Раньше здесь query читался первым, и тело
+    // «team_meeting» проводило через проверку команды, а query «club_meeting»
+    // удалял клубное собрание.
+    const scope = getEventScope(req);
+    const { eventType, teamId, clubId } = scope;
 
     if (!teamId && !clubId) {
       return res.status(400).json({ success: false, error: 'Параметр teamId или clubId обязателен' });
@@ -191,16 +210,21 @@ export const deleteMeeting = async (req, res) => {
       return res.status(400).json({ success: false, error: 'Некорректный формат идентификатора собрания' });
     }
 
+    if (!MEETING_OWNERS[eventType]) {
+      return res.status(400).json({ success: false, error: 'Неизвестный тип собрания' });
+    }
+
+    // Своё ли собрание — до чтения деталей для пуша и до любых удалений
+    if (!(await loadMeeting(numericId, scope))) {
+      return res.status(404).json({
+        success: false,
+        error: eventType === 'club_meeting' ? 'Клубное собрание не найдено' : 'Собрание не найдено',
+      });
+    }
+
     const eventInfo = await getMeetingInfo(numericId, eventType);
 
     if (eventType === 'team_meeting') {
-      const check = await pool.query(
-        'SELECT id FROM "public"."team_meeting" WHERE id = $1',
-        [numericId]
-      );
-      if (check.rowCount === 0) {
-        return res.status(404).json({ success: false, error: 'Собрание не найдено' });
-      }
       await pool.query(
         'DELETE FROM "public"."team_meeting_attendance" WHERE team_meeting_id = $1',
         [numericId]
@@ -210,14 +234,7 @@ export const deleteMeeting = async (req, res) => {
         [numericId]
       );
 
-    } else if (eventType === 'club_meeting') {
-      const check = await pool.query(
-        'SELECT id FROM "public"."club_meeting" WHERE id = $1',
-        [numericId]
-      );
-      if (check.rowCount === 0) {
-        return res.status(404).json({ success: false, error: 'Клубное собрание не найдено' });
-      }
+    } else {
       await pool.query(
         'DELETE FROM "public"."club_meeting_attendance" WHERE club_meeting_id = $1',
         [numericId]
@@ -226,9 +243,6 @@ export const deleteMeeting = async (req, res) => {
         'DELETE FROM "public"."club_meeting" WHERE id = $1',
         [numericId]
       );
-
-    } else {
-      return res.status(400).json({ success: false, error: 'Неизвестный тип собрания' });
     }
 
     cancelScheduledNotifications(numericId).catch(() => {});

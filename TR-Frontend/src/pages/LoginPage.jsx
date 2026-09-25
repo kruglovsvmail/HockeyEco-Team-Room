@@ -491,8 +491,9 @@ export default function LoginPage() {
     <div className="w-full h-full max-w-md mx-auto flex bg-surface-base flex-col flex-1 px-6 py-10 relative z-10">
   
       <div className="relative mt-1 mb-16 shrink-0">
-        <h1 className="text-[36px] font-bold uppercase tracking-widest mb-1 text-content-main">
-          Hockey<span className="text-brand ">Eco</span>
+        <h1 className="heco-login-wordmark mb-1">
+          <img src="/brand/heco-tr-wordmark-light.svg" alt="Heco TR" className="heco-mark-light" />
+          <img src="/brand/heco-tr-wordmark-dark.svg" alt="Heco TR" className="heco-mark-dark" />
         </h1>
         <p className="text-content-muted text-[14px] tracking-[0.2em] uppercase font-semibold mb-4">
           Кабинет команды
@@ -723,7 +724,7 @@ export default function LoginPage() {
             </div>
             <h2 className="text-[18px] font-bold text-content-main mb-3">Установить приложение</h2>
             <p className="text-content-muted text-[14px] mb-8 px-2 leading-relaxed">
-              Установите HockeyEco на ваше устройство для быстрого доступа, работы оффлайн и получения уведомлений.
+              Установите Heco TR на ваше устройство для быстрого доступа, работы оффлайн и получения уведомлений.
             </p>
             <ButtonLP 
               variant="primary" 

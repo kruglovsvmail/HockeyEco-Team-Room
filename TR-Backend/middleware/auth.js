@@ -8,6 +8,7 @@ import {
   isClubEventType,
   isCommunityEventType,
   isCoachAnywhere,
+  getEventTypeFromRequest,
 } from '../utils/checkPermission.js';
 
 // Троттлинг в памяти процесса: last_seen_at обновляется не чаще раза в LAST_SEEN_THROTTLE_MS
@@ -338,7 +339,9 @@ export const requireCoach = async (req, res, next) => {
  * @param {string|string[]} [communityPermissionKey] - правило для контекста сообщества
  */
 export const requireEventPermission = (teamPermissionKey, clubPermissionKey, communityPermissionKey) => (req, res, next) => {
-  const eventType = req.body?.eventType || req.query?.eventType;
+  // Тип читается тем же помощником, что и в контроллерах (getEventScope): по нему
+  // выбирается и контекст проверки здесь, и таблица события там — разойтись им нельзя
+  const eventType = getEventTypeFromRequest(req);
   const clubId = req.body?.clubId || req.query?.clubId || req.params?.clubId;
   const teamId = req.body?.teamId || req.query?.teamId || req.params?.teamId;
   const communityId = req.body?.communityId || req.query?.communityId || req.params?.communityId;

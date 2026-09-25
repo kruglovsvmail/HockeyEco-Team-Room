@@ -24,6 +24,10 @@ const componentMap = {
   match: EventDetailsMatch,
   training: EventDetailsTraining,
   meeting: EventDetailsMeeting,
+  // Клубные — свои маршруты только ради однозначного адреса (см. EVENT_ROUTE в
+  // helpers.js); экран у них тот же, что у командных
+  'club-training': EventDetailsTraining,
+  'club-meeting': EventDetailsMeeting,
   // Тренировка и солянка — один компонент: набор вкладок он выбирает сам по типу
   'community-training': EventDetailsCommunity,
   'community-game': EventDetailsCommunity,
@@ -33,6 +37,8 @@ const EVENT_TITLES = {
   match: 'Матч',
   training: 'Тренировка',
   meeting: 'Собрание',
+  'club-training': 'Тренировка',
+  'club-meeting': 'Собрание',
   'community-training': 'Тренировка',
   'community-game': 'Солянка',
 };

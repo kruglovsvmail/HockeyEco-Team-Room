@@ -4,6 +4,7 @@ import {
   sendPushToCommunityExcept,
   scheduleNotification,
   getCommunityEventInfo,
+  eventUrl,
 } from '../services/pushService.js';
 
 // =============================================================================
@@ -60,29 +61,43 @@ export async function announceCommunityEvent({ event, eventType, communityId, ex
   if (!cfg) return;
 
   const info = await getCommunityEventInfo(event.id, eventType);
-  const route = eventType === 'community_game' ? 'community-game' : 'community-training';
   const isGame = eventType === 'community_game';
 
   await sendPushToCommunityExcept(Number(communityId), exceptUserId, 'schedule', {
     title: isGame ? 'Новая солянка' : 'Новая тренировка',
     body: `${event.title} — ${info.text}`,
-    url: `/event/${route}/${event.id}`,
+    url: eventUrl(eventType, event.id),
     tag: `new-${eventType}-${event.id}`,
   });
 
-  // Напоминание за сутки. Если до события меньше суток, оно бессмысленно —
-  // scheduleNotification такие моменты и так отбрасывает, проверяем здесь же.
+  await scheduleCommunityReminder({ event, eventType, communityId, info });
+}
+
+/**
+ * Напоминание за сутки. Отдельно от анонса, потому что ставится ещё и после
+ * правки расписания — там пуш «Новая тренировка» не нужен, событие не новое.
+ * event — строка из базы (RETURNING *): дата в ней уже момент времени, а не
+ * стенные часы арены из формы. info — детали события, если их уже прочли.
+ */
+export async function scheduleCommunityReminder({ event, eventType, communityId, info = null }) {
+  const cfg = COMMUNITY_EVENT_MAP[eventType];
+  if (!cfg) return;
+
+  // Если до события меньше суток, напоминание бессмысленно. Сам
+  // scheduleNotification прошедшие моменты не отбрасывает — крон отправил бы
+  // «Завтра тренировка» сразу, поэтому проверяем здесь.
   const sendAt = new Date(new Date(event[cfg.dateCol]).getTime() - 24 * 3600_000);
   if (sendAt > new Date()) {
+    const { text } = info || await getCommunityEventInfo(event.id, eventType);
     await scheduleNotification({
       type: 'event_reminder_24h',
       communityId: Number(communityId),
       eventId: event.id,
       sendAt,
       payload: {
-        title: isGame ? 'Завтра солянка' : 'Завтра тренировка',
-        body: `${event.title} — ${info.text}`,
-        url: `/event/${route}/${event.id}`,
+        title: eventType === 'community_game' ? 'Завтра солянка' : 'Завтра тренировка',
+        body: `${event.title} — ${text}`,
+        url: eventUrl(eventType, event.id),
         tag: `reminder-${eventType}-${event.id}`,
       },
     });

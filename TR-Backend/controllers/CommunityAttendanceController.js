@@ -1,5 +1,5 @@
 import pool from '../config/db.js';
-import { checkCommunityPermissionInternal } from '../utils/checkPermission.js';
+import { checkCommunityPermissionInternal, getCommunityIdFromRequest } from '../utils/checkPermission.js';
 import {
   COMMUNITY_EVENT_MAP,
   resolveLane,
@@ -10,7 +10,7 @@ import {
   requeueAfterExpiry,
 } from '../utils/communityReserve.js';
 import { resolvePayRole, getFeeContext, isAfterWithdrawDeadline, describeSplitFee } from '../utils/eventFees.js';
-import { sendPushToCommunityExcept, getCommunityEventInfo, getUserName } from '../services/pushService.js';
+import { sendPushToCommunityExcept, getCommunityEventInfo, getUserName, eventUrl } from '../services/pushService.js';
 
 const cfgFor = (eventType) => COMMUNITY_EVENT_MAP[eventType] || null;
 
@@ -281,7 +281,6 @@ export const toggleCommunityAttendance = async (req, res) => {
         getCommunityEventInfo(eventId, eventType),
         lateWithdraw ? Promise.resolve('') : describeSplitFee(eventType, eventId),
       ]);
-      const route = eventType === 'community_game' ? 'community-game' : 'community-training';
       const what = eventType === 'community_game' ? 'солянку' : 'тренировку';
 
       await sendPushToCommunityExcept(Number(communityId), targetId, 'schedule', {
@@ -289,7 +288,7 @@ export const toggleCommunityAttendance = async (req, res) => {
         body: isAttending
           ? `${name} ${slotStatus === 'reserve' ? 'встал в резерв на' : 'отметился на'} ${what}: ${info.text}${feeText}`
           : `${name} снял отметку с ${what}: ${info.text}${feeText}`,
-        url: `/event/${route}/${eventId}`,
+        url: eventUrl(eventType, eventId),
         tag: `attend-${eventType}-${eventId}-${targetId}`,
       });
     })().catch(() => {});
@@ -470,7 +469,7 @@ export const bulkMarkCommunityAttendance = async (req, res) => {
         await sendPushToCommunityExcept(Number(communityId), initiatorId, 'schedule', {
           title: 'Новые отметки',
           body: `${who} ${names.length === 1 ? 'отмечен' : 'отмечены'} на солянку: ${info.text}${feeText}`,
-          url: `/event/community-game/${eventId}`,
+          url: eventUrl(eventType, eventId),
           tag: `attend-bulk-${eventType}-${eventId}`,
         });
       })().catch(() => {});
@@ -507,6 +506,14 @@ export const updateCommunityGuest = async (req, res) => {
     );
     if (!hasAccess) {
       return res.status(403).json({ success: false, error: 'Недостаточно прав доступа' });
+    }
+
+    // Событие своего сообщества — как и в остальных ручках отметок: права проверены
+    // в communityId, но само событие могло быть чужим, и штаб переименовывал гостей
+    // на чужой солянке
+    const event = await loadEvent(pool, cfg, eventId);
+    if (!event || Number(event.community_id) !== Number(communityId)) {
+      return res.status(404).json({ success: false, error: 'Событие не найдено' });
     }
 
     const { rowCount } = await pool.query(`
@@ -560,11 +567,10 @@ export const confirmCommunityOffer = async (req, res) => {
         getUserName(userId),
         getCommunityEventInfo(eventId, eventType),
       ]);
-      const route = eventType === 'community_game' ? 'community-game' : 'community-training';
       await sendPushToCommunityExcept(Number(communityId), userId, 'schedule', {
         title: 'Место занято',
         body: `${name} вышел из резерва: ${info.text}`,
-        url: `/event/${route}/${eventId}`,
+        url: eventUrl(eventType, eventId),
         tag: `reserve-confirm-${eventType}-${eventId}-${userId}`,
       });
     })().catch(() => {});
@@ -705,10 +711,19 @@ export const getCommunityAttendance = async (req, res) => {
   try {
     const { eventId } = req.params;
     const { eventType } = req.query;
+    // Сообщество — то, в котором гейт проверил права: тем же порядком, тело раньше query
+    const communityId = getCommunityIdFromRequest(req);
 
     const cfg = cfgFor(eventType);
     if (!cfg) {
       return res.status(400).json({ success: false, error: 'Неизвестный тип события сообщества' });
+    }
+
+    // Без этой проверки любой участник любого сообщества читал состав чужого события —
+    // с пометками об оплате, взносами и очередью резерва
+    const event = await loadEvent(pool, cfg, eventId);
+    if (!event || Number(event.community_id) !== communityId) {
+      return res.status(404).json({ success: false, error: 'Событие не найдено' });
     }
 
     const { rows } = await pool.query(`
@@ -767,6 +782,12 @@ export const toggleCommunityAttendanceTag = async (req, res) => {
     );
     if (!hasAccess) {
       return res.status(403).json({ success: false, error: 'Недостаточно прав доступа' });
+    }
+
+    // Событие своего сообщества: иначе ₽ ставились на отметки чужого события
+    const event = await loadEvent(pool, cfg, eventId);
+    if (!event || Number(event.community_id) !== Number(communityId)) {
+      return res.status(404).json({ success: false, error: 'Событие не найдено' });
     }
 
     // Занятое место тоже платит, и пометка ₽ ему нужна ровно так же —

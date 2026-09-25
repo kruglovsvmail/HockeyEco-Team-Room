@@ -119,8 +119,9 @@ export const CommunityAttendance = ({ event, refreshData, openRightPanel }) => {
   // календаря и тут же входит в событие — наша загрузка при монтировании легко
   // обгоняет его отметку и приносит список без него. 'tr-events-updated'
   // приходит уже по ответу сервера, так что этот список заведомо полный.
+  // После удаления события перечитывать нечего — сервер ответит 404.
   useEffect(() => {
-    const onUpdate = () => { load(); };
+    const onUpdate = (e) => { if (!e.detail?.eventDeleted) load(); };
     window.addEventListener('tr-events-updated', onUpdate);
     return () => window.removeEventListener('tr-events-updated', onUpdate);
   }, [load]);

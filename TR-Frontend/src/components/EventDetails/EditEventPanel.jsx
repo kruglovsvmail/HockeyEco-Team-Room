@@ -478,7 +478,9 @@ export const EditEventPanel = ({ data, onClose }) => {
         triggerToast(errData.error || 'Не удалось удалить', 'danger');
         return;
       }
-      window.dispatchEvent(new CustomEvent('tr-events-updated'));
+      // Календарю сигнал нужен — убрать карточку. Экраны деталей по eventDeleted
+      // его пропускают: перечитывать удалённое событие — это 404 в консоли
+      window.dispatchEvent(new CustomEvent('tr-events-updated', { detail: { eventDeleted: true } }));
       triggerToast('Событие удалено', 'success');
       setConfirmDeleteOpen(false);
       setTimeout(() => {

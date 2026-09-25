@@ -13,6 +13,7 @@ export default defineConfig({
     VitePWA({
       // Переключаем на ручное подтверждение обновлений пользователем
       registerType: 'prompt',
+      includeAssets: ['favicon.ico', 'apple-touch-icon.png', 'fonts/Manrope.ttf', 'brand/*.svg'],
       workbox: {
         globPatterns: ['**/*.{js,css,html,ico,png,svg,webp}'],
         cleanupOutdatedCaches: true,
@@ -24,8 +25,8 @@ export default defineConfig({
         type: 'module',
       },
       manifest: {
-        name: 'HockeyEco Team Room',
-        short_name: 'Heco',
+        name: 'Heco TR',
+        short_name: 'Heco TR',
         description: 'Кабинет хоккейной команды для управления статистикой и составами',
         
         // 🎨 ХАБ УПРАВЛЕНИЯ ЦВЕТОМ СТАРТОВОГО ЭКРАНА
@@ -36,7 +37,7 @@ export default defineConfig({
         // safe-area зоны в App.jsx. Новый цвет доедет до установленных приложений
         // не сразу: Chrome сверяет манифест примерно раз в сутки и пересобирает WebAPK.
         theme_color: '#242424',
-        background_color: '#e2e4e7', // Физический фон системного Splash Screen при клике на иконку
+        background_color: '#e2e4e7', // Стандартный фон системного Splash Screen.
         
         display: 'standalone',
         orientation: 'portrait',

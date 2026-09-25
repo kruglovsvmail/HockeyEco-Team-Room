@@ -479,11 +479,24 @@ export const leaveCommunity = async (req, res) => {
 //
 // Каскадом уходит всё: участники, штаб, группы, события, отметки, расстановки
 // и настройки уведомлений — на всех внешних ключах стоит ON DELETE CASCADE.
+// Мимо каскада проходят логотип в S3 и слепки разовых упражнений из планов
+// тренировок — их убираем руками.
 // Действие необратимо, поэтому на фронте оно закрыто шторкой подтверждения.
 // =============================================================================
 export const deleteCommunity = async (req, res) => {
   try {
     const { communityId } = req.params;
+
+    // Слепок разового упражнения к тренировке не привязан, и каскад его не заденет.
+    // Номера запоминаем, пока пункты планов на месте, а стираем после удаления — раньше
+    // не даст внешний ключ пункта на слепок (ON DELETE RESTRICT). Подробнее — у
+    // deleteCommunityEvent в CommunityEventController.js.
+    const { rows: adhoc } = await pool.query(`
+      SELECT p.drill_snapshot_id
+      FROM community_training_plan p
+      JOIN community_training t ON t.id = p.community_training_id
+      WHERE t.community_id = $1 AND p.is_adhoc AND p.drill_snapshot_id IS NOT NULL
+    `, [communityId]);
 
     const { rows } = await pool.query(
       'DELETE FROM communities WHERE id = $1 RETURNING name, logo_url',
@@ -495,6 +508,14 @@ export const deleteCommunity = async (req, res) => {
 
     // Строку каскад унёс, а файл в S3 каскадам не подчиняется — убираем руками
     deleteFromS3(rows[0].logo_url);
+
+    // Сбой чистки удаление не отменяет: сообщества уже нет, а лишний слепок никому не мешает
+    if (adhoc.length > 0) {
+      await pool.query(
+        'DELETE FROM drill_snapshots WHERE id = ANY($1::int[])',
+        [adhoc.map(r => r.drill_snapshot_id)]
+      ).catch(err => console.error('[Delete Community Snapshots Error]:', err.message));
+    }
 
     res.json({ success: true });
   } catch (error) {

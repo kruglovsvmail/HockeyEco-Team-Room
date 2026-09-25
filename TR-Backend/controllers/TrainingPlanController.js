@@ -1,7 +1,12 @@
 import pool from '../config/db.js';
-import { checkPermissionInternal, checkClubPermissionInternal, checkCommunityPermissionInternal } from '../utils/checkPermission.js';
+import {
+  checkPermissionInternal,
+  checkClubPermissionInternal,
+  checkCommunityPermissionInternal,
+  getEventScope,
+} from '../utils/checkPermission.js';
 import { normalizeDrillInput } from '../utils/drillContent.js';
-import { sendPushToEventScopeExcept, getTrainingInfo } from '../services/pushService.js';
+import { sendPushToEventScopeExcept, getTrainingInfo, eventUrl } from '../services/pushService.js';
 
 // План тренировки — упорядоченный список упражнений из личной библиотеки тренера.
 //
@@ -25,15 +30,41 @@ const isClubTraining = (eventType) => eventType === 'club_training';
 // различаются только таблица, ключ прав и то, откуда берётся контекст.
 const isCommunityTraining = (eventType) => eventType === 'community_training';
 
-// Куда смотреть за планом: у командной и клубной тренировки таблицы разные, а логика
-// одна. Возвращаем обе части адреса сразу — они всегда нужны вместе.
+// Куда смотреть за планом. Логика у трёх контекстов тренировки одна, а таблицы свои:
+// пункты плана, колонка, которой пункт ссылается на тренировку, и сама тренировка —
+// там дата и флаг публикации. Публикация выбирала таблицу тренировки по месту и про
+// сообщество не знала: флаг переключался у командной тренировки с тем же id, открывая
+// или пряча чужой план, а тренировка сообщества оставалась черновиком. Поэтому все
+// три имени выбираются только здесь.
+//
+// Здесь же — чья это тренировка: колонка владельца в её таблице и ключ контекста
+// запроса, с которым колонка обязана совпасть (см. loadTraining).
 const planTarget = (eventType) => {
   if (isCommunityTraining(eventType)) {
-    return { planTable: 'community_training_plan', eventColumn: 'community_training_id' };
+    return {
+      planTable: 'community_training_plan',
+      eventColumn: 'community_training_id',
+      eventTable: 'community_training',
+      ownerColumn: 'community_id',
+      scopeKey: 'communityId',
+    };
   }
-  return isClubTraining(eventType)
-    ? { planTable: 'club_training_plan', eventColumn: 'club_training_id' }
-    : { planTable: 'team_training_plan', eventColumn: 'team_training_id' };
+  if (isClubTraining(eventType)) {
+    return {
+      planTable: 'club_training_plan',
+      eventColumn: 'club_training_id',
+      eventTable: 'club_training',
+      ownerColumn: 'club_id',
+      scopeKey: 'clubId',
+    };
+  }
+  return {
+    planTable: 'team_training_plan',
+    eventColumn: 'team_training_id',
+    eventTable: 'team_training',
+    ownerColumn: 'team_id',
+    scopeKey: 'teamId',
+  };
 };
 
 // Может ли пользователь распоряжаться планом: добавлять упражнения, менять порядок
@@ -49,15 +80,26 @@ const canManagePlan = async (userId, { teamId, clubId, communityId, eventType },
     : checkPermissionInternal(userId, teamId, 'TRAINING_PLAN_MANAGE', client);
 };
 
-// Тренировка + признак «уже прошла». Дату сравниваем в базе, чтобы не зависеть от
-// часового пояса процесса: сервер живёт в UTC, training_date хранится timestamptz.
-const loadTraining = async (eventId, eventType, client = pool) => {
-  const table = isCommunityTraining(eventType) ? 'community_training'
-    : isClubTraining(eventType) ? 'club_training' : 'team_training';
+// Тренировка + признак «уже прошла» — если она принадлежит контексту запроса.
+//
+// Гейт (requireEventPermission) проверяет роль в teamId / clubId / communityId из
+// запроса, но не то, что тренировка из адреса — тренировка именно этой команды, клуба
+// или сообщества. Без условия на колонку владельца тренер команды A, прислав teamId=A
+// и id тренировки команды B, читал черновик плана B, переписывал его и публиковал.
+// Законно чужой тренировка не бывает: совместных нет, и календарь открывает каждую
+// только в контексте её владельца. Чужая тренировка отсюда выходит «не найденной».
+//
+// Дату сравниваем в базе, чтобы не зависеть от часового пояса процесса: сервер
+// живёт в UTC, training_date хранится timestamptz.
+const loadTraining = async (eventId, scope, client = pool) => {
+  const { eventTable, ownerColumn, scopeKey } = planTarget(scope.eventType);
+  const ownerId = scope[scopeKey];
+  if (!ownerId) return null;
+
   const { rows } = await client.query(`
     SELECT id, plan_published, (training_date < now()) AS is_past
-    FROM "${table}" WHERE id = $1
-  `, [eventId]);
+    FROM "${eventTable}" WHERE id = $1 AND ${ownerColumn} = $2
+  `, [eventId, ownerId]);
   return rows[0] || null;
 };
 
@@ -70,18 +112,18 @@ const loadTraining = async (eventId, eventType, client = pool) => {
 export const getTrainingPlan = async (req, res) => {
   try {
     const { eventId } = req.params;
-    const { teamId, clubId, communityId, eventType } = req.query;
+    const scope = getEventScope(req);
 
-    if (!teamId && !clubId && !communityId) {
+    if (!scope.teamId && !scope.clubId && !scope.communityId) {
       return res.status(400).json({ success: false, error: 'teamId, clubId или communityId обязателен' });
     }
 
-    const training = await loadTraining(eventId, eventType);
+    const training = await loadTraining(eventId, scope);
     if (!training) {
       return res.status(404).json({ success: false, error: 'Тренировка не найдена' });
     }
 
-    const canManage = await canManagePlan(req.user.id, { teamId, clubId, communityId, eventType });
+    const canManage = await canManagePlan(req.user.id, scope);
 
     // Неопубликованный план виден только тренерскому составу: пока тренер собирает
     // тренировку, команде незачем видеть два упражнения из восьми.
@@ -95,7 +137,7 @@ export const getTrainingPlan = async (req, res) => {
       });
     }
 
-    const { planTable, eventColumn } = planTarget(eventType);
+    const { planTable, eventColumn } = planTarget(scope.eventType);
 
     const { rows } = await pool.query(`
       SELECT
@@ -196,23 +238,24 @@ export const saveTrainingPlan = async (req, res) => {
   const client = await pool.connect();
   try {
     const { eventId } = req.params;
-    const { teamId, clubId, communityId, eventType, items } = req.body;
+    const { items } = req.body;
+    const scope = getEventScope(req);
     const userId = req.user.id;
 
-    if ((!teamId && !clubId && !communityId) || !Array.isArray(items)) {
+    if ((!scope.teamId && !scope.clubId && !scope.communityId) || !Array.isArray(items)) {
       return res.status(400).json({ success: false, error: 'Некорректные данные' });
     }
 
-    if (!(await canManagePlan(userId, { teamId, clubId, communityId, eventType }, client))) {
+    if (!(await canManagePlan(userId, scope, client))) {
       return res.status(403).json({ success: false, error: 'У вас нет прав для изменения плана' });
     }
 
-    const training = await loadTraining(eventId, eventType, client);
+    const training = await loadTraining(eventId, scope, client);
     if (!training) {
       return res.status(404).json({ success: false, error: 'Тренировка не найдена' });
     }
 
-    const { planTable, eventColumn } = planTarget(eventType);
+    const { planTable, eventColumn } = planTarget(scope.eventType);
 
     // Названия новых пунктов берём из библиотеки, а не из тела запроса: клиент мог бы
     // прислать любое. Заодно это проверка владения — чужое упражнение в план не попадёт.
@@ -292,36 +335,37 @@ export const saveTrainingPlan = async (req, res) => {
 export const setPlanPublished = async (req, res) => {
   try {
     const { eventId } = req.params;
-    const { teamId, clubId, communityId, eventType, published } = req.body;
+    const { published } = req.body;
+    const scope = getEventScope(req);
+    const { eventType } = scope;
     const userId = req.user.id;
 
-    if (!teamId && !clubId && !communityId) {
+    if (!scope.teamId && !scope.clubId && !scope.communityId) {
       return res.status(400).json({ success: false, error: 'teamId, clubId или communityId обязателен' });
     }
 
-    if (!(await canManagePlan(userId, { teamId, clubId, communityId, eventType }))) {
+    if (!(await canManagePlan(userId, scope))) {
       return res.status(403).json({ success: false, error: 'У вас нет прав для публикации плана' });
     }
 
-    const isClub = isClubTraining(eventType);
-    const table = isClub ? 'club_training' : 'team_training';
-
-    const before = await loadTraining(eventId, eventType);
+    const before = await loadTraining(eventId, scope);
     if (!before) {
       return res.status(404).json({ success: false, error: 'Тренировка не найдена' });
     }
 
     const nextValue = Boolean(published);
-    await pool.query(`UPDATE "${table}" SET plan_published = $2 WHERE id = $1`, [eventId, nextValue]);
+    const { eventTable } = planTarget(eventType);
+    await pool.query(`UPDATE "${eventTable}" SET plan_published = $2 WHERE id = $1`, [eventId, nextValue]);
 
     // Пуш только на переход «черновик → опубликован»: снятие публикации и повторные
-    // сохранения команду не касаются.
+    // сохранения команду не касаются. Адресат — владелец тренировки: в scope другого
+    // контекста нет, и чужому клубу или сообществу пуш отсюда не уйдёт.
     if (nextValue && !before.plan_published) {
       getTrainingInfo(eventId, eventType).then(info => {
-        sendPushToEventScopeExcept({ teamId, clubId, communityId }, userId, 'training_plan', {
+        sendPushToEventScopeExcept(scope, userId, 'training_plan', {
           title: 'Опубликован план тренировки',
           body: info.text,
-          url: `/event/${eventType}/${eventId}`,
+          url: eventUrl(eventType, eventId),
           tag: `plan-${eventId}`,
         });
       }).catch(() => {});
@@ -350,13 +394,14 @@ export const setPlanPublished = async (req, res) => {
 // иначе — его можно править и забирать себе.
 // =============================================================================
 
-// Пункт плана вместе со слепком и датой тренировки. Возвращает null, если пункта нет
-// или он принадлежит другой тренировке: id пункта приходит от клиента, и проверять
-// принадлежность обязательно — иначе чужой план правился бы по одному номеру.
-const loadPlanItem = async (eventId, eventType, itemId, client = pool) => {
-  const { planTable, eventColumn } = planTarget(eventType);
-  const table = isCommunityTraining(eventType) ? 'community_training'
-    : isClubTraining(eventType) ? 'club_training' : 'team_training';
+// Пункт плана вместе со слепком и датой тренировки. Возвращает null, если пункта нет,
+// он принадлежит другой тренировке или сама тренировка — не контекста запроса. id и
+// пункта, и тренировки приходят от клиента, и проверять надо обе принадлежности:
+// иначе чужой план правился бы по одному номеру (см. loadTraining).
+const loadPlanItem = async (eventId, scope, itemId, client = pool) => {
+  const { planTable, eventColumn, eventTable, ownerColumn, scopeKey } = planTarget(scope.eventType);
+  const ownerId = scope[scopeKey];
+  if (!ownerId) return null;
 
   const { rows } = await client.query(`
     SELECT
@@ -364,10 +409,10 @@ const loadPlanItem = async (eventId, eventType, itemId, client = pool) => {
       s.description, s.rink_type, s.board_json, s.board_enabled,
       (t.training_date < now()) AS is_past
     FROM ${planTable} p
-    JOIN ${table} t ON t.id = p.${eventColumn}
+    JOIN ${eventTable} t ON t.id = p.${eventColumn}
     LEFT JOIN drill_snapshots s ON s.id = p.drill_snapshot_id
-    WHERE p.id = $1 AND p.${eventColumn} = $2
-  `, [itemId, eventId]);
+    WHERE p.id = $1 AND p.${eventColumn} = $2 AND t.${ownerColumn} = $3
+  `, [itemId, eventId, ownerId]);
 
   return rows[0] || null;
 };
@@ -382,18 +427,18 @@ export const createAdhocDrill = async (req, res) => {
   const client = await pool.connect();
   try {
     const { eventId } = req.params;
-    const { teamId, clubId, communityId, eventType } = req.body;
+    const scope = getEventScope(req);
     const userId = req.user.id;
 
-    if (!teamId && !clubId && !communityId) {
+    if (!scope.teamId && !scope.clubId && !scope.communityId) {
       return res.status(400).json({ success: false, error: 'teamId, clubId или communityId обязателен' });
     }
 
-    if (!(await canManagePlan(userId, { teamId, clubId, communityId, eventType }, client))) {
+    if (!(await canManagePlan(userId, scope, client))) {
       return res.status(403).json({ success: false, error: 'У вас нет прав для изменения плана' });
     }
 
-    const training = await loadTraining(eventId, eventType, client);
+    const training = await loadTraining(eventId, scope, client);
     if (!training) {
       return res.status(404).json({ success: false, error: 'Тренировка не найдена' });
     }
@@ -406,7 +451,7 @@ export const createAdhocDrill = async (req, res) => {
       return res.status(400).json({ success: false, error: input.error });
     }
 
-    const { planTable, eventColumn } = planTarget(eventType);
+    const { planTable, eventColumn } = planTarget(scope.eventType);
 
     await client.query('BEGIN');
 
@@ -451,18 +496,18 @@ export const updateAdhocDrill = async (req, res) => {
   const client = await pool.connect();
   try {
     const { eventId, itemId } = req.params;
-    const { teamId, clubId, communityId, eventType } = req.body;
+    const scope = getEventScope(req);
     const userId = req.user.id;
 
-    if (!teamId && !clubId && !communityId) {
+    if (!scope.teamId && !scope.clubId && !scope.communityId) {
       return res.status(400).json({ success: false, error: 'teamId, clubId или communityId обязателен' });
     }
 
-    if (!(await canManagePlan(userId, { teamId, clubId, communityId, eventType }, client))) {
+    if (!(await canManagePlan(userId, scope, client))) {
       return res.status(403).json({ success: false, error: 'У вас нет прав для изменения плана' });
     }
 
-    const item = await loadPlanItem(eventId, eventType, itemId, client);
+    const item = await loadPlanItem(eventId, scope, itemId, client);
     if (!item) {
       return res.status(404).json({ success: false, error: 'Упражнение не найдено' });
     }
@@ -478,7 +523,7 @@ export const updateAdhocDrill = async (req, res) => {
       return res.status(400).json({ success: false, error: input.error });
     }
 
-    const { planTable, eventColumn } = planTarget(eventType);
+    const { planTable, eventColumn } = planTarget(scope.eventType);
 
     await client.query('BEGIN');
 
@@ -521,18 +566,18 @@ export const updateAdhocDrill = async (req, res) => {
 export const copyAdhocToLibrary = async (req, res) => {
   try {
     const { eventId, itemId } = req.params;
-    const { teamId, clubId, communityId, eventType } = req.body;
+    const scope = getEventScope(req);
     const userId = req.user.id;
 
-    if (!teamId && !clubId && !communityId) {
+    if (!scope.teamId && !scope.clubId && !scope.communityId) {
       return res.status(400).json({ success: false, error: 'teamId, clubId или communityId обязателен' });
     }
 
-    if (!(await canManagePlan(userId, { teamId, clubId, communityId, eventType }))) {
+    if (!(await canManagePlan(userId, scope))) {
       return res.status(403).json({ success: false, error: 'У вас нет прав для изменения плана' });
     }
 
-    const item = await loadPlanItem(eventId, eventType, itemId);
+    const item = await loadPlanItem(eventId, scope, itemId);
     if (!item) {
       return res.status(404).json({ success: false, error: 'Упражнение не найдено' });
     }

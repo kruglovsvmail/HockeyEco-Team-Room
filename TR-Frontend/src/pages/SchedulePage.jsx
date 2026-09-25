@@ -13,7 +13,7 @@ import { ExpandedGrid } from '../components/EventCalendar/ExpandedGrid';
 import { EventFilters } from '../components/EventCalendar/EventFilters';
 import { TopSheet } from '../ui/TopSheet';
 import EventCard from '../components/EventCalendar/EventCard';
-import { getAuthHeaders, COMMUNITY_EVENT_ROUTE } from '../utils/helpers';
+import { getAuthHeaders, eventRouteType } from '../utils/helpers';
 import { ReserveJoinSheet } from '../components/EventCalendar/ReserveJoinSheet';
 import { Toast } from '../ui/Toast';
 import { useFocusRevalidate } from '../hooks/useFocusRevalidate';
@@ -576,17 +576,10 @@ export function SchedulePage() {
                     ) : slideEvents.length > 0 ? (
                       <FadeIn className="flex flex-col gap-0">
                         {slideEvents.map(event => {
-                          // У событий сообщества свой маршрут: тренировка и солянка
-                          // живут в отдельных таблицах, и общий 'training' их
-                          // не откроет — бэкенд разворачивает тип по этой же карте.
-                          let routeType = COMMUNITY_EVENT_ROUTE[event.event_type] || 'match';
-                          if (!COMMUNITY_EVENT_ROUTE[event.event_type]) {
-                            if (event.event_type.includes('training')) {
-                              routeType = 'training';
-                            } else if (event.event_type.includes('meeting')) {
-                              routeType = 'meeting';
-                            }
-                          }
+                          // У событий клуба и сообщества свои маршруты: они живут в
+                          // отдельных таблицах со своими номерами, и общий 'training'
+                          // их не различит — бэкенд разворачивает тип по этой же карте.
+                          const routeType = eventRouteType(event.event_type);
 
                           return (
                             <EventCard

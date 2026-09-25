@@ -8,7 +8,7 @@ import { sendPushToTeamExcept } from '../services/pushService.js';
 import { syncClubMembershipOnTeamJoin, canOfferClubExclusion, removeFromClubOnly, CLUB_EXCLUSION_OFFER_PREDICATE } from '../utils/clubMembership.js';
 
 /**
- * Р’РЅСѓС‚СЂРµРЅРЅСЏСЏ С„СѓРЅРєС†РёСЏ РґР»СЏ РїСЂРѕРІРµСЂРєРё РіСЂР°РЅСѓР»СЏСЂРЅС‹С… РїСЂР°РІ РґРѕСЃС‚СѓРїР° Рё РїРѕРґРїРёСЃРєРё
+ * Внутренняя функция для проверки гранулярных прав доступа и подписки
  */
 async function checkPermissionInternal(userId, teamId, permissionKey, client = pool) {
   if (!userId) return false;
@@ -76,12 +76,12 @@ async function checkPermissionInternal(userId, teamId, permissionKey, client = p
   });
 }
 
-// РџРѕР»СѓС‡РµРЅРёРµ РІСЃРµС… РєРѕРјР°РЅРґ С‚РµРєСѓС‰РµРіРѕ РїРѕР»СЊР·РѕРІР°С‚РµР»СЏ
+// Получение всех команд текущего пользователя
 export const getMyTeams = async (req, res) => {
     try {
         const userId = req.user.id;
 
-        // 1. Р‘Р°Р·РѕРІС‹Р№ СЃРїРёСЃРѕРє РєРѕРјР°РЅРґ РїРѕР»СЊР·РѕРІР°С‚РµР»СЏ
+        // 1. Базовый список команд пользователя
         const teamsQuery = `
             SELECT DISTINCT t.id, t.name, t.short_name, t.logo_url, t.city, t.description,
                             t.jersey_dark_url, t.jersey_light_url, t.team_photo_url, t.ui_color,
@@ -106,7 +106,7 @@ export const getMyTeams = async (req, res) => {
 
         const teamIds = teams.map(t => t.id);
 
-        // 2. Р РѕР»Рё РїРѕР»СЊР·РѕРІР°С‚РµР»СЏ РІ РєРѕРјР°РЅРґР°С… (team_roles)
+        // 2. Роли пользователя в командах (team_roles)
         const teamRolesRes = await pool.query(`
             SELECT tm.team_id, tr.role
             FROM team_roles tr
@@ -114,7 +114,7 @@ export const getMyTeams = async (req, res) => {
             WHERE tm.user_id = $1 AND tm.team_id = ANY($2) AND tr.left_at IS NULL AND tm.left_at IS NULL
         `, [userId, teamIds]);
 
-        // 3. Р РѕР»Рё РїРѕР»СЊР·РѕРІР°С‚РµР»СЏ С‡РµСЂРµР· РєР»СѓР± (club_roles в†’ РєРѕРјР°РЅРґС‹ РєР»СѓР±Р°)
+        // 3. Роли пользователя через клуб (club_roles → команды клуба)
         const clubRolesRes = await pool.query(`
             SELECT t.id AS team_id, (CASE WHEN cr.role = 'coach' THEN 'club_coach' ELSE cr.role END) AS role
             FROM club_roles cr
@@ -127,7 +127,7 @@ export const getMyTeams = async (req, res) => {
             WHERE c.owner_id = $1 AND t2.id = ANY($2)
         `, [userId, teamIds]);
 
-        // 4. РЎС‚Р°С‚СѓСЃ РїРѕРґРїРёСЃРєРё РїРѕР»СЊР·РѕРІР°С‚РµР»СЏ
+        // 4. Статус подписки пользователя
         const subRes = await pool.query(
             'SELECT subscription_expires_at FROM users WHERE id = $1',
             [userId]
@@ -135,7 +135,7 @@ export const getMyTeams = async (req, res) => {
         const subExpires = subRes.rows[0]?.subscription_expires_at;
         const hasSubscription = subExpires ? new Date(subExpires) > new Date() : false;
 
-        // 5. РЎРєР»РµРёРІР°РµРј СЂРѕР»Рё РІ РєР°СЂС‚Сѓ РїРѕ team_id
+        // 5. Склеиваем роли в карту по team_id
         const rolesByTeam = {};
         for (const { team_id, role } of teamRolesRes.rows) {
             if (!rolesByTeam[team_id]) rolesByTeam[team_id] = new Set();
@@ -146,7 +146,7 @@ export const getMyTeams = async (req, res) => {
             rolesByTeam[team_id].add(role);
         }
 
-        // 6. РЎРѕР±РёСЂР°РµРј РёС‚РѕРіРѕРІС‹Р№ РјР°СЃСЃРёРІ РєРѕРјР°РЅРґ СЃ СЂРѕР»СЏРјРё
+        // 6. Собираем итоговый массив команд с ролями
         const enrichedTeams = teams.map(team => {
             const ownerIds = (team.owner_ids || []).map(Number);
             const isOwner = ownerIds.includes(Number(userId));
@@ -158,8 +158,8 @@ export const getMyTeams = async (req, res) => {
                 // Первый владелец отдельным полем — его читают клиенты со старым кэшем
                 // профиля в localStorage, где массива owner_ids ещё нет.
                 owner_id: ownerIds[0] ?? null,
-                user_role: roles.join(','),       // СЃС‚СЂРѕРєР° РґР»СЏ РѕР±СЂР°С‚РЅРѕР№ СЃРѕРІРјРµСЃС‚РёРјРѕСЃС‚Рё СЃ С„РѕР»Р±РµРєРѕРј
-                user_roles: roles,                 // РјР°СЃСЃРёРІ РґР»СЏ accessMatrix
+                user_role: roles.join(','),       // строка для обратной совместимости с фолбеком
+                user_roles: roles,                 // массив для accessMatrix
                 has_subscription: hasSubscription,
                 is_owner: isOwner,
             };
@@ -172,7 +172,7 @@ export const getMyTeams = async (req, res) => {
     }
 };
 
-// РџРѕР»СѓС‡РµРЅРёРµ РґРµС‚Р°Р»РёР·РёСЂРѕРІР°РЅРЅС‹С… СЃРїРёСЃРєРѕРІ СѓС‡Р°СЃС‚РЅРёРєРѕРІ С…РѕРєРєРµР№РЅРѕР№ РєРѕРјР°РЅРґС‹
+// Получение детализированных списков участников хоккейной команды
 export const getTeamDetails = async (req, res) => {
     try {
         const teamId = req.params.id;
@@ -198,7 +198,7 @@ export const getTeamDetails = async (req, res) => {
             ORDER BY u.last_name, u.first_name
         `;
 
-        // 2. Р—Р°РїСЂРѕСЃ Р°РєС‚РёРІРЅРѕРіРѕ РёРіСЂРѕРІРѕРіРѕ СЂРѕСЃС‚РµСЂР° РЅР° С‚СѓСЂРЅРёСЂС‹
+        // 2. Запрос активного игрового ростера на турниры
         const rosterQuery = `
             SELECT
                 tm.id as member_id, u.id as user_id,
@@ -212,7 +212,7 @@ export const getTeamDetails = async (req, res) => {
             ORDER BY tr.jersey_number
         `;
         
-        // 3. Р—Р°РїСЂРѕСЃ Р°РґРјРёРЅРёСЃС‚СЂР°С‚РёРІРЅРѕРіРѕ Рё С‚СЂРµРЅРµСЂСЃРєРѕРіРѕ С€С‚Р°Р±Р°
+        // 3. Запрос административного и тренерского штаба
         const staffQuery = `
             SELECT 
                 tm.id as member_id, u.id as user_id, 
@@ -244,17 +244,17 @@ export const getTeamDetails = async (req, res) => {
     }
 };
 
-// РџРѕР»СѓС‡РµРЅРёРµ Р°РЅРєРµС‚С‹ СѓС‡Р°СЃС‚РЅРёРєР° РєРѕРјР°РЅРґС‹ СЃ СЃРµР»РµРєС‚РёРІРЅРѕР№ Р·Р°С‰РёС‚РѕР№ РІРёСЂС‚СѓР°Р»СЊРЅРѕРіРѕ РєРѕРґР° Рё РІС‹РґР°С‡РµР№ РєР°СЂС‚С‹ РїСЂР°РІ
+// Получение анкеты участника команды с селективной защитой виртуального кода и выдачей карты прав
 export const getTeamMemberDetails = async (req, res) => {
   const { teamId, userId } = req.params;
   const reqUserId = req.user?.id;
 
   try {
     if (!reqUserId) {
-      return res.status(401).json({ error: 'РџРѕР»СЊР·РѕРІР°С‚РµР»СЊ РЅРµ РёРґРµРЅС‚РёС„РёС†РёСЂРѕРІР°РЅ' });
+      return res.status(401).json({ error: 'Пользователь не идентифицирован' });
     }
 
-    // Р’С‹С‡РёСЃР»СЏРµРј РґРёРЅР°РјРёС‡РµСЃРєРёРµ РїСЂР°РІР° РЅР° РѕСЃРЅРѕРІРµ СЌС‚Р°Р»РѕРЅРЅРѕР№ РјР°С‚СЂРёС†С‹ permissions.js
+    // Вычисляем динамические права на основе эталонной матрицы permissions.js
     const canEditRoles = await checkPermissionInternal(reqUserId, teamId, 'EDIT_USER_BLOCK_ROLES');
     const canEditGameProfile = await checkPermissionInternal(reqUserId, teamId, 'EDIT_USER_BLOCK_HOCKEY');
     const canEditHeader = await checkPermissionInternal(reqUserId, teamId, 'EDIT_USER_BLOCK_BASE');
@@ -285,12 +285,12 @@ export const getTeamMemberDetails = async (req, res) => {
     const { rows } = await pool.query(query, [teamId, userId]);
 
     if (rows.length === 0) {
-      return res.status(404).json({ error: 'РЈС‡Р°СЃС‚РЅРёРє РєРѕРјР°РЅРґС‹ РЅРµ РЅР°Р№РґРµРЅ' });
+      return res.status(404).json({ error: 'Участник команды не найден' });
     }
 
     const memberData = rows[0];
 
-    // Р•СЃР»Рё Сѓ РїРѕР»СЊР·РѕРІР°С‚РµР»СЏ РЅРµС‚ РїСЂР°РІ (РёР»Рё РЅРµС‚ РїРѕРґРїРёСЃРєРё) вЂ” СЃРєСЂС‹РІР°РµРј РІРёСЂС‚СѓР°Р»СЊРЅС‹Р№ РєРѕРґ
+    // Если у пользователя нет прав (или нет подписки) — скрываем виртуальный код
     if (!canViewVirtualCode) {
       delete memberData.virtual_code;
     }
@@ -312,31 +312,31 @@ export const getTeamMemberDetails = async (req, res) => {
   }
 };
 
-// РЎС‚Р°С‚РёСЃС‚РёРєР° РёРіСЂРѕРєР° РІРЅСѓС‚СЂРё РєРѕРЅРєСЂРµС‚РЅРѕР№ РєРѕРјР°РЅРґС‹ (РїР°РЅРµР»СЊ "РЎС‚Р°С‚РёСЃС‚РёРєР° РІ РєРѕРјР°РЅРґРµ").
-// РџРѕРєР° СЃС‡РёС‚Р°РµРј РїРѕСЃРµС‰Р°РµРјРѕСЃС‚СЊ РєРѕРјР°РЅРґРЅС‹С… С‚СЂРµРЅРёСЂРѕРІРѕРє Рё РјР°С‚С‡РµР№; РІ Р±СѓРґСѓС‰РµРј СЃСЋРґР° Р¶Рµ
-// РґРѕР±Р°РІСЏС‚СЃСЏ РґСЂСѓРіРёРµ Р±Р»РѕРєРё (СЃРѕР±СЂР°РЅРёСЏ Рё С‚.Рї.).
+// Статистика игрока внутри конкретной команды (панель "Статистика в команде").
+// Пока считаем посещаемость командных тренировок и матчей; в будущем сюда же
+// добавятся другие блоки (собрания и т.п.).
 //
-// РўСЂРµРЅРёСЂРѕРІРєРё Рё РќР•РѕС„РёС†РёР°Р»СЊРЅС‹Рµ РјР°С‚С‡Рё (friendly_pwa/friendly_ext/tournament_ext)
-// СЃС‡РёС‚Р°РµРј С‚РѕР»СЊРєРѕ Р·Р° С‚Рµ РїРµСЂРёРѕРґС‹, РєРѕРіРґР° РёРіСЂРѕРє СЂРµР°Р»СЊРЅРѕ С‡РёСЃР»РёР»СЃСЏ РІ РёРіСЂРѕРІРѕРј СЃРѕСЃС‚Р°РІРµ
-// РєРѕРјР°РЅРґС‹ (team_rosters): Р·Р°РєСЂС‹С‚С‹Рµ РїРµСЂРёРѕРґС‹ Р±РµСЂС‘Рј РёР· РёСЃС‚РѕСЂРёРё team_roster_periods
-// (РµС‘ Р·Р°РїРѕР»РЅСЏРµС‚ Р‘Р”-С‚СЂРёРіРіРµСЂ trg_team_rosters_close_period РїСЂРё РєР°Р¶РґРѕРј РёСЃРєР»СЋС‡РµРЅРёРё
-// РёРіСЂРѕРєР° вЂ” РёР· Р»СЋР±РѕРіРѕ РїСЂРёР»РѕР¶РµРЅРёСЏ, Team-Room РёР»Рё LMS), С‚РµРєСѓС‰РёР№ РЅРµР·Р°РєСЂС‹С‚С‹Р№ РїРµСЂРёРѕРґ вЂ”
-// РЅР°РїСЂСЏРјСѓСЋ РёР· team_rosters.left_at IS NULL.
+// Тренировки и НЕофициальные матчи (friendly_pwa/friendly_ext/tournament_ext)
+// считаем только за те периоды, когда игрок реально числился в игровом составе
+// команды (team_rosters): закрытые периоды берём из истории team_roster_periods
+// (её заполняет БД-триггер trg_team_rosters_close_period при каждом исключении
+// игрока — из любого приложения, Team-Room или LMS), текущий незакрытый период —
+// напрямую из team_rosters.left_at IS NULL.
 //
-// РћР¤РР¦РРђР›Р¬РќР«Р• РјР°С‚С‡Рё (game_type = 'official', РїСЂРёРІСЏР·Р°РЅС‹ Рє РґРёРІРёР·РёРѕРЅСѓ) СЃС‡РёС‚Р°РµРј
-// РїРѕ РґСЂСѓРіРѕРјСѓ РєСЂРёС‚РµСЂРёСЋ вЂ” РЅРµ РїРѕ team_rosters, Р° РїРѕ С„Р°РєС‚Сѓ РѕРґРѕР±СЂРµРЅРЅРѕР№ Р·Р°СЏРІРєРё
-// РёРіСЂРѕРєР° РЅР° РґРёРІРёР·РёРѕРЅ (tournament_rosters.application_status = 'approved',
-// tournament_team_id -> tournament_teams.division_id), СЃ СѓС‡С‘С‚РѕРј period_start/
-// period_end Р·Р°СЏРІРєРё, РµСЃР»Рё РѕРЅРё Р·Р°РґР°РЅС‹ (С‡Р°СЃС‚РёС‡РЅР°СЏ Р·Р°СЏРІРєР° РЅР° С‡Р°СЃС‚СЊ СЃРµР·РѕРЅР°).
+// ОФИЦИАЛЬНЫЕ матчи (game_type = 'official', привязаны к дивизиону) считаем
+// по другому критерию — не по team_rosters, а по факту одобренной заявки
+// игрока на дивизион (tournament_rosters.application_status = 'approved',
+// tournament_team_id -> tournament_teams.division_id), с учётом period_start/
+// period_end заявки, если они заданы (частичная заявка на часть сезона).
 //
-// В«РџРѕСЃРµС‚РёР»В» РјР°С‚С‡ вЂ” РќР• РѕС‚РјРµС‚РєР° РІ team_game_attendance (СЌС‚Рѕ С‚РѕР»СЊРєРѕ РѕРїСЂРѕСЃ
-// РЅР°РјРµСЂРµРЅРёР№ РґРѕ С„РѕСЂРјРёСЂРѕРІР°РЅРёСЏ СЃРѕСЃС‚Р°РІР°), Р° С„Р°РєС‚ РїРѕРїР°РґР°РЅРёСЏ РІ РёС‚РѕРіРѕРІС‹Р№ РїСЂРѕС‚РѕРєРѕР»
-// РјР°С‚С‡Р°: РЅР°Р»РёС‡РёРµ СЃС‚СЂРѕРєРё РІ game_rosters (game_id + player_id + team_id).
-// РРіСЂРѕРє РјРѕРі РѕС‚РјРµС‚РёС‚СЊСЃСЏ РЅР° РёРіСЂСѓ, РЅРѕ РЅРµ РїРѕРїР°СЃС‚СЊ РІ СЃРѕСЃС‚Р°РІ вЂ” СЌС‚Рѕ РЅРµ СЃС‡РёС‚Р°РµС‚СЃСЏ.
+// «Посетил» матч — НЕ отметка в team_game_attendance (это только опрос
+// намерений до формирования состава), а факт попадания в итоговый протокол
+// матча: наличие строки в game_rosters (game_id + player_id + team_id).
+// Игрок мог отметиться на игру, но не попасть в состав — это не считается.
 //
-// РњР°С‚С‡Рё РѕС‚РґР°СЋС‚СЃСЏ С„СЂРѕРЅС‚Сѓ РЎР«Р Р«Рњ СЃРїРёСЃРєРѕРј СЃ "Р±РёСЂРєР°РјРё" (Р»РёРіР°/СЃРµР·РѕРЅ/РґРёРІРёР·РёРѕРЅ РёР»Рё
-// РІРЅРµС€РЅРёР№ С‚СѓСЂРЅРёСЂ) вЂ” РїРѕСЃРµС‰Р°РµРјРѕСЃС‚СЊ, РїРѕР±РµРґС‹/РЅРёС‡СЊРё/РїРѕСЂР°Р¶РµРЅРёСЏ Рё С„РёР»СЊС‚СЂ РїРѕ С‚СѓСЂРЅРёСЂСѓ
-// СЃС‡РёС‚Р°СЋС‚СЃСЏ РІ Р±СЂР°СѓР·РµСЂРµ РїСЂРё РїРµСЂРµРєР»СЋС‡РµРЅРёРё С„РёР»СЊС‚СЂР°, Р±РµР· РїРѕРІС‚РѕСЂРЅС‹С… Р·Р°РїСЂРѕСЃРѕРІ.
+// Матчи отдаются фронту СЫРЫМ списком с "бирками" (лига/сезон/дивизион или
+// внешний турнир) — посещаемость, победы/ничьи/поражения и фильтр по турниру
+// считаются в браузере при переключении фильтра, без повторных запросов.
 export const getMemberTeamStats = async (req, res) => {
   const { teamId, userId } = req.params;
 
@@ -403,15 +403,15 @@ export const getMemberTeamStats = async (req, res) => {
       ORDER BY tt.training_date DESC
     `;
 
-    // Р•РґРёРЅС‹Р№ СЃРїРёСЃРѕРє Р’РЎР•РҐ РґРѕСЃС‚СѓРїРЅС‹С… РґР»СЏ РїРѕРґСЃС‡С‘С‚Р° РјР°С‚С‡РµР№ (РЅРµ С‚РѕР»СЊРєРѕ СЃС‹РіСЂР°РЅРЅС‹С…)
-    // СЃ "Р±РёСЂРєР°РјРё" Р»РёРіРё/СЃРµР·РѕРЅР°/РґРёРІРёР·РёРѕРЅР° РёР»Рё РІРЅРµС€РЅРµРіРѕ С‚СѓСЂРЅРёСЂР° вЂ” РѕС‚РґР°С‘Рј РµРіРѕ
-    // С„СЂРѕРЅС‚Сѓ С†РµР»РёРєРѕРј (variant Р‘), Р° РїРѕСЃРµС‰Р°РµРјРѕСЃС‚СЊ/СЂРµР·СѓР»СЊС‚Р°С‚С‹/С„РёР»СЊС‚СЂ РїРѕ С‚СѓСЂРЅРёСЂСѓ
-    // СЃС‡РёС‚Р°СЋС‚СЃСЏ СѓР¶Рµ РІ Р±СЂР°СѓР·РµСЂРµ РїСЂРё РїРµСЂРµРєР»СЋС‡РµРЅРёРё С„РёР»СЊС‚СЂР°, Р±РµР· РЅРѕРІС‹С… Р·Р°РїСЂРѕСЃРѕРІ.
+    // Единый список ВСЕХ доступных для подсчёта матчей (не только сыгранных)
+    // с "бирками" лиги/сезона/дивизиона или внешнего турнира — отдаём его
+    // фронту целиком (variant Б), а посещаемость/результаты/фильтр по турниру
+    // считаются уже в браузере при переключении фильтра, без новых запросов.
     //
-    // РћС„РёС†РёР°Р»СЊРЅС‹Рµ вЂ” С‡РµСЂРµР· division_periods (РѕРґРѕР±СЂРµРЅРЅР°СЏ Р·Р°СЏРІРєР° РЅР° РґРёРІРёР·РёРѕРЅ),
-    // РЅРµРѕС„РёС†РёР°Р»СЊРЅС‹Рµ (friendly_pwa/friendly_ext/tournament_ext) вЂ” С‡РµСЂРµР·
-    // roster_periods (С‚РѕС‚ Р¶Рµ РєСЂРёС‚РµСЂРёР№, С‡С‚Рѕ Рё Сѓ С‚СЂРµРЅРёСЂРѕРІРѕРє). "РџРѕСЃРµС‚РёР»" (attended)
-    // РІ РѕР±РµРёС… РІРµС‚РєР°С… вЂ” РЅР°Р»РёС‡РёРµ СЃС‚СЂРѕРєРё РІ game_rosters, РєР°Рє РґРѕРіРѕРІРѕСЂРёР»РёСЃСЊ СЂР°РЅСЊС€Рµ.
+    // Официальные — через division_periods (одобренная заявка на дивизион),
+    // неофициальные (friendly_pwa/friendly_ext/tournament_ext) — через
+    // roster_periods (тот же критерий, что и у тренировок). "Посетил" (attended)
+    // в обеих ветках — наличие строки в game_rosters, как договорились раньше.
     // Боксскор игрока в конкретном матче — строка player_game_statistics. Отдаём
     // СЫРЫЕ колонки по каждому матчу, а не готовую сумму: полная статистика в панели
     // считается по текущему фильтру матчей, и суммирует её фронт при переключении
@@ -520,7 +520,7 @@ ${pgsFields}
     ]);
 
     if (infoRes.rows.length === 0) {
-      return res.status(404).json({ error: 'РЈС‡Р°СЃС‚РЅРёРє РєРѕРјР°РЅРґС‹ РЅРµ РЅР°Р№РґРµРЅ' });
+      return res.status(404).json({ error: 'Участник команды не найден' });
     }
 
     const trainings = trainingRes.rows.map(row => ({
@@ -590,7 +590,7 @@ ${pgsFields}
   }
 };
 
-// РРЅС‚РµСЂР°РєС‚РёРІРЅРѕРµ Р°РІС‚РѕРјР°С‚РёС‡РµСЃРєРѕРµ СЃРѕС…СЂР°РЅРµРЅРёРµ РїР°СЂР°РјРµС‚СЂРѕРІ СѓС‡Р°СЃС‚РЅРёРєР° РєРѕРјР°РЅРґС‹ СЂСѓРєРѕРІРѕРґРёС‚РµР»РµРј / Р°РґРјРёРЅРѕРј
+// Интерактивное автоматическое сохранение параметров участника команды руководителем / админом
 export const updateMemberDetails = async (req, res) => {
   const { teamId, memberId } = req.params;
   const { position, jerseyNumber, roles, isCaptain, isAssistant } = req.body;
@@ -599,11 +599,11 @@ export const updateMemberDetails = async (req, res) => {
   try {
     await pool.query('BEGIN');
 
-    // 1. РџР РћР’Р•Р РљРђ РџР РђР’ Р”Р›РЇ РР“Р РћР’РћР“Рћ РџР РћР¤РР›Р¬РќРћР“Рћ Р‘Р›РћРљРђ
+    // 1. ПРОВЕРКА ПРАВ ДЛЯ ИГРОВОГО ПРОФИЛЬНОГО БЛОКА
     if (position !== undefined || jerseyNumber !== undefined) {
       const hasAccess = await checkPermissionInternal(reqUserId, teamId, 'EDIT_USER_BLOCK_HOCKEY');
       if (!hasAccess) {
-        return res.status(403).json({ error: 'РќРµРґРѕСЃС‚Р°С‚РѕС‡РЅРѕ РїСЂР°РІ РёР»Рё С‚СЂРµР±СѓРµС‚СЃСЏ РїСЂРѕРґР»РёС‚СЊ РїРѕРґРїРёСЃРєСѓ РґР»СЏ РёР·РјРµРЅРµРЅРёСЏ РёРіСЂРѕРІРѕРіРѕ РїСЂРѕС„РёР»СЏ' });
+        return res.status(403).json({ error: 'Недостаточно прав или требуется продлить подписку для изменения игрового профиля' });
       }
 
       if (jerseyNumber) {
@@ -613,7 +613,7 @@ export const updateMemberDetails = async (req, res) => {
           [teamId, jerseyNumber, memberId]
         );
         if (numCheck.rows.length > 0) {
-          return res.status(400).json({ error: 'Р­С‚РѕС‚ РёРіСЂРѕРІРѕР№ РЅРѕРјРµСЂ СѓР¶Рµ Р·Р°РЅСЏС‚ РґСЂСѓРіРёРј Р°РєС‚РёРІРЅС‹Рј РёРіСЂРѕРєРѕРј' });
+          return res.status(400).json({ error: 'Этот игровой номер уже занят другим активным игроком' });
         }
       }
 
@@ -626,11 +626,11 @@ export const updateMemberDetails = async (req, res) => {
       );
     }
 
-    // 2. РџР РћР’Р•Р РљРђ РџР РђР’ Р”Р›РЇ Р‘Р›РћРљРђ РЁРђРџРљР/РљРђРџРРўРђРќРЎРўР’Рђ
+    // 2. ПРОВЕРКА ПРАВ ДЛЯ БЛОКА ШАПКИ/КАПИТАНСТВА
     if (isCaptain !== undefined || isAssistant !== undefined) {
       const hasAccess = await checkPermissionInternal(reqUserId, teamId, 'EDIT_USER_BLOCK_BASE');
       if (!hasAccess) {
-        return res.status(403).json({ error: 'РќРµРґРѕСЃС‚Р°С‚РѕС‡РЅРѕ РїСЂР°РІ РёР»Рё С‚СЂРµР±СѓРµС‚СЃСЏ РїСЂРѕРґР»РёС‚СЊ РїРѕРґРїРёСЃРєСѓ РґР»СЏ РёР·РјРµРЅРµРЅРёСЏ РєР°РїРёС‚Р°РЅСЃРєРёС… СЃС‚Р°С‚СѓСЃРѕРІ' });
+        return res.status(403).json({ error: 'Недостаточно прав или требуется продлить подписку для изменения капитанских статусов' });
       }
 
       if (isCaptain !== undefined) {
@@ -659,7 +659,7 @@ export const updateMemberDetails = async (req, res) => {
             [teamId, memberId]
           );
           if (parseInt(assistCheck.rows[0].count) >= 2) {
-            return res.status(400).json({ error: 'Р’ СЂРѕСЃС‚РµСЂРµ РєРѕРјР°РЅРґС‹ СѓР¶Рµ Р·Р°С„РёРєСЃРёСЂРѕРІР°РЅРѕ 2 Р°СЃСЃРёСЃС‚РµРЅС‚Р°' });
+            return res.status(400).json({ error: 'В ростере команды уже зафиксировано 2 ассистента' });
           }
           await pool.query(
             `UPDATE team_rosters SET is_assistant = true, is_captain = false WHERE member_id = $1 AND team_id = $2 AND left_at IS NULL`,
@@ -674,11 +674,11 @@ export const updateMemberDetails = async (req, res) => {
       }
     }
 
-    // 3. РџР РћР’Р•Р РљРђ РџР РђР’ Р”Р›РЇ РђР”РњРРќРРЎРўР РђРўРР’РќР«РҐ РЎРўРђРўРЈРЎРћР’ (РЈРїСЂР°РІР»РµРЅРёРµ СЂРѕР»СЏРјРё)
+    // 3. ПРОВЕРКА ПРАВ ДЛЯ АДМИНИСТРАТИВНЫХ СТАТУСОВ (Управление ролями)
     if (roles !== undefined) {
       const hasAccess = await checkPermissionInternal(reqUserId, teamId, 'EDIT_USER_BLOCK_ROLES');
       if (!hasAccess) {
-        return res.status(403).json({ error: 'РќРµРґРѕСЃС‚Р°С‚РѕС‡РЅРѕ РїСЂР°РІ РёР»Рё С‚СЂРµР±СѓРµС‚СЃСЏ РїСЂРѕРґР»РёС‚СЊ РїРѕРґРїРёСЃРєСѓ РґР»СЏ РёР·РјРµРЅРµРЅРёСЏ Р°РґРјРёРЅРёСЃС‚СЂР°С‚РёРІРЅРѕРіРѕ СЃС‚Р°С‚СѓСЃР°' });
+        return res.status(403).json({ error: 'Недостаточно прав или требуется продлить подписку для изменения административного статуса' });
       }
 
       const memberUserRes = await pool.query(
@@ -688,10 +688,10 @@ export const updateMemberDetails = async (req, res) => {
       
       const rolesArray = roles.split(',').map(r => r.trim()).filter(Boolean);
 
-      // Р—Р°С‰РёС‚Р° РѕС‚ СЃР°РјРѕСЂР°Р·Р¶Р°Р»РѕРІР°РЅРёСЏ СЂСѓРєРѕРІРѕРґРёС‚РµР»СЏ
+      // Защита от саморазжалования руководителя
       if (memberUserRes.rows.length > 0 && memberUserRes.rows[0].user_id === reqUserId) {
         if (!rolesArray.includes('team_manager')) {
-          return res.status(400).json({ error: 'Р’С‹ РЅРµ РјРѕР¶РµС‚Рµ Р»РёС€РёС‚СЊ СЃР°РјРѕРіРѕ СЃРµР±СЏ СЂРѕР»Рё Р СѓРєРѕРІРѕРґРёС‚РµР»СЏ РєРѕРјР°РЅРґС‹' });
+          return res.status(400).json({ error: 'Вы не можете лишить самого себя роли Руководителя команды' });
         }
       }
 
@@ -723,7 +723,7 @@ export const updateMemberDetails = async (req, res) => {
     }
 
     await pool.query('COMMIT');
-    res.json({ success: true, message: 'РР·РјРµРЅРµРЅРёСЏ СѓСЃРїРµС€РЅРѕ СЃРѕС…СЂР°РЅРµРЅС‹' });
+    res.json({ success: true, message: 'Изменения успешно сохранены' });
   } catch (error) {
     await pool.query('ROLLBACK');
     console.error('[Update Member Details Error]:', error);
@@ -731,7 +731,7 @@ export const updateMemberDetails = async (req, res) => {
   }
 };
 
-// Р’СЃРїРѕРјРѕРіР°С‚РµР»СЊРЅС‹Р№ РјРµС‚РѕРґ Р·Р°РіСЂСѓР·РєРё РІ S3-С…СЂР°РЅРёР»РёС‰Рµ
+// Вспомогательный метод загрузки в S3-хранилище
 const uploadBufferToS3 = async (file, bucketKey) => {
   const params = {
     Bucket: process.env.S3_BUCKET || 'hockeyeco-s3-storage',
@@ -749,14 +749,14 @@ const uploadBufferToS3 = async (file, bucketKey) => {
     const request = s3.putObject(params);
     return typeof request.promise === 'function' ? request.promise() : request;
   }
-  throw new Error('S3 Client РЅРµ РЅР°СЃС‚СЂРѕРµРЅ РЅР° СЃРµСЂРІРµСЂРµ');
+  throw new Error('S3 Client не настроен на сервере');
 };
 
-// РњРµС‚РѕРґ Р·Р°РіСЂСѓР·РєРё/Р·Р°РјРµРЅС‹ РєР°СЃС‚РѕРјРЅРѕР№ Р°РІР°С‚Р°СЂРєРё РёРіСЂРѕРєР° РІ S3
+// Метод загрузки/замены кастомной аватарки игрока в S3
 export const updateMemberPhoto = async (req, res) => {
   const { teamId, memberId } = req.params;
   if (!req.file) {
-    return res.status(400).json({ error: 'Р¤Р°Р№Р» С„РѕС‚РѕРіСЂР°С„РёРё РЅРµ РїСЂРµРґРѕСЃС‚Р°РІР»РµРЅ' });
+    return res.status(400).json({ error: 'Файл фотографии не предоставлен' });
   }
 
   try {
@@ -765,11 +765,11 @@ export const updateMemberPhoto = async (req, res) => {
       [memberId, teamId]
     );
     if (memberRes.rows.length === 0) {
-      return res.status(404).json({ error: 'РЈС‡Р°СЃС‚РЅРёРє СЃРѕСЃС‚Р°РІР° РЅРµ РЅР°Р№РґРµРЅ РёР»Рё Р·Р°Р°СЂС…РёРІРёСЂРѕРІР°РЅ' });
+      return res.status(404).json({ error: 'Участник состава не найден или заархивирован' });
     }
     const userId = memberRes.rows[0].user_id;
 
-    // Р РµСЃР°Р№Р· РґРѕ 400Г—400 + РєРѕРЅРІРµСЂС‚Р°С†РёСЏ РІ WebP РїРµСЂРµРґ Р·Р°Р»РёРІРєРѕР№ (РІСЃРµРіРґР° .webp)
+    // Ресайз до 400×400 + конвертация в WebP перед заливкой (всегда .webp)
     const bucketKey = `uploads/teams_${teamId}_users_${userId}_photo_${Date.now()}.webp`;
 
     const processedBuffer = await processAvatar(req.file.buffer);
@@ -792,7 +792,7 @@ export const updateMemberPhoto = async (req, res) => {
   }
 };
 
-// РњРµС‚РѕРґ СѓРґР°Р»РµРЅРёСЏ РєР°СЃС‚РѕРјРЅРѕРіРѕ С„РѕС‚Рѕ СѓС‡Р°СЃС‚РЅРёРєР°
+// Метод удаления кастомного фото участника
 export const deleteMemberPhoto = async (req, res) => {
   const { teamId, memberId } = req.params;
   try {
@@ -803,14 +803,14 @@ export const deleteMemberPhoto = async (req, res) => {
 
     // Допуск не трогаем по той же причине, что и при замене фото (см. updateMemberPhoto):
     // у допущенного игрока лига смотрит на слепок, а не на живое фото команды.
-    res.json({ success: true, message: 'Р¤РѕС‚РѕРіСЂР°С„РёСЏ СѓСЃРїРµС€РЅРѕ СѓРґР°Р»РµРЅР°' });
+    res.json({ success: true, message: 'Фотография успешно удалена' });
   } catch (error) {
     console.error('[Delete Member Photo Error]:', error);
     res.status(500).json({ error: 'Internal server error' });
   }
 };
 
-// РћР±РЅРѕРІР»РµРЅРёРµ РІРёР·СѓР°Р»СЊРЅРѕРіРѕ РїСЂРѕС„РёР»СЏ С…РѕРєРєРµР№РЅРѕР№ РєРѕРјР°РЅРґС‹
+// Обновление визуального профиля хоккейной команды
 export const updateTeamProfile = async (req, res) => {
   try {
     const teamId = req.params.id;
@@ -916,7 +916,7 @@ export const updateTeamProfile = async (req, res) => {
   }
 };
 
-// РСЃРєР»СЋС‡РµРЅРёРµ СѓС‡Р°СЃС‚РЅРёРєР° РёР· РёРіСЂРѕРІРѕРіРѕ СЂРѕСЃС‚РµСЂР° РЅР° С‚СѓСЂРЅРёСЂ
+// Исключение участника из игрового ростера на турнир
 export const excludeFromRoster = async (req, res) => {
   const { teamId, memberId } = req.params;
   try {
@@ -926,14 +926,14 @@ export const excludeFromRoster = async (req, res) => {
       WHERE member_id = $1 AND team_id = $2 AND left_at IS NULL
     `;
     await pool.query(updateRosterQuery, [memberId, teamId]);
-    res.json({ success: true, message: 'РРіСЂРѕРє СѓСЃРїРµС€РЅРѕ РёСЃРєР»СЋС‡РµРЅ РёР· С‚СѓСЂРЅРёСЂРЅРѕРіРѕ СЂРѕСЃС‚РµСЂР°' });
+    res.json({ success: true, message: 'Игрок успешно исключен из турнирного ростера' });
   } catch (error) {
     console.error('[Exclude From Roster Error]:', error);
     res.status(500).json({ error: 'Internal server error' });
   }
 };
 
-// РџРѕР»РЅРѕРµ РёСЃРєР»СЋС‡РµРЅРёРµ РёР· С‡Р»РµРЅСЃС‚РІР° РєРѕРјР°РЅРґС‹ (СЃРѕСЃС‚Р°РІ + СЂРѕСЃС‚РµСЂ)
+// Полное исключение из членства команды (состав + ростер)
 export const excludeFromMembership = async (req, res) => {
   const { teamId, memberId } = req.params;
   const alsoRemoveFromClub = req.body?.alsoRemoveFromClub === true;
@@ -986,14 +986,14 @@ export const excludeFromMembership = async (req, res) => {
 
     await pool.query('COMMIT');
 
-    // Push: СѓС‡Р°СЃС‚РЅРёРє РїРѕРєРёРЅСѓР» РєРѕРјР°РЅРґСѓ
+    // Push: участник покинул команду
     const { rows: [excluded] } = await pool.query(
       'SELECT u.last_name, u.first_name FROM team_members tm JOIN users u ON u.id = tm.user_id WHERE tm.id = $1',
       [memberId]
     );
-    const eName = excluded ? `${excluded.last_name} ${excluded.first_name}` : 'РЈС‡Р°СЃС‚РЅРёРє';
+    const eName = excluded ? `${excluded.last_name} ${excluded.first_name}` : 'Участник';
     sendPushToTeamExcept(teamId, null, 'team_news', {
-      title: 'РЈС…РѕРґ РёР· РєРѕРјР°РЅРґС‹', body: `${eName} РїРѕРєРёРЅСѓР» РєРѕРјР°РЅРґСѓ`,
+      title: 'Уход из команды', body: `${eName} покинул команду`,
       url: '/my-team', tag: `member-leave-${memberId}`,
     }).catch(() => {});
 
@@ -1007,13 +1007,13 @@ export const excludeFromMembership = async (req, res) => {
   }
 };
 
-// РџРѕРёСЃРє Р·Р°СЂРµРіРёСЃС‚СЂРёСЂРѕРІР°РЅРЅРѕРіРѕ РїРѕР»СЊР·РѕРІР°С‚РµР»СЏ РїРѕ РЅРѕРјРµСЂСѓ С‚РµР»РµС„РѕРЅР°
+// Поиск зарегистрированного пользователя по номеру телефона
 export const searchUserByPhone = async (req, res) => {
   const { teamId } = req.params;
   const { phone } = req.query;
 
   if (!phone) {
-    return res.status(400).json({ error: 'РџР°СЂР°РјРµС‚СЂ phone РѕР±СЏР·Р°С‚РµР»РµРЅ' });
+    return res.status(400).json({ error: 'Параметр phone обязателен' });
   }
 
   try {
@@ -1033,7 +1033,7 @@ export const searchUserByPhone = async (req, res) => {
     const { rows } = await pool.query(query, [teamId, last10Digits]);
 
     if (rows.length === 0) {
-      return res.json({ success: false, message: 'РџРѕР»СЊР·РѕРІР°С‚РµР»СЊ СЃ С‚Р°РєРёРј РЅРѕРјРµСЂРѕРј РЅРµ Р·Р°СЂРµРіРёСЃС‚СЂРёСЂРѕРІР°РЅ' });
+      return res.json({ success: false, message: 'Пользователь с таким номером не зарегистрирован' });
     }
 
     res.json({ success: true, user: rows[0] });
@@ -1043,7 +1043,7 @@ export const searchUserByPhone = async (req, res) => {
   }
 };
 
-// Р”РѕР±Р°РІР»РµРЅРёРµ РёР»Рё РІРѕСЃСЃС‚Р°РЅРѕРІР»РµРЅРёРµ С‡Р»РµРЅСЃС‚РІР° РїРѕР»СЊР·РѕРІР°С‚РµР»СЏ РІ РєРѕРјР°РЅРґРµ
+// Добавление или восстановление членства пользователя в команде
 export const addOrRestoreTeamMember = async (req, res) => {
   const { teamId } = req.params;
   const { userId } = req.body;
@@ -1055,7 +1055,7 @@ export const addOrRestoreTeamMember = async (req, res) => {
     if (rows.length > 0) {
       const existing = rows[0];
       if (existing.left_at === null) {
-        return res.status(400).json({ error: 'РџРѕР»СЊР·РѕРІР°С‚РµР»СЊ СѓР¶Рµ РЅР°С…РѕРґРёС‚СЃСЏ РІ СЃРѕСЃС‚Р°РІРµ РєРѕРјР°РЅРґС‹' });
+        return res.status(400).json({ error: 'Пользователь уже находится в составе команды' });
       }
 
       await pool.query(
@@ -1065,15 +1065,15 @@ export const addOrRestoreTeamMember = async (req, res) => {
 
       // Команда в клубе — человек обязан быть и в общей базе клуба
       await syncClubMembershipOnTeamJoin(teamId, userId);
-      // Push: СѓС‡Р°СЃС‚РЅРёРє РІРµСЂРЅСѓР»СЃСЏ
+      // Push: участник вернулся
       const { rows: [restored] } = await pool.query('SELECT last_name, first_name FROM users WHERE id = $1', [userId]);
-      const rName = restored ? `${restored.last_name} ${restored.first_name}` : 'РЈС‡Р°СЃС‚РЅРёРє';
+      const rName = restored ? `${restored.last_name} ${restored.first_name}` : 'Участник';
       sendPushToTeamExcept(teamId, userId, 'team_news', {
-        title: 'Р’РѕР·РІСЂР°С‰РµРЅРёРµ РІ РєРѕРјР°РЅРґСѓ', body: `${rName} РІРµСЂРЅСѓР»СЃСЏ РІ СЃРѕСЃС‚Р°РІ`,
+        title: 'Возвращение в команду', body: `${rName} вернулся в состав`,
         url: '/my-team', tag: `member-join-${userId}`,
       }).catch(() => {});
 
-      return res.json({ success: true, message: 'Р§Р»РµРЅСЃС‚РІРѕ РїРѕР»СЊР·РѕРІР°С‚РµР»СЏ РІ РєРѕРјР°РЅРґРµ СѓСЃРїРµС€РЅРѕ РІРѕСЃСЃС‚Р°РЅРѕРІР»РµРЅРѕ' });
+      return res.json({ success: true, message: 'Членство пользователя в команде успешно восстановлено' });
     }
 
     await pool.query(
@@ -1084,22 +1084,22 @@ export const addOrRestoreTeamMember = async (req, res) => {
     // Команда в клубе — человек обязан быть и в общей базе клуба
     await syncClubMembershipOnTeamJoin(teamId, userId);
 
-    // Push: РЅРѕРІС‹Р№ СѓС‡Р°СЃС‚РЅРёРє
+    // Push: новый участник
     const { rows: [added] } = await pool.query('SELECT last_name, first_name FROM users WHERE id = $1', [userId]);
-    const aName = added ? `${added.last_name} ${added.first_name}` : 'РќРѕРІС‹Р№ СѓС‡Р°СЃС‚РЅРёРє';
+    const aName = added ? `${added.last_name} ${added.first_name}` : 'Новый участник';
     sendPushToTeamExcept(teamId, userId, 'team_news', {
-      title: 'РќРѕРІС‹Р№ СѓС‡Р°СЃС‚РЅРёРє', body: `${aName} РґРѕР±Р°РІР»РµРЅ РІ СЃРѕСЃС‚Р°РІ`,
+      title: 'Новый участник', body: `${aName} добавлен в состав`,
       url: '/my-team', tag: `member-join-${userId}`,
     }).catch(() => {});
 
-    res.json({ success: true, message: 'РџРѕР»СЊР·РѕРІР°С‚РµР»СЊ СѓСЃРїРµС€РЅРѕ РґРѕР±Р°РІР»РµРЅ РІ СЃРѕСЃС‚Р°РІ РєРѕРјР°РЅРґС‹' });
+    res.json({ success: true, message: 'Пользователь успешно добавлен в состав команды' });
   } catch (error) {
     console.error('[Add/Restore Member Error]:', error);
     res.status(500).json({ error: 'Internal server error' });
   }
 };
 
-// Р’РєР»СЋС‡РµРЅРёРµ С‡Р»РµРЅР° РѕСЃРЅРѕРІРЅРѕРіРѕ СЃРѕСЃС‚Р°РІР° РІ С‚СѓСЂРЅРёСЂРЅС‹Р№ РёРіСЂРѕРІРѕР№ СЂРѕСЃС‚РµСЂ
+// Включение члена основного состава в турнирный игровой ростер
 export const addTeamMemberToRoster = async (req, res) => {
   const { teamId } = req.params;
   const { memberId, position, jerseyNumber } = req.body;
@@ -1111,7 +1111,7 @@ export const addTeamMemberToRoster = async (req, res) => {
     `;
     const { rows: numRows } = await pool.query(numCheck, [teamId, jerseyNumber]);
     if (numRows.length > 0) {
-      return res.status(400).json({ error: 'Р­С‚РѕС‚ РёРіСЂРѕРІРѕР№ РЅРѕРјРµСЂ СѓР¶Рµ Р·Р°РЅСЏС‚ Р°РєС‚РёРІРЅС‹Рј РёРіСЂРѕРєРѕРј СЂРѕСЃС‚РµСЂР°' });
+      return res.status(400).json({ error: 'Этот игровой номер уже занят активным игроком ростера' });
     }
 
     const teamRes = await pool.query(`SELECT club_id FROM teams WHERE id = $1`, [teamId]);
@@ -1134,7 +1134,7 @@ export const addTeamMemberToRoster = async (req, res) => {
       `, [clubId, teamId, memberId, position, jerseyNumber]);
     }
 
-    res.json({ success: true, message: 'РРіСЂРѕРє СѓСЃРїРµС€РЅРѕ РґРѕР±Р°РІР»РµРЅ РІ Р°РєС‚РёРІРЅС‹Р№ СЂРѕСЃС‚РµСЂ' });
+    res.json({ success: true, message: 'Игрок успешно добавлен в активный ростер' });
   } catch (error) {
     console.error('[Add Member To Roster Error]:', error);
     res.status(500).json({ error: 'Internal server error' });

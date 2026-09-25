@@ -44,11 +44,17 @@ export const getEvents = async (req, res) => {
 
     // Точечный запрос одной карточки — открытие события по прямой ссылке /event/:eventType/:eventId.
     // eventType приходит в «маршрутном» виде (match/training/meeting), разворачиваем его
-    // в реальные значения event_type из UNION ALL ниже.
+    // в реальные значения event_type из UNION ALL ниже. Та же карта — EVENT_ROUTE в
+    // helpers.js фронта и EVENT_ROUTE_TYPES в pushService.js; правятся вместе.
     const ROUTE_EVENT_TYPES = {
       match:    ['match'],
+      // Клубные события отвечают и на общий training/meeting: так раньше выглядели
+      // все ссылки на них, и такие ссылки остались в мессенджерах и в пушах. Фронт
+      // берёт клубную карточку, только если командной с этим номером нет.
       training: ['team_training', 'club_training'],
       meeting:  ['team_meeting', 'club_meeting'],
+      'club-training': ['club_training'],
+      'club-meeting':  ['club_meeting'],
       // Дефис, а не подчёркивание: так тип читается в URL /event/community-training/12
       'community-training': ['community_training'],
       'community-game':     ['community_game'],

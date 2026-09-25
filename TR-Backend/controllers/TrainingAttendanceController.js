@@ -1,7 +1,37 @@
 import pool from '../config/db.js';
-import { checkPermissionInternal, checkClubPermissionInternal } from '../utils/checkPermission.js';
-import { sendPushToEventScopeExcept, getTrainingInfo, getUserName } from '../services/pushService.js';
+import { checkPermissionInternal, checkClubPermissionInternal, getEventScope } from '../utils/checkPermission.js';
+import { sendPushToEventScopeExcept, getTrainingInfo, getUserName, eventUrl } from '../services/pushService.js';
 import { resolvePayRole, getFeeContext, isAfterWithdrawDeadline, describeSplitFee } from '../utils/eventFees.js';
+
+// Командная и клубная тренировка: где она лежит и чья она. Тренировки сообщества
+// отмечаются в CommunityAttendanceController — у них своя резервная очередь.
+const TRAINING_OWNERS = {
+  team_training: {
+    table: 'team_training', ownerColumn: 'team_id', scopeKey: 'teamId',
+    formationTable: 'team_formation_training', formationColumn: 'team_training_id',
+  },
+  club_training: {
+    table: 'club_training', ownerColumn: 'club_id', scopeKey: 'clubId',
+    formationTable: 'club_formation_training', formationColumn: 'club_training_id',
+  },
+};
+
+// Тренировка из адреса — только если она принадлежит команде или клубу из запроса.
+// Гейт (requireEventPermission) проверяет роль в teamId / clubId, но не то, что
+// тренировка — именно их: без этого руководитель команды A отмечал людей, снимал
+// отметки и ставил ₽ на тренировке команды B, а любой её игрок читал чужой список
+// с пометками об оплате. Законно чужой тренировка не бывает: совместных нет.
+const loadTraining = async (eventId, scope) => {
+  const owner = TRAINING_OWNERS[scope.eventType];
+  const ownerId = owner && scope[owner.scopeKey];
+  if (!ownerId) return null;
+
+  const { rows } = await pool.query(
+    `SELECT id FROM "public"."${owner.table}" WHERE id = $1 AND ${owner.ownerColumn} = $2`,
+    [eventId, ownerId]
+  );
+  return rows[0] || null;
+};
 
 // =============================================================================
 // ПЕРЕКЛЮЧЕНИЕ СТАТУСА ПРИСУТСТВИЯ НА ТРЕНИРОВКЕ
@@ -10,10 +40,23 @@ export const toggleTrainingAttendance = async (req, res) => {
   try {
     const initiatorId = req.user.id;
     const { eventId } = req.params;
-    const { isAttending, eventType, teamId, clubId, targetUserId, purge } = req.body;
+    const { isAttending, targetUserId, purge } = req.body;
+    const scope = getEventScope(req);
+    const { eventType, teamId, clubId } = scope;
 
     if (!eventType) {
       return res.status(400).json({ success: false, error: 'eventType обязателен' });
+    }
+    if (!TRAINING_OWNERS[eventType]) {
+      return res.status(400).json({ success: false, error: 'Неизвестный тип тренировки' });
+    }
+
+    // Сначала — своя ли тренировка. Это же закрывает обход проверки прав ниже: гейт
+    // этого маршрута пускает и по одному communityId (роль в сообществе), и раньше
+    // запрос без teamId и clubId проходил обе ветки прав насквозь — любой участник
+    // любого сообщества отмечал и снимал кого угодно на любой тренировке.
+    if (!(await loadTraining(eventId, scope))) {
+      return res.status(404).json({ success: false, error: 'Тренировка не найдена' });
     }
 
     const targetId = targetUserId || initiatorId;
@@ -24,40 +67,26 @@ export const toggleTrainingAttendance = async (req, res) => {
     // кто распоряжается отметками. Поэтому и на самого себя purge идёт через
     // ветку управления, а не самоотметки.
     const isPurge = purge === true;
+    const isClub = eventType === 'club_training';
 
-    // Проверка прав: самоотметка или управление руководителем.
-    // Клубная тренировка живёт в контексте клуба, командная — в контексте команды.
+    // Проверка прав: самоотметка или управление руководителем — в контексте владельца
+    // тренировки. Клубная живёт в контексте клуба, командная — в контексте команды.
     if (targetId === initiatorId && !isPurge) {
-      if (clubId) {
-        const hasAccess = await checkClubPermissionInternal(initiatorId, clubId, 'EVENT_SELF_ATTENDANCE');
-        if (!hasAccess) {
-          return res.status(403).json({ success: false, error: 'Доступ ограничен. Для самостоятельной отметки явки требуется продлить подписку' });
-        }
-      } else if (teamId) {
-        const hasAccess = await checkPermissionInternal(initiatorId, teamId, 'EVENT_SELF_ATTENDANCE');
-        if (!hasAccess) {
-          return res.status(403).json({ success: false, error: 'Доступ ограничен. Для самостоятельной отметки явки требуется продлить подписку' });
-        }
+      const hasAccess = isClub
+        ? await checkClubPermissionInternal(initiatorId, clubId, 'EVENT_SELF_ATTENDANCE')
+        : await checkPermissionInternal(initiatorId, teamId, 'EVENT_SELF_ATTENDANCE');
+      if (!hasAccess) {
+        return res.status(403).json({ success: false, error: 'Доступ ограничен. Для самостоятельной отметки явки требуется продлить подписку' });
       }
     } else {
-      if (clubId) {
-        const hasAccess = await checkClubPermissionInternal(initiatorId, clubId, 'CLUB_EVENT_ATTENDANCE_MANAGE');
-        if (!hasAccess) {
-          return res.status(403).json({ success: false, error: 'Недостаточно прав доступа или требуется продление подписки руководителя' });
-        }
-      } else if (teamId) {
-        const hasAccess = await checkPermissionInternal(initiatorId, teamId, 'TRAINING_ATTENDANCE_MANAGE');
-        if (!hasAccess) {
-          return res.status(403).json({ success: false, error: 'Недостаточно прав доступа или требуется продление подписки руководителя' });
-        }
+      const hasAccess = isClub
+        ? await checkClubPermissionInternal(initiatorId, clubId, 'CLUB_EVENT_ATTENDANCE_MANAGE')
+        : await checkPermissionInternal(initiatorId, teamId, 'TRAINING_ATTENDANCE_MANAGE');
+      if (!hasAccess) {
+        return res.status(403).json({ success: false, error: 'Недостаточно прав доступа или требуется продление подписки руководителя' });
       }
     }
 
-    if (eventType !== 'team_training' && eventType !== 'club_training') {
-      return res.status(400).json({ success: false, error: 'Неизвестный тип тренировки' });
-    }
-
-    const isClub = eventType === 'club_training';
     const table = isClub ? 'club_training_attendance' : 'team_training_attendance';
     const fk = isClub ? 'club_training_id' : 'team_training_id';
     const uniq = isClub ? 'club_train_att_unique' : 'team_train_att_unique';
@@ -101,7 +130,7 @@ export const toggleTrainingAttendance = async (req, res) => {
         body: isAttending
           ? `${name} отметился на тренировку: ${info.text}${feeText}`
           : `${name} снял отметку с тренировки: ${info.text}${feeText}`,
-        url: `/event/${eventType}/${eventId}`,
+        url: eventUrl(eventType, eventId),
         tag: `attend-${eventId}-${targetId}`,
       });
     })().catch(() => {});
@@ -119,10 +148,17 @@ export const toggleTrainingAttendance = async (req, res) => {
 export const getTrainingAttendance = async (req, res) => {
   try {
     const { eventId } = req.params;
-    const { eventType } = req.query;
+    const scope = getEventScope(req);
+    const { eventType } = scope;
 
     if (!eventType) {
       return res.status(400).json({ success: false, error: 'eventType обязателен' });
+    }
+    if (!TRAINING_OWNERS[eventType]) {
+      return res.status(400).json({ success: false, error: 'Неизвестный тип тренировки' });
+    }
+    if (!(await loadTraining(eventId, scope))) {
+      return res.status(404).json({ success: false, error: 'Тренировка не найдена' });
     }
 
     let query = '';
@@ -178,8 +214,18 @@ export const getTrainingAttendance = async (req, res) => {
         return res.status(400).json({ success: false, error: 'Неизвестный тип тренировки' });
     }
 
-    const result = await pool.query(query, params);
-    res.json({ success: true, attendees: result.rows });
+    // Сохранена ли расстановка. По этому признаку страница тренировки решает, тянуть ли
+    // из S3 её картинку: без расстановки картинки нет, и S3 отвечает на запрос 403
+    const owner = TRAINING_OWNERS[eventType];
+    const [result, formationRes] = await Promise.all([
+      pool.query(query, params),
+      pool.query(
+        `SELECT EXISTS (SELECT 1 FROM "public"."${owner.formationTable}"
+                        WHERE ${owner.formationColumn} = $1 AND ${owner.ownerColumn} = $2) AS has_formation`,
+        [eventId, scope[owner.scopeKey]]
+      ),
+    ]);
+    res.json({ success: true, attendees: result.rows, hasFormation: formationRes.rows[0].has_formation });
   } catch (err) {
     console.error('Ошибка получения списка отметившихся на тренировку:', err);
     res.status(500).json({ success: false, error: 'Ошибка сервера' });
@@ -193,22 +239,26 @@ export const toggleTrainingAttendanceTag = async (req, res) => {
   try {
     const initiatorId = req.user.id;
     const { eventId } = req.params;
-    const { eventType, teamId, clubId, targetUserId, hasPayTag } = req.body;
+    const { targetUserId, hasPayTag } = req.body;
+    const scope = getEventScope(req);
+    const { eventType, teamId, clubId } = scope;
 
     if (!eventType || !targetUserId) {
       return res.status(400).json({ success: false, error: 'eventType и targetUserId обязательны' });
     }
+    if (!TRAINING_OWNERS[eventType]) {
+      return res.status(400).json({ success: false, error: 'Неизвестный тип тренировки' });
+    }
+    if (!(await loadTraining(eventId, scope))) {
+      return res.status(404).json({ success: false, error: 'Тренировка не найдена' });
+    }
 
-    if (clubId) {
-      const hasAccess = await checkClubPermissionInternal(initiatorId, clubId, 'CLUB_EVENT_ATTENDANCE_MANAGE');
-      if (!hasAccess) {
-        return res.status(403).json({ success: false, error: 'Недостаточно прав доступа или требуется продление подписки руководителя для выставления пометок' });
-      }
-    } else if (teamId) {
-      const hasAccess = await checkPermissionInternal(initiatorId, teamId, 'TRAINING_ATTENDANCE_MANAGE');
-      if (!hasAccess) {
-        return res.status(403).json({ success: false, error: 'Недостаточно прав доступа или требуется продление подписки руководителя для выставления пометок' });
-      }
+    // Права — в контексте владельца тренировки, как и у отметки
+    const hasAccess = eventType === 'club_training'
+      ? await checkClubPermissionInternal(initiatorId, clubId, 'CLUB_EVENT_ATTENDANCE_MANAGE')
+      : await checkPermissionInternal(initiatorId, teamId, 'TRAINING_ATTENDANCE_MANAGE');
+    if (!hasAccess) {
+      return res.status(403).json({ success: false, error: 'Недостаточно прав доступа или требуется продление подписки руководителя для выставления пометок' });
     }
 
     switch (eventType) {
@@ -240,8 +290,9 @@ export const toggleTrainingAttendanceTag = async (req, res) => {
 // =============================================================================
 export const getTrainingRoster = async (req, res) => {
   try {
-    const { eventId } = req.params;
-    const { teamId, clubId, eventType } = req.query;
+    // Контекст — тот, что проверил гейт (тело раньше query), а не голый query:
+    // иначе GET с телом проходил гейт по своей команде, а состав отдавал чужой
+    const { teamId, clubId, eventType } = getEventScope(req);
 
     if (!eventType) {
       return res.status(400).json({ success: false, error: 'eventType обязателен' });

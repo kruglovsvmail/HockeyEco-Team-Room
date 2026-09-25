@@ -138,6 +138,23 @@ export const COMMUNITY_EVENT_ROUTE = {
   community_game: 'community-game',
 };
 
+// event_type из календаря → тип в адресе /event/:eventType/:eventId. Клубные
+// тренировка и собрание — свои маршруты, а не общий training/meeting: командные и
+// клубные события лежат в разных таблицах с независимыми номерами, и адрес
+// /event/training/37 подходил бы и командной №37, и клубной №37. Та же карта —
+// EVENT_ROUTE_TYPES в pushService.js (адреса в пушах) и ROUTE_EVENT_TYPES в
+// CalendarController.js (обратная сторона); правятся вместе.
+export const EVENT_ROUTE = {
+  match: 'match',
+  team_training: 'training',
+  club_training: 'club-training',
+  team_meeting: 'meeting',
+  club_meeting: 'club-meeting',
+  ...COMMUNITY_EVENT_ROUTE,
+};
+
+export const eventRouteType = (eventType) => EVENT_ROUTE[eventType] || 'match';
+
 /**
  * Иконка типа тренировки (имена — из ui/Icon.jsx). Держим карту здесь, рядом с
  * подписями: тип уже показывается в шторке фильтра статистики и в шапке деталей

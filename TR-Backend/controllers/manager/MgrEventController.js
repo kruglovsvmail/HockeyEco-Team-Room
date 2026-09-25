@@ -2,7 +2,7 @@ import pool from '../../config/db.js';
 import { PERMISSIONS } from '../../utils/permissions.js';
 import { checkClubPermissionInternal } from '../../utils/checkPermission.js';
 import { isTeamOwner } from '../../utils/teamOwners.js';
-import { sendPushToTeamExcept, sendPushToClubExcept, scheduleNotification, scheduleMatchDeadlines, getTrainingInfo, getMeetingInfo, getMatchInfo } from '../../services/pushService.js';
+import { sendPushToTeamExcept, sendPushToClubExcept, scheduleNotification, scheduleMatchDeadlines, getTrainingInfo, getMeetingInfo, getMatchInfo, eventUrl } from '../../services/pushService.js';
 
 /**
  * Допустимые типы тренировки. Должны совпадать с CHECK-ограничением колонок
@@ -238,7 +238,7 @@ export const createEvent = async (req, res) => {
           sendPushToClubExcept(clubId, req.user.id, 'schedule', {
             title: 'Новая клубная тренировка',
             body: info.text,
-            url: `/event/club_training/${newEventId}`,
+            url: eventUrl('club_training', newEventId),
             tag: `new-event-${newEventId}`,
           });
         }).catch(() => {});
@@ -260,7 +260,7 @@ export const createEvent = async (req, res) => {
         sendPushToClubExcept(clubId, req.user.id, 'schedule', {
           title: 'Новое клубное собрание',
           body: info.text,
-          url: `/event/club_meeting/${newMeetingId}`,
+          url: eventUrl('club_meeting', newMeetingId),
           tag: `new-event-${newMeetingId}`,
         });
       }).catch(() => {});
@@ -293,7 +293,7 @@ export const createEvent = async (req, res) => {
         sendPushToTeamExcept(teamId, req.user.id, 'schedule', {
           title: 'Новая тренировка',
           body: info.text,
-          url: `/event/team_training/${newEventId}`,
+          url: eventUrl('team_training', newEventId),
           tag: `new-event-${newEventId}`,
         });
       }).catch(() => {});
@@ -301,7 +301,7 @@ export const createEvent = async (req, res) => {
         const sendAt = new Date(trainingDateUtc.getTime() - 24 * 60 * 60 * 1000);
         if (sendAt > new Date()) {
           getTrainingInfo(newEventId, 'team_training').then(info => {
-            scheduleNotification({ type: 'event_reminder_24h', teamId, eventId: newEventId, sendAt, payload: { title: 'Тренировка через 24 часа', body: info.text, url: `/event/team_training/${newEventId}`, tag: `reminder-${newEventId}` } });
+            scheduleNotification({ type: 'event_reminder_24h', teamId, eventId: newEventId, sendAt, payload: { title: 'Тренировка через 24 часа', body: info.text, url: eventUrl('team_training', newEventId), tag: `reminder-${newEventId}` } });
           }).catch(() => {});
         }
       }
@@ -330,7 +330,7 @@ export const createEvent = async (req, res) => {
         sendPushToTeamExcept(teamId, req.user.id, 'schedule', {
           title: 'Новое собрание',
           body: info.text,
-          url: `/event/team_meeting/${newMeetingId}`,
+          url: eventUrl('team_meeting', newMeetingId),
           tag: `new-event-${newMeetingId}`,
         });
       }).catch(() => {});
@@ -338,7 +338,7 @@ export const createEvent = async (req, res) => {
         const sendAt = new Date(meetingDateUtc.getTime() - 24 * 60 * 60 * 1000);
         if (sendAt > new Date()) {
           getMeetingInfo(newMeetingId, 'team_meeting').then(info => {
-            scheduleNotification({ type: 'event_reminder_24h', teamId, eventId: newMeetingId, sendAt, payload: { title: 'Собрание через 24 часа', body: info.text, url: `/event/team_meeting/${newMeetingId}`, tag: `reminder-${newMeetingId}` } });
+            scheduleNotification({ type: 'event_reminder_24h', teamId, eventId: newMeetingId, sendAt, payload: { title: 'Собрание через 24 часа', body: info.text, url: eventUrl('team_meeting', newMeetingId), tag: `reminder-${newMeetingId}` } });
           }).catch(() => {});
         }
       }
@@ -508,7 +508,7 @@ export const createEvent = async (req, res) => {
         sendPushToTeamExcept(teamId, req.user.id, 'schedule', {
           title: matchPushTitle,
           body: info.text,
-          url: `/event/match/${newGameId}`,
+          url: eventUrl('match', newGameId),
           tag: `new-event-${newGameId}`,
         });
       }).catch(() => {});
@@ -516,7 +516,7 @@ export const createEvent = async (req, res) => {
         const sendAt = new Date(gameDateUtc.getTime() - 24 * 60 * 60 * 1000);
         if (sendAt > new Date()) {
           getMatchInfo(newGameId, teamId).then(info => {
-            scheduleNotification({ type: 'event_reminder_24h', teamId, eventId: newGameId, sendAt, payload: { title: 'Матч через 24 часа', body: info.text, url: `/event/match/${newGameId}`, tag: `reminder-${newGameId}` } });
+            scheduleNotification({ type: 'event_reminder_24h', teamId, eventId: newGameId, sendAt, payload: { title: 'Матч через 24 часа', body: info.text, url: eventUrl('match', newGameId), tag: `reminder-${newGameId}` } });
           }).catch(() => {});
         }
       }
@@ -526,7 +526,7 @@ export const createEvent = async (req, res) => {
           sendPushToTeamExcept(awayTeamId, req.user.id, 'friendly', {
             title: 'Вызов на товарищеский матч',
             body: info.text,
-            url: `/event/match/${newGameId}`,
+            url: eventUrl('match', newGameId),
             tag: `friendly-challenge-${newGameId}`,
           });
         }).catch(() => {});

@@ -1,8 +1,25 @@
 import pool from '../config/db.js';
 import { getTeamIdFromRequest } from '../utils/checkPermission.js';
 import { promoteExpiredMatchesToNoResult } from '../utils/matchStatus.js';
-import { sendPushToTeamExcept, cancelScheduledNotifications, getMatchInfo, formatFeeChange, formatSplitCostChange } from '../services/pushService.js';
+import { sendPushToTeamExcept, cancelScheduledNotifications, getMatchInfo, formatFeeChange, formatSplitCostChange, eventUrl } from '../services/pushService.js';
 import { parseFeeSettings, mapFeeColumnsToMatchSide, buildFeeUpdate } from '../utils/eventFees.js';
+
+// Матч из адреса — только если команда из запроса в нём играет. requireTeamPermission
+// проверяет роль в teamId, но не то, что матч — матч этой команды. У платформенного
+// товарищеского правку дальше сторожит проверка инициатора, а у внешних (friendly_ext,
+// tournament_ext) её нет вовсе: руководитель любой команды менял ссылки на трансляции,
+// переносил и удалял чужой внешний матч. Чужой матч отсюда выходит «не найденным».
+// Две команды у матча законны, поэтому условие — «хозяева или гости».
+const loadTeamMatch = async (eventId, teamId, columns) => {
+  const tid = Number(teamId);
+  if (!Number.isInteger(tid) || tid <= 0) return null;
+
+  const { rows } = await pool.query(
+    `SELECT ${columns} FROM "public"."games" WHERE id = $1 AND $2::int IN (home_team_id, away_team_id)`,
+    [eventId, tid]
+  );
+  return rows[0] || null;
+};
 
 // =============================================================================
 // ПОДГРУЗКА СУДЕЙ МАТЧА
@@ -46,16 +63,10 @@ export const updateMatchMedia = async (req, res) => {
       return res.status(400).json({ success: false, error: 'Параметр teamId обязателен' });
     }
 
-    const gameRes = await pool.query(
-      'SELECT game_type, status, initiator_team_id FROM "public"."games" WHERE id = $1',
-      [eventId]
-    );
-
-    if (gameRes.rowCount === 0) {
+    const game = await loadTeamMatch(eventId, teamId, 'game_type, status, initiator_team_id');
+    if (!game) {
       return res.status(404).json({ success: false, error: 'Матч не найден' });
     }
-
-    const game = gameRes.rows[0];
 
     if (game.game_type === 'official') {
       return res.status(400).json({ success: false, error: 'Официальные матчи лиги не поддерживают ручное редактирование медиа-ссылок' });
@@ -93,16 +104,13 @@ export const updateMatchSchedule = async (req, res) => {
       return res.status(400).json({ success: false, error: 'Параметр teamId обязателен' });
     }
 
-    const gameRes = await pool.query(
-      'SELECT game_type, status, initiator_team_id, arena_id, custom_timezone, location, location_url FROM "public"."games" WHERE id = $1',
-      [eventId]
+    const game = await loadTeamMatch(
+      eventId, teamId,
+      'game_type, status, initiator_team_id, arena_id, custom_timezone, location, location_url'
     );
-
-    if (gameRes.rowCount === 0) {
+    if (!game) {
       return res.status(404).json({ success: false, error: 'Матч не найден' });
     }
-
-    const game = gameRes.rows[0];
 
     if (game.game_type === 'official') {
       return res.status(400).json({ success: false, error: 'Запрещено менять дату, время или локацию официального матча' });
@@ -184,7 +192,7 @@ export const updateMatchSchedule = async (req, res) => {
       sendPushToTeamExcept(teamId, req.user.id, 'schedule', {
         title: 'Матч изменён',
         body: `Новое расписание: ${info.text}`,
-        url: `/event/match/${eventId}`, tag: `event-update-${eventId}`,
+        url: eventUrl('match', eventId), tag: `event-update-${eventId}`,
       });
     }).catch(() => {});
 
@@ -281,7 +289,7 @@ export const updateMatchFinances = async (req, res) => {
           body: nextMode === 'split'
             ? formatSplitCostChange(oldMatchTotal, newMatchTotal, `матча ${info.text}`)
             : formatFeeChange(oldMatchFee, newMatchFee, `матча ${info.text}`),
-          url: `/event/match/${eventId}`,
+          url: eventUrl('match', eventId),
           tag: `fee-${eventId}`,
         });
       }).catch(() => {});
@@ -357,16 +365,10 @@ export const deleteMatch = async (req, res) => {
       return res.status(400).json({ success: false, error: 'Некорректный формат идентификатора матча' });
     }
 
-    const gameRes = await pool.query(
-      'SELECT game_type, status, initiator_team_id FROM "public"."games" WHERE id = $1',
-      [numericId]
-    );
-
-    if (gameRes.rowCount === 0) {
+    const game = await loadTeamMatch(numericId, teamId, 'game_type, status, initiator_team_id');
+    if (!game) {
       return res.status(404).json({ success: false, error: 'Матч не найден' });
     }
-
-    const game = gameRes.rows[0];
 
     if (game.game_type === 'official') {
       return res.status(400).json({ success: false, error: 'Запрещено удалять официальные календарные матчи лиги' });

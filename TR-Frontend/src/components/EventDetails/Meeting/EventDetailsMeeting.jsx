@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
-import { getAuthHeaders, uiFixed } from '../../../utils/helpers';
+import { getAuthHeaders, uiFixed, eventRouteType } from '../../../utils/helpers';
 import { Icon } from '../../../ui/Icon';
 import { FeeRow } from '../../../ui/FeeRow';
 import { ChipTabs } from '../../../ui/ChipTabs';
@@ -132,17 +132,19 @@ export const EventDetailsMeeting = ({ event, openRightPanel }) => {
   // на карточке календаря прямо перед входом в событие, и тогда загрузка при
   // монтировании обгоняет отметку и приносит список без человека. Сигнал
   // приходит уже по ответу сервера, так что этот список заведомо полный.
+  // После удаления собрания перечитывать нечего — сервер ответит 404.
   useEffect(() => {
-    const onUpdate = () => {
+    const onUpdate = (e) => {
+      if (e.detail?.eventDeleted) return;
       fetchAllMeetingData();
-      const routeType = 'meeting';
-      const key = `tr_event_${routeType}_${localEvent?.event_id}`;
+      // Ключ кэша — по маршруту события: у клубного собрания он свой (club-meeting)
+      const key = `tr_event_${eventRouteType(localEvent?.event_type)}_${localEvent?.event_id}`;
       const cached = sessionStorage.getItem(key);
       if (cached) setLocalEvent(JSON.parse(cached));
     };
     window.addEventListener('tr-events-updated', onUpdate);
     return () => window.removeEventListener('tr-events-updated', onUpdate);
-  }, [fetchAllMeetingData, localEvent?.event_id]);
+  }, [fetchAllMeetingData, localEvent?.event_id, localEvent?.event_type]);
 
   if (!localEvent) return null;
 

@@ -1,22 +1,26 @@
 import pool from '../config/db.js';
-import { checkPermissionInternal, checkClubPermissionInternal, checkCommunityPermissionInternal } from '../utils/checkPermission.js';
+import {
+  checkPermissionInternal,
+  checkClubPermissionInternal,
+  checkCommunityPermissionInternal,
+  getEventScope,
+} from '../utils/checkPermission.js';
 import {
   sendPushToEventScopeExcept,
   getTrainingInfo,
   getCommunityEventInfo,
+  eventUrl,
 } from '../services/pushService.js';
 
 // Расстановка у солянки та же, что у тренировки: те же звенья, те же позиции,
 // та же сетка. Отличаются только таблицы, поэтому имена собираем здесь, а не
-// разводим два почти одинаковых контроллера.
+// разводим два почти одинаковых контроллера. Таблица самого события — в EVENT_OWNERS.
 const COMMUNITY_FORMATION = {
   community_training: {
-    event: 'community_training',
     formation: 'community_formation_training',
     fk: 'community_training_id',
   },
   community_game: {
-    event: 'community_game',
     formation: 'community_formation_game',
     fk: 'community_game_id',
     // На солянке в составе бывают гости — люди без аккаунта, за которых штаб
@@ -26,6 +30,31 @@ const COMMUNITY_FORMATION = {
     guests: true,
     attendance: 'community_game_attendance',
   },
+};
+
+// Чьё событие, расстановку которого ставят: таблица и колонка владельца. Строки
+// расстановки и так помечены командой, клубом или сообществом, поэтому чужую
+// расстановку не перетереть — но без проверки события руководитель команды A
+// записывал «свои» звенья к тренировке команды B, и его команде уходил пуш с её
+// датой и местом. Законно чужой тренировка не бывает: совместных нет.
+const EVENT_OWNERS = {
+  team_training: { table: 'team_training', ownerColumn: 'team_id', scopeKey: 'teamId' },
+  club_training: { table: 'club_training', ownerColumn: 'club_id', scopeKey: 'clubId' },
+  community_training: { table: 'community_training', ownerColumn: 'community_id', scopeKey: 'communityId' },
+  community_game: { table: 'community_game', ownerColumn: 'community_id', scopeKey: 'communityId' },
+};
+
+// Событие из адреса — только если оно принадлежит контексту запроса (см. EVENT_OWNERS)
+const loadEvent = async (eventId, scope, client = pool) => {
+  const owner = EVENT_OWNERS[scope.eventType];
+  const ownerId = owner && scope[owner.scopeKey];
+  if (!ownerId) return null;
+
+  const { rows } = await client.query(
+    `SELECT id FROM "${owner.table}" WHERE id = $1 AND ${owner.ownerColumn} = $2`,
+    [eventId, ownerId]
+  );
+  return rows[0] || null;
 };
 
 // Ссылка на гостя в расстановке: «g» + id строки отметки. Разбирается обратно
@@ -39,7 +68,8 @@ const parseGuestRef = (value) => {
 export const getTrainingLines = async (req, res) => {
   try {
     const { eventId } = req.params;
-    const { teamId, clubId, communityId, eventType } = req.query;
+    const scope = getEventScope(req);
+    const { teamId, clubId, communityId, eventType } = scope;
 
     if (!teamId && !clubId && !communityId) {
       return res.status(400).json({ success: false, error: 'teamId, clubId или communityId обязателен' });
@@ -48,10 +78,8 @@ export const getTrainingLines = async (req, res) => {
     const communityCfg = COMMUNITY_FORMATION[eventType] || null;
     const isCommunity = !!communityCfg;
     const isClub = eventType === 'club_training';
-    const table = isCommunity ? communityCfg.event : isClub ? 'club_training' : 'team_training';
 
-    const check = await pool.query(`SELECT id FROM "${table}" WHERE id = $1`, [eventId]);
-    if (check.rowCount === 0) {
+    if (!(await loadEvent(eventId, scope))) {
       return res.status(404).json({ success: false, error: 'Событие не найдено' });
     }
 
@@ -139,7 +167,9 @@ export const saveTrainingLines = async (req, res) => {
   try {
     const initiatorId = req.user.id;
     const { eventId } = req.params;
-    const { teamId, clubId, communityId, eventType, lines } = req.body;
+    const { lines } = req.body;
+    const scope = getEventScope(req);
+    const { teamId, clubId, communityId, eventType } = scope;
 
     if ((!teamId && !clubId && !communityId) || !Array.isArray(lines)) {
       return res.status(400).json({ success: false, error: 'Некорректные данные' });
@@ -161,9 +191,7 @@ export const saveTrainingLines = async (req, res) => {
       return res.status(403).json({ success: false, error: 'У вас нет прав для сохранения расстановки' });
     }
 
-    const table = isCommunity ? communityCfg.event : isClub ? 'club_training' : 'team_training';
-    const check = await client.query(`SELECT id FROM "${table}" WHERE id = $1`, [eventId]);
-    if (check.rowCount === 0) {
+    if (!(await loadEvent(eventId, scope, client))) {
       return res.status(404).json({ success: false, error: 'Событие не найдено' });
     }
 
@@ -232,7 +260,7 @@ export const saveTrainingLines = async (req, res) => {
       sendPushToEventScopeExcept({ teamId, clubId, communityId }, req.user.id, 'lines', {
         title: eventType === 'community_game' ? 'Составы на солянку обновлены' : 'Состав на тренировку обновлён',
         body: info.text,
-        url: `/event/${eventType}/${eventId}`,
+        url: eventUrl(eventType, eventId),
         tag: `lines-${eventId}`,
       });
     }).catch(() => {});

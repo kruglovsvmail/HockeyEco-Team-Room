@@ -7,7 +7,7 @@ import utc from 'dayjs/plugin/utc';
 import timezone from 'dayjs/plugin/timezone';
 import 'dayjs/locale/ru';
 
-import { getToken, removeToken, getAuthHeaders, uiFixed, getTeamUiColor, COMMUNITY_EVENT_ROUTE } from './utils/helpers';
+import { getToken, removeToken, getAuthHeaders, uiFixed, getTeamUiColor, EVENT_ROUTE, eventRouteType } from './utils/helpers';
 import { Sidebar } from './components/Sidebar';
 import { Header } from './components/Header';
 import { ConsentModal } from './components/ConsentModal';
@@ -74,15 +74,28 @@ dayjs.extend(utc);
 dayjs.extend(timezone);
 dayjs.locale('ru');
 
-// event_type из календаря (match / team_training / club_meeting / …) → тип в адресе
-// /event/:eventType/:eventId. Та же свёртка, что и при переходе из карточки календаря.
-const routeTypeOfEvent = (eventType = '') => {
-  // Сообщества проверяем первыми: community_training тоже содержит 'training',
-  // и общая ветка увела бы тренировку на маршрут командной тренировки.
-  if (COMMUNITY_EVENT_ROUTE[eventType]) return COMMUNITY_EVENT_ROUTE[eventType];
-  if (eventType.includes('training')) return 'training';
-  if (eventType.includes('meeting')) return 'meeting';
-  return 'match';
+// Пуши, ушедшие до того, как бэкенд стал собирать адрес через eventUrl (pushService.js),
+// ведут на /event/<тип из БД>/:id, а напоминания за сутки ещё долго лежат в очереди
+// scheduled_notifications. Маршрут таких типов не знает, и тап открывал календарь.
+// Поэтому старый тип сворачивается ещё до разбора адреса — в запрос карточки и в ключ
+// кэша он не попадает. Сворачиваем только известные типы из БД (EVENT_ROUTE в
+// helpers.js): eventRouteType уводит неизвестный тип в match, а незнакомый адрес
+// должен, как и раньше, закончиться календарём.
+const canonicalEventPath = (pathname) => {
+  const match = matchPath('/event/:eventType/:eventId', pathname);
+  const routeType = match && EVENT_ROUTE[match.params.eventType];
+  return routeType && routeType !== match.params.eventType
+    ? `/event/${routeType}/${match.params.eventId}`
+    : pathname;
+};
+
+// До того как клубным событиям дали свои маршруты, клубная тренировка открывалась по
+// общему /event/training/:id (собрание — по meeting). Такие ссылки остались в
+// мессенджерах и в уже пришедших пушах: если командного события с этим номером нет,
+// ссылка вела на клубное — его и открываем.
+const SHARED_ROUTE_FALLBACK = {
+  training: 'club-training',
+  meeting: 'club-meeting',
 };
 
 // Чьими глазами собрана карточка события: команда, клуб или сообщество. Матч двух своих
@@ -96,7 +109,7 @@ const cardSide = (card) => `${card?.my_team_id ?? ''}|${card?.my_club_id ?? ''}|
 // ссылке, где стороны ещё нет вовсе, и любая карточка лучше, чем уйти на главную.
 const pickEventCard = (cards, eventId, eventType, preferredSide, { fallbackToFirst = false } = {}) => {
   const sameEvent = (cards || []).filter(
-    c => String(c.event_id) === String(eventId) && routeTypeOfEvent(c.event_type) === eventType
+    c => String(c.event_id) === String(eventId) && eventRouteType(c.event_type) === eventType
   );
   const mine = preferredSide ? sameEvent.find(c => cardSide(c) === preferredSide) : null;
   if (mine) return mine;
@@ -346,9 +359,13 @@ function TeamLayoutContent() {
   const navigate = useNavigate();
   const location = useLocation();
 
+  // Разбираем уже свёрнутый адрес (см. canonicalEventPath). Зависимость — строка:
+  // когда старый адрес заменится на свёрнутый, разбор останется тем же объектом,
+  // и ничего из завязанного на него не перезапустится.
+  const eventPathname = canonicalEventPath(location.pathname);
   const eventMatch = useMemo(
-    () => matchPath('/event/:eventType/:eventId', location.pathname),
-    [location.pathname]
+    () => matchPath('/event/:eventType/:eventId', eventPathname),
+    [eventPathname]
   );
 
   const applicationMatch = useMemo(
@@ -423,7 +440,9 @@ function TeamLayoutContent() {
         const data = await res.json();
         const team = selectedTeamRef.current;
         const teamId = team?.id ?? team?.team_id;
-        const card = pickEventCard(data?.cards, eventId, eventType, teamId ? `${teamId}||` : null, { fallbackToFirst: true });
+        const card = pickEventCard(data?.cards, eventId, eventType, teamId ? `${teamId}||` : null, { fallbackToFirst: true })
+          || (SHARED_ROUTE_FALLBACK[eventType]
+            && pickEventCard(data?.cards, eventId, SHARED_ROUTE_FALLBACK[eventType], null, { fallbackToFirst: true }));
         if (cancelled) return;
 
         if (!card) {
@@ -431,11 +450,14 @@ function TeamLayoutContent() {
           return;
         }
 
-        sessionStorage.setItem(`tr_event_${eventType}_${eventId}`, JSON.stringify(card));
+        // Тип берём у самой карточки: по старой общей ссылке она могла оказаться клубной,
+        // и адрес заодно переезжает на её собственный маршрут
+        const routeType = eventRouteType(card.event_type);
+        sessionStorage.setItem(`tr_event_${routeType}_${eventId}`, JSON.stringify(card));
         // Карточка только что с сервера — обновлять её при открытии уже незачем
-        freshCardKey.current = `${eventType}/${eventId}`;
+        freshCardKey.current = `${routeType}/${eventId}`;
         // history.state тоже должен знать о событии — иначе следующий рефреш снова придёт пустым
-        navigate(`/event/${eventType}/${eventId}`, { replace: true, state: { event: card } });
+        navigate(`/event/${routeType}/${eventId}`, { replace: true, state: { event: card } });
       } catch (err) {
         console.error('Не удалось открыть событие по ссылке:', err);
         if (!cancelled) navigate('/', { replace: true });
@@ -446,6 +468,15 @@ function TeamLayoutContent() {
 
     return () => { cancelled = true; };
   }, [eventMatch, eventForOverlay, navigate]);
+
+  // Старый адрес в самой строке тоже меняем на свёрнутый. Пока карточки нет, это
+  // сделает дотягивание выше: оно всё равно переходит на /event/<тип>/<id>. Лишний
+  // переход отсюда перезапустил бы его (navigate меняется вместе с адресом) и
+  // отправил бы тот же запрос второй раз.
+  useEffect(() => {
+    if (!eventForOverlay || eventPathname === location.pathname) return;
+    navigate(eventPathname, { replace: true, state: location.state });
+  }, [eventForOverlay, eventPathname, location.pathname, location.state, navigate]);
 
   // Кнопка «назад» во вложенных экранах: обычно шаг по истории, но при заходе
   // по прямой ссылке истории нет — тогда уводим на страницу, откуда экран обычно

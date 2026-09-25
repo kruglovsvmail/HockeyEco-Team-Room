@@ -328,7 +328,6 @@ export async function sendPushToEventScopeExcept({ teamId, clubId, communityId }
 // если человек не узнал, что подошла его очередь — поэтому шлём сразу после выдачи.
 export async function notifyReserveOffers(offers = []) {
   for (const offer of offers) {
-    const route = offer.eventType === 'community_game' ? 'community-game' : 'community-training';
     const until = new Date(offer.offerExpiresAt).toLocaleString('ru-RU', {
       day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit'
     });
@@ -337,7 +336,7 @@ export async function notifyReserveOffers(offers = []) {
       await sendPushToCommunityUser(offer.userId, offer.communityId, 'reserve', {
         title: 'Освободилось место',
         body: `${offer.title} — подтвердите участие до ${until}, иначе место уйдёт следующему`,
-        url: `/event/${route}/${offer.eventId}`,
+        url: eventUrl(offer.eventType, offer.eventId),
         tag: `reserve-offer-${offer.eventType}-${offer.eventId}`,
       });
     } catch (err) {
@@ -371,7 +370,7 @@ export async function batchAttendanceNotification(teamId, eventId, eventType, ev
       [type, teamId, eventId, JSON.stringify({
         title: 'Новая отметка',
         body: `1 игрок отметился на ${eventLabel}`,
-        url: `/event/${eventType}/${eventId}`,
+        url: eventUrl(eventType, eventId),
         tag: `attendance-${eventId}`,
         count: 1,
       })]
@@ -383,6 +382,31 @@ export async function batchAttendanceNotification(teamId, eventId, eventType, ev
 export function eventTypeLabel(eventType) {
   const map = { match: 'матч', team_training: 'тренировку', club_training: 'тренировку', training: 'тренировку', team_meeting: 'собрание', club_meeting: 'собрание', meeting: 'собрание' };
   return map[eventType] || 'событие';
+}
+
+// ── Хелпер: адрес события для перехода из уведомления ───────────────────
+// Маршрут приложения /event/:eventType/:eventId понимает только свои типы — те же,
+// что разворачивает календарь (ROUTE_EVENT_TYPES в CalendarController) и строит
+// фронт (EVENT_ROUTE в helpers.js); правятся вместе. Сырой тип из БД маршрут не
+// узнавал, и тап по такому пушу открывал календарь вместо события. Поэтому адрес
+// события для пуша собирается только здесь.
+//
+// Клубные тренировка и собрание — отдельные маршруты, а не общий training/meeting:
+// командные и клубные события лежат в разных таблицах с независимыми номерами, и
+// /event/training/37 подходил бы и командной №37, и клубной №37.
+const EVENT_ROUTE_TYPES = {
+  match: 'match',
+  team_training: 'training',
+  club_training: 'club-training',
+  team_meeting: 'meeting',
+  club_meeting: 'club-meeting',
+  community_training: 'community-training',
+  community_game: 'community-game',
+};
+
+// Уже свёрнутый тип (training, community-game) проходит как есть
+export function eventUrl(eventType, eventId) {
+  return `/event/${EVENT_ROUTE_TYPES[eventType] || eventType}/${eventId}`;
 }
 
 // ── Создание отложенного уведомления ────────────────────────────────────
@@ -398,10 +422,17 @@ export async function scheduleNotification({ type, targetUserId, teamId, communi
 }
 
 // ── Удаление запланированных уведомлений (при отмене события) ────────────
-export async function cancelScheduledNotifications(eventId) {
+// id событий идут из разных таблиц и совпадают: без community_id удаление
+// матча №7 сносило бы напоминание тренировки сообщества №7, и наоборот.
+// Строки сообществ отличает community_id, у командных он пустой — IS NOT
+// DISTINCT FROM сравнивает и NULL. Командные события между собой (матч,
+// тренировка, собрание) так же пересекаются: это лечится только типом события
+// в самой таблице, которого пока нет.
+export async function cancelScheduledNotifications(eventId, { communityId = null } = {}) {
   await pool.query(
-    'DELETE FROM scheduled_notifications WHERE event_id = $1 AND sent = false',
-    [eventId]
+    `DELETE FROM scheduled_notifications
+     WHERE event_id = $1 AND community_id IS NOT DISTINCT FROM $2 AND sent = false`,
+    [eventId, communityId]
   );
 }
 
@@ -578,7 +609,7 @@ export async function scheduleMatchDeadlines(gameId, teamId, gameDate, confirmDe
         [teamId, gameId, rosterDeadlineSendAt, JSON.stringify({
           title: 'Дедлайн заявки',
           body: 'До старта матча 2 часа — подайте заявку',
-          url: `/event/match/${gameId}`,
+          url: eventUrl('match', gameId),
           tag: `roster-deadline-${gameId}`,
         })]
       );
@@ -593,7 +624,7 @@ export async function scheduleMatchDeadlines(gameId, teamId, gameDate, confirmDe
         [teamId, gameId, linesDeadlineSendAt, JSON.stringify({
           title: 'Дедлайн состава',
           body: 'До старта матча 2 часа — проверьте состав',
-          url: `/event/match/${gameId}`,
+          url: eventUrl('match', gameId),
           tag: `lines-deadline-${gameId}`,
         })]
       );
@@ -610,7 +641,7 @@ export async function scheduleMatchDeadlines(gameId, teamId, gameDate, confirmDe
           [teamId, gameId, confirmSendAt, JSON.stringify({
             title: 'Дедлайн подтверждения',
             body: 'До дедлайна подтверждения товарищеского матча остался 1 час',
-            url: `/event/match/${gameId}`,
+            url: eventUrl('match', gameId),
             tag: `friendly-deadline-${gameId}`,
           })]
         );
@@ -661,7 +692,7 @@ export async function pollLmsGames() {
           sendPushToTeam(tid, 'tournaments', {
             title: 'Новый матч от лиги',
             body: `против ${oppName}, ${dateStr}, ${g.arena_name}`,
-            url: `/event/match/${g.id}`,
+            url: eventUrl('match', g.id),
             tag: `lms-new-${g.id}`,
           }).catch(() => {});
 
@@ -676,7 +707,7 @@ export async function pollLmsGames() {
                 [tid, g.id, reminder24, JSON.stringify({
                   title: 'Матч через 24 часа',
                   body: `против ${oppName}, ${dateStr}, ${g.arena_name}`,
-                  url: `/event/match/${g.id}`,
+                  url: eventUrl('match', g.id),
                   tag: `reminder-${g.id}`,
                 })]
               );
@@ -698,7 +729,7 @@ export async function pollLmsGames() {
             sendPushToTeam(tid, 'schedule', {
               title: 'Матч изменён',
               body: `Новое расписание: против ${oppName}, ${dateStr}, ${g.arena_name}`,
-              url: `/event/match/${g.id}`,
+              url: eventUrl('match', g.id),
               tag: `event-update-${g.id}`,
             }).catch(() => {});
           }

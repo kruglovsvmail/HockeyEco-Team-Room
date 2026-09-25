@@ -3,14 +3,15 @@ import { COMMUNITY_EVENT_MAP } from '../utils/communityReserve.js';
 import { parseFeeSettings, buildFeeUpdate } from '../utils/eventFees.js';
 import {
   sendPushToCommunityExcept,
-  scheduleNotification,
   cancelScheduledNotifications,
   getCommunityEventInfo,
+  eventUrl,
 } from '../services/pushService.js';
 import {
   parsePublishSettings,
   initialPublishedAt,
   announceCommunityEvent,
+  scheduleCommunityReminder,
   publishCommunityEvent,
 } from '../utils/communityPublish.js';
 
@@ -90,6 +91,43 @@ const parseLocation = (body) => {
 };
 
 /**
+ * Таймзона места проведения после правки — по ней календарь потом покажет
+ * событие: сначала арена, потом ручная таймзона. Арену смотрим в справочнике:
+ * плоские поля её таймзону не несут, а custom_timezone фронт присылает от
+ * прежней локации. Локацию не меняли — берём ту, что уже стоит у события.
+ */
+const resolveEventTimezone = async (cfg, eventId, communityId, patch) => {
+  if ('arena_id' in patch) {
+    if (!patch.arena_id) return patch.custom_timezone || 'Europe/Moscow';
+    const { rows } = await pool.query('SELECT timezone FROM arenas WHERE id = $1', [patch.arena_id]);
+    return rows[0]?.timezone || 'Europe/Moscow';
+  }
+
+  const { rows } = await pool.query(`
+    SELECT a.timezone AS arena_timezone, e.custom_timezone
+    FROM "public"."${cfg.table}" e
+    LEFT JOIN arenas a ON a.id = e.arena_id
+    WHERE e.id = $1 AND e.community_id = $2
+  `, [eventId, communityId]);
+  return rows[0]?.arena_timezone || patch.custom_timezone || rows[0]?.custom_timezone || 'Europe/Moscow';
+};
+
+/**
+ * Событие этого сообщества по id. Гейт маршрута проверяет роль в communityId из
+ * пути, но не то, что событие из пути — его. Правка расписания, взноса и удаление
+ * несут условие community_id прямо в своём запросе; эта функция — для действий,
+ * где до такого запроса что-то успевает случиться (группы тренировки) или где
+ * запрос общий с кроном и сообщества не знает (публикация).
+ */
+const findCommunityEvent = async (cfg, eventId, communityId) => {
+  const { rows } = await pool.query(
+    `SELECT * FROM "public"."${cfg.table}" WHERE id = $1 AND community_id = $2`,
+    [eventId, communityId]
+  );
+  return rows[0] || null;
+};
+
+/**
  * Список допущенных групп у тренировки. Пустой список означает «для всех групп»,
  * поэтому отсутствие строк — не ошибка, а осмысленное состояние.
  */
@@ -104,7 +142,6 @@ const replaceTrainingGroups = async (client, trainingId, communityId, groupIds) 
   `, [trainingId, communityId, groupIds.map(Number).filter(Number.isInteger)]);
 };
 
-// Напоминание за 24 часа — то же, что у командных событий, но адресуется сообществу
 // =============================================================================
 // СОЗДАНИЕ СОБЫТИЯ СООБЩЕСТВА
 // =============================================================================
@@ -243,8 +280,13 @@ function parseLimits(body = {}, eventType = null) {
   return patch;
 }
 
-// Общая часть трёх ручек редактирования: собрать патч, применить, уведомить
-const applyEventPatch = async (req, res, patch, { notify = null } = {}) => {
+// Общая часть трёх ручек редактирования: собрать патч, применить, уведомить.
+//
+// eventTimestamp — дата из формы «наивной» строкой, как при создании. В обычный
+// патч её класть нельзя: база прочла бы её по часам своей сессии (Москва), и
+// 19:00 в Екатеринбурге стало бы 21:00. Поэтому она уходит отдельной частью SET
+// через AT TIME ZONE таймзоны места проведения (eventTz).
+const applyEventPatch = async (req, res, patch, { notify = null, eventTimestamp = null, eventTz = null } = {}) => {
   const { eventType, eventId } = req.params;
   const cfg = cfgFor(eventType);
   if (!cfg) {
@@ -252,12 +294,18 @@ const applyEventPatch = async (req, res, patch, { notify = null } = {}) => {
   }
 
   const { clause, values, isEmpty } = buildFeeUpdate(patch, 1);
-  if (isEmpty) {
+  if (isEmpty && !eventTimestamp) {
     return res.status(400).json({ error: 'Нет полей для обновления' });
   }
 
+  const sets = isEmpty ? [] : [clause];
+  if (eventTimestamp) {
+    values.push(eventTimestamp, eventTz || 'Europe/Moscow');
+    sets.push(`"${cfg.dateCol}" = $${values.length - 1}::timestamp AT TIME ZONE $${values.length}`);
+  }
+
   const { rows } = await pool.query(`
-    UPDATE "public"."${cfg.table}" SET ${clause}
+    UPDATE "public"."${cfg.table}" SET ${sets.join(', ')}
     WHERE id = $${values.length + 1} AND community_id = $${values.length + 2}
     RETURNING *
   `, [...values, eventId, req.params.communityId]);
@@ -266,14 +314,32 @@ const applyEventPatch = async (req, res, patch, { notify = null } = {}) => {
     return res.status(404).json({ error: 'Событие не найдено' });
   }
 
+  // Напоминание за сутки собрано из названия, даты и места. Правка задела что-то
+  // из этого — напоминание в очереди уже врёт: убираем его и ставим новое по
+  // записанной строке, где дата уже момент времени. Только после UPDATE: упади
+  // запрос раньше — событие осталось бы без напоминания при старой дате.
+  // Сбой напоминания правку не отменяет, она уже в базе.
+  const reminderCols = ['title', cfg.dateCol, 'arena_id', 'location', 'custom_timezone'];
+  if (eventTimestamp || reminderCols.some(col => col in patch)) {
+    const event = rows[0];
+    try {
+      await cancelScheduledNotifications(event.id, { communityId: event.community_id });
+      // Неопубликованному событию напоминание поставит публикация — уже от новой даты
+      if (event.published_at) {
+        await scheduleCommunityReminder({ event, eventType, communityId: event.community_id });
+      }
+    } catch (err) {
+      console.error('[Community Event Reminder Error]:', err.message);
+    }
+  }
+
   if (notify) {
     (async () => {
       const info = await getCommunityEventInfo(eventId, eventType);
-      const route = eventType === 'community_game' ? 'community-game' : 'community-training';
       await sendPushToCommunityExcept(Number(req.params.communityId), req.user.id, 'schedule', {
         title: notify,
         body: `${rows[0].title} — ${info.text}`,
-        url: `/event/${route}/${eventId}`,
+        url: eventUrl(eventType, eventId),
         tag: `upd-${eventType}-${eventId}`,
       });
     })().catch(() => {});
@@ -301,11 +367,13 @@ export const updateCommunityEventSchedule = async (req, res) => {
     if (req.body.event_date !== undefined) patch[cfg.dateCol] = req.body.event_date;
     if (req.body.custom_timezone !== undefined) patch.custom_timezone = req.body.custom_timezone || null;
 
-    // Пара «дата + время» — тот же контракт, что у создания
+    // Пара «дата + время» — тот же контракт, что у создания: стенные часы места
+    // проведения. В патч не кладём — applyEventPatch переведёт её сам (см. там)
+    let eventTimestamp = null;
     if (req.body.eventDate !== undefined && req.body.eventTime !== undefined) {
-      const ts = parseDateTime(req.body.eventDate, req.body.eventTime);
-      if (!ts) return res.status(400).json({ error: 'Некорректные дата или время' });
-      patch[cfg.dateCol] = ts;
+      eventTimestamp = parseDateTime(req.body.eventDate, req.body.eventTime);
+      if (!eventTimestamp) return res.status(400).json({ error: 'Некорректные дата или время' });
+      delete patch[cfg.dateCol];
     }
 
     if (eventType === 'community_training' && req.body.training_type !== undefined) {
@@ -322,18 +390,18 @@ export const updateCommunityEventSchedule = async (req, res) => {
         return res.status(400).json({ error: 'Выберите арену или укажите адрес вместе со ссылкой на карту' });
       }
       Object.assign(patch, loc);
+      // timezone — не колонка события, а подсказка для перевода времени: при
+      // создании она уходит только в AT TIME ZONE, в UPDATE её тоже не пускаем
+      delete patch.timezone;
     }
 
-    // Дата уехала — старое напоминание за 24 часа больше не к месту
-    if (patch[cfg.dateCol]) {
-      await cancelScheduledNotifications(Number(eventId));
-      await scheduleReminder({
-        eventType, eventId: Number(eventId), communityId: Number(communityId),
-        eventDate: patch[cfg.dateCol], title: patch.title || '',
-      });
-    }
+    const eventTz = eventTimestamp
+      ? await resolveEventTimezone(cfg, eventId, communityId, patch)
+      : null;
 
-    return await applyEventPatch(req, res, patch, { notify: 'Изменение в расписании' });
+    return await applyEventPatch(req, res, patch, {
+      notify: 'Изменение в расписании', eventTimestamp, eventTz,
+    });
   } catch (error) {
     console.error('[Update Community Event Schedule Error]:', error);
     res.status(500).json({ error: 'Internal server error' });
@@ -368,16 +436,18 @@ export const updateCommunityEventLimits = async (req, res) => {
 
     const patch = parseLimits(req.body, eventType);
 
+    // Своё ли событие — до замены групп. Она пишет мимо applyEventPatch, и раньше
+    // чужая тренировка успевала лишиться адресации по группам, прежде чем ответ
+    // становился 404: удаление групп идёт по одному id тренировки.
+    const current = await findCommunityEvent(cfg, eventId, communityId);
+    if (!current) return res.status(404).json({ error: 'Событие не найдено' });
+
     if (eventType === 'community_training' && req.body.group_ids !== undefined) {
       await replaceTrainingGroups(pool, Number(eventId), Number(communityId), req.body.group_ids);
-      // Изменились только группы, а колонок события патч не трогает — отвечаем сами
+      // Изменились только группы, а колонок события патч не трогает — отвечаем сами:
+      // строка события та же, что прочитана выше, группы живут в своей таблице
       if (Object.keys(patch).length === 0) {
-        const { rows } = await pool.query(
-          `SELECT * FROM "public"."${cfg.table}" WHERE id = $1 AND community_id = $2`,
-          [eventId, communityId]
-        );
-        if (rows.length === 0) return res.status(404).json({ error: 'Событие не найдено' });
-        return res.json({ success: true, event: rows[0] });
+        return res.json({ success: true, event: current });
       }
     }
 
@@ -396,12 +466,28 @@ export const updateCommunityEventLimits = async (req, res) => {
 // =============================================================================
 // УДАЛЕНИЕ СОБЫТИЯ
 // Отметки, план, расстановка и составы уходят каскадом по внешним ключам.
+// Мимо каскада проходят только слепки разовых упражнений из плана — их стираем сами.
 // =============================================================================
 export const deleteCommunityEvent = async (req, res) => {
   try {
     const { communityId, eventType, eventId } = req.params;
     const cfg = cfgFor(eventType);
     if (!cfg) return res.status(400).json({ error: 'Неизвестный тип события сообщества' });
+
+    // Разовое упражнение плана хранит содержимое в drill_snapshots, а слепок к событию не
+    // привязан: пункт плана уйдёт каскадом вместе с тренировкой, слепок останется ничьим.
+    // Номера запоминаем, пока пункты на месте, а стираем после удаления — раньше не даст
+    // внешний ключ пункта на слепок (ON DELETE RESTRICT). Слепки библиотечных упражнений
+    // не трогаем: они общие для всех тренировок, замороженных одной правкой. У солянки
+    // плана нет.
+    let adhocSnapshots = [];
+    if (eventType === 'community_training') {
+      const { rows: plan } = await pool.query(`
+        SELECT drill_snapshot_id FROM community_training_plan
+        WHERE community_training_id = $1 AND is_adhoc AND drill_snapshot_id IS NOT NULL
+      `, [eventId]);
+      adhocSnapshots = plan.map(r => r.drill_snapshot_id);
+    }
 
     const { rows } = await pool.query(
       `DELETE FROM "public"."${cfg.table}" WHERE id = $1 AND community_id = $2 RETURNING title`,
@@ -411,13 +497,21 @@ export const deleteCommunityEvent = async (req, res) => {
       return res.status(404).json({ error: 'Событие не найдено' });
     }
 
-    await cancelScheduledNotifications(Number(eventId));
+    // Сбой чистки удаление не отменяет: события уже нет, а лишний слепок никому не мешает
+    if (adhocSnapshots.length > 0) {
+      await pool.query('DELETE FROM drill_snapshots WHERE id = ANY($1::int[])', [adhocSnapshots])
+        .catch(err => console.error('[Delete Community Event Snapshots Error]:', err.message));
+    }
+
+    await cancelScheduledNotifications(Number(eventId), { communityId: Number(communityId) });
 
     (async () => {
       await sendPushToCommunityExcept(Number(communityId), req.user.id, 'schedule', {
         title: eventType === 'community_game' ? 'Солянка отменена' : 'Тренировка отменена',
         body: rows[0].title,
-        url: '/schedule',
+        // Событие удалено — открывать нечего, ведём в календарь, как и отмена
+        // командных событий. Маршрута /schedule в приложении нет.
+        url: '/',
         tag: `del-${eventType}-${eventId}`,
       });
     })().catch(() => {});
@@ -438,9 +532,17 @@ export const deleteCommunityEvent = async (req, res) => {
 // =============================================================================
 export const publishCommunityEventNow = async (req, res) => {
   try {
-    const { eventType, eventId } = req.params;
-    if (!cfgFor(eventType)) {
+    const { eventType, eventId, communityId } = req.params;
+    const cfg = cfgFor(eventType);
+    if (!cfg) {
       return res.status(400).json({ error: 'Неизвестный тип события сообщества' });
+    }
+
+    // publishCommunityEvent общая с кроном и ищет событие только по id. Без этой
+    // проверки штаб одного сообщества открывал скрытое событие другого, а его
+    // участникам уходил пуш о новой тренировке или солянке.
+    if (!(await findCommunityEvent(cfg, eventId, communityId))) {
+      return res.status(404).json({ error: 'Событие не найдено' });
     }
 
     const event = await publishCommunityEvent(eventType, eventId, req.user.id);

@@ -1,8 +1,23 @@
 import pool from '../config/db.js';
 import { checkPermissionInternal, getTeamIdFromRequest } from '../utils/checkPermission.js';
-import { sendPushToTeamExcept, getMatchInfo, getUserName } from '../services/pushService.js';
+import { sendPushToTeamExcept, getMatchInfo, getUserName, eventUrl } from '../services/pushService.js';
 import { resolvePayRole, getFeeContext, isAfterWithdrawDeadline, describeSplitFee } from '../utils/eventFees.js';
 import { isRosterFollowingAttendance, resyncRosterWithAttendance } from './MatchLinesController.js';
+
+// Играет ли команда из запроса в матче из адреса. requireTeamPermission проверяет роль
+// в teamId, но не то, что матч — её: без этого игрок любой команды отмечался на чужой
+// матч от имени своей, его команде уходил пуш с данными чужой игры, а заявка «по явке»
+// пересобиралась уже в чужом матче. Две команды у матча законны — «хозяева или гости».
+const isTeamMatch = async (eventId, teamId) => {
+  const tid = Number(teamId);
+  if (!Number.isInteger(tid) || tid <= 0) return false;
+
+  const { rowCount } = await pool.query(
+    'SELECT 1 FROM games WHERE id = $1 AND $2::int IN (home_team_id, away_team_id)',
+    [eventId, tid]
+  );
+  return rowCount > 0;
+};
 
 // =============================================================================
 // ДОСТУПНЫЙ СОСТАВ НА МАТЧ (с учетом регламентов и дисквалификаций)
@@ -10,7 +25,9 @@ import { isRosterFollowingAttendance, resyncRosterWithAttendance } from './Match
 export const getAvailableRoster = async (req, res) => {
   try {
     const { eventId } = req.params;
-    const { teamId } = req.query;
+    // Команда — та, что проверил гейт (тело раньше query), а не голый query: иначе
+    // GET с телом проходил гейт по своей команде, а состав отдавал чужой
+    const teamId = getTeamIdFromRequest(req);
 
     if (!teamId) {
       return res.status(400).json({ success: false, error: 'teamId обязателен' });
@@ -112,6 +129,9 @@ export const toggleMatchAttendance = async (req, res) => {
     if (!teamId) {
       return res.status(400).json({ success: false, error: 'teamId обязателен для матча' });
     }
+    if (!(await isTeamMatch(eventId, teamId))) {
+      return res.status(404).json({ success: false, error: 'Матч не найден' });
+    }
 
     const targetId = targetUserId || initiatorId;
 
@@ -209,7 +229,7 @@ export const toggleMatchAttendance = async (req, res) => {
         body: isAttending
           ? `${name} отметился на матч: ${info.text}${feeText}`
           : `${name} снял отметку с матча: ${info.text}${feeText}`,
-        url: `/event/match/${eventId}`,
+        url: eventUrl('match', eventId),
         tag: `attend-${eventId}-${targetId}`,
       });
     })().catch(() => {});
@@ -227,7 +247,8 @@ export const toggleMatchAttendance = async (req, res) => {
 export const getMatchAttendance = async (req, res) => {
   try {
     const { eventId } = req.params;
-    const { teamId } = req.query;
+    // Команда — та, что проверил гейт (тело раньше query): см. getAvailableRoster
+    const teamId = getTeamIdFromRequest(req);
 
     if (!teamId) {
       return res.status(400).json({ success: false, error: 'teamId обязателен для матча' });

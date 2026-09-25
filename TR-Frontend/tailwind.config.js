@@ -8,7 +8,7 @@ export default {
     extend: {
       fontFamily: {
         // Базовый шрифт всего приложения
-        sans: ['Inter'],
+        sans: ['Manrope', 'Arial', 'sans-serif'],
       },
       colors: {
         // --- АКЦЕНТНЫЕ ЦВЕТА (БРЕНД) ---

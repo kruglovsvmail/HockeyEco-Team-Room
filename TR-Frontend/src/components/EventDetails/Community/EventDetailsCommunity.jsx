@@ -130,8 +130,10 @@ export const EventDetailsCommunity = ({ event, openRightPanel }) => {
   //
   // Заодно перечитываем состав для «Формаций»: он мог измениться не отсюда —
   // тумблером на карточке календаря прямо перед входом в событие.
+  // После удаления события перечитывать нечего — сервер ответит 404.
   useEffect(() => {
-    const onUpdate = () => {
+    const onUpdate = (e) => {
+      if (e.detail?.eventDeleted) return;
       fetchAttendees();
       const routeType = COMMUNITY_EVENT_ROUTE[eventType];
       if (!routeType || !localEvent?.event_id) return;
