@@ -491,9 +491,8 @@ export default function LoginPage() {
     <div className="w-full h-full max-w-md mx-auto flex bg-surface-base flex-col flex-1 px-6 py-10 relative z-10">
   
       <div className="relative mt-1 mb-16 shrink-0">
-        <h1 className="heco-login-wordmark mb-1">
-          <img src="/brand/heco-tr-wordmark-light.svg" alt="Heco TR" className="heco-mark-light" />
-          <img src="/brand/heco-tr-wordmark-dark.svg" alt="Heco TR" className="heco-mark-dark" />
+        <h1 className="text-[34px] leading-tight font-black tracking-tight text-content-main mb-1">
+          HockeyEco <span className="text-brand">TR</span>
         </h1>
         <p className="text-content-muted text-[14px] tracking-[0.2em] uppercase font-semibold mb-4">
           Кабинет команды
