@@ -4,6 +4,7 @@ import { PutObjectCommand, DeleteObjectCommand } from '@aws-sdk/client-s3';
 import { assertPlayersAllowedInDivision, assertApplicationRosterAllowed, loadDivisionQualificationRules } from '../../utils/qualificationAccess.js';
 import { resetAdmissionByRosterIds, resetAdmissionForPersons } from '../../utils/admissionReset.js';
 import { logPersonEvent, logPersonEvents, cardDiff, CARD_FIELDS } from '../../utils/personLog.js';
+import { assertJerseyNumbersFree } from '../../utils/jerseyNumbers.js';
 
 const S3_BUCKET = process.env.S3_BUCKET || 'hockeyeco-uploads';
 
@@ -455,6 +456,10 @@ export const createApplication = async (req, res) => {
     const logEvents = [];
 
     if (isDigital && players.length > 0) {
+      // Заявка новая, чужих строк в ней нет — ловим только два одинаковых номера в самом
+      // запросе (utils/jerseyNumbers.js)
+      await assertJerseyNumbersFree(client, appId, players);
+
       // Валидность игроков подтверждаем членством в команде; амплуа/номер/капитанство берём из запроса
       const { rows } = await client.query(`
         INSERT INTO tournament_rosters (tournament_team_id, player_id, position, jersey_number, is_captain, is_assistant)
@@ -649,6 +654,11 @@ export const addPlayersToApplication = async (req, res) => {
         [appId, playerIds]
       );
       const existingPids = new Set(existingRes.rows.map(r => r.player_id));
+
+      // Номер берётся из состава команды и не должен быть занят в заявке другим игроком
+      // (utils/jerseyNumbers.js): лига могла сменить номер в заявке, и в команде он теперь
+      // у другого человека
+      await assertJerseyNumbersFree(client, appId, pRes.rows.map(r => ({ player_id: r.pid, jersey_number: r.jersey_number })));
 
       const insertValues = []; const insertParams = []; let insertIdx = 1;
       const updateValues = []; const updateParams = []; let updateIdx = 1;
