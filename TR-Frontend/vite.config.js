@@ -37,7 +37,7 @@ export default defineConfig({
         // safe-area зоны в App.jsx. Новый цвет доедет до установленных приложений
         // не сразу: Chrome сверяет манифест примерно раз в сутки и пересобирает WebAPK.
         theme_color: '#242424',
-        background_color: '#e2e4e7', // Стандартный фон системного Splash Screen.
+        background_color: '#1D1E1E', // Графитовый фон системного Splash Screen, как в центре иконки.
         
         display: 'standalone',
         orientation: 'portrait',
