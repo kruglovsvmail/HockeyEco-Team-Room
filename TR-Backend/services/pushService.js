@@ -1,5 +1,6 @@
 import webpush from 'web-push';
 import pool from '../config/db.js';
+import { DEADLINE_PERMISSIONS, getTeamMembersWithPermission } from '../utils/teamStaff.js';
 
 webpush.setVapidDetails(
   process.env.VAPID_SUBJECT,
@@ -480,7 +481,16 @@ export async function processScheduledNotifications() {
           friendly_confirm_deadline: 'admin',
         };
         const groupKey = groupMap[n.type] || 'schedule';
-        await sendPushToTeam(n.team_id, groupKey, n.payload);
+
+        // Дедлайны — не всей команде, а тем, кто может по ним что-то сделать:
+        // «подайте заявку» игроку без прав подать её — просто шум.
+        const permissionKey = DEADLINE_PERMISSIONS[n.type];
+        let filterFn;
+        if (permissionKey) {
+          const staff = await getTeamMembersWithPermission(n.team_id, permissionKey);
+          filterFn = (uid) => staff.has(String(uid));
+        }
+        await sendPushToTeam(n.team_id, groupKey, n.payload, filterFn);
       }
       await pool.query('UPDATE scheduled_notifications SET sent = true WHERE id = $1', [n.id]);
     } catch (err) {
@@ -594,38 +604,38 @@ export async function processBirthdays() {
   }
 }
 
+// ── Дедлайны матча: за сколько минут до начала и что написать ────────────
+// Заявка — за 2 часа и ещё раз за час, если так и не подана (shouldSendDeadline
+// проверяет это перед отправкой); состав — за 2 часа. У двух строк заявки тип
+// один, поэтому lead_minutes пишется в payload: по нему rescheduleMatchDeadlines
+// переносит каждую строку на своё время. У строк, поставленных раньше, пометки
+// нет — это «за 2 часа». Тег у заявки общий: часовое напоминание заменяет на
+// телефоне двухчасовое и звучит заново (renotify в push-sw.js).
+const MATCH_DEADLINES = [
+  { type: 'roster_deadline', leadMinutes: 120, title: 'Дедлайн заявки', body: 'До старта матча 2 часа — подайте заявку', tag: 'roster-deadline' },
+  { type: 'roster_deadline', leadMinutes: 60, title: 'Заявка не подана', body: 'До старта матча 1 час — подайте заявку', tag: 'roster-deadline' },
+  { type: 'lines_deadline', leadMinutes: 120, title: 'Дедлайн состава', body: 'До старта матча 2 часа — проверьте состав', tag: 'lines-deadline' },
+];
+const DEFAULT_DEADLINE_LEAD_MINUTES = 120;
+
 // ── Планирование дедлайнов администрирования при создании матча ──────────
 export async function scheduleMatchDeadlines(gameId, teamId, gameDate, confirmDeadline) {
   try {
     if (!gameDate) return;
     const gameTime = new Date(gameDate).getTime();
 
-    // Дедлайн подачи заявки: за 2 часа до матча
-    const rosterDeadlineSendAt = new Date(gameTime - 2 * 60 * 60 * 1000);
-    if (rosterDeadlineSendAt > new Date()) {
+    for (const d of MATCH_DEADLINES) {
+      const sendAt = new Date(gameTime - d.leadMinutes * 60 * 1000);
+      if (sendAt <= new Date()) continue;
       await pool.query(
         `INSERT INTO scheduled_notifications (type, team_id, event_id, send_at, payload)
-         VALUES ('roster_deadline', $1, $2, $3, $4)`,
-        [teamId, gameId, rosterDeadlineSendAt, JSON.stringify({
-          title: 'Дедлайн заявки',
-          body: 'До старта матча 2 часа — подайте заявку',
+         VALUES ($1, $2, $3, $4, $5)`,
+        [d.type, teamId, gameId, sendAt, JSON.stringify({
+          title: d.title,
+          body: d.body,
           url: eventUrl('match', gameId),
-          tag: `roster-deadline-${gameId}`,
-        })]
-      );
-    }
-
-    // Дедлайн редактирования состава: за 2 часа до матча (совпадает, но отдельный тип)
-    const linesDeadlineSendAt = new Date(gameTime - 2 * 60 * 60 * 1000);
-    if (linesDeadlineSendAt > new Date()) {
-      await pool.query(
-        `INSERT INTO scheduled_notifications (type, team_id, event_id, send_at, payload)
-         VALUES ('lines_deadline', $1, $2, $3, $4)`,
-        [teamId, gameId, linesDeadlineSendAt, JSON.stringify({
-          title: 'Дедлайн состава',
-          body: 'До старта матча 2 часа — проверьте состав',
-          url: eventUrl('match', gameId),
-          tag: `lines-deadline-${gameId}`,
+          tag: `${d.tag}-${gameId}`,
+          lead_minutes: d.leadMinutes,
         })]
       );
     }
@@ -649,6 +659,26 @@ export async function scheduleMatchDeadlines(gameId, teamId, gameDate, confirmDe
     }
   } catch (err) {
     console.error('Ошибка планирования дедлайнов матча:', err.message);
+  }
+}
+
+// ── Перенос дедлайнов заявки и состава на новое время матча ──────────────
+// Каждая неотправленная строка встаёт на свои lead_minutes до новой даты. Время
+// считается здесь, в JS, как и при постановке строки, — чтобы перенесённое
+// напоминание не расходилось с только что поставленным. Подтверждение
+// товарищеского считается от своего дедлайна, а не от матча, — его не трогаем.
+export async function rescheduleMatchDeadlines(gameId, gameDate) {
+  if (!gameId || !gameDate) return;
+  const gameTime = new Date(gameDate).getTime();
+  const leads = [...new Set(MATCH_DEADLINES.map(d => d.leadMinutes))];
+
+  for (const lead of leads) {
+    await pool.query(
+      `UPDATE scheduled_notifications SET send_at = $1
+        WHERE event_id = $2 AND type IN ('roster_deadline', 'lines_deadline') AND sent = false
+          AND COALESCE((payload->>'lead_minutes')::int, $4) = $3`,
+      [new Date(gameTime - lead * 60 * 1000), gameId, lead, DEFAULT_DEADLINE_LEAD_MINUTES]
+    );
   }
 }
 
@@ -714,7 +744,7 @@ export async function pollLmsGames() {
             }
           }
 
-          // Дедлайны заявки и состава за 2ч
+          // Дедлайны заявки (за 2 ч и за 1 ч) и состава (за 2 ч)
           await scheduleMatchDeadlines(g.id, tid, g.game_date, null);
         }
       } else {
@@ -738,7 +768,6 @@ export async function pollLmsGames() {
           if (g.game_date) {
             const gameTime = new Date(g.game_date).getTime();
             const reminder24 = new Date(gameTime - 24 * 60 * 60 * 1000);
-            const deadline2h = new Date(gameTime - 2 * 60 * 60 * 1000);
 
             await pool.query(
               `UPDATE scheduled_notifications SET send_at = $1,
@@ -747,11 +776,7 @@ export async function pollLmsGames() {
               [reminder24, g.id, `против ${g.away_name || 'Соперник'}, ${dateStr}, ${g.arena_name}`]
             );
 
-            await pool.query(
-              `UPDATE scheduled_notifications SET send_at = $1
-               WHERE event_id = $2 AND type IN ('roster_deadline', 'lines_deadline') AND sent = false`,
-              [deadline2h, g.id]
-            );
+            await rescheduleMatchDeadlines(g.id, g.game_date);
           }
         }
       }

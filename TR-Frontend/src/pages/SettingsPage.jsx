@@ -605,7 +605,9 @@ function NotificationSettings() {
                     />
                   </div>
 
-                  {NOTIFICATION_GROUPS.map(group => (
+                  {/* «Администрирование» — только тем, кому эти дедлайны приходят (сервер
+                      отдаёт admin_relevant). Старый сервер поля не знает — тогда показываем. */}
+                  {NOTIFICATION_GROUPS.filter(g => !g.adminOnly || activeTeam.admin_relevant !== false).map(group => (
                     <div
                       key={group.key}
                       className={clsx(

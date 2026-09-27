@@ -1,4 +1,5 @@
 import pool from '../config/db.js';
+import { ADMIN_GROUP_ROLES, memberHasRoleSql } from '../utils/teamStaff.js';
 
 // ── POST /api/push/subscribe ─────────────────────────────────────────────
 export const subscribe = async (req, res) => {
@@ -58,7 +59,11 @@ export const getSettings = async (req, res) => {
   try {
     const userId = req.user.id;
 
-    // Подтягиваем настройки + все команды пользователя (даже если настройки ещё не созданы)
+    // Подтягиваем настройки + все команды пользователя (даже если настройки ещё не созданы).
+    // admin_relevant — приходят ли человеку в этой команде уведомления группы
+    // «Администрирование» (дедлайны заявки, состава, подтверждения): только тогда
+    // экран настроек показывает её переключатель. Роли — те же, по которым
+    // pushService выбирает адресатов дедлайнов (utils/teamStaff.js).
     const { rows } = await pool.query(
       `SELECT
          t.id AS team_id,
@@ -72,13 +77,14 @@ export const getSettings = async (req, res) => {
          COALESCE(ns.tournaments, true) AS tournaments,
          COALESCE(ns.friendly, true) AS friendly,
          COALESCE(ns.team_news, true) AS team_news,
-         COALESCE(ns.admin, true) AS admin
+         COALESCE(ns.admin, true) AS admin,
+         ${memberHasRoleSql('$2::text[]')} AS admin_relevant
        FROM team_members tm
        JOIN teams t ON t.id = tm.team_id
        LEFT JOIN notification_settings ns ON ns.user_id = tm.user_id AND ns.team_id = tm.team_id
        WHERE tm.user_id = $1 AND tm.left_at IS NULL
        ORDER BY t.name`,
-      [userId]
+      [userId, ADMIN_GROUP_ROLES]
     );
 
     // Проверяем, есть ли хотя бы одна подписка (устройство зарегистрировано)

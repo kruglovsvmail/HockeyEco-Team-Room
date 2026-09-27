@@ -532,7 +532,8 @@ export const createEvent = async (req, res) => {
         }).catch(() => {});
       }
 
-      // Дедлайны администрирования: заявка (за 2ч), состав (за 2ч), подтверждение товарищеского (за 1ч)
+      // Дедлайны администрирования: заявка (за 2 ч и за 1 ч), состав (за 2 ч),
+      // подтверждение товарищеского (за 1 ч до его дедлайна)
       scheduleMatchDeadlines(newGameId, teamId, gameDateUtc, confirmDeadlineUtc).catch(() => {});
 
       return res.json({

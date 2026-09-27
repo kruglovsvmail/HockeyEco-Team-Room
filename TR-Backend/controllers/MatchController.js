@@ -1,7 +1,7 @@
 import pool from '../config/db.js';
 import { getTeamIdFromRequest } from '../utils/checkPermission.js';
 import { promoteExpiredMatchesToNoResult } from '../utils/matchStatus.js';
-import { sendPushToTeamExcept, cancelScheduledNotifications, getMatchInfo, formatFeeChange, formatSplitCostChange, eventUrl } from '../services/pushService.js';
+import { sendPushToTeamExcept, cancelScheduledNotifications, getMatchInfo, formatFeeChange, formatSplitCostChange, eventUrl, rescheduleMatchDeadlines } from '../services/pushService.js';
 import { parseFeeSettings, mapFeeColumnsToMatchSide, buildFeeUpdate } from '../utils/eventFees.js';
 
 // Матч из адреса — только если команда из запроса в нём играет. requireTeamPermission
@@ -196,12 +196,12 @@ export const updateMatchSchedule = async (req, res) => {
       });
     }).catch(() => {});
 
-    // Матч перенесён — уже запланированные пуши «за 24ч»/«за 2ч» считались от старой
-    // даты и не пересчитывались (в отличие от официальных матчей LMS), из-за чего
-    // приходили не «за N часов до игры», а в случайный момент относительно нового времени.
+    // Матч перенесён — уже запланированные пуши «за 24ч» и дедлайны заявки и состава
+    // считались от старой даты и не пересчитывались (в отличие от официальных матчей
+    // LMS), из-за чего приходили не «за N часов до игры», а в случайный момент
+    // относительно нового времени.
     const gameTime = updatedGameDate.getTime();
     const reminder24 = new Date(gameTime - 24 * 60 * 60 * 1000);
-    const deadline2h = new Date(gameTime - 2 * 60 * 60 * 1000);
 
     matchInfoPromise.then(info => {
       pool.query(
@@ -212,11 +212,8 @@ export const updateMatchSchedule = async (req, res) => {
       ).catch(() => {});
     }).catch(() => {});
 
-    pool.query(
-      `UPDATE scheduled_notifications SET send_at = $1
-       WHERE event_id = $2 AND type IN ('roster_deadline', 'lines_deadline') AND sent = false`,
-      [deadline2h, eventId]
-    ).catch(() => {});
+    // Заявка — за 2 ч и за 1 ч, состав — за 2 ч: каждая строка на своё время
+    rescheduleMatchDeadlines(eventId, updatedGameDate).catch(() => {});
 
     res.json({ success: true, message: 'Параметры расписания успешно сохранены' });
   } catch (err) {
