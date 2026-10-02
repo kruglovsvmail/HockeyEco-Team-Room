@@ -11,17 +11,28 @@ import {
   getEventTypeFromRequest,
 } from '../utils/checkPermission.js';
 
+// Допустимые значения заголовка X-Client-Mode (его ставит getClientMode во фронтенде):
+// установленное приложение на iOS / Android / ПК и обычный браузер на телефоне / ПК.
+// Всё остальное отбрасываем — в users.last_seen_client попадает только этот список.
+const CLIENT_MODES = new Set(['app_ios', 'app_android', 'app_desktop', 'web_mobile', 'web_desktop']);
+
 // Троттлинг в памяти процесса: last_seen_at обновляется не чаще раза в LAST_SEEN_THROTTLE_MS
 // на пользователя, чтобы не писать в БД на каждый авторизованный запрос подряд.
+// Смена способа входа (был браузер — открыл приложение) пишется сразу, без ожидания.
 const lastSeenCache = new Map();
 const LAST_SEEN_THROTTLE_MS = 2 * 60 * 1000;
 
-const touchLastSeen = (userId) => {
+const touchLastSeen = (userId, clientMode) => {
   const now = Date.now();
   const prev = lastSeenCache.get(userId);
-  if (prev && now - prev < LAST_SEEN_THROTTLE_MS) return;
-  lastSeenCache.set(userId, now);
-  pool.query('UPDATE users SET last_seen_at = now() WHERE id = $1', [userId]).catch(() => {});
+  // Часть запросов уходит без X-Client-Mode (загрузка файлов, вложения) — они способ входа
+  // не меняют, поэтому в сравнении и в кэше такие запросы просто не учитываем
+  if (prev && now - prev.at < LAST_SEEN_THROTTLE_MS && (!clientMode || prev.client === clientMode)) return;
+  lastSeenCache.set(userId, { at: now, client: clientMode || prev?.client || null });
+  pool.query(
+    'UPDATE users SET last_seen_at = now(), last_seen_client = COALESCE($2, last_seen_client) WHERE id = $1',
+    [userId, clientMode]
+  ).catch(() => {});
 };
 
 export const verifyToken = (req, res, next) => {
@@ -39,8 +50,9 @@ export const verifyToken = (req, res, next) => {
       return res.status(403).json({ message: 'Недействительный или просроченный токен' });
     }
     req.user = decoded;
+    const clientHeader = req.headers['x-client-mode'];
     // Fire-and-forget — не блокирует и не может провалить основной запрос
-    touchLastSeen(decoded.id);
+    touchLastSeen(decoded.id, CLIENT_MODES.has(clientHeader) ? clientHeader : null);
     next();
   });
 };

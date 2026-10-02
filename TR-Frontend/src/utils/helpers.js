@@ -63,9 +63,26 @@ export const removeToken = () => {
   sessionStorage.removeItem('teampwa_welcome_trial');
 };
 
+/**
+ * Откуда открыт Team-Room: установленным приложением (иконка на экране «Домой», ярлык на ПК)
+ * или обычной вкладкой браузера, и на каком устройстве. Сервер сохраняет это рядом с временем
+ * последнего визита (метрика в LMS). Значения совпадают с CLIENT_MODES в TR-Backend/middleware/auth.js.
+ * iPadOS 13+ выдаёт себя за Mac, поэтому его отличаем по сенсорному экрану.
+ */
+export const getClientMode = () => {
+  const ua = navigator.userAgent;
+  const isIos = /iPhone|iPad|iPod/.test(ua) || (/Macintosh/.test(ua) && navigator.maxTouchPoints > 1);
+  const isAndroid = /Android/.test(ua);
+  const isApp = window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone === true;
+
+  if (isIos) return isApp ? 'app_ios' : 'web_mobile';
+  if (isAndroid) return isApp ? 'app_android' : 'web_mobile';
+  return isApp ? 'app_desktop' : 'web_desktop';
+};
+
 export const getAuthHeaders = () => {
   const token = getToken();
-  return token ? { 'Authorization': `Bearer ${token}` } : {};
+  return token ? { 'Authorization': `Bearer ${token}`, 'X-Client-Mode': getClientMode() } : {};
 };
 
 /**
