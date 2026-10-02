@@ -25,7 +25,8 @@ const getRenderers = () => {
   return renderers;
 };
 
-export const TEMPLATE_VERSION = 1;
+// 2 — фото режутся в квадрат по правилам приложения (utils/photoCrop.js), а не по центру
+export const TEMPLATE_VERSION = 2;
 
 // Масштаб растра: карточка свёрстана в CSS-пикселях, картинка выходит в SCALE раз
 // крупнее. Матч 600 → 1800 px по ширине: фото в слоте 58 px получает 174 px —

@@ -21,6 +21,7 @@ import {
 import s3 from '../config/s3.js';
 import pool from '../config/db.js';
 import { loadMatchLineRows, loadTrainingLineRows } from '../utils/formationRows.js';
+import { getPhotoCropBox } from '../utils/photoCrop.js';
 import {
   renderFormationJpeg, pickAccent, PHOTO_PX, TEMPLATE_VERSION, MATCH_WIDTH, TRAINING_WIDTH,
 } from './formationImageTemplate.js';
@@ -85,9 +86,18 @@ const loadPhoto = async (src) => {
       continue;
     }
     try {
+      // Квадрат — по тем же правилам, что у браузера в приложении (utils/photoCrop.js):
+      // портрет подрезается сверху меньше, чем снизу, чтобы не срезать макушку.
+      // Стороны — уже после поворота по EXIF (ориентации 5–8 меняют их местами).
+      const meta = await sharp(bytes).metadata();
+      const turned = (meta.orientation || 1) >= 5;
+      const width = turned ? meta.height : meta.width;
+      const height = turned ? meta.width : meta.height;
+      const box = getPhotoCropBox(width, height);
       const jpeg = await sharp(bytes)
         .rotate()
-        .resize(PHOTO_PX, PHOTO_PX, { fit: 'cover' })
+        .extract({ left: box.left, top: box.top, width: box.size, height: box.size })
+        .resize(PHOTO_PX, PHOTO_PX)
         .flatten({ background: '#e7e7e7' })
         .jpeg({ quality: 92, chromaSubsampling: '4:4:4' })
         .toBuffer();
