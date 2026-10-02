@@ -136,6 +136,15 @@ export function formatFeeChange(oldFee, newFee, eventLabel) {
   return `Стоимость ${eventLabel} — ${fmt(newFee)}`;
 }
 
+// Параметры доставки для сервиса push (FCM у Android/Chrome, APNs у iPhone).
+// urgency 'high' — без неё Android в режиме экономии батареи (телефон лежит без дела)
+// придерживает уведомление и отдаёт пачкой, когда экран включат.
+// TTL — сколько сервис хранит недоставленное уведомление, пока телефон вне сети.
+// По умолчанию библиотека ставит 4 недели, и выключенный на неделю телефон получал
+// бы «тренировка через час» недельной давности. Сутки — с запасом для переносов
+// и составов, но без протухших напоминаний.
+const PUSH_SEND_OPTIONS = { urgency: 'high', TTL: 24 * 60 * 60 };
+
 // ── Отправка push одному пользователю (на все его устройства) ────────────
 export async function sendPushToUser(userId, { title, body, url, tag, icon }) {
   const { rows: subs } = await pool.query(
@@ -150,13 +159,23 @@ export async function sendPushToUser(userId, { title, body, url, tag, icon }) {
     try {
       await webpush.sendNotification(
         { endpoint: sub.endpoint, keys: { p256dh: sub.p256dh, auth: sub.auth } },
-        payload
+        payload,
+        PUSH_SEND_OPTIONS
       );
       await pool.query('UPDATE push_subscriptions SET last_used_at = NOW() WHERE id = $1', [sub.id]);
       results.push({ id: sub.id, ok: true });
     } catch (err) {
       if (err.statusCode === 410 || err.statusCode === 404) {
+        // Подписки больше нет (приложение удалили, уведомления выключили) — обычное дело
         await pool.query('DELETE FROM push_subscriptions WHERE id = $1', [sub.id]);
+      } else {
+        // Всё остальное — настоящая поломка: неверные VAPID-ключи (401/403), слишком
+        // большое уведомление (413), сервис push лежит (5xx) или нет сети у сервера.
+        // Раньше такие ошибки глотались молча, и узнать о них было неоткуда
+        console.error(
+          `[push] Не доставлено: пользователь ${userId}, подписка ${sub.id}, код ${err.statusCode ?? '—'}:`,
+          err.body || err.message
+        );
       }
       results.push({ id: sub.id, ok: false, status: err.statusCode });
     }

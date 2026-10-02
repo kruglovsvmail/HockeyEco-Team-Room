@@ -4,8 +4,10 @@ import { useFocusRevalidate } from '../hooks/useFocusRevalidate';
 import { usePushSubscription } from '../hooks/usePushSubscription';
 import {
   getAuthHeaders, getImageUrl, hasTeamInClub,
-  DEFAULT_BRAND_COLOR, getUserBrandColor, applyUserBrandColor
+  DEFAULT_BRAND_COLOR, getUserBrandColor, applyUserBrandColor,
+  isIosDevice, isStandaloneApp
 } from '../utils/helpers';
+import { InstallAppSheet } from '../components/InstallAppSheet';
 import { SegmentedControl } from '../ui/SegmentedControl';
 import { DropdownSelect } from '../ui/DropdownSelect';
 import { FadeIn, StaggerContainer } from '../ui/FadeIn';
@@ -413,6 +415,9 @@ function NotificationSettings() {
   // нижнего можно просто не долистать. Показываем что-то одно на выбор.
   const [scope, setScope] = useState('team');
 
+  // Шторка «Как установить» — для iPhone в браузере, где уведомлений без установки нет
+  const [isInstallSheetOpen, setIsInstallSheetOpen] = useState(false);
+
   const [teams, setTeams] = useState([]);
   const [activeTeamId, setActiveTeamId] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -493,6 +498,28 @@ function NotificationSettings() {
       setSaving(false);
     }
   };
+
+  // Safari на iPhone даёт уведомления только приложению с экрана «Домой», во вкладке их
+  // нет вовсе. Раньше здесь было одно «не поддерживается» — тупик; теперь сразу путь к установке
+  if (!isSupported && isIosDevice() && !isStandaloneApp()) {
+    return (
+      <SettingsBlock title="Пуш-уведомления" icon="bell">
+        <p className="text-[14px] text-content-muted font-medium leading-relaxed">
+          На iPhone уведомления приходят только в установленном приложении. Добавьте Team-Room
+          на экран «Домой», откройте его с иконки и включите уведомления там.
+        </p>
+        <button
+          type="button"
+          onClick={() => setIsInstallSheetOpen(true)}
+          className="mt-4 w-full px-4 py-3 rounded-xl border border-brand bg-brand-opacity text-brand flex items-center justify-center gap-2 text-[14px] font-bold tracking-wider outline-none transition-all active:scale-[0.98]"
+        >
+          <Icon name="download" className="w-5 h-5" />
+          Как установить
+        </button>
+        <InstallAppSheet isOpen={isInstallSheetOpen} onClose={() => setIsInstallSheetOpen(false)} />
+      </SettingsBlock>
+    );
+  }
 
   if (!isSupported) {
     return (

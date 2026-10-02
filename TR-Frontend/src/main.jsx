@@ -7,6 +7,8 @@ import App from './App.jsx';
 import './assets/global.css';
 // Кадрирование фото 3:4 в квадратных рамках — глобально, см. utils/photoCrop.js
 import './utils/photoCrop.js';
+// Ловит сигнал браузера «готов установить приложение» до загрузки ленивых страниц
+import './hooks/useInstallPrompt.js';
 
 ReactDOM.createRoot(document.getElementById('root')).render(
   <React.StrictMode>

@@ -6,6 +6,8 @@ import { getImageUrl, isOwnTeam, isTeamOwner, COMMUNITY_CATEGORY_LABELS } from '
 import { ROLES } from '../utils/permissions';
 import { buildEventTargets } from '../utils/eventTargets';
 import { getSubscriptionStatus } from '../utils/subscription';
+import { useInstallPrompt } from '../hooks/useInstallPrompt';
+import { InstallAppSheet } from './InstallAppSheet';
 import clsx from 'clsx';
 
 // Раскладываем команды по клубам: клуб-шапка + вложенные составы, а команды без клуба
@@ -102,6 +104,10 @@ export function Sidebar({
       ].includes(role))
     );
   }, [teams, clubs, isGlobalAdmin, user?.id, user?.communities]);
+
+  // Кнопка «Установить приложение» над бейджем подписки
+  const { canPrompt, isInstalled, promptInstall } = useInstallPrompt();
+  const [isInstallSheetOpen, setIsInstallSheetOpen] = useState(false);
 
   // Статус личной подписки пользователя для бейджа над профилем
   const subscriptionStatus = getSubscriptionStatus(user?.subscriptionExpiresAt || user?.subscription_expires_at);
@@ -548,6 +554,29 @@ export function Sidebar({
 
         </nav>
       </div>
+
+      {/* Установка приложения — единственное место внутри TR, где её предлагают: без
+          баннеров и всплывающих окон. Видна, только пока TR открыт вкладкой браузера.
+          Chrome на Android и ПК ставит приложение сразу системным окном; на iPhone и там,
+          где браузер так не умеет, открывается шторка с шагами */}
+      {!isInstalled && (
+        <button
+          onClick={canPrompt ? promptInstall : () => setIsInstallSheetOpen(true)}
+          className="shrink-0 mx-3 mb-2 px-3 py-2 rounded-xl border border-brand bg-brand-opacity text-brand flex items-center gap-3 text-left transition-all outline-none active:scale-[0.98]"
+        >
+          <Icon name="download" className="w-5 h-5 shrink-0" />
+          <span className="flex flex-col min-w-0">
+            <span className="text-[12px] font-bold tracking-wider leading-tight">
+              Установить приложение
+            </span>
+            <span className="text-[12px] font-semibold tracking-wider leading-tight opacity-80">
+              Уведомления о матчах и тренировках
+            </span>
+          </span>
+        </button>
+      )}
+
+      <InstallAppSheet isOpen={isInstallSheetOpen} onClose={() => setIsInstallSheetOpen(false)} />
 
       {/* Бейдж-индикатор статуса личной подписки, ведёт на страницу оформления подписки */}
       <button

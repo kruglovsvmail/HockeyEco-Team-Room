@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate, Navigate } from 'react-router-dom';
 import clsx from 'clsx';
-import { Share, PlusSquare, Download, AlertCircle } from 'lucide-react';
+import { Download } from 'lucide-react';
 import { PhoneInputLP, PasswordInputLP, EmailInputLP, TextInputLP } from '../ui/Input-LP';
 import { ButtonLP } from '../ui/Button-LP';
 import { CheckboxLP } from '../ui/Checkbox-LP';
@@ -9,6 +9,8 @@ import { BottomSheet } from '../ui/BottomSheet';
 import { PolicySheet } from '../ui/PolicySheet';
 import { Icon } from '../ui/Icon';
 import { getToken, getImageUrl } from '../utils/helpers';
+import { useInstallPrompt } from '../hooks/useInstallPrompt';
+import { InstallAppSheet } from '../components/InstallAppSheet';
 
 // Ключ, под которым мастер регистрации переживает перезагрузку страницы во время звонка
 const REG_STORAGE_KEY = 'hockeyeco_reg_wizard';
@@ -66,54 +68,8 @@ export default function LoginPage() {
   const [policyChecked, setPolicyChecked] = useState(false);
   const [isPolicyOpen, setIsPolicyOpen] = useState(false);
 
-  // PWA states
-  const [deferredPrompt, setDeferredPrompt] = useState(null);
-  const [isInstalled, setIsInstalled] = useState(false);
-  const ua = navigator.userAgent.toLowerCase();
-  const isIos = /ipad|iphone|ipod/.test(ua);
-  const isSafari = isIos && /safari/.test(ua) && !/crios|fxios/.test(ua);
-  const isChrome = /chrome|crios/.test(ua) && !/opr|edg|brave|yabrowser|samsungbrowser|ucbrowser/.test(ua);
-
-  useEffect(() => {
-    const checkInstalled = () => {
-      if (window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone) {
-        setIsInstalled(true);
-      }
-    };
-    checkInstalled();
-
-    const handleBeforeInstallPrompt = (e) => {
-      e.preventDefault();
-      setDeferredPrompt(e);
-    };
-
-    const handleAppInstalled = () => {
-      setIsInstalled(true);
-      setDeferredPrompt(null);
-      setActiveSheet(null);
-    };
-
-    window.addEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
-    window.addEventListener('appinstalled', handleAppInstalled);
-    window.matchMedia('(display-mode: standalone)').addEventListener('change', checkInstalled);
-
-    return () => {
-      window.removeEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
-      window.removeEventListener('appinstalled', handleAppInstalled);
-      window.matchMedia('(display-mode: standalone)').removeEventListener('change', checkInstalled);
-    };
-  }, []);
-
-  const handleInstallClick = async () => {
-    if (!deferredPrompt) return;
-    deferredPrompt.prompt();
-    const { outcome } = await deferredPrompt.userChoice;
-    if (outcome === 'accepted') {
-      setDeferredPrompt(null);
-      setIsInstalled(true);
-      setActiveSheet(null);
-    }
-  };
+  // Установка приложения: сигнал браузера ловится один раз на всё приложение (useInstallPrompt)
+  const { canPrompt, isInstalled, promptInstall } = useInstallPrompt();
 
   // На ПК оболочка приложения сужена до 800px, и рядом с узкой формой входа фон
   // распадался на три вертикальные полосы разного цвета. Класс на <html> включает
@@ -651,13 +607,24 @@ export default function LoginPage() {
             className="tracking-widest">
             Регистрация
           </ButtonLP>
-          <ButtonLP
-            variant="text"
-            onClick={() => setActiveSheet('pwa')}
-            disabled={isInstalled}
-          >
-            {isInstalled ? 'Приложение установлено' : 'Установить PWA (Приложение)'}
-          </ButtonLP>
+          {/* Внутри установленного приложения кнопка не нужна. Если браузер сам готов
+              поставить приложение (Chrome на Android и ПК), ставим сразу, без шторки;
+              шторка с шагами — для iPhone и браузеров, где так нельзя */}
+          {!isInstalled && (
+            <div className="flex flex-col gap-1.5">
+              <ButtonLP
+                variant="outline"
+                onClick={canPrompt ? promptInstall : () => setActiveSheet('pwa')}
+                className="bg-brand-opacity border-brand text-brand"
+              >
+                <Download size={18} />
+                Установить приложение
+              </ButtonLP>
+              <p className="text-[12px] text-content-muted text-center">
+                Уведомления о матчах и тренировках
+              </p>
+            </div>
+          )}
           <button
             type="button"
             onClick={() => setIsPolicyOpen(true)}
@@ -678,64 +645,7 @@ export default function LoginPage() {
       </div>
 
       {/* Шторка установки PWA */}
-      <BottomSheet isOpen={activeSheet === 'pwa'} onClose={() => setActiveSheet(null)}>
-        {!isSafari && !isChrome ? (
-          <div className="text-center pb-2">
-            <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-full bg-surface-level2 text-brand shadow-sm">
-              <AlertCircle size={28} />
-            </div>
-            <h2 className="text-[18px] font-bold text-content-main mb-3">Браузер не поддерживается</h2>
-            <p className="text-content-muted text-[14px] leading-relaxed mb-8 px-2">
-              Установка PWA-приложения доступна только в браузерах <b className="text-content-main">Google Chrome</b> и <b className="text-content-main">Safari</b>. <br className="hidden sm:block"/>
-              Пожалуйста, откройте этот сайт в одном из них.
-            </p>
-           </div>
-        ) : isSafari ? (
-          <div className="pb-2">
-            <div className="mb-12 flex items-center gap-4">
-              <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl bg-surface-level2 shadow-sm overflow-hidden">
-                <img src="/apple-touch-icon.png" alt="App Icon" className="h-full w-full object-cover" onError={(e) => e.target.style.display='none'} />
-              </div>
-              <div>
-                <h2 className="text-[18px] font-bold text-content-main mb-1">Установка на iPhone</h2>
-                <p className="text-[14px] text-content-muted">Добавьте на экран «Домой»</p>
-              </div>
-            </div>
-            <ul className="space-y-4 text-[14px] text-content-main p-5 rounded-2xl border border-surface-level2">
-              <li className="flex gap-4 items-center">
-                <div className="w-8 h-8 shrink-0 bg-surface-base rounded-full flex items-center justify-center font-bold text-brand shadow-sm">1</div>
-                <p>Нажмите <b>Поделиться</b> <Share size={16} className="inline text-brand mx-0.5 relative -top-[1px]" /> в меню браузера снизу.</p>
-              </li>
-              <li className="flex gap-4 items-center">
-                <div className="w-8 h-8 shrink-0 bg-surface-base rounded-full flex items-center justify-center font-bold text-brand shadow-sm">2</div>
-                <p>Выберите <b>На экран «Домой»</b> <PlusSquare size={16} className="inline text-content-main mx-0.5 relative -top-[1px]" />.</p>
-              </li>
-              <li className="flex gap-4 items-center">
-                <div className="w-8 h-8 shrink-0 bg-surface-base rounded-full flex items-center justify-center font-bold text-brand shadow-sm">3</div>
-                <p>Нажмите <b>Добавить</b> в правом верхнем углу.</p>
-              </li>
-            </ul>
-          </div>
-        ) : (
-          <div className="text-center pb-2">
-            <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-full bg-surface-level2 text-brand shadow-sm">
-              <Download size={28} />
-            </div>
-            <h2 className="text-[18px] font-bold text-content-main mb-3">Установить приложение</h2>
-            <p className="text-content-muted text-[14px] mb-8 px-2 leading-relaxed">
-              Установите Heco TR на ваше устройство для быстрого доступа, работы оффлайн и получения уведомлений.
-            </p>
-            <ButtonLP 
-              variant="primary" 
-              onClick={handleInstallClick} 
-              disabled={!deferredPrompt}
-              className="mt-24 mb-12"
-            >
-              Установить сейчас
-            </ButtonLP>
-          </div>
-        )}
-      </BottomSheet>
+      <InstallAppSheet isOpen={activeSheet === 'pwa'} onClose={() => setActiveSheet(null)} />
 
       {/* Шторка Регистрации и Присвоения аккаунта */}
       <BottomSheet isOpen={activeSheet === 'reg'} onClose={() => { setActiveSheet(null); setTimeout(resetReg, 300); }}>

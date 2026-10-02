@@ -64,16 +64,28 @@ export const removeToken = () => {
 };
 
 /**
- * Откуда открыт Team-Room: установленным приложением (иконка на экране «Домой», ярлык на ПК)
- * или обычной вкладкой браузера, и на каком устройстве. Сервер сохраняет это рядом с временем
- * последнего визита (метрика в LMS). Значения совпадают с CLIENT_MODES в TR-Backend/middleware/auth.js.
- * iPadOS 13+ выдаёт себя за Mac, поэтому его отличаем по сенсорному экрану.
+ * Открыт ли Team-Room установленным приложением (с иконки на экране «Домой» или ярлыка на ПК),
+ * а не вкладкой браузера. Браузер не сообщает, установлено ли приложение вообще, —
+ * только то, как открыта текущая страница. navigator.standalone — то же самое у Safari на iPhone.
+ */
+export const isStandaloneApp = () =>
+  window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone === true;
+
+/** iPhone или iPad. iPadOS 13+ выдаёт себя за Mac, поэтому его отличаем по сенсорному экрану. */
+export const isIosDevice = () => {
+  const ua = navigator.userAgent;
+  return /iPhone|iPad|iPod/.test(ua) || (/Macintosh/.test(ua) && navigator.maxTouchPoints > 1);
+};
+
+/**
+ * Откуда открыт Team-Room: установленным приложением или вкладкой браузера, и на каком
+ * устройстве. Сервер сохраняет это рядом с временем последнего визита (метрика в LMS).
+ * Значения совпадают с CLIENT_MODES в TR-Backend/middleware/auth.js.
  */
 export const getClientMode = () => {
-  const ua = navigator.userAgent;
-  const isIos = /iPhone|iPad|iPod/.test(ua) || (/Macintosh/.test(ua) && navigator.maxTouchPoints > 1);
-  const isAndroid = /Android/.test(ua);
-  const isApp = window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone === true;
+  const isIos = isIosDevice();
+  const isAndroid = /Android/.test(navigator.userAgent);
+  const isApp = isStandaloneApp();
 
   if (isIos) return isApp ? 'app_ios' : 'web_mobile';
   if (isAndroid) return isApp ? 'app_android' : 'web_mobile';

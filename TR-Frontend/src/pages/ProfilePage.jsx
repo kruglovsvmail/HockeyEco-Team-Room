@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { removeToken, getAuthHeaders, getImageUrl } from '../utils/helpers';
 import { useFocusRevalidate } from '../hooks/useFocusRevalidate';
+import { releaseDevicePush } from '../hooks/usePushSubscription';
 import { TextInputLP, PhoneInputLP, PasswordInputLP } from '../ui/Input-LP';
 import { ButtonLP } from '../ui/Button-LP';
 import { SegmentedControl } from '../ui/SegmentedControl';
@@ -528,6 +529,10 @@ export function ProfilePage() {
   };
 
   const handleLogout = () => {
+    // До removeToken: отписке нужен токен, чтобы сервер убрал подписку этого аккаунта.
+    // Автоматический выброс на вход (протух токен) устройство не отписывает: войдёт,
+    // скорее всего, тот же человек, и уведомления у него не должны пропадать
+    releaseDevicePush();
     removeToken();
     navigate('/login');
   };

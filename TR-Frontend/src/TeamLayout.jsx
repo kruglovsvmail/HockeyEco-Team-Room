@@ -13,6 +13,8 @@ import { Header } from './components/Header';
 import { ConsentModal } from './components/ConsentModal';
 import { WelcomeTrialModal } from './components/WelcomeTrialModal';
 import { LeagueRosterNoticeModal } from './components/LeagueRosterNoticeModal';
+import { PushPromptModal } from './components/PushPromptModal';
+import { syncPushSubscription } from './hooks/usePushSubscription';
 import { Icon } from './ui/Icon';
 import { PageLoader } from './ui/Loader';
 import { FadeIn } from './ui/FadeIn';
@@ -189,6 +191,11 @@ function TeamLayoutContent() {
 
   // Флаг необходимости показать блокирующую модалку согласия с политикой обработки ПД
   const [needsConsent, setNeedsConsent] = useState(false);
+  // Ответ про согласие и новости от лиги уже пришёл. До этого очередь окон при входе
+  // ещё не известна, и окно про уведомления (последнее в очереди) не показываем —
+  // иначе согласие или новость от лиги всплыли бы прямо поверх него
+  const [isConsentChecked, setIsConsentChecked] = useState(false);
+  const [areLeagueNoticesChecked, setAreLeagueNoticesChecked] = useState(false);
 
   // Приветствие о пробном периоде. Флаг ставит LoginPage при первом входе после активации;
   // читаем его синхронно при монтировании, чтобы окно не мигало после отрисовки лейаута.
@@ -218,6 +225,7 @@ function TeamLayoutContent() {
     } catch (err) {
       // Окно-уведомление не стоит того, чтобы шуметь при сбое сети
     }
+    setAreLeagueNoticesChecked(true);
   }, []);
 
   const dismissLeagueNotice = useCallback(async () => {
@@ -772,7 +780,25 @@ function TeamLayoutContent() {
       .then(json => {
         if (json.success) setNeedsConsent(!!json.needsConsent);
       })
-      .catch(() => {});
+      .catch(() => {})
+      .finally(() => setIsConsentChecked(true));
+  }, [user?.id]);
+
+  // Подписка на уведомления: при входе и при возвращении в приложение тихо отправляем
+  // на сервер ту, что уже есть на устройстве (syncPushSubscription) — если сервер её
+  // потерял, уведомления снова начнут доходить. PWA неделями живёт без перезагрузки,
+  // поэтому одного раза при входе мало; чаще раза в час незачем.
+  const pushSyncedAt = useRef(0);
+  useEffect(() => {
+    if (!user?.id) return;
+    const sync = () => {
+      if (Date.now() - pushSyncedAt.current < 60 * 60_000) return;
+      pushSyncedAt.current = Date.now();
+      syncPushSubscription();
+    };
+    sync();
+    window.addEventListener('app-global-refresh', sync);
+    return () => window.removeEventListener('app-global-refresh', sync);
   }, [user?.id]);
 
   // Уведомления от лиги проверяем при входе и при возвращении в приложение: PWA
@@ -1326,6 +1352,18 @@ function TeamLayoutContent() {
       <LeagueRosterNoticeModal
         notice={!needsConsent && !showWelcomeTrial ? (leagueNotices[0] || null) : null}
         onClose={dismissLeagueNotice}
+      />
+
+      {/* Включить уведомления после установки — самое последнее: ждёт, пока придут
+          ответы про согласие и новости от лиги и все окна выше будут закрыты */}
+      <PushPromptModal
+        canShow={
+          !!user?.id && isConsentChecked && areLeagueNoticesChecked &&
+          !needsConsent && leagueNotices.length === 0 &&
+          // Приветствие без даты окончания доступа не рисуется (WelcomeTrialModal) —
+          // такой флаг очередь не держит
+          !(showWelcomeTrial && (user?.subscriptionExpiresAt || user?.subscription_expires_at))
+        }
       />
 
     </div>
