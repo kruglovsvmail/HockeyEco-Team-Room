@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { getImageUrl, getAuthHeaders, getContrastTextColor, uiFixed } from '../../../utils/helpers';
 import { BottomSheet } from '../../../ui/BottomSheet';
 import { ButtonLP } from '../../../ui/Button-LP';
@@ -14,17 +14,8 @@ import { HintPopover } from '../../../ui/HintPopover';
 import clsx from 'clsx';
 import { PageLoader } from '../../../ui/Loader';
 import { FadeIn } from '../../../ui/FadeIn';
-import { toBlob } from 'html-to-image';
-import { MatchLinesShareCard } from './MatchLinesShareCard';
 import { RosterStaffSheet } from './RosterStaffSheet';
-import dayjs from 'dayjs';
-import utc from 'dayjs/plugin/utc';
-import timezone from 'dayjs/plugin/timezone';
-import 'dayjs/locale/ru';
-
-dayjs.extend(utc);
-dayjs.extend(timezone);
-dayjs.locale('ru');
+import { shareFormationImage } from '../../../hooks/useFormationImage';
 
 // Геометрия слота игрока в составе. Раньше стояла жёсткая ширина 94px: на экранах
 // шире 375px под фамилию появлялось свободное место, но слот его не забирал — и
@@ -81,7 +72,7 @@ const sanitizePosition = (pos) => {
   return validKeys.includes(sanitized) ? sanitized : 'LW';
 };
 
-export const MatchLines = ({ event, initialAttendees = [], initialDraftLines = [], initialIsPublished = false, initialStaffMembers = [], initialFormationFile = null, lateRoster = null, refreshData }) => {
+export const MatchLines = ({ event, initialAttendees = [], initialDraftLines = [], initialIsPublished = false, initialStaffMembers = [], formation = null, lateRoster = null, refreshData }) => {
   const [attendees, setAttendees] = useState(initialAttendees);
   const [draftLines, setDraftLines] = useState(initialDraftLines);
   const [isPublished, setIsPublished] = useState(initialIsPublished);
@@ -90,7 +81,6 @@ export const MatchLines = ({ event, initialAttendees = [], initialDraftLines = [
   const [isEditMode, setIsEditMode] = useState(false);
   const [isDeleteMode, setIsDeleteMode] = useState(false); 
   const [isPublishing, setIsPublishing] = useState(false);
-  const [isSharing, setIsSharing] = useState(false);
   const [isSubmittingRoster, setIsSubmittingRoster] = useState(false);
   const [timeToMatch, setTimeToMatch] = useState(999);
 
@@ -154,7 +144,6 @@ export const MatchLines = ({ event, initialAttendees = [], initialDraftLines = [
   const hasShareAccess = checkAccess('MATCH_LINES_SHARE', event?.my_team_id);
 
   const carouselRef = useRef(null);
-  const shareCardRef = useRef(null);
   const chipsScrollRef = useRef(null);
   const pressTimer = useRef(null);
   const longPressFired = useRef(false);
@@ -170,27 +159,6 @@ export const MatchLines = ({ event, initialAttendees = [], initialDraftLines = [
   const hasTeamColor = isColorsEnabled && !!event?.team_color;
   const activeBrandColor = hasTeamColor ? event.team_color : 'var(--color-brand)';
   const contrastBadgeText = getContrastTextColor(hasTeamColor ? event.team_color : null) === 'text-white' ? '#ffffff' : '#111827';
-
-  // ── Данные шапки для картинки-карточки составов ──────────────────────────
-  const shareHeader = useMemo(() => {
-    const isMyTeamHome = event?.my_team_id === event?.home_team_id;
-    const homeJersey   = event?.home_jersey_type || event?.home_jersey || 'light';
-    const awayJersey   = event?.away_jersey_type || event?.away_jersey || 'dark';
-    const myJerseyType = isMyTeamHome ? homeJersey : awayJersey;
-
-    const arenaTz = event?.arena_timezone || 'UTC';
-    const target  = event?.event_date || event?.game_date;
-    const dObj    = target ? dayjs.utc(target).tz(arenaTz) : null;
-    const daysMap = ['ВС', 'ПН', 'ВТ', 'СР', 'ЧТ', 'ПТ', 'СБ'];
-
-    return {
-      opponentName: event?.opponent_name || '',
-      arenaDisplay: event?.arena_name || '',
-      timeDisplay:  dObj ? dObj.format('HH:mm') : '',
-      dateDisplay:  dObj ? `${dObj.format('D MMMM')}, ${daysMap[dObj.day()]}` : '',
-      jerseyLabel:  myJerseyType === 'dark' ? 'Тёмные' : 'Светлые',
-    };
-  }, [event]);
 
   // Высокопроизводительная синхронизация с централизованным реактивным хранилищем родительского контейнера матча
   useEffect(() => { setAttendees(initialAttendees); }, [initialAttendees]);
@@ -364,8 +332,9 @@ export const MatchLines = ({ event, initialAttendees = [], initialDraftLines = [
         setIsEditMode(false);
         setIsDeleteMode(false);
         setActiveSelection(null);
-        // Перегенерируем и заливаем картинку состава в S3 (не блокируя выход из редактирования)
-        regenerateFormationImage();
+        // Картинку состава сервер уже пересобирает. Прежнюю выбрасываем и ждём новую,
+        // чтобы по «Поделиться» не ушёл старый состав
+        formation?.invalidate();
         refreshData();
       } else {
         setToast({
@@ -443,175 +412,19 @@ export const MatchLines = ({ event, initialAttendees = [], initialDraftLines = [
     }
   };
 
-  // Текстовый состав — фолбэк, если картинку сгенерировать/расшарить не удалось
-  const buildLinesText = () => {
-    const POSITION_DISPLAY = { 'LW': 'ЛН', 'C': 'ЦН', 'RW': 'ПН', 'LD': 'ЛЗ', 'RD': 'ПЗ' };
-    const POSITIONS_ORDER = ['LW', 'C', 'RW', 'LD', 'RD'];
-    const GOALIE_LABELS = { 5: 'ОСН', 6: 'ЗАП', 7: 'РЕЗ' };
-
-    const textParts = [];
-
-    for (let lineNum = 1; lineNum <= 4; lineNum++) {
-      const linePlayers = draftLines.filter(l => l.line_number === lineNum);
-      if (linePlayers.length === 0) continue;
-
-      textParts.push(`ЗВЕНО #${lineNum}`);
-      POSITIONS_ORDER.forEach(pos => {
-        const player = linePlayers.find(l => l.position_in_line === pos);
-        if (player) {
-          textParts.push(`${POSITION_DISPLAY[pos]} - ${player.last_name || ''} ${player.first_name || ''}`);
-        }
+  // Клик «Поделиться». Картинку собирает сервер, на странице она уже загружена —
+  // отдаём её сразу, синхронно (иначе iOS не откроет окно «Поделиться»). Не
+  // получилось её забрать — та же кнопка пробует ещё раз.
+  const handleShareLines = () => {
+    if (draftLines.length === 0 || !formation) return;
+    if (formation.status === 'ready' && formation.file) {
+      shareFormationImage(formation.file, {
+        what: 'состава',
+        notify: (message, type) => setToast({ isOpen: true, message, type }),
       });
-      textParts.push('');
-    }
-
-    const goalies = draftLines.filter(l => l.position_in_line === 'G').sort((a, b) => a.line_number - b.line_number);
-    if (goalies.length > 0) {
-      textParts.push('ВРАТАРИ');
-      goalies.forEach(g => {
-        const label = GOALIE_LABELS[g.line_number] || 'ВР';
-        textParts.push(`${label} - ${g.last_name || ''} ${g.first_name || ''}`);
-      });
-    }
-
-    return textParts.join('\n').trim();
-  };
-
-  const shareAsText = async () => {
-    const text = buildLinesText();
-    if (!text) return;
-    if (navigator.share) {
-      try { await navigator.share({ text }); } catch { /* пользователь закрыл окно */ }
-    } else {
-      try {
-        await navigator.clipboard.writeText(text);
-        setToast({ isOpen: true, message: 'Состав скопирован в буфер обмена', type: 'success' });
-      } catch {
-        setToast({ isOpen: true, message: 'Не удалось скопировать', type: 'danger' });
-      }
-    }
-  };
-
-  // Снимок off-screen карточки в PNG-файл (pixelRatio: 3 → ретина-чёткая ~1800px)
-  const buildShareFile = useCallback(async () => {
-    const node = shareCardRef.current;
-    if (!node) return null;
-    try {
-      const blob = await toBlob(node, {
-        pixelRatio: 3,
-        cacheBust: true,
-        backgroundColor: getComputedStyle(document.documentElement)
-          .getPropertyValue('--color-surface-base').trim() || '#f3f4f6',
-      });
-      if (!blob) return null;
-      const fileName = `sostav_${event?.opponent_name || 'match'}.png`.replace(/[^\wа-яёА-ЯЁ.-]+/gi, '_');
-      return { blob, file: new File([blob], fileName, { type: 'image/png' }) };
-    } catch (e) {
-      console.error('Не удалось подготовить картинку состава:', e);
-      return null;
-    }
-  }, [event?.opponent_name]);
-
-  // Готовый к шерингу файл (загружен из S3 или собран после сохранения)
-  const preparedShareRef = useRef(null); // { blob, file } | null
-  const [isGeneratingFormation, setIsGeneratingFormation] = useState(false);
-  const [isShareReady, setIsShareReady] = useState(false); // есть ли готовый файл (для подписи кнопки)
-  const formationDirtyRef = useRef(false); // картинку надо перегенерировать после прихода свежих draftLines
-
-  // Готовый файл прилетает уже загруженным из S3 родителем (EventDetailsMatch) на старте страницы —
-  // поэтому при открытии вкладки «Состав» шеринг сразу готов, без запроса в момент клика.
-  useEffect(() => {
-    if (initialFormationFile) {
-      preparedShareRef.current = initialFormationFile;
-      setIsShareReady(true);
-    } else if (!preparedShareRef.current) {
-      setIsShareReady(false);
-    }
-  }, [initialFormationFile]);
-
-  // Сгенерировать картинку и перезаписать в S3 — после сохранения состава/параметров или по клику «Генерация»
-  const regenerateFormationImage = useCallback(async () => {
-    setIsGeneratingFormation(true);
-    try {
-      const result = await buildShareFile();
-      if (!result) return;
-      const apiUrl = import.meta.env.VITE_API_URL || '';
-      const fd = new FormData();
-      fd.append('teamId', event.my_team_id);
-      fd.append('image', result.file, result.file.name);
-      const resp = await fetch(`${apiUrl}/api/matches/${event.event_id}/lines/formation-image?teamId=${event.my_team_id}`, {
-        method: 'POST',
-        headers: getAuthHeaders(), // без Content-Type — boundary проставит FormData
-        body: fd,
-      });
-      if (resp.ok) {
-        preparedShareRef.current = result; // сразу готов к моментальному шерингу
-        setIsShareReady(true);
-      }
-    } catch (e) {
-      console.error('Не удалось обновить картинку состава в S3:', e);
-    } finally {
-      setIsGeneratingFormation(false);
-    }
-  }, [buildShareFile, event?.my_team_id, event?.event_id]);
-
-  // Перегенерация после «Сохранить параметры» (номер/капитан/ассистент): ждём, пока приедет
-  // свежий draftLines (через refreshData → проп → синк-эффект), и только тогда снимаем картинку.
-  useEffect(() => {
-    if (!formationDirtyRef.current) return;
-    if (isEditMode || !(hasShareRoleAccess && hasShareAccess) || draftLines.length === 0) return;
-    formationDirtyRef.current = false;
-    regenerateFormationImage();
-  }, [draftLines, isEditMode, hasShareRoleAccess, hasShareAccess, regenerateFormationImage]);
-
-  // Клик «Поделиться»
-  const handleShareLines = async () => {
-    if (draftLines.length === 0) return;
-
-    // Быстрый путь (моб./PWA): файл уже готов → вызываем share СИНХРОННО, сохраняя user activation
-    const prepared = preparedShareRef.current;
-    if (prepared && navigator.canShare && navigator.canShare({ files: [prepared.file] })) {
-      navigator.share({ files: [prepared.file] }).catch(() => { /* пользователь закрыл окно */ });
       return;
     }
-
-    // Иначе — десктоп (буфер/скачивание) или файл ещё не готов → генерим по клику
-    setIsSharing(true);
-    try {
-      const result = prepared || await buildShareFile();
-      if (!result) throw new Error('Не удалось получить картинку');
-      const { blob, file } = result;
-
-      if (navigator.canShare && navigator.canShare({ files: [file] })) {
-        try { await navigator.share({ files: [file] }); } catch { /* закрыл окно */ }
-        return;
-      }
-
-      // Десктоп без file-share — копируем картинку в буфер обмена
-      if (navigator.clipboard && typeof window.ClipboardItem !== 'undefined') {
-        try {
-          await navigator.clipboard.write([new window.ClipboardItem({ 'image/png': blob })]);
-          setToast({ isOpen: true, message: 'Картинка состава скопирована в буфер обмена', type: 'success' });
-          return;
-        } catch { /* буфер недоступен — упадём на скачивание */ }
-      }
-
-      // Последний резерв — скачивание PNG
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = file.name;
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
-      URL.revokeObjectURL(url);
-      setToast({ isOpen: true, message: 'Картинка состава сохранена', type: 'success' });
-    } catch (err) {
-      console.error('Не удалось сгенерировать картинку состава:', err);
-      await shareAsText();
-    } finally {
-      setIsSharing(false);
-    }
+    if (formation.status !== 'loading') formation.invalidate();
   };
 
   const handleCarouselScroll = (e) => {
@@ -800,9 +613,8 @@ export const MatchLines = ({ event, initialAttendees = [], initialDraftLines = [
         if (data.rosterResubmitted) {
           setToast({ isOpen: true, message: 'Изменения сохранены, заявка отправлена заново', type: 'success' });
         }
-        // Параметры (номер/капитан/ассистент) изменились → пометим картинку на перегенерацию,
-        // она запустится, когда приедет свежий draftLines (см. эффект formationDirtyRef)
-        formationDirtyRef.current = true;
+        // Нашивки «К»/«А» есть на картинке — сервер её уже пересобирает, ждём новую
+        formation?.invalidate();
         refreshData();
       } else {
         setSheetError(data.error || 'Ошибка сохранения');
@@ -1100,17 +912,17 @@ export const MatchLines = ({ event, initialAttendees = [], initialDraftLines = [
               {hasShareRoleAccess && draftLines.length > 0 && (
                 hasShareAccess ? (
                   <button
-                    onClick={isShareReady ? handleShareLines : regenerateFormationImage}
-                    disabled={isSharing || isGeneratingFormation}
+                    onClick={handleShareLines}
+                    disabled={!formation || formation.status === 'loading'}
                     style={{ color: activeBrandColor, borderColor: activeBrandColor }}
                     className="flex flex-1 justify-center items-center gap-1 px-3 py-2 rounded-full text-[14px] font-semibold border bg-surface-base transition-all active:scale-95 hover:opacity-80 outline-none cursor-pointer select-none disabled:opacity-60 disabled:active:scale-100"
                   >
-                    {(isSharing || isGeneratingFormation) ? (
+                    {formation?.status === 'loading' ? (
                       <div className="w-3.5 h-3.5 rounded-full border-2 border-current border-t-transparent animate-spin shrink-0" />
                     ) : (
-                      <Icon name={isShareReady ? 'share' : 'refresh'} className="w-4 h-4 shrink-0" />
+                      <Icon name={formation?.status === 'ready' ? 'share' : 'refresh'} className="w-4 h-4 shrink-0" />
                     )}
-                    {isGeneratingFormation ? 'Генерация…' : !isShareReady ? 'Генерация' : isSharing ? 'Готовим…' : 'Поделиться'}
+                    {formation?.status === 'loading' ? 'Готовим…' : formation?.status === 'ready' ? 'Поделиться' : 'Повторить'}
                   </button>
                 ) : (
                   <HintPopover status="no_subscription" className="flex-1">
@@ -1360,19 +1172,6 @@ export const MatchLines = ({ event, initialAttendees = [], initialDraftLines = [
         activeColor={hasTeamColor ? event.team_color : null}
       />
 
-      {/* Off-screen карточка-источник для генерации картинки составов (html-to-image) */}
-      <div aria-hidden="true" style={{ position: 'fixed', left: -99999, top: 0, pointerEvents: 'none' }}>
-        <MatchLinesShareCard
-          ref={shareCardRef}
-          lines={draftLines}
-          accent={activeBrandColor}
-          opponentName={shareHeader.opponentName}
-          dateDisplay={shareHeader.dateDisplay}
-          timeDisplay={shareHeader.timeDisplay}
-          arenaDisplay={shareHeader.arenaDisplay}
-          jerseyLabel={shareHeader.jerseyLabel}
-        />
-      </div>
 
       </div>
     </FadeIn>

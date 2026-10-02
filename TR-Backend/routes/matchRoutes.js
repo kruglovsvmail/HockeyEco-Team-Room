@@ -17,8 +17,7 @@ import {
   cancelFriendlyMatch 
 } from '../controllers/MatchAttendanceController.js';
 import { getMatchLines, saveMatchLines, submitMatchRoster, updateLinePlayer, getRosterStaffCandidates } from '../controllers/MatchLinesController.js';
-import { uploadMatchFormationImage } from '../controllers/FormationImageController.js';
-import upload from '../config/upload.js';
+import { getMatchFormationImageHandler } from '../controllers/FormationImageController.js';
 import {
   getMatchRosters,
   addMatchEvent,
@@ -89,9 +88,9 @@ router.get('/:eventId/lines', verifyToken, requireTeamPermission('INTERNAL_VIEW'
 // сейчас, решает контроллер — до начала матча менеджер сюда по-прежнему не пройдёт.
 router.post('/:eventId/lines', verifyToken, requireTeamPermission(['MATCH_LINES_MANAGE', 'MATCH_FILL_RESULTS']), saveMatchLines);
 
-// Загрузить/перезаписать картинку состава в S3 (генерируется на клиенте после сохранения).
-// Права те же, что у сохранения расстановки: картинка — её снимок.
-router.post('/:eventId/lines/formation-image', verifyToken, requireTeamPermission(['MATCH_LINES_MANAGE', 'MATCH_FILL_RESULTS']), upload.single('image'), uploadMatchFormationImage);
+// Картинка состава — собирает сервер (services/formationImageService.js), приложение
+// только забирает. Права те же, что у просмотра расстановки: картинка — её снимок.
+router.get('/:eventId/lines/formation-image', verifyToken, requireTeamPermission('INTERNAL_VIEW'), getMatchFormationImageHandler);
 
 // Обновить параметры конкретного игрока в черновике (номер, C, A) — доступно руководителям по подписке
 router.put('/:eventId/line-player', verifyToken, requireTeamPermission('MATCH_LINES_EDIT_PLAYER_PARAMS'), updateLinePlayer);

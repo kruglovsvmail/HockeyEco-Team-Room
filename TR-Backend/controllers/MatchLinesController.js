@@ -4,6 +4,8 @@ import { DEADLINES, PERMISSIONS } from '../utils/permissions.js';
 import { sendPushToTeamExcept, getMatchInfo, eventUrl } from '../services/pushService.js';
 import { getLateRosterState, LATE_ROSTER_ERRORS } from '../utils/lateRoster.js';
 import { recalculatePlayerGameStats } from '../utils/playerGameStatsCalculator.js';
+import { loadMatchLineRows } from '../utils/formationRows.js';
+import { refreshMatchFormationImage } from '../services/formationImageService.js';
 
 // Матч для правки расстановки и заявки — только если команда из запроса в нём играет.
 // requireTeamPermission проверяет роль в teamId, но не то, что матч — её. После начала
@@ -502,55 +504,10 @@ export const getMatchLines = async (req, res) => {
     }
 
     const { game_type, division_id } = game;
-    let query = '';
-    let params = [eventId, teamId];
 
-    // Если матч товарищеский (pwa/ext) или кастомный внешний (tournament_ext)
-    if (game_type !== 'official') {
-      query = `
-        SELECT 
-          tfg.player_id, 
-          tfg.line_number, 
-          tfg.position_in_line,
-          COALESCE(tfg.jersey_number, tr.jersey_number) AS jersey_number,
-          COALESCE(tfg.is_captain, tr.is_captain, false) AS is_captain,
-          COALESCE(tfg.is_assistant, tr.is_assistant, false) AS is_assistant,
-          u.first_name, 
-          u.last_name, 
-          COALESCE(tm.photo_url, u.avatar_url) AS avatar_url
-        FROM team_formation_game tfg
-        JOIN users u ON u.id = tfg.player_id
-        LEFT JOIN team_members tm ON tm.user_id = u.id AND tm.team_id = $2 AND tm.left_at IS NULL
-        LEFT JOIN team_rosters tr ON tr.member_id = tm.id AND tr.left_at IS NULL
-        WHERE tfg.game_id = $1 AND tfg.team_id = $2
-      `;
-    } else {
-      // Исключительно для официальных внутренних матчей лиги платформы
-      query = `
-        SELECT 
-          tfg.player_id, 
-          tfg.line_number, 
-          tfg.position_in_line,
-          COALESCE(tfg.jersey_number, tr.jersey_number) AS jersey_number,
-          COALESCE(tfg.is_captain, tr.is_captain, false) AS is_captain,
-          COALESCE(tfg.is_assistant, tr.is_assistant, false) AS is_assistant,
-          u.first_name, 
-          u.last_name, 
-          -- Официальный матч — лиговый контекст: показываем фото из заявки (снимок на момент
-          -- допуска), чтобы состав на матч совпадал с тем, кого лига допустила
-          COALESCE(tr.photo_snapshot_url, tm.photo_url, u.avatar_url) AS avatar_url
-        FROM team_formation_game tfg
-        JOIN users u ON u.id = tfg.player_id
-        LEFT JOIN team_members tm ON tm.user_id = u.id AND tm.team_id = $2 AND tm.left_at IS NULL
-        LEFT JOIN tournament_teams tt ON tt.team_id = $2 AND tt.division_id = $3
-        LEFT JOIN tournament_rosters tr ON tr.player_id = u.id AND tr.tournament_team_id = tt.id AND tr.period_end IS NULL AND tr.application_status = 'approved'
-        WHERE tfg.game_id = $1 AND tfg.team_id = $2
-      `;
-      params.push(division_id);
-    }
+    // Тот же запрос собирает и картинку состава — см. utils/formationRows.js
+    const lines = await loadMatchLineRows(pool, { eventId, teamId, gameType: game_type, divisionId: division_id });
 
-    const result = await pool.query(query, params);
-    
     // «Отправлено» — это не «строки в game_rosters есть», а «отправленная заявка всё ещё
     // совпадает с составом». Разошлась (тренер перерисовал расстановку или секретарь лиги
     // поправил протокол) — кнопка снова становится «Отправить», чтобы расхождение было видно.
@@ -563,7 +520,7 @@ export const getMatchLines = async (req, res) => {
     res.json({
       success: true,
       isPublished: submitted && inSync,
-      lines: result.rows,
+      lines,
       lateRoster,
     });
 
@@ -735,6 +692,10 @@ export const saveMatchLines = async (req, res) => {
 
     await client.query('COMMIT');
 
+    // Картинку состава сервер пересобирает сам, в фоне: ответ на сохранение её не ждёт,
+    // а приложение, перечитав матч, запросит картинку и дождётся уже этой сборки
+    refreshMatchFormationImage(eventId, teamId);
+
     if (late) {
       // Матч уже сыгран: рассылка «состав обновлён» команде ни к чему, а вот
       // статистику матча надо свести с новой заявкой
@@ -871,6 +832,8 @@ export const updateLinePlayer = async (req, res) => {
       : null;
 
     await client.query('COMMIT');
+    // Нашивки «К» и «А» есть на картинке состава — пересобираем её в фоне
+    refreshMatchFormationImage(eventId, teamId);
     // Капитанство уходит в статистику матча — после поздней правки сводим её заново
     if (late) await refreshBoxscoreAfterLateRoster(eventId);
     res.json({ success: true, rosterResubmitted: !!resubmitSource });

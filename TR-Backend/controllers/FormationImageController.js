@@ -1,81 +1,51 @@
-import { PutObjectCommand } from '@aws-sdk/client-s3';
-import s3 from '../config/s3.js';
-import pool from '../config/db.js';
-import { getEventScope } from '../utils/checkPermission.js';
+import { getTeamIdFromRequest, getEventScope } from '../utils/checkPermission.js';
+import { getMatchFormationImage, getTrainingFormationImage } from '../services/formationImageService.js';
 
-const BUCKET = process.env.S3_BUCKET || 'hockeyeco-uploads';
-
-// Чья картинка перезаписывается. Имя файла строится из владельца расстановки, и этим
-// владельцем обязан быть тот, в чьём контексте гейт проверил права, а событие — его
-// событием. Раньше владелец брался из teamId/clubId запроса как есть: тренер команды,
-// приславший вместе со своим teamId чужой clubId, или штаб сообщества с чужим teamId
-// перезаписывали публичную картинку чужой расстановки.
+// Картинка состава (матч) и расстановки (тренировка, солянка). Раньше её снимал
+// телефон сохранившего и заливал сюда же, в S3; теперь собирает сервер
+// (services/formationImageService.js), а приложение только забирает готовую.
 //
-// Матч принадлежит обеим своим командам, тренировка — своей команде или клубу. Для
-// тренировок сообществ имени файла не заведено — такой запрос, как и раньше, получает 400.
-const OWNERS = {
-  game: {
-    sql: 'SELECT id FROM games WHERE id = $1 AND $2::int IN (home_team_id, away_team_id)',
-    scopeKey: 'teamId',
-    prefix: 'team',
-  },
-  team_training: {
-    sql: 'SELECT id FROM team_training WHERE id = $1 AND team_id = $2',
-    scopeKey: 'teamId',
-    prefix: 'team',
-  },
-  club_training: {
-    sql: 'SELECT id FROM club_training WHERE id = $1 AND club_id = $2',
-    scopeKey: 'clubId',
-    prefix: 'club',
-  },
+// Отдаём байтами, а не ссылкой на S3: картинка собирается из закрытых данных
+// команды и в бакете лежит без публичного доступа. ETag — отпечаток данных
+// карточки: браузер переспрашивает с If-None-Match и, пока состав не менялся,
+// получает 304 без тела — картинка не гоняется заново при каждом открытии события.
+
+const knownHash = (req) => {
+  const header = req.get('if-none-match');
+  if (!header) return null;
+  return header.replace(/^W\//, '').replace(/"/g, '').trim() || null;
 };
 
-// Загрузка/перезапись картинки состава в S3 по детерминированному ключу.
-// kind = 'game' (матч) | 'training' (тренировка). Имя файла строится из владельца
-// расстановки (команда или клуб) + eventId, поэтому URL вычисляется на клиенте
-// без хранения в БД.
-const uploadFormation = async (req, res, kind) => {
+const sendFormationImage = (res, result) => {
+  // Расстановки нет (или событие не этого владельца) — 204, а не 404: событие без
+  // состава — обычное дело, и красная строка в консоли на каждое открытие ни к чему
+  if (!result) return res.status(204).end();
+  res.set('ETag', `"${result.hash}"`);
+  res.set('Cache-Control', 'private, no-cache');
+  if (result.notModified) return res.status(304).end();
+  return res.type('image/jpeg').send(result.buffer);
+};
+
+// Чужой матч (команда из запроса в нём не играет) выходит «не найденным» — это
+// проверяет сам сборщик: он ищет матч только среди матчей команды.
+export const getMatchFormationImageHandler = async (req, res) => {
   try {
-    const { eventId } = req.params;
-
-    if (!req.file) {
-      return res.status(400).json({ success: false, error: 'Файл изображения не предоставлен' });
-    }
-
-    // Контекст — только из query. Гейт отрабатывает до multer, когда тела ещё нет, и
-    // проверял ровно query; поля формы приходят позже, и подложить в них можно что угодно.
-    const scope = getEventScope({ query: req.query });
-    const owner = OWNERS[kind === 'game' ? 'game' : scope.eventType];
-    const ownerId = owner && scope[owner.scopeKey];
-
-    if (!ownerId) {
-      return res.status(400).json({ success: false, error: 'Не указан teamId или clubId' });
-    }
-
-    const { rows } = await pool.query(owner.sql, [eventId, ownerId]);
-    if (rows.length === 0) {
-      return res.status(404).json({ success: false, error: 'Событие не найдено' });
-    }
-
-    const key = `roster-formation/${owner.prefix}-${ownerId}-formation_${kind}-${rows[0].id}.png`;
-
-    await s3.send(new PutObjectCommand({
-      Bucket: BUCKET,
-      Key: key,
-      Body: req.file.buffer,
-      ContentType: 'image/png',
-      ACL: 'public-read',
-      // Файл перезаписывается по тому же ключу — запрещаем кэширование, чтобы все видели свежую версию
-      CacheControl: 'no-cache, max-age=0',
-    }));
-
-    return res.json({ success: true, url: `/${key}` });
+    const result = await getMatchFormationImage(req.params.eventId, getTeamIdFromRequest(req), knownHash(req));
+    return sendFormationImage(res, result);
   } catch (err) {
-    console.error('[Formation Image Upload Error]:', err);
-    return res.status(500).json({ success: false, error: 'Не удалось загрузить изображение состава' });
+    console.error('[Formation Image] матч:', err);
+    return res.status(500).json({ success: false, error: 'Не удалось собрать картинку состава' });
   }
 };
 
-export const uploadMatchFormationImage = (req, res) => uploadFormation(req, res, 'game');
-export const uploadTrainingFormationImage = (req, res) => uploadFormation(req, res, 'training');
+// Контекст (команда, клуб, сообщество) — тот же, что проверил гейт; событие
+// сборщик ищет только у этого владельца.
+export const getTrainingFormationImageHandler = async (req, res) => {
+  try {
+    const result = await getTrainingFormationImage(req.params.eventId, getEventScope(req), knownHash(req));
+    return sendFormationImage(res, result);
+  } catch (err) {
+    console.error('[Formation Image] тренировка:', err);
+    return res.status(500).json({ success: false, error: 'Не удалось собрать картинку расстановки' });
+  }
+};

@@ -6,6 +6,7 @@ import { ChipTabs } from '../../../ui/ChipTabs';
 import { HintPopover } from '../../../ui/HintPopover';
 import { PageLoader } from '../../../ui/Loader';
 import { FadeIn } from '../../../ui/FadeIn';
+import { useFormationImage } from '../../../hooks/useFormationImage';
 
 import dayjs from 'dayjs';
 import utc from 'dayjs/plugin/utc';
@@ -120,6 +121,17 @@ export const EventDetailsCommunity = ({ event, openRightPanel }) => {
   }, [localEvent?.event_id, localEvent?.my_community_id, eventType]);
 
   useEffect(() => { fetchAttendees(); }, [fetchAttendees]);
+
+  // Картинка расстановки — как у командной тренировки: собирает сервер, страница
+  // подтягивает заранее, чтобы «Поделиться» срабатывало сразу. Раньше у событий
+  // сообщества её не было вовсе: сервер не знал, куда её класть, и отвечал 400.
+  // Есть ли расстановка, страница не знает — нет, сервер ответит 204 без ошибки.
+  const formation = useFormationImage(
+    localEvent?.event_id && localEvent?.my_community_id
+      ? `/api/trainings/${localEvent.event_id}/lines/formation-image?communityId=${localEvent.my_community_id}&eventType=${eventType}`
+      : null,
+    { refreshKey: attendees, fileName: isGame ? 'rasstanovka_solyanka.jpg' : 'rasstanovka_trenirovka.jpg' },
+  );
 
   // Карточка события (взнос, занятость дорожек, свой тумблер) считается сервером
   // и живёт в кэше календаря — после отметки её надо перечитать, иначе цифры
@@ -342,6 +354,7 @@ export const EventDetailsCommunity = ({ event, openRightPanel }) => {
                       event={localEvent}
                       initialAttendees={attendees}
                       initialStaffMembers={[]}
+                      formation={formation}
                       refreshData={fetchAttendees}
                       maxBlocks={isGame ? GAME_MAX_BLOCKS : undefined}
                     />

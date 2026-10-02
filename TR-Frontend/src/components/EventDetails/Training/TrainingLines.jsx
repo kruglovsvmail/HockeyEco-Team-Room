@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { getAuthHeaders, getContrastTextColor, getImageUrl, uiFixed } from '../../../utils/helpers';
 import { useAccess } from '../../../hooks/useAccess';
 import { PERMISSIONS } from '../../../utils/permissions';
@@ -10,16 +10,7 @@ import { HintPopover } from '../../../ui/HintPopover';
 import clsx from 'clsx';
 import { PageLoader } from '../../../ui/Loader';
 import { FadeIn } from '../../../ui/FadeIn';
-import { toBlob } from 'html-to-image';
-import { TrainingLinesShareCard } from './TrainingLinesShareCard';
-import dayjs from 'dayjs';
-import utc from 'dayjs/plugin/utc';
-import timezone from 'dayjs/plugin/timezone';
-import 'dayjs/locale/ru';
-
-dayjs.extend(utc);
-dayjs.extend(timezone);
-dayjs.locale('ru');
+import { shareFormationImage } from '../../../hooks/useFormationImage';
 
 const getSafeUserFromToken = () => {
   try {
@@ -56,7 +47,6 @@ const SLOT_BOX_STYLE = {
 };
 
 const LINE_POSITIONS = ['LW', 'C', 'RW', 'LD', 'RD'];
-const LINE_LABELS    = { LW: 'ЛН', C: 'ЦН', RW: 'ПН', LD: 'ЛЗ', RD: 'ПЗ' };
 const SLOT_POSITIONS = ['S1','S2','S3','S4','S5','S6','S7','S8','S9'];
 const MIN_BLOCKS_GROUPS = 2;
 const DEFAULT_BLOCKS_LINES = 4;
@@ -154,7 +144,7 @@ function JerseyColorPicker({ blockNum, blockColors, setBlockColors, isEditMode }
 
 // ── Компонент ────────────────────────────────────────────────────────────
 export const TrainingLines = ({
-  event, initialAttendees = [], initialStaffMembers = [], initialFormationFile = null,
+  event, initialAttendees = [], initialStaffMembers = [], formation = null,
   refreshData, maxBlocks = DEFAULT_MAX_BLOCKS,
 }) => {
   const MAX_BLOCKS = maxBlocks;
@@ -166,7 +156,6 @@ export const TrainingLines = ({
   const [isEditMode, setIsEditMode] = useState(false);
   const [isDeleteMode, setIsDeleteMode] = useState(false);
   const [isPublishing, setIsPublishing] = useState(false);
-  const [isSharing, setIsSharing] = useState(false);
   const [mode, setMode] = useState('lines');
   const [blockCount, setBlockCount] = useState(DEFAULT_BLOCKS_LINES);
   const [groupSlots, setGroupSlots] = useState({});
@@ -234,7 +223,6 @@ export const TrainingLines = ({
     : checkAccess('TRAINING_LINES_SHARE', event?.my_team_id);
 
   const carouselRef = useRef(null);
-  const shareCardRef = useRef(null);
   const chipsScrollRef = useRef(null);
   const pressTimer = useRef(null);
   const longPressFired = useRef(false);
@@ -463,8 +451,9 @@ export const TrainingLines = ({
         setIsEditMode(false);
         setIsDeleteMode(false);
         setActiveSelection(null);
-        // Перегенерируем и заливаем картинку расстановки в S3 (не блокируя выход из редактирования)
-        regenerateFormationImage();
+        // Картинку расстановки сервер уже пересобирает. Прежнюю выбрасываем и ждём новую,
+        // чтобы по «Поделиться» не ушла старая расстановка
+        formation?.invalidate();
         if (refreshData) refreshData();
       } else {
         setToast({ isOpen: true, message: data.error || 'Не удалось сохранить расстановку', type: 'danger' });
@@ -474,157 +463,19 @@ export const TrainingLines = ({
   };
 
   // ── Шеринг ─────────────────────────────────────────────────────────────
-  // Текстовый состав — фолбэк, если картинку сгенерировать/расшарить не удалось
-  const buildLinesText = () => {
-    const textParts = [];
-    for (let bn = 1; bn <= blockCount; bn++) {
-      const players = draftLines.filter(l => l.line_number === bn && l.position_in_line !== 'G');
-      if (players.length === 0) continue;
-      const isGroup = players.some(l => isGroupPos(l.position_in_line));
-      textParts.push(isGroup ? `ГРУППА #${bn}` : `ЗВЕНО #${bn}`);
-      if (isGroup) {
-        players.sort((a, b) => SLOT_POSITIONS.indexOf(a.position_in_line) - SLOT_POSITIONS.indexOf(b.position_in_line));
-        players.forEach(p => textParts.push(`- ${p.last_name || ''} ${p.first_name || ''}`));
-      } else {
-        ['LW','C','RW','LD','RD'].forEach(pos => {
-          const p = players.find(l => l.position_in_line === pos);
-          if (p) textParts.push(`${LINE_LABELS[pos]} - ${p.last_name || ''} ${p.first_name || ''}`);
-        });
-      }
-      textParts.push('');
-    }
-    const goalies = draftLines.filter(l => l.position_in_line === 'G').sort((a, b) => a.line_number - b.line_number);
-    if (goalies.length > 0) {
-      textParts.push('ВРАТАРИ');
-      goalies.forEach((g, i) => textParts.push(`G${i + 1} - ${g.last_name || ''} ${g.first_name || ''}`));
-    }
-    return textParts.join('\n').trim();
-  };
-
-  const shareAsText = async () => {
-    const text = buildLinesText();
-    if (!text) return;
-    if (navigator.share) {
-      try { await navigator.share({ text }); } catch { /* пользователь закрыл окно */ }
-    } else {
-      try {
-        await navigator.clipboard.writeText(text);
-        setToast({ isOpen: true, message: 'Состав скопирован в буфер обмена', type: 'success' });
-      } catch { setToast({ isOpen: true, message: 'Не удалось скопировать', type: 'danger' }); }
-    }
-  };
-
-  // Снимок off-screen карточки в PNG-файл (pixelRatio: 3 → ретина-чёткая)
-  const buildShareFile = useCallback(async () => {
-    const node = shareCardRef.current;
-    if (!node) return null;
-    try {
-      const blob = await toBlob(node, {
-        pixelRatio: 3,
-        cacheBust: true,
-        backgroundColor: getComputedStyle(document.documentElement)
-          .getPropertyValue('--color-surface-base').trim() || '#f3f4f6',
+  // Картинку собирает сервер, на странице она уже загружена — отдаём её сразу,
+  // синхронно (иначе iOS не откроет окно «Поделиться»). Не получилось её забрать —
+  // та же кнопка пробует ещё раз.
+  const handleShareLines = () => {
+    if (draftLines.length === 0 || !formation) return;
+    if (formation.status === 'ready' && formation.file) {
+      shareFormationImage(formation.file, {
+        what: 'расстановки',
+        notify: (message, type) => setToast({ isOpen: true, message, type }),
       });
-      if (!blob) return null;
-      return { blob, file: new File([blob], 'rasstanovka_trenirovka.png', { type: 'image/png' }) };
-    } catch (e) {
-      console.error('Не удалось подготовить картинку расстановки:', e);
-      return null;
-    }
-  }, []);
-
-  // Готовый к шерингу файл (загружен из S3 или собран после сохранения)
-  const preparedShareRef = useRef(null); // { blob, file } | null
-  const [isGeneratingFormation, setIsGeneratingFormation] = useState(false);
-  const [isShareReady, setIsShareReady] = useState(false); // есть ли готовый файл (для подписи кнопки)
-
-  // Готовый файл прилетает уже загруженным из S3 родителем (EventDetailsTraining) на старте страницы —
-  // поэтому при открытии вкладки «Расстановка» шеринг сразу готов, без запроса в момент клика.
-  useEffect(() => {
-    if (initialFormationFile) {
-      preparedShareRef.current = initialFormationFile;
-      setIsShareReady(true);
-    } else if (!preparedShareRef.current) {
-      setIsShareReady(false);
-    }
-  }, [initialFormationFile]);
-
-  // Сгенерировать картинку и перезаписать в S3 — после сохранения расстановки или по клику «Генерация»
-  const regenerateFormationImage = useCallback(async () => {
-    setIsGeneratingFormation(true);
-    try {
-      const result = await buildShareFile();
-      if (!result) return;
-      const apiUrl = import.meta.env.VITE_API_URL || '';
-      const fd = new FormData();
-      if (isCommunityEvent) fd.append('communityId', eventCommunityId);
-      else if (isClubEvent) fd.append('clubId', eventClubId);
-      else fd.append('teamId', event.my_team_id);
-      fd.append('image', result.file, result.file.name);
-      // eventType в query обязателен: проверка прав срабатывает до multer, тела ещё нет
-      const resp = await fetch(`${apiUrl}/api/trainings/${event.event_id}/lines/formation-image?${scopeQuery}&eventType=${event.event_type}`, {
-        method: 'POST',
-        headers: getAuthHeaders(), // без Content-Type — boundary проставит FormData
-        body: fd,
-      });
-      if (resp.ok) {
-        preparedShareRef.current = result; // сразу готов к моментальному шерингу
-        setIsShareReady(true);
-      }
-    } catch (e) {
-      console.error('Не удалось обновить картинку расстановки в S3:', e);
-    } finally {
-      setIsGeneratingFormation(false);
-    }
-  }, [buildShareFile, event?.my_team_id, eventClubId, isClubEvent, scopeQuery, event?.event_type, event?.event_id]);
-
-  // Клик «Поделиться»
-  const handleShareLines = async () => {
-    if (draftLines.length === 0) return;
-
-    // Быстрый путь (моб./PWA): файл уже готов → share СИНХРОННО, сохраняя user activation
-    const prepared = preparedShareRef.current;
-    if (prepared && navigator.canShare && navigator.canShare({ files: [prepared.file] })) {
-      navigator.share({ files: [prepared.file] }).catch(() => { /* пользователь закрыл окно */ });
       return;
     }
-
-    setIsSharing(true);
-    try {
-      const result = prepared || await buildShareFile();
-      if (!result) throw new Error('Не удалось получить картинку');
-      const { blob, file } = result;
-
-      if (navigator.canShare && navigator.canShare({ files: [file] })) {
-        try { await navigator.share({ files: [file] }); } catch { /* закрыл окно */ }
-        return;
-      }
-
-      // Десктоп без file-share — копируем картинку в буфер обмена
-      if (navigator.clipboard && typeof window.ClipboardItem !== 'undefined') {
-        try {
-          await navigator.clipboard.write([new window.ClipboardItem({ 'image/png': blob })]);
-          setToast({ isOpen: true, message: 'Картинка расстановки скопирована в буфер обмена', type: 'success' });
-          return;
-        } catch { /* буфер недоступен — упадём на скачивание */ }
-      }
-
-      // Последний резерв — скачивание PNG
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = file.name;
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
-      URL.revokeObjectURL(url);
-      setToast({ isOpen: true, message: 'Картинка расстановки сохранена', type: 'success' });
-    } catch (err) {
-      console.error('Не удалось сгенерировать картинку расстановки:', err);
-      await shareAsText();
-    } finally {
-      setIsSharing(false);
-    }
+    if (formation.status !== 'loading') formation.invalidate();
   };
 
   // ── Управление ─────────────────────────────────────────────────────────
@@ -912,60 +763,6 @@ export const TrainingLines = ({
   const renderBlock = (bn) => mode === 'groups' ? renderGroupBlock(bn) : renderLineBlock(bn);
   const blockTitle = (bn) => mode === 'groups' ? `Группа #${bn}` : `Звено #${bn}`;
 
-  // ── Данные для картинки-карточки расстановки ─────────────────────────────
-  const shareHeader = useMemo(() => {
-    const arenaTz = event?.arena_timezone || 'UTC';
-    const target  = event?.event_date || event?.game_date;
-    const dObj    = target ? dayjs.utc(target).tz(arenaTz) : null;
-    const daysMap = ['ВС', 'ПН', 'ВТ', 'СР', 'ЧТ', 'ПТ', 'СБ'];
-    return {
-      arenaDisplay: event?.arena_name || '',
-      timeDisplay:  dObj ? dObj.format('HH:mm') : '',
-      dateDisplay:  dObj ? `${dObj.format('D MMMM')}, ${daysMap[dObj.day()]}` : '',
-    };
-  }, [event]);
-
-  const shareBlocks = useMemo(() => {
-    const LINE_FW  = [['LW', 'ЛН'], ['C', 'ЦН'], ['RW', 'ПН']];
-    const LINE_DEF = [['LD', 'ЛЗ'], ['RD', 'ПЗ']];
-    return blockNumbers.map((bn) => {
-      const players = draftLines.filter(l => l.line_number === bn && l.position_in_line !== 'G');
-      if (players.length === 0) return null;
-      const color = JERSEY_COLORS.find(c => c.value === (blockColors[bn] || null));
-      const find  = (pos) => players.find(l => l.position_in_line === pos) || null;
-      const base = {
-        num: bn,
-        title: blockTitle(bn),
-        mode,
-        jerseyHex: color?.hex || null,
-        jerseyPlural: color?.plural || null,
-      };
-      if (mode === 'groups') {
-        // Группы свободные — показываем только заполненные слоты, нумеруем по порядку
-        const ordered = [...players].sort(
-          (a, b) => SLOT_POSITIONS.indexOf(a.position_in_line) - SLOT_POSITIONS.indexOf(b.position_in_line)
-        );
-        base.slots = ordered.map((p, i) => ({ player: p, label: `${i + 1}` }));
-      } else {
-        base.forwards = LINE_FW.map(([pos, label]) => ({ player: find(pos), label }));
-        base.defense  = LINE_DEF.map(([pos, label]) => ({ player: find(pos), label }));
-      }
-      return base;
-    }).filter(Boolean);
-  }, [draftLines, blockNumbers, mode, blockColors]);
-
-  const shareGoalies = useMemo(() => {
-    const gs = draftLines.filter(l => l.position_in_line === 'G');
-    if (gs.length === 0) return null;
-    const labels = mode === 'lines' ? ['Осн', 'Зап', 'Рез'] : ['G1', 'G2', 'G3', 'G4'];
-    const count  = mode === 'lines' ? 3 : GOALIE_COUNT;
-    const slots = Array.from({ length: count }, (_, i) => ({
-      player: gs.find(g => g.line_number === GOALIE_LINE_START + i) || null,
-      label: labels[i],
-    }));
-    return { slots };
-  }, [draftLines, mode]);
-
   if (loading) return <PageLoader />;
 
   return (
@@ -1008,12 +805,12 @@ export const TrainingLines = ({
             <>
               {hasShareRoleAccess && draftLines.length > 0 && (
                 hasShareAccess ? (
-                  <button onClick={isShareReady ? handleShareLines : regenerateFormationImage} disabled={isSharing || isGeneratingFormation} style={{ color: activeBrandColor, borderColor: activeBrandColor }}
+                  <button onClick={handleShareLines} disabled={!formation || formation.status === 'loading'} style={{ color: activeBrandColor, borderColor: activeBrandColor }}
                     className="flex flex-1 justify-center items-center gap-1 px-3 py-2 rounded-full text-[14px] font-semibold border bg-surface-base transition-all active:scale-95 hover:opacity-80 outline-none cursor-pointer select-none disabled:opacity-60 disabled:active:scale-100">
-                    {(isSharing || isGeneratingFormation)
+                    {formation?.status === 'loading'
                       ? <div className="w-3.5 h-3.5 rounded-full border-2 border-current border-t-transparent animate-spin shrink-0" />
-                      : <Icon name={isShareReady ? 'share' : 'refresh'} className="w-4 h-4 shrink-0" />}
-                    {isGeneratingFormation ? 'Генерация…' : !isShareReady ? 'Генерация' : isSharing ? 'Готовим…' : 'Поделиться'}
+                      : <Icon name={formation?.status === 'ready' ? 'share' : 'refresh'} className="w-4 h-4 shrink-0" />}
+                    {formation?.status === 'loading' ? 'Готовим…' : formation?.status === 'ready' ? 'Поделиться' : 'Повторить'}
                   </button>
                 ) : (
                   <HintPopover status="no_subscription">
@@ -1146,18 +943,6 @@ export const TrainingLines = ({
       <Toast isOpen={toast.isOpen} message={toast.message} type={toast.type}
         onClose={() => setToast(prev => ({ ...prev, isOpen: false }))} activeColor={hasTeamColor ? event.team_color : null} />
 
-      {/* Off-screen карточка-источник для генерации картинки расстановки (html-to-image) */}
-      <div aria-hidden="true" style={{ position: 'fixed', left: -99999, top: 0, pointerEvents: 'none' }}>
-        <TrainingLinesShareCard
-          ref={shareCardRef}
-          blocks={shareBlocks}
-          goalies={shareGoalies}
-          dateDisplay={shareHeader.dateDisplay}
-          timeDisplay={shareHeader.timeDisplay}
-          arenaDisplay={shareHeader.arenaDisplay}
-          accent={activeBrandColor}
-        />
-      </div>
       </div>
     </FadeIn>
   );

@@ -1,9 +1,10 @@
 import React, { useState, useEffect, useRef, Suspense, lazy, useCallback } from 'react';
-import { getAuthHeaders, getImageUrl, uiFixed, getTrainingTypeIcon, eventRouteType } from '../../../utils/helpers';
+import { getAuthHeaders, uiFixed, getTrainingTypeIcon, eventRouteType } from '../../../utils/helpers';
 import { Icon } from '../../../ui/Icon';
 import { FeeRow } from '../../../ui/FeeRow';
 import { ChipTabs } from '../../../ui/ChipTabs';
 import { useFocusRevalidate } from '../../../hooks/useFocusRevalidate';
+import { useFormationImage } from '../../../hooks/useFormationImage';
 import { usePullToRefresh } from '../../../hooks/usePullToRefresh';
 import { PageLoader } from '../../../ui/Loader';
 import { FadeIn } from '../../../ui/FadeIn';
@@ -277,29 +278,17 @@ export const EventDetailsTraining = ({ event, openRightPanel }) => {
     return () => window.removeEventListener('tr-events-updated', onUpdate);
   }, [fetchAllTrainingData]);
 
-  // Предзагрузка картинки расстановки из S3 заранее (на уровне страницы деталей, а не вкладки «Расстановка»).
-  // Только когда расстановка сохранена: иначе картинки нет, и S3 отвечает 403 — на
-  // каждое открытие тренировки и каждое перечитывание отметок по красной строке в консоли.
-  const [formationFile, setFormationFile] = useState(null);
-  useEffect(() => {
-    if ((!localEvent?.my_team_id && !eventClubId) || !localEvent?.event_id || !trainingData.hasFormation) {
-      setFormationFile(null);
-      return;
-    }
-    const owner = isClubEvent ? `club-${eventClubId}` : `team-${localEvent.my_team_id}`;
-    const url = getImageUrl(`/roster-formation/${owner}-formation_training-${localEvent.event_id}.png`);
-    let cancelled = false;
-    (async () => {
-      try {
-        const resp = await fetch(url, { cache: 'no-store' });
-        if (!resp.ok) { if (!cancelled) setFormationFile(null); return; }
-        const blob = await resp.blob();
-        if (!blob || blob.type !== 'image/png') { if (!cancelled) setFormationFile(null); return; }
-        if (!cancelled) setFormationFile({ blob, file: new File([blob], 'rasstanovka_trenirovka.png', { type: 'image/png' }) });
-      } catch { if (!cancelled) setFormationFile(null); }
-    })();
-    return () => { cancelled = true; };
-  }, [localEvent?.my_team_id, eventClubId, isClubEvent, localEvent?.event_id, trainingData]);
+  // Картинка расстановки подтягивается заранее (на уровне страницы деталей, а не вкладки
+  // «Расстановка») — шеринг срабатывает сразу. Собирает её сервер; при перечитывании
+  // тренировки переспрашиваем, и пока расстановка не менялась, ответ — 304 без тела.
+  // Только когда расстановка сохранена: иначе и спрашивать не о чем.
+  const formationOwner = isClubEvent ? `clubId=${eventClubId}` : `teamId=${localEvent?.my_team_id}`;
+  const formation = useFormationImage(
+    localEvent?.event_id && (isClubEvent || localEvent?.my_team_id)
+      ? `/api/trainings/${localEvent.event_id}/lines/formation-image?${formationOwner}&eventType=${localEvent.event_type}`
+      : null,
+    { enabled: !!trainingData.hasFormation, refreshKey: trainingData, fileName: 'rasstanovka_trenirovka.jpg' },
+  );
 
   // ── Сохранение из шторки — расписание и взнос одним общим запросом ────────
   const handleSave = async () => {
@@ -592,7 +581,7 @@ export const EventDetailsTraining = ({ event, openRightPanel }) => {
                       event={localEvent}
                       initialAttendees={trainingData.attendees}
                       initialStaffMembers={trainingData.staffMembers}
-                      initialFormationFile={formationFile}
+                      formation={formation}
                       refreshData={fetchAllTrainingData}
                     />
                   </FadeIn>

@@ -20,8 +20,7 @@ import {
   updateAdhocDrill,
   copyAdhocToLibrary,
 } from '../controllers/TrainingPlanController.js';
-import { uploadTrainingFormationImage } from '../controllers/FormationImageController.js';
-import upload from '../config/upload.js';
+import { getTrainingFormationImageHandler } from '../controllers/FormationImageController.js';
 import { verifyToken, requireEventPermission } from '../middleware/auth.js';
 
 const router = express.Router();
@@ -94,8 +93,8 @@ router.put('/:eventId/plan/:itemId/adhoc', verifyToken, requireEventPermission('
 // поэтому на общей тренировке это могут сделать оба — копии независимы.
 router.post('/:eventId/plan/:itemId/library', verifyToken, requireEventPermission('TRAINING_PLAN_MANAGE', 'CLUB_TRAINING_PLAN_MANAGE', 'COMMUNITY_TRAINING_PLAN_MANAGE'), copyAdhocToLibrary);
 
-// Загрузить/перезаписать картинку расстановки в S3 (генерируется на клиенте после сохранения).
-// eventType и контекст приходят в query — тело здесь multipart и до multer недоступно.
-router.post('/:eventId/lines/formation-image', verifyToken, requireEventPermission('TRAINING_LINES_MANAGE', 'CLUB_TRAINING_LINES_MANAGE', 'COMMUNITY_LINES_MANAGE'), upload.single('image'), uploadTrainingFormationImage);
+// Картинка расстановки — собирает сервер (services/formationImageService.js), приложение
+// только забирает. Права те же, что у просмотра расстановки; контекст и eventType — в query.
+router.get('/:eventId/lines/formation-image', verifyToken, requireEventPermission('INTERNAL_VIEW', 'INTERNAL_VIEW', 'COMMUNITY_INTERNAL_VIEW'), getTrainingFormationImageHandler);
 
 export default router;

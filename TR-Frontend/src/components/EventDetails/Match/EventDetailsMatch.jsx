@@ -4,6 +4,7 @@ import { Icon } from '../../../ui/Icon';
 import { FeeRow } from '../../../ui/FeeRow';
 import { ChipTabs } from '../../../ui/ChipTabs';
 import { useFocusRevalidate } from '../../../hooks/useFocusRevalidate';
+import { useFormationImage } from '../../../hooks/useFormationImage';
 import { usePullToRefresh } from '../../../hooks/usePullToRefresh';
 import { HintPopover } from '../../../ui/HintPopover';
 import { useAccess } from '../../../hooks/useAccess';
@@ -174,29 +175,20 @@ export const EventDetailsMatch = ({ event, user: userProp, selectedTeam: selecte
 
   useEffect(() => () => { if (rafRef.current) cancelAnimationFrame(rafRef.current); }, []);
 
-  // Предзагрузка картинки состава из S3 заранее (на уровне страницы деталей, а не вкладки «Состав»).
-  // Готовый файл прокидывается в MatchLines, чтобы шеринг был мгновенным без проверки при клике на вкладку.
-  // Только когда состав сохранён: иначе картинки нет, и S3 отвечает 403 — на каждое
-  // открытие матча и каждое перечитывание его данных по красной строке в консоли.
-  const [formationFile, setFormationFile] = useState(null);
-  useEffect(() => {
-    if (!localEvent?.my_team_id || !localEvent?.event_id || !matchData.draftLines?.length) {
-      setFormationFile(null);
-      return;
-    }
-    const url = getImageUrl(`/roster-formation/team-${localEvent.my_team_id}-formation_game-${localEvent.event_id}.png`);
-    let cancelled = false;
-    (async () => {
-      try {
-        const resp = await fetch(url, { cache: 'no-store' });
-        if (!resp.ok) { if (!cancelled) setFormationFile(null); return; }
-        const blob = await resp.blob();
-        if (!blob || blob.type !== 'image/png') { if (!cancelled) setFormationFile(null); return; }
-        if (!cancelled) setFormationFile({ blob, file: new File([blob], 'sostav.png', { type: 'image/png' }) });
-      } catch { if (!cancelled) setFormationFile(null); }
-    })();
-    return () => { cancelled = true; };
-  }, [localEvent?.my_team_id, localEvent?.event_id, matchData]);
+  // Картинка состава подтягивается заранее (на уровне страницы деталей, а не вкладки «Состав»)
+  // и прокидывается в MatchLines — шеринг срабатывает сразу. Собирает её сервер; при каждом
+  // перечитывании матча переспрашиваем, и пока состав не менялся, ответ — 304 без тела.
+  // Только когда расстановка есть: иначе и спрашивать не о чем.
+  const formation = useFormationImage(
+    localEvent?.my_team_id && localEvent?.event_id
+      ? `/api/matches/${localEvent.event_id}/lines/formation-image?teamId=${localEvent.my_team_id}`
+      : null,
+    {
+      enabled: !!matchData.draftLines?.length,
+      refreshKey: matchData,
+      fileName: `sostav_${localEvent?.opponent_name || 'match'}.jpg`.replace(/[^\wа-яёА-ЯЁ.-]+/gi, '_'),
+    },
+  );
 
   if (!localEvent) return null;
 
@@ -410,7 +402,7 @@ export const EventDetailsMatch = ({ event, user: userProp, selectedTeam: selecte
                       initialDraftLines={matchData.draftLines}
                       initialIsPublished={matchData.isPublished}
                       initialStaffMembers={matchData.staffMembers}
-                      initialFormationFile={formationFile}
+                      formation={formation}
                       lateRoster={matchData.lateRoster ?? null}
                       refreshData={fetchAllMatchData}
                     />

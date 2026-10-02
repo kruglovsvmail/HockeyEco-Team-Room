@@ -11,26 +11,10 @@ import {
   getCommunityEventInfo,
   eventUrl,
 } from '../services/pushService.js';
-
-// Расстановка у солянки та же, что у тренировки: те же звенья, те же позиции,
-// та же сетка. Отличаются только таблицы, поэтому имена собираем здесь, а не
-// разводим два почти одинаковых контроллера. Таблица самого события — в EVENT_OWNERS.
-const COMMUNITY_FORMATION = {
-  community_training: {
-    formation: 'community_formation_training',
-    fk: 'community_training_id',
-  },
-  community_game: {
-    formation: 'community_formation_game',
-    fk: 'community_game_id',
-    // На солянке в составе бывают гости — люди без аккаунта, за которых штаб
-    // занял место. У них нет player_id, поэтому в расстановке они хранятся
-    // ссылкой на строку отметки (guest_attendance_id), а наружу отдаются
-    // идентификатором вида «g12»: фронт различает своих и гостей по нему же.
-    guests: true,
-    attendance: 'community_game_attendance',
-  },
-};
+// Таблицы расстановки сообществ и сам запрос расстановки — общие с картинкой состава.
+// Таблица самого события — в EVENT_OWNERS.
+import { COMMUNITY_FORMATION, loadTrainingLineRows } from '../utils/formationRows.js';
+import { refreshTrainingFormationImage } from '../services/formationImageService.js';
 
 // Чьё событие, расстановку которого ставят: таблица и колонка владельца. Строки
 // расстановки и так помечены командой, клубом или сообществом, поэтому чужую
@@ -69,93 +53,19 @@ export const getTrainingLines = async (req, res) => {
   try {
     const { eventId } = req.params;
     const scope = getEventScope(req);
-    const { teamId, clubId, communityId, eventType } = scope;
+    const { teamId, clubId, communityId } = scope;
 
     if (!teamId && !clubId && !communityId) {
       return res.status(400).json({ success: false, error: 'teamId, clubId или communityId обязателен' });
     }
 
-    const communityCfg = COMMUNITY_FORMATION[eventType] || null;
-    const isCommunity = !!communityCfg;
-    const isClub = eventType === 'club_training';
-
     if (!(await loadEvent(eventId, scope))) {
       return res.status(404).json({ success: false, error: 'Событие не найдено' });
     }
 
-    // Тренировка: на общий лёд приходят люди без команды, фото берём из профиля —
-    // как и на клубной тренировке.
-    if (isCommunity) {
-      // Расстановка солянки держит и гостей, поэтому users присоединяется
-      // LEFT JOIN, а имя берётся из отметки, если человека за строкой нет.
-      const result = communityCfg.guests
-        ? await pool.query(`
-            SELECT
-              COALESCE(cf.player_id::text, 'g' || cf.guest_attendance_id) AS player_id,
-              cf.line_number,
-              cf.position_in_line,
-              cf.jersey_color,
-              COALESCE(u.first_name, ga.guest_first_name) AS first_name,
-              COALESCE(u.last_name, ga.guest_last_name) AS last_name,
-              u.avatar_url
-            FROM "${communityCfg.formation}" cf
-            LEFT JOIN users u ON u.id = cf.player_id
-            LEFT JOIN "${communityCfg.attendance}" ga ON ga.id = cf.guest_attendance_id
-            WHERE cf."${communityCfg.fk}" = $1 AND cf.community_id = $2
-          `, [eventId, communityId])
-        : await pool.query(`
-            SELECT
-              cf.player_id,
-              cf.line_number,
-              cf.position_in_line,
-              cf.jersey_color,
-              u.first_name,
-              u.last_name,
-              u.avatar_url
-            FROM "${communityCfg.formation}" cf
-            JOIN users u ON u.id = cf.player_id
-            WHERE cf."${communityCfg.fk}" = $1 AND cf.community_id = $2
-          `, [eventId, communityId]);
-
-      return res.json({ success: true, lines: result.rows });
-    }
-
-    // Клубная расстановка живёт в своей таблице: у неё нет команды, а фото человека
-    // берётся из личного профиля — на общий лёд приходят игроки разных составов.
-    if (isClub) {
-      const result = await pool.query(`
-        SELECT
-          cft.player_id,
-          cft.line_number,
-          cft.position_in_line,
-          cft.jersey_color,
-          u.first_name,
-          u.last_name,
-          u.avatar_url
-        FROM club_formation_training cft
-        JOIN users u ON u.id = cft.player_id
-        WHERE cft.club_training_id = $1 AND cft.club_id = $2
-      `, [eventId, clubId]);
-
-      return res.json({ success: true, lines: result.rows });
-    }
-
-    const result = await pool.query(`
-      SELECT
-        tft.player_id,
-        tft.line_number,
-        tft.position_in_line,
-        tft.jersey_color,
-        u.first_name,
-        u.last_name,
-        COALESCE(tm.photo_url, u.avatar_url) AS avatar_url
-      FROM team_formation_training tft
-      JOIN users u ON u.id = tft.player_id
-      LEFT JOIN team_members tm ON tm.user_id = u.id AND tm.team_id = $2 AND tm.left_at IS NULL
-      WHERE tft.team_training_id = $1 AND tft.team_id = $2
-    `, [eventId, teamId]);
-
-    res.json({ success: true, lines: result.rows });
+    // Тот же запрос собирает и картинку расстановки — см. utils/formationRows.js
+    const lines = await loadTrainingLineRows(pool, eventId, scope);
+    res.json({ success: true, lines });
   } catch (err) {
     console.error('Ошибка получения расстановки тренировки:', err);
     res.status(500).json({ success: false, error: 'Ошибка сервера' });
@@ -249,6 +159,10 @@ export const saveTrainingLines = async (req, res) => {
     }
 
     await client.query('COMMIT');
+
+    // Картинку расстановки сервер пересобирает сам, в фоне: ответ на сохранение её не
+    // ждёт, а приложение, перечитав событие, запросит картинку и дождётся этой сборки
+    refreshTrainingFormationImage(eventId, scope);
 
     // У солянки своя дата (game_date) и свой заголовок: getTrainingInfo такую
     // таблицу не знает, поэтому берём общий помощник событий сообщества.
