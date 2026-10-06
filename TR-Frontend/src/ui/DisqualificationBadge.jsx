@@ -5,21 +5,25 @@ const Pill = ({ children, className = '' }) => (
   <span className={`inline-flex items-center px-1.5 py-0.5 rounded text-[14px] font-bold whitespace-nowrap ${className}`}>{children}</span>
 );
 
+const getPenaltyPillClass = (required, completed) => {
+  if (Number(required) <= 0) return 'bg-surface-level2 text-content-muted';
+  return completed ? 'bg-success/10 text-success' : 'bg-danger/10 text-danger';
+};
+
 // Пилюли одной дисквалификации — тот же формат, что и в LMS (Обяз./Доп. матчи, сумма),
-// просто в цветах TR (danger/success вместо status-rejected/status-accepted).
+// серый = ноль, зелёный = исполнено, красный = осталось исполнить.
 function DisqualificationPills({ d }) {
   const hasSplit = d.mandatory_games != null || d.additional_games != null;
-  const dqServed = d.games_served || 0;
-  const mandatoryServed = hasSplit && d.mandatory_games != null ? Math.min(dqServed, d.mandatory_games) : null;
+  const dqServed = Math.max(Number(d.games_served) || 0, 0);
+  const mandatoryServed = hasSplit && d.mandatory_games != null ? Math.min(dqServed, Number(d.mandatory_games)) : null;
   const additionalServed = hasSplit && d.additional_games != null
-    ? Math.min(Math.max(dqServed - (d.mandatory_games || 0), 0), d.additional_games)
+    ? Math.min(Math.max(dqServed - (Number(d.mandatory_games) || 0), 0), Number(d.additional_games))
     : null;
+  const amount = Number(d.penalty_amount);
 
-  if (!hasSplit && d.penalty_amount == null) {
+  if (!hasSplit && d.games_assigned == null && d.penalty_amount == null) {
     let oldText = '';
-    if (d.penalty_type === 'games' && d.games_assigned != null) {
-      oldText = `Осталось матчей: ${Math.max(d.games_assigned - dqServed, 0)}`;
-    } else if (d.penalty_type === 'time') {
+    if (d.penalty_type === 'time') {
       oldText = `До: ${new Date(d.end_date).toLocaleDateString('ru-RU')}`;
     } else if (d.penalty_type === 'manual') {
       oldText = 'До решения СДК';
@@ -33,14 +37,17 @@ function DisqualificationPills({ d }) {
         <Pill className="bg-surface-level2 text-content-muted">Штраф команды</Pill>
       )}
       {hasSplit && d.mandatory_games != null && (
-        <Pill className="bg-danger/10 text-danger">Обяз. матчи: {mandatoryServed}/{d.mandatory_games}</Pill>
+        <Pill className={getPenaltyPillClass(d.mandatory_games, mandatoryServed >= Number(d.mandatory_games))}>Обяз. матчи: {mandatoryServed}/{d.mandatory_games}</Pill>
       )}
       {hasSplit && d.additional_games != null && (
-        <Pill className="bg-danger/10 text-danger">Доп. матчи: {additionalServed}/{d.additional_games}</Pill>
+        <Pill className={getPenaltyPillClass(d.additional_games, additionalServed >= Number(d.additional_games))}>Доп. матчи: {additionalServed}/{d.additional_games}</Pill>
+      )}
+      {!hasSplit && d.games_assigned != null && (
+        <Pill className={getPenaltyPillClass(d.games_assigned, dqServed >= Number(d.games_assigned))}>Матчи: {Math.min(dqServed, Number(d.games_assigned))}/{d.games_assigned}</Pill>
       )}
       {d.penalty_amount != null && (
-        <Pill className={d.penalty_amount_paid ? 'bg-success/10 text-success' : 'bg-[#007AFF]/10 text-[#007AFF]'}>
-          {d.penalty_amount} ₽ · {d.penalty_amount_paid ? 'оплачен' : 'не оплачен'}
+        <Pill className={getPenaltyPillClass(amount, d.penalty_amount_paid)}>
+          {amount.toLocaleString('ru-RU')} ₽{amount > 0 && ` · ${d.penalty_amount_paid ? 'оплачен' : 'не оплачен'}`}
         </Pill>
       )}
     </div>
