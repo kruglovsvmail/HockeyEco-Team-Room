@@ -116,7 +116,7 @@ function PlayerEditSheet({ isOpen, onClose, player, roster = [], canEdit, canRem
           {canEdit ? (
             <>
               {sheetError && (
-                <div className="p-3 rounded-xl bg-danger/10 text-danger text-[14px] font-medium">
+                <div className="p-3 rounded-xl bg-danger-muted text-danger text-[14px] font-medium">
                   {sheetError}
                 </div>
               )}
@@ -214,7 +214,7 @@ function StaffEditSheet({ isOpen, onClose, person, canEdit, showVerdict, activeB
                   style={role === o.value && activeBrandColor ? { borderColor: activeBrandColor, color: activeBrandColor, backgroundColor: `${activeBrandColor}1a` } : {}}
                   className={clsx(
                     "w-full p-3.5 rounded-xl text-left text-[14px] font-bold border transition-all",
-                    role === o.value ? (!activeBrandColor && "border-brand text-brand bg-brand/10") : "border-surface-border text-content-muted"
+                    role === o.value ? (!activeBrandColor && "border-brand text-brand bg-danger-muted") : "border-surface-border text-content-muted"
                   )}
                 >
                   {o.label}
@@ -349,7 +349,7 @@ function AddPlayerSheet({ isOpen, onClose, teamId, appId, divisionId, targetPosi
           </div>
         )}
         {sheetError && (
-          <div className="p-3 rounded-xl bg-danger/10 text-danger text-[14px] font-medium">{sheetError}</div>
+          <div className="p-3 rounded-xl bg-danger-muted text-danger text-[14px] font-medium">{sheetError}</div>
         )}
         <ButtonLP onClick={handleSubmit} isLoading={isSaving} disabled={selectedIds.size === 0 || isSaving} activeColor={activeBrandColor} className="mt-1">
           Добавить {selectedIds.size > 0 ? `(${selectedIds.size})` : ''}
@@ -452,7 +452,7 @@ function AddStaffSheet({ isOpen, onClose, teamId, appId, targetRole, excludeIds,
           </div>
         )}
         {sheetError && (
-          <div className="p-3 rounded-xl bg-danger/10 text-danger text-[14px] font-medium">{sheetError}</div>
+          <div className="p-3 rounded-xl bg-danger-muted text-danger text-[14px] font-medium">{sheetError}</div>
         )}
         <ButtonLP onClick={handleSubmit} isLoading={isSaving} disabled={selectedIds.size === 0 || isSaving} activeColor={activeBrandColor} className="mt-1">
           Добавить {selectedIds.size > 0 ? `(${selectedIds.size})` : ''}
@@ -928,7 +928,7 @@ export function SeasonRosterDetails({ app, teamId, onClose, activeBrandColor, op
       </div>
 
       {isPaperBlocked && (
-        <div className="p-3 bg-danger/10 border border-danger/20 rounded-2xl text-[14px] font-medium text-danger leading-relaxed">
+        <div className="p-3 bg-danger-muted border border-danger rounded-2xl text-[16px] font-medium text-danger leading-relaxed">
           {(!app.paper_roster_team_url && !pendingPaperFile)
             ? (isLeagueManaged
                 ? 'Этот дивизион требует скан заявочного листа. Загрузите скан заполненного листа и отправьте заявку на проверку — состав в заявку внесёт лига.'
