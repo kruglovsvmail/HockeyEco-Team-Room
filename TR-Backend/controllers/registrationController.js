@@ -1,7 +1,7 @@
 import bcrypt from 'bcrypt';
 import jwt from 'jsonwebtoken';
 import pool from '../config/db.js';
-import transporter from '../config/mail.js';
+import transporter, { mailFrom } from '../config/mail.js';
 import { normalizePhone, isVirtualPhone } from '../utils/phone.js';
 import { startPhoneCheck, getPhoneCheckStatus } from '../services/callService.js';
 import { generateTempPassword } from '../utils/password.js';
@@ -166,7 +166,7 @@ const sendPasswordEmail = async (email, firstName, password, isActivation) => {
   `;
 
   await transporter.sendMail({
-    from: '"HockeyEco Team" <kruglov.svmail@yandex.ru>',
+    from: mailFrom('HockeyEco Team'),
     to: email,
     subject: `${title} | HockeyEco Team`,
     html
