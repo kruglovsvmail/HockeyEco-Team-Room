@@ -286,10 +286,13 @@ export function TournamentsPage() {
                                 {stageName}
                               </div>
                             )}
-                            {Object.entries(tours).map(([tourNum, stageGames]) => (
+                            {/* Матчи без тура — в конце, а не «Тур №0» в начале */}
+                            {Object.entries(tours)
+                              .sort(([a], [b]) => (Number(a) || Infinity) - (Number(b) || Infinity))
+                              .map(([tourNum, stageGames]) => (
                               <div key={tourNum} className="flex flex-col gap-2">
                                 <div className="text-center text-[14px] font-black uppercase tracking-[0.2em] text-content-muted ">
-                                  Тур №{tourNum}
+                                  {Number(tourNum) ? `Тур №${tourNum}` : 'Тур не назначен'}
                                 </div>
                                 <div className="flex flex-col gap-2">
                                   {stageGames.map((game) => (

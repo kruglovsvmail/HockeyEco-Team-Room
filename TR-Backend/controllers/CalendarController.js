@@ -379,6 +379,13 @@ export const getEvents = async (req, res) => {
         LEFT JOIN tournament_teams tt_my ON tt_my.division_id = g.division_id AND tt_my.team_id = ut.team_id
         LEFT JOIN tournament_teams tt_opp ON tt_opp.division_id = g.division_id AND tt_opp.team_id = CASE WHEN g.home_team_id = ut.team_id THEN g.away_team_id ELSE g.home_team_id END
         LEFT JOIN team_external_tournaments ext_tour ON g.external_tournament_id = ext_tour.id
+        -- Матч лиги попадает в календарь, только когда у него есть арена и точное начало.
+        -- Расписание в LMS можно составлять частями (одна дата, время без арены и т.п.) —
+        -- такие матчи видны только в разделе «Турниры». Точное начало LMS считает лишь
+        -- при заполненных арене, дате и времени, арену проверяем на случай старых записей.
+        -- Матчи, которые команды создают сами, это не касается: у них место бывает текстом.
+        WHERE g.game_type IS DISTINCT FROM 'official'
+           OR (g.arena_id IS NOT NULL AND g.game_date IS NOT NULL)
         -- Cancelled-матчи friendly_pwa остаются в выдаче до прохода game_date
         -- (их рисуем как «Матч отменён»). Авто-удаление выше зачищает после game_date.
       ),

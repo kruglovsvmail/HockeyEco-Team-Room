@@ -58,6 +58,12 @@ class TournamentController {
           g.playoff_match_type,
           g.series_number,
           g.game_date,
+          -- Черновик расписания LMS — «часы арены», как их вписал организатор. Есть и у
+          -- матчей без точного начала (только дата, время без арены и т.п.). Строками:
+          -- голый date драйвер pg сдвигает на день на серверах в другом поясе.
+          to_char(g.draft_date, 'YYYY-MM-DD') AS draft_date,
+          to_char(g.draft_time, 'HH24:MI') AS draft_time,
+          a.timezone AS arena_timezone,
           g.home_score,
           g.away_score,
           g.game_number,
@@ -97,8 +103,10 @@ class TournamentController {
             WHEN 'playoff' THEN 2 
             ELSE 3 
           END ASC,
-          g.game_date ASC, 
-          g.game_number ASC,
+          -- Внутри стадии — по туру и номеру матча, а не по дате: у части расписания
+          -- даты ещё нет
+          g.series_number ASC NULLS LAST,
+          g.game_number ASC NULLS LAST,
           g.id ASC
       `;
 

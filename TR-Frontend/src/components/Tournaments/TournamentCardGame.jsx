@@ -1,9 +1,14 @@
 import React, { useRef, useState, useLayoutEffect } from 'react';
 import { Icon } from '../../ui/Icon';
 import dayjs from 'dayjs';
+import utc from 'dayjs/plugin/utc';
+import timezone from 'dayjs/plugin/timezone';
 import clsx from 'clsx';
 import { getImageUrl } from '../../utils/helpers';
 import { HintPopover } from '../../ui/HintPopover';
+
+dayjs.extend(utc);
+dayjs.extend(timezone);
 
 // ─── Основной компонент ───────────────────────────────────────────────────────
 export function TournamentCardGame({ game }) {
@@ -28,11 +33,17 @@ export function TournamentCardGame({ game }) {
 
   const isFinished = game.status === 'finished';
   const isLive = game.status === 'live';
-  const hasTime = !!game.game_date;
   const isPlayedOrLive = isFinished || isLive;
 
-  const formattedTime = hasTime ? dayjs(game.game_date).format('HH:mm') : '—';
-  const formattedDateShort = hasTime ? dayjs(game.game_date).format('DD.MM') : '—';
+  // Дата и время — черновик расписания LMS, «часы арены» как их вписал организатор:
+  // в «Турнирах» видны и матчи, у которых известна только дата или только время.
+  // Матчи без черновика (старые записи) — по точному началу в поясе арены, а не
+  // телефона: иначе на выезде в другой город время бы уехало.
+  const exactStart = game.game_date ? dayjs.utc(game.game_date).tz(game.arena_timezone || 'Europe/Moscow') : null;
+  const formattedDateShort = game.draft_date
+    ? dayjs(game.draft_date).format('DD.MM')
+    : (exactStart ? exactStart.format('DD.MM') : 'Дата уточняется');
+  const formattedTime = game.draft_time || (exactStart ? exactStart.format('HH:mm') : 'время уточняется');
 
   const isTech = game.end_type === 'tech' || !!game.is_technical;
   const isOvertime = game.end_type === 'ot';

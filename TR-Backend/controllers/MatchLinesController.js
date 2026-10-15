@@ -324,7 +324,8 @@ export const isRosterFollowingAttendance = async (client, { eventId, teamId }) =
 
   const gameQuery = await client.query(`SELECT game_date FROM games WHERE id = $1`, [eventId]);
   if (gameQuery.rowCount === 0) return false;
-  if ((new Date(gameQuery.rows[0].game_date) - new Date()) / 1000 / 60 < DEADLINES.ROSTER_SUBMIT_MINUTES) return false;
+  const gameDate = gameQuery.rows[0].game_date;
+  if (gameDate && (new Date(gameDate) - new Date()) / 1000 / 60 < DEADLINES.ROSTER_SUBMIT_MINUTES) return false;
   if (await isMatchStarted(client, eventId)) return false;
 
   const { submitted, inSync } = await compareRosterWithSource(client, { eventId, teamId });
@@ -559,7 +560,9 @@ export const saveMatchLines = async (req, res) => {
     const { game_date, game_type, division_id } = game;
 
     if (!late) {
-      const diffMinutes = (new Date(game_date) - new Date()) / 1000 / 60;
+      // Пока у матча лиги нет точного начала (расписание составляют частями), сроков
+      // нет: new Date(null) — это 1970 год, и срок считался бы давно вышедшим
+      const diffMinutes = game_date ? (new Date(game_date) - new Date()) / 1000 / 60 : Infinity;
 
       if (diffMinutes < DEADLINES.MIDDLE_EDIT_MINUTES) {
         return res.status(403).json({ success: false, error: `Время изменения расстановки вышло (менее ${DEADLINES.MIDDLE_EDIT_MINUTES} минут до старта)` });
@@ -755,7 +758,9 @@ export const updateLinePlayer = async (req, res) => {
     const { game_date, game_type, division_id, allow_jersey, allow_letters } = game;
 
     if (!late) {
-      const diffMinutes = (new Date(game_date) - new Date()) / 1000 / 60;
+      // Пока у матча лиги нет точного начала (расписание составляют частями), сроков
+      // нет: new Date(null) — это 1970 год, и срок считался бы давно вышедшим
+      const diffMinutes = game_date ? (new Date(game_date) - new Date()) / 1000 / 60 : Infinity;
 
       if (diffMinutes < DEADLINES.ROSTER_SUBMIT_MINUTES) {
         return res.status(403).json({ success: false, error: `Время изменения вышло (менее ${DEADLINES.ROSTER_SUBMIT_MINUTES} минут до старта)` });
@@ -876,7 +881,9 @@ export const submitMatchRoster = async (req, res) => {
     const { game_date, game_type, division_id } = game;
 
     if (!late) {
-      const diffMinutes = (new Date(game_date) - new Date()) / 1000 / 60;
+      // Пока у матча лиги нет точного начала (расписание составляют частями), сроков
+      // нет: new Date(null) — это 1970 год, и срок считался бы давно вышедшим
+      const diffMinutes = game_date ? (new Date(game_date) - new Date()) / 1000 / 60 : Infinity;
 
       if (diffMinutes < DEADLINES.ROSTER_SUBMIT_MINUTES) {
         return res.status(403).json({ success: false, error: `Время подачи заявки вышло (менее ${DEADLINES.ROSTER_SUBMIT_MINUTES} минут до старта)` });

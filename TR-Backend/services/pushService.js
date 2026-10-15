@@ -701,10 +701,69 @@ export async function rescheduleMatchDeadlines(gameId, gameDate) {
   }
 }
 
+// ── Матч лиги ушёл из календаря ──────────────────────────────────────────
+// Расписание в LMS составляют частями: точное начало (game_date) есть, только пока
+// у матча заполнены арена, дата и время. Если у уже объявленного матча что-то из
+// этого убрали, он пропадает из календаря TR (CalendarController), а напоминание
+// за сутки и дедлайны заявки остаются и пришли бы по старому времени. Снимаем их
+// и говорим командам, что время уточняется. Объявленный матч узнаём по снимку
+// push_game_date: его ставит поллинг ниже и обнуляет эта функция.
+async function withdrawIncompleteLmsGames() {
+  const { rows: games } = await pool.query(`
+    SELECT g.id, g.home_team_id, g.away_team_id,
+           COALESCE(tt_h.snap_name, ht.name) AS home_name, COALESCE(tt_a.snap_name, at_t.name) AS away_name
+    FROM games g
+    LEFT JOIN teams ht ON ht.id = g.home_team_id
+    LEFT JOIN teams at_t ON at_t.id = g.away_team_id
+    LEFT JOIN tournament_teams tt_h ON tt_h.division_id = g.division_id AND tt_h.team_id = g.home_team_id
+    LEFT JOIN tournament_teams tt_a ON tt_a.division_id = g.division_id AND tt_a.team_id = g.away_team_id
+    WHERE g.game_type = 'official'
+      AND g.push_game_date IS NOT NULL
+      -- Только матчи, которые ещё не должны были пройти по объявленному времени:
+      -- старые записи, где арену стирали до этой правки, тревожить незачем
+      AND g.push_game_date > NOW() - INTERVAL '2 hours'
+      AND (g.game_date IS NULL OR g.arena_id IS NULL)
+      AND g.updated_at > g.push_processed_at
+    LIMIT 30
+  `);
+
+  for (const g of games) {
+    // event_id матча совпадает с id тренировок и собраний — свои строки узнаём ещё
+    // и по ссылке на матч в payload (см. cancelScheduledNotifications)
+    await pool.query(
+      `DELETE FROM scheduled_notifications
+        WHERE event_id = $1 AND community_id IS NULL AND sent = false
+          AND type IN ('event_reminder_24h', 'roster_deadline', 'lines_deadline')
+          AND payload->>'url' = $2`,
+      [g.id, eventUrl('match', g.id)]
+    );
+
+    for (const tid of [g.home_team_id, g.away_team_id].filter(Boolean)) {
+      const oppName = tid === g.home_team_id ? (g.away_name || 'Соперник') : (g.home_name || 'Команда');
+      sendPushToTeam(tid, 'schedule', {
+        title: 'Время матча уточняется',
+        body: `Матч против ${oppName} убран из календаря, пока лига уточняет расписание`,
+        // Карточки матча в календаре больше нет — ведём в «Турниры», где он виден
+        url: '/tournaments',
+        tag: `event-update-${g.id}`,
+      }).catch(() => {});
+    }
+
+    await pool.query(
+      'UPDATE games SET push_processed_at = NOW(), push_game_date = NULL, push_arena_id = NULL WHERE id = $1',
+      [g.id]
+    );
+  }
+}
+
 // ── Крон-поллинг: отслеживание матчей от LMS (official) ─────────────────
 // Ищет новые/изменённые official-матчи и рассылает push + планирует дедлайны.
+// Матч считается объявленным, когда у него есть арена и точное начало — тогда же он
+// появляется в календаре TR.
 export async function pollLmsGames() {
   try {
+    await withdrawIncompleteLmsGames();
+
     const { rows: games } = await pool.query(`
       SELECT g.id, g.game_date, g.home_team_id, g.away_team_id, g.arena_id, g.status,
              g.push_processed_at, g.created_at, g.updated_at, g.custom_timezone,
@@ -721,13 +780,17 @@ export async function pollLmsGames() {
       WHERE g.game_type = 'official'
         AND g.home_team_id IS NOT NULL
         AND g.away_team_id IS NOT NULL
+        AND g.arena_id IS NOT NULL
         AND (g.push_processed_at IS NULL OR g.updated_at > g.push_processed_at)
         AND (g.game_date > NOW() - INTERVAL '2 hours')
       LIMIT 30
     `);
 
     for (const g of games) {
-      const isNew = g.push_processed_at === null;
+      // Снятый с календаря матч (withdrawIncompleteLmsGames) возвращается как новый:
+      // напоминания и дедлайны ставятся заново, но командам это «Матч изменён»
+      const wasWithdrawn = g.push_processed_at !== null && g.push_game_date === null;
+      const isNew = g.push_processed_at === null || wasWithdrawn;
       const tz = g.custom_timezone || g.arena_tz || 'Europe/Moscow';
       const dateStr = formatDateRu(g.game_date, tz);
       const opponent = g.away_name || 'Соперник';
@@ -738,12 +801,21 @@ export async function pollLmsGames() {
         // Новый матч от лиги
         for (const tid of teamIds) {
           const oppName = tid === g.home_team_id ? opponent : homeName;
-          sendPushToTeam(tid, 'tournaments', {
-            title: 'Новый матч от лиги',
-            body: `против ${oppName}, ${dateStr}, ${g.arena_name}`,
-            url: eventUrl('match', g.id),
-            tag: `lms-new-${g.id}`,
-          }).catch(() => {});
+          if (wasWithdrawn) {
+            sendPushToTeam(tid, 'schedule', {
+              title: 'Матч изменён',
+              body: `Новое расписание: против ${oppName}, ${dateStr}, ${g.arena_name}`,
+              url: eventUrl('match', g.id),
+              tag: `event-update-${g.id}`,
+            }).catch(() => {});
+          } else {
+            sendPushToTeam(tid, 'tournaments', {
+              title: 'Новый матч от лиги',
+              body: `против ${oppName}, ${dateStr}, ${g.arena_name}`,
+              url: eventUrl('match', g.id),
+              tag: `lms-new-${g.id}`,
+            }).catch(() => {});
+          }
 
           // Напоминание за 24ч
           if (g.game_date) {
