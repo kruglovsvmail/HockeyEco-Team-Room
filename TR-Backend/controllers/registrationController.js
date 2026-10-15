@@ -419,9 +419,11 @@ class RegistrationController {
           // технический адрес вида temp_...@users.lms — настоящей почтой человека.
           // virtual_code намеренно НЕ гасим: он остаётся рабочим до первого успешного
           // входа, чтобы опечатка в почте не заперла человека без пароля.
+          // Отчество необязательно: не вписал — остаётся то, что было в карточке (если было),
+          // вписал — записываем вписанное.
           const claimed = await client.query(`
             UPDATE users
-            SET email = $1, first_name = $2, last_name = $3, middle_name = $4, birth_date = $5,
+            SET email = $1, first_name = $2, last_name = $3, middle_name = COALESCE($4, middle_name), birth_date = $5,
                 password_hash = $6, phone = $7, phone_verified_at = NOW(),
                 subscription_expires_at = GREATEST(COALESCE(subscription_expires_at, NOW()), NOW() + make_interval(days => $9)),
                 updated_at = NOW()
@@ -442,10 +444,12 @@ class RegistrationController {
           isActivation = true;
           await recordConsent(client, ticket.claimUserId, req);
         } else {
+          // created_via = 'self' — человек зарегистрировался сам (у активации карточки выше
+          // отметка не меняется: аккаунт создал не он). Видно в LMS, раздел «Метрика».
           const created = await client.query(`
             INSERT INTO users (phone, email, first_name, last_name, middle_name, birth_date,
-                               password_hash, status, phone_verified_at, subscription_expires_at)
-            VALUES ($1, $2, $3, $4, $5, $6, $7, 'active', NOW(), NOW() + make_interval(days => $8))
+                               password_hash, status, phone_verified_at, subscription_expires_at, created_via)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, 'active', NOW(), NOW() + make_interval(days => $8), 'self')
             RETURNING id
           `, [
             ticket.phone, ticket.email, ticket.firstName, ticket.lastName,
