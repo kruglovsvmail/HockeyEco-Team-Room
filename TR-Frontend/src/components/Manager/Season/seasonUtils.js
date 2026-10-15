@@ -4,7 +4,7 @@ import { getAuthHeaders } from '../../../utils/helpers';
 // не должен подстраиваться под цвет команды, даже если включено цветовое кодирование.
 export const STATUS_META = {
   draft:    { label: 'Формируется',    dot: 'bg-content-muted',               text: 'text-content-muted' },
-  revision: { label: 'На исправлении', dot: 'bg-blue-500 animate-pulse',      text: 'text-blue-500' },
+  revision: { label: 'На доработке',   dot: 'bg-blue-500 animate-pulse',      text: 'text-blue-500' },
   pending:  { label: 'На проверке',    dot: 'bg-content-muted animate-pulse', text: 'text-content-muted' },
   approved: { label: 'Допущена',       dot: 'bg-success',                     text: 'text-success' },
   rejected: { label: 'Отклонена',      dot: 'bg-danger',                      text: 'text-danger' },

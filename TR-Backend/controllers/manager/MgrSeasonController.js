@@ -69,7 +69,7 @@ const isLeagueManagedRoster = (division) => !division.digital_applications_only 
  * представителя). В дивизионах с league_managed_roster состав ведёт лига, и команде
  * такие операции закрыты в любом статусе. Правка карточки игрока (номер, нашивки,
  * амплуа) и загрузка документов идут с composition = false и остаются команде
- * в статусах «Формируется» и «На исправлении».
+ * в статусах «Формируется» и «На доработке».
  */
 const assertApplicationEditable = async (client, appId, teamId, { composition = false } = {}) => {
   const { rows } = await client.query(`
@@ -539,7 +539,7 @@ export const sendApplicationForReview = async (req, res) => {
 
     const app = rows[0];
     if (!['draft', 'revision'].includes(app.status)) {
-      return res.status(400).json({ success: false, error: 'Заявку можно отправить на проверку только из статуса «Формируется» или «На исправлении»' });
+      return res.status(400).json({ success: false, error: 'Заявку можно отправить на проверку только из статуса «Формируется» или «На доработке»' });
     }
 
     // Бумажный дивизион: пока лига не проверила скан, отправка возможна только с загруженным сканом
@@ -549,7 +549,7 @@ export const sendApplicationForReview = async (req, res) => {
 
     // Представителей требуем только там, где их вносит сама команда. Когда состав ведёт
     // лига, штаб появится уже после проверки — иначе команда не смогла бы отправить
-    // заявку повторно после возврата на исправление.
+    // заявку повторно после возврата на доработку.
     if (!isLeagueManagedRoster(app) && (app.digital_applications_only || app.paper_roster_league_url !== null)) {
       if (parseInt(app.staff_count, 10) === 0) {
         return res.status(400).json({ success: false, error: 'Нельзя отправить заявку: необходимо добавить хотя бы одного представителя команды (тренера или руководителя)' });
@@ -577,7 +577,7 @@ export const uploadApplicationPaper = async (req, res) => {
     }
 
     const app = await assertApplicationOwnership(pool, appId, teamId);
-    // Загружать/менять скан можно только пока заявка формируется или отправлена на исправление —
+    // Загружать/менять скан можно только пока заявка формируется или отправлена на доработку —
     // на рассмотрении, допущенную или отклонённую заявку команда менять не вправе.
     if (!['draft', 'revision'].includes(app.status)) {
       return res.status(400).json({ success: false, error: 'Заявка недоступна для загрузки скана в текущем статусе' });
