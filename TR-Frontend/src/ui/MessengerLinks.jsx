@@ -29,6 +29,13 @@ const toDigits = (phone) => {
   return digits;
 };
 
+// Ссылка «написать в Telegram» по номеру — для мест, где кнопка нужна своей вёрстки
+// (например, широкая кнопка в карточке резервного вратаря). Нет номера — null
+export const getTelegramLink = (phone) => {
+  const digits = toDigits(phone);
+  return digits ? TELEGRAM_LINK(digits) : null;
+};
+
 /**
  * Кнопка «написать» под контактами в карточке человека.
  * Ничего не рисует, если номера нет или он скрыт настройкой приватности.

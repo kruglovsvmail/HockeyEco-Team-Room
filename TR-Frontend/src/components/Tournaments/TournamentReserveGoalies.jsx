@@ -3,7 +3,8 @@ import React from 'react';
 import clsx from 'clsx';
 import { Avatar } from '../../ui/Avatar';
 import { Icon } from '../../ui/Icon';
-import { MessengerLinks } from '../../ui/MessengerLinks';
+import { getTelegramLink } from '../../ui/MessengerLinks';
+import { TelegramLogo } from '../../ui/MessengerLogos';
 import { pluralRu } from '../../utils/helpers';
 
 // Номер в базе лежит как есть (+79991234567) — приводим к читаемому виду.
@@ -18,87 +19,104 @@ const formatPhone = (raw) => {
   return raw;
 };
 
-const savePercent = (g) => (
-  g.shotsAgainst > 0 ? `${((g.saves / g.shotsAgainst) * 100).toFixed(1)}%` : '—'
+// Среднее пропущенных за матч — главная цифра карточки. Процент отражённых для этого
+// не годится: он есть, только если лига ведёт броски, а пропущенные считаются всегда
+const goalsAgainstAverage = (g) => (
+  g.gamesPlayed > 0 ? (g.goalsAgainst / g.gamesPlayed).toFixed(2).replace('.', ',') : '—'
 );
 
-function GoalieStat({ value, label }) {
-  return (
-    <div className="flex flex-col items-center gap-0.5 min-w-0">
-      <span className="text-[16px] font-black text-content-main tabular-nums leading-none">{value}</span>
-      <span className="text-[10px] font-semibold uppercase tracking-wide text-content-muted">{label}</span>
-    </div>
-  );
-}
+/**
+ * Карточка резервного вратаря — в одном стиле с карточкой матча: сверху полоса фактов
+ * (сколько сыграл в воротах в этой лиге и телефон), в середине фото, имя, игровой номер
+ * и главная цифра, внизу — две широкие кнопки связи: «Позвонить» и «Написать».
+ */
+function GoalieCard({ goalie, onOpenProfile }) {
+  const telegramLink = goalie.phone ? getTelegramLink(goalie.phone) : null;
 
-function GoalieCard({ goalie, showShots, onOpenProfile }) {
   return (
     <div className={clsx(
-      "bg-surface-level1 rounded-2xl shadow-md overflow-hidden",
-      goalie.isBlocked && "opacity-60"
+      'bg-surface-level1 rounded-2xl shadow-md overflow-hidden',
+      (goalie.isBlocked || goalie.isUnavailable) && 'opacity-60'
     )}>
+      {/* ── ПОЛОСА ФАКТОВ: сколько матчей сыграл в воротах в этой лиге за все сезоны
+          (за свою команду и резервным; ноль тоже) слева, телефон справа. Команд здесь
+          нет: у резервных их часто нет вовсе ── */}
+      <div className="flex items-center gap-3 px-4 h-9 border-b border-surface-border text-[12px] font-semibold text-content-muted">
+        <span className="flex-1 min-w-0 flex items-center gap-2">
+          {/* Наказание — только там, где оно меняет дело: выход закрыт.
+              Ни вид, ни срок наказания списку не нужны */}
+          {goalie.isBlocked && (
+            <span className="shrink-0 px-1.5 py-0.5 rounded-md bg-red-500/10 text-red-500 text-[10px] font-black uppercase tracking-wider">
+              Дисквал.
+            </span>
+          )}
+          <span className="truncate tabular-nums">
+            {goalie.gamesPlayed} {pluralRu(goalie.gamesPlayed, 'матч', 'матча', 'матчей')}
+            {goalie.shutouts > 0 && ` · ${goalie.shutouts} на ноль`}
+          </span>
+        </span>
+        {/* Номер целиком и текстом — его можно выделить и скопировать. У вратаря без
+            обязательных документов номер не приходит: пока лига его не допустит,
+            договариваться с ним нельзя */}
+        {goalie.phone ? (
+          <span className="shrink-0 tabular-nums text-content-main select-text">{formatPhone(goalie.phone)}</span>
+        ) : goalie.isUnavailable && (
+          <span className="shrink-0 text-content-main">Вратарь не доступен</span>
+        )}
+      </div>
+
+      {/* ── ФОТО, ИМЯ И ГЛАВНАЯ ЦИФРА ── */}
       <div
         onClick={onOpenProfile}
-        className={clsx("flex items-center gap-3 px-4 pt-4", onOpenProfile && "cursor-pointer active:opacity-70 transition-opacity")}
+        className={clsx('flex items-center gap-3 px-4 py-3', onOpenProfile && 'cursor-pointer active:opacity-70 transition-opacity')}
       >
         <Avatar
           photoUrl={goalie.photoUrl}
           firstName={goalie.firstName}
           lastName={goalie.lastName}
-          className="w-12 h-12 rounded-xl bg-surface-level2"
+          className="w-14 h-14 rounded-xl bg-surface-level2"
         />
         <div className="flex flex-col min-w-0 flex-1 leading-tight gap-0.5">
-          <span className="text-[16px] font-bold text-content-main truncate">
-            {goalie.lastName}
-          </span>
+          <span className="text-[18px] font-bold text-content-main truncate">{goalie.lastName}</span>
           <span className="text-[13px] text-content-muted truncate">
             {goalie.firstName}
             {goalie.jerseyNumber != null && <span className="font-bold"> · №{goalie.jerseyNumber}</span>}
           </span>
+          {goalie.note && (
+            <span className="text-[11px] text-content-muted leading-snug line-clamp-2 mt-0.5">{goalie.note}</span>
+          )}
         </div>
-        {/* Наказание показываем только там, где оно меняет дело: выход закрыт.
-            Ни вид, ни срок наказания списку не нужны */}
-        {goalie.isBlocked && (
-          <span className="shrink-0 px-2 py-1 rounded-lg bg-red-500/10 text-red-500 text-[10px] font-black uppercase tracking-wider">
-            Дисквал.
+        <div className="shrink-0 flex flex-col items-end leading-tight">
+          <span className="text-[24px] font-black text-content-main tabular-nums leading-none">
+            {goalsAgainstAverage(goalie)}
           </span>
-        )}
-      </div>
-
-      {(goalie.note || goalie.teams.length > 0) && (
-        <div className="px-4 pt-2 flex flex-col gap-1 text-[12px] leading-snug text-content-muted">
-          {goalie.note && <span>{goalie.note}</span>}
-          {goalie.teams.length > 0 && <span>Выходил за: {goalie.teams.join(', ')}</span>}
+          <span className="text-[10px] font-semibold uppercase tracking-wide text-content-muted mt-1">
+            за один матч
+          </span>
         </div>
-      )}
-
-      {/* Выходы резервным вратарём в этом дивизионе. Броски — только если лига их ведёт */}
-      <div className={clsx(
-        "grid gap-2 px-4 pt-4 pb-4",
-        showShots ? "grid-cols-4" : "grid-cols-3"
-      )}>
-        <GoalieStat value={goalie.gamesPlayed} label={pluralRu(goalie.gamesPlayed, 'матч', 'матча', 'матчей')} />
-        <GoalieStat value={goalie.goalsAgainst} label="пропущ." />
-        {showShots && <GoalieStat value={savePercent(goalie)} label="% отраж." />}
-        <GoalieStat value={goalie.shutouts} label="на ноль" />
       </div>
 
-      {/* Список ради одного — быстро договориться: номер виден целиком (его можно
-          выделить и скопировать), рядом — позвонить и написать в Telegram */}
+      {/* ── СВЯЗЬ: две широкие кнопки, как на макете; сам номер — в полосе сверху ── */}
       {goalie.phone && (
-        <div className="flex items-center gap-2 h-14 px-4 border-t border-surface-border">
-          <span className="flex-1 min-w-0 truncate text-[15px] font-bold text-content-main tabular-nums select-text">
-            {formatPhone(goalie.phone)}
-          </span>
+        <div className="flex border-t border-surface-border">
           <a
             href={`tel:${goalie.phone}`}
-            aria-label="Позвонить"
-            title="Позвонить"
-            className="w-9 h-9 rounded-xl bg-brand text-white flex items-center justify-center shadow-sm shrink-0 outline-none active:scale-90 transition-transform"
+            className="flex-1 min-w-0 h-11 flex items-center justify-center gap-2 text-[13px] font-bold text-brand outline-none active:bg-surface-level2 transition-colors"
           >
-            <Icon name="phone" className="w-5 h-5" />
+            <Icon name="phone" className="w-4 h-4 shrink-0" />
+            Позвонить
           </a>
-          <MessengerLinks phone={goalie.phone} />
+          {telegramLink && (
+            <a
+              href={telegramLink}
+              target="_blank"
+              rel="noreferrer noopener"
+              className="flex-1 min-w-0 h-11 flex items-center justify-center gap-2 border-l border-surface-border text-[13px] font-bold text-content-main outline-none active:bg-surface-level2 transition-colors"
+            >
+              <TelegramLogo className="w-5 h-5 rounded-md overflow-hidden shrink-0" />
+              Написать
+            </a>
+          )}
         </div>
       )}
     </div>
@@ -106,10 +124,6 @@ function GoalieCard({ goalie, showShots, onOpenProfile }) {
 }
 
 export function TournamentReserveGoalies({ goalies, openRightPanel }) {
-  // Колонку % отражённых решаем на весь список, а не по вратарю: у того, кто ещё
-  // не выходил, признака учёта бросков нет, и карточки получались бы разной формы
-  const showShots = goalies.some(g => g.tracksShots);
-
   const handleOpenProfile = (goalie) => {
     if (!openRightPanel || !goalie?.playerId) return;
     openRightPanel('playerProfile', { playerId: goalie.playerId }, 'Профиль игрока');
@@ -117,10 +131,6 @@ export function TournamentReserveGoalies({ goalies, openRightPanel }) {
 
   return (
     <div className="flex flex-col gap-3 w-full">
-      <p className="px-2 text-[13px] leading-relaxed text-content-muted">
-        Если ваш вратарь не выходит на матч, с любым из списка можно договориться напрямую.
-        О замене нужно сообщить организаторам лиги и секретарю матча до его начала.
-      </p>
 
       {goalies.length === 0 ? (
         <div className="text-center py-12 text-[14px] font-bold text-content-subtle uppercase tracking-wider">
@@ -131,11 +141,16 @@ export function TournamentReserveGoalies({ goalies, openRightPanel }) {
           <GoalieCard
             key={goalie.playerId}
             goalie={goalie}
-            showShots={showShots}
             onOpenProfile={openRightPanel ? () => handleOpenProfile(goalie) : null}
           />
         ))
       )}
+
+      {/* Главное, что нужно знать, — о замене сообщают заранее. Внизу, после списка:
+          сначала вратари, потом напоминание */}
+      <p className="px-2 pt-1 text-[13px] leading-snug text-content-muted text-center">
+        О замене вратаря сообщите организаторам лиги и секретарю матча до начала игры.
+      </p>
     </div>
   );
 }

@@ -84,7 +84,8 @@ const Linkified = ({ text }) => {
 function StatTile({ icon, value, label, caption }) {
   return (
     <div className="bg-surface-level1 rounded-2xl shadow-md p-4 flex flex-col gap-2 min-w-0">
-      <div className="flex items-center gap-2 text-content-muted">
+      {/* Подпись плитки со значком — цветом бренда, цифра под ней — основным цветом */}
+      <div className="flex items-center gap-2 text-brand">
         <Icon name={icon} className="w-4 h-4 shrink-0" />
         <span className="text-[10px] font-bold uppercase tracking-widest truncate">{label}</span>
       </div>

@@ -13,6 +13,9 @@ const STAT_ROWS = [
   { key: 'shots_on_goal', label: 'Броски в створ', needsShots: true },
   { key: 'shooting_pct', label: '% реализации', isPercentage: true, needsShots: true },
   { key: 'pp_goals',      label: 'Голы в большинстве' },
+  // Доля большинств, закончившихся голом; большинств не было — прочерк. Знак % уже
+  // стоит у самих чисел, поэтому в подписи его нет — и подпись короче
+  { key: 'pp_pct',        label: 'Реализ. больш.', isPercentage: true },
   { key: 'sh_goals',      label: 'Голы в меньшинстве' },
   { key: 'pim',           label: 'Штрафное время' },
   { key: 'saves',         label: 'Отр. броски', needsShots: true },

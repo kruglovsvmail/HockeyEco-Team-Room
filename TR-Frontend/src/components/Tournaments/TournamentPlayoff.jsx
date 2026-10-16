@@ -1,5 +1,5 @@
 // TournamentPlayoff.jsx
-import React, { useState, useEffect, useMemo, useRef } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import clsx from 'clsx';
 import { Icon } from '../../ui/Icon';
 import { HintPopover } from '../../ui/HintPopover';
@@ -20,17 +20,12 @@ export function TournamentPlayoff({
   // ЖЕЛЕЗНЫЙ ВХОДНОЙ ГВАРД-ЧЕКЕР: Предотвращает падение React, если данные еще не доехали
   if (!bracket || !bracket.matchups) return null;
 
-  const { id: bracketId, matchups } = bracket;
+  const { matchups } = bracket;
 
-  const carouselRef = useRef(null);
-  const timeoutRef = useRef(null);
-  
-  // Локальный стейт активного раунда плей-офф
+  // Локальный стейт активного раунда плей-офф. Раунд переключается только чипсами:
+  // свайп вбок на вкладке «Таблицы» листает «Турнирная таблица / Плей-офф» (общая панель
+  // раздела), и своя карусель раундов с ним спорила
   const [activeRoundId, setActiveRoundId] = useState(null);
-
-  // ЖЕЛЕЗОБЕТОННЫЕ ПРЕДОХРАНИТЕЛИ: Полностью ликвидируют мерцание чипсов и войну систем
-  const isScrollingProgrammatically = useRef(false);
-  const ignoreNextEffect = useRef(false);
 
   // Хелпер сокращения названий раундов для спортивных плейсхолдеров дерева
   const getAbbreviatedRound = (roundName) => {
@@ -110,59 +105,8 @@ export function TournamentPlayoff({
     };
   };
 
-  // 1. СИНХРОНИЗАЦИЯ ИЗ ЧИПСОВ: Авто-скролл к раунду при ручном клике по табу
-  useEffect(() => {
-    if (!carouselRef.current || !activeRoundId) return;
-
-    // Защитный гвард: Если стейт обновился из handleCarouselScroll (свайп пальцем) — блокируем программный скролл
-    if (ignoreNextEffect.current) {
-      ignoreNextEffect.current = false;
-      return;
-    }
-
-    const element = document.getElementById(`round-panel-${bracketId}-${activeRoundId}`);
-    if (element && carouselRef.current) {
-      const containerLeft = carouselRef.current.getBoundingClientRect().left;
-      const elementLeft = element.getBoundingClientRect().left;
-      
-      // Наглухо отключаем реакцию onScroll на время выполнения плавной анимации перехода
-      isScrollingProgrammatically.current = true;
-      carouselRef.current.scrollBy({ left: elementLeft - containerLeft, behavior: 'smooth' });
-
-      if (timeoutRef.current) clearTimeout(timeoutRef.current);
-      timeoutRef.current = setTimeout(() => {
-        isScrollingProgrammatically.current = false;
-      }, 500);
-    }
-  }, [activeRoundId, bracketId]);
-
-  // Очистка таймеров при размонтировании
-  useEffect(() => {
-    return () => {
-      if (timeoutRef.current) clearTimeout(timeoutRef.current);
-    };
-  }, []);
-
   const handleRoundTabClick = (roundId) => {
     setActiveRoundId(roundId);
-  };
-
-  // 2. СИНХРОНИЗАЦИЯ ИЗ СВАЙПА: Подсветка табов при нативном перелистывании экрана пальцем
-  const handleCarouselScroll = () => {
-    if (isScrollingProgrammatically.current) return;
-    if (!carouselRef.current) return;
-    
-    const { scrollLeft, clientWidth } = carouselRef.current;
-    if (clientWidth === 0) return;
-
-    const targetIdx = Math.round(scrollLeft / clientWidth);
-    const targetRound = uniqueRounds[targetIdx];
-    
-    if (targetRound && activeRoundId !== targetRound.id) {
-      // Предотвращаем запуск конфликтующего scrollTo внутри useEffect
-      ignoreNextEffect.current = true;
-      setActiveRoundId(targetRound.id);
-    }
   };
 
   // Рендеринг контента всплывающей подсказки серии игр (HintPopover)
@@ -224,8 +168,14 @@ export function TournamentPlayoff({
   return (
     <div className="flex flex-col gap-3 w-full">
       
-      {/* 1. Навигационные горизонтальные чипсы раундов текущей сетки */}
-      <div className="flex gap-2 overflow-x-auto scrollbar-hide px-0.5 pb-1 snap-x">
+      {/* 1. Навигационные горизонтальные чипсы раундов текущей сетки. Касания не
+          отдаём наверх: прокрутка самих чипсов не должна листать «Таблица / Плей-офф» */}
+      <div
+        className="flex gap-2 overflow-x-auto scrollbar-hide px-0.5 pb-1 snap-x"
+        onTouchStart={(e) => e.stopPropagation()}
+        onTouchMove={(e) => e.stopPropagation()}
+        onTouchEnd={(e) => e.stopPropagation()}
+      >
         {uniqueRounds.map((r) => {
           const isRoundActive = activeRoundId === r.id;
           return (
@@ -244,21 +194,16 @@ export function TournamentPlayoff({
         })}
       </div>
 
-      {/* 2. Карусель раундов (Свайп-модуль текущей сетки) */}
-      <div 
-        ref={carouselRef}
-        onScroll={handleCarouselScroll}
-        className="w-full flex overflow-x-auto snap-x snap-mandatory scrollbar-hide gap-6"
-      >
-        {uniqueRounds.map((round) => {
+      {/* 2. Пары выбранного раунда — без своей горизонтальной прокрутки */}
+      <div className="w-full flex flex-col">
+        {uniqueRounds.filter(round => round.id === activeRoundId).map((round) => {
           const roundMatchups = matchups.filter(m => m.round_id === round.id);
           const isFinalRound = round.name.toLowerCase().includes('финал') && !round.name.toLowerCase().includes('1/');
 
           return (
             <div 
               key={round.id}
-              id={`round-panel-${bracketId}-${round.id}`}
-              className="w-full shrink-0 snap-center flex flex-col gap-4"
+              className="w-full flex flex-col gap-4"
             >
               <div className="flex flex-col gap-3.5 relative">
                 {roundMatchups.map((matchup) => {

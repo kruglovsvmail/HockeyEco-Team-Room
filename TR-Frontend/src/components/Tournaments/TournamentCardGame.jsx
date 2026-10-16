@@ -242,9 +242,10 @@ export function TournamentCardGame({ game }) {
         <div className="flex flex-col items-center justify-center text-center shrink-0 px-1 min-w-[92px] self-start pt-1.5">
           {isPlayedOrLive ? (
             <div className="flex items-center font-black text-[30px] tracking-tighter justify-center leading-none tabular-nums">
-              <span className={homeIsLoser ? 'text-content-subtle' : scoreColorClass}>{homeScoreDisplay}</span>
+              {/* Счёт обеих команд одного цвета; проигравшего выдаёт только название */}
+              <span className={scoreColorClass}>{homeScoreDisplay}</span>
               <span className="text-content-subtle text-[20px] font-bold px-1.5 pb-1">:</span>
-              <span className={awayIsLoser ? 'text-content-subtle' : scoreColorClass}>{awayScoreDisplay}</span>
+              <span className={scoreColorClass}>{awayScoreDisplay}</span>
             </div>
           ) : (
             // Время начала — в капсуле с часами, а не крупными цифрами: «21:30»

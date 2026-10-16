@@ -1,15 +1,13 @@
 // TournamentsPage.jsx
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { useOutletContext } from 'react-router-dom';
-import clsx from 'clsx';
 import { FadeIn } from '../ui/FadeIn';
 import { Icon } from '../ui/Icon';
 import { TournamentPageHeader, TOURNAMENT_CARD_HEIGHT, TOURNAMENT_CARD_HEIGHT_COLLAPSED } from '../components/Tournaments/TournamentPageHeader';
 import { getAuthHeaders } from '../utils/helpers';
 import { PageLoader } from '../ui/Loader';
 import { TournamentMatches } from '../components/Tournaments/TournamentMatches';
-import { TournamentTable } from '../components/Tournaments/TournamentTable';
-import { TournamentPlayoff } from '../components/Tournaments/TournamentPlayoff';
+import { TournamentTables } from '../components/Tournaments/TournamentTables';
 import { TournamentStat } from '../components/Tournaments/TournamentStat';
 import { TournamentNominations } from '../components/Tournaments/TournamentNominations';
 import { TournamentOverview } from '../components/Tournaments/TournamentOverview';
@@ -24,7 +22,7 @@ const TOURNAMENT_TABS = [
 
 // Вкладки по данным дивизиона: номинации — если лига их завела (в карточке топ-7, отсюда
 // и название), резервные вратари — если механика включена и список не пуст
-const NOMINATIONS_TAB = { id: 'nominations', label: 'ТОП-7' };
+const NOMINATIONS_TAB = { id: 'nominations', label: 'Лидеры' };
 const RESERVE_TAB = { id: 'reserve', label: 'Рез. вратари' };
 const OVERVIEW_TAB = { id: 'overview', label: 'О дивизионе' };
 
@@ -413,47 +411,18 @@ export function TournamentsPage() {
                 )
               )}
 
-              {/* ВКЛАДКА: ТАБЛИЦЫ И СЕТКИ */}
+              {/* ВКЛАДКА: ТАБЛИЦЫ — «Турнирная таблица / Плей-офф» в той же панели, что туры */}
               {activeTab === 'tables' && (
                 isTablesLoading ? <PageLoader /> : (
-                  <div className="flex flex-col gap-8">
-                    
-                    <TournamentTable 
-                      standings={standings} 
-                      expandedTeams={expandedTeams} 
-                      onToggleTeam={toggleTeamAccordion} 
-                    />
-
-                    <div className="flex flex-col gap-2 mt-2">
-                      <div className="text-center text-[14px] font-bold uppercase tracking-[0.1em] text-content-muted">
-                        Плей-офф
-                      </div>
-
-                      {playoffs.length === 0 ? (
-                        <div className="text-center py-8 text-[12px] italic font-semibold  text-content-subtle uppercase tracking-wider bg-surface-base rounded-2xl border border-surface-border">
-                          Матчи плей-офф еще не сформированы
-                        </div>
-                      ) : (
-                        <div className="flex flex-col gap-6">
-                          {sortedBrackets.map((bracket, index) => (
-                            <div key={bracket.id} className={clsx("flex flex-col gap-4 w-full", index > 0 && "mt-6 pt-6 border-t border-surface-border")}>
-                              {!bracket.is_main && (
-                                <div className="text-left text-[10px] font-black uppercase tracking-[0.12em] text-content-muted pl-1 opacity-90">
-                                  {bracket.name}
-                                </div>
-                              )}
-                              
-                              <TournamentPlayoff
-                                bracket={bracket}
-                                games={games}
-                              />
-                            </div>
-                          ))}
-                        </div>
-                      )}
-                    </div>
-
-                  </div>
+                  <TournamentTables
+                    standings={standings}
+                    expandedTeams={expandedTeams}
+                    onToggleTeam={toggleTeamAccordion}
+                    brackets={sortedBrackets}
+                    games={games}
+                    scrollContainerRef={scrollRef}
+                    headerOffset={TOURNAMENT_CARD_HEIGHT_COLLAPSED + tabsHeight}
+                  />
                 )
               )}
 
@@ -472,12 +441,14 @@ export function TournamentsPage() {
                 )
               )}
 
-              {/* ВКЛАДКА: ТОП-7 (НОМИНАЦИИ) */}
+              {/* ВКЛАДКА: ЛИДЕРЫ (НОМИНАЦИИ) */}
               {activeTab === 'nominations' && (
                 isNominationsLoading && nominations.length === 0 ? <PageLoader /> : (
                   <TournamentNominations
                     nominations={nominations}
                     openRightPanel={openRightPanel}
+                    scrollContainerRef={scrollRef}
+                    headerOffset={TOURNAMENT_CARD_HEIGHT_COLLAPSED + tabsHeight}
                   />
                 )
               )}

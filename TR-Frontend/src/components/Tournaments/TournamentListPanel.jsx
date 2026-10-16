@@ -399,9 +399,11 @@ export function TournamentListPanel({ activeDivisionId, activeTournament, onSele
                     type="button"
                     aria-pressed={isActive}
                     onClick={() => handleDivisionSelect(division)}
-                    className={clsx('w-full min-h-[60px] flex items-center gap-3 px-3 py-2.5 text-left transition-colors focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-brand', isActive ? 'bg-brand-opacity text-brand' : 'text-content-main active:bg-surface-level2')}
+                    className={clsx('w-full min-h-[60px] flex items-center gap-4 px-3 py-2.5 text-left transition-colors focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-brand', isActive ? 'bg-brand-opacity text-brand' : 'text-content-main active:bg-surface-level2')}
                   >
-                    <Logo url={division.logoUrl} className="w-10 h-10" />
+                    {/* Логотип скромнее названия: 32px — у дивизионов одной лиги эмблемы часто
+                        одинаковые, и крупные они только повторяли друг друга */}
+                    <Logo url={division.logoUrl} className="w-8 h-8" />
                     <span className="flex flex-col min-w-0 flex-1">
                       {/* Короткое название дивизиона, если лига его задала — в одну строку до
                           края, не влезло — многоточие. Подпись под ним держит место всегда,

@@ -446,6 +446,21 @@ export const getMatchStats = async (req, res) => {
         WHERE game_id = $1 AND event_type = 'penalty'
         GROUP BY team_id
       ),
+      pp_chances AS (
+        -- Удаления, дающие сопернику большинство: team_id здесь — наказанная команда,
+        -- а большинство достаётся другой. Одно нарушение — одна группа строк
+        -- (penalty_group_id — id первой строки; «2+10» — две строки, но одно удаление),
+        -- поэтому считаем группы, а не строки. Обоюдные удаления (penalty_pair_id на
+        -- первой строке группы) большинства не дают — так же решает панель секретаря
+        -- (coincidentRowIds в LMS). Пара разного размера считается грубо — без большинства
+        SELECT ge.team_id, COUNT(DISTINCT COALESCE(ge.penalty_group_id, ge.id))::int AS chances
+        FROM "public"."game_events" ge
+        JOIN "public"."game_events" head ON head.id = COALESCE(ge.penalty_group_id, ge.id)
+        WHERE ge.game_id = $1 AND ge.event_type = 'penalty'
+          AND ge.penalty_class IN ('minor', 'double_minor', 'major', 'match')
+          AND head.penalty_pair_id IS NULL
+        GROUP BY ge.team_id
+      ),
       shots_faced_stats AS (
         -- Все броски в створ по вратарям команды (team_id = команда вратаря).
         -- shots_entries — сколько ячеек вообще заполнено. Различать сумму и факт
@@ -533,6 +548,9 @@ export const getMatchStats = async (req, res) => {
         COALESCE(ag.goals_from_shot, 0)::int AS away_goals_from_shot,
         COALESCE(hp.pim, 0)::int          AS home_pim,
         COALESCE(ap.pim, 0)::int          AS away_pim,
+        -- Большинства хозяев — это удаления гостей, и наоборот
+        COALESCE(appc.chances, 0)::int    AS home_pp_chances,
+        COALESCE(hppc.chances, 0)::int    AS away_pp_chances,
         COALESCE(hsf.shots_faced, 0)::int AS home_shots_faced,
         COALESCE(asf.shots_faced, 0)::int AS away_shots_faced,
         COALESCE(hsf.shots_entries, 0)::int AS home_shots_entries,
@@ -552,6 +570,8 @@ export const getMatchStats = async (req, res) => {
       LEFT JOIN goal_stats ag    ON ag.team_id IS NOT DISTINCT FROM gi.away_team_id
       LEFT JOIN penalty_stats hp ON hp.team_id IS NOT DISTINCT FROM gi.home_team_id
       LEFT JOIN penalty_stats ap ON ap.team_id IS NOT DISTINCT FROM gi.away_team_id
+      LEFT JOIN pp_chances hppc  ON hppc.team_id IS NOT DISTINCT FROM gi.home_team_id
+      LEFT JOIN pp_chances appc  ON appc.team_id IS NOT DISTINCT FROM gi.away_team_id
       LEFT JOIN shots_faced_stats   hsf  ON hsf.team_id = COALESCE(gi.home_team_id, -1)
       LEFT JOIN shots_faced_stats   asf  ON asf.team_id = COALESCE(gi.away_team_id, -1)
       LEFT JOIN ga_from_shot_stats  hga  ON hga.conceding_team_id IS NOT DISTINCT FROM gi.home_team_id
@@ -834,6 +854,10 @@ export const getMatchStats = async (req, res) => {
 
     // % отражённых вратарей команды = saves / броски в створ ПО НАШИМ ВРАТАРЯМ.
     // (Не делим на SOG соперника, потому что пустые ворота в знаменатель не идут.)
+    // Реализация большинства: голы в большинстве к числу большинств. Большинств не было —
+    // процент не определён, на фронте прочерк
+    const ppPct = (goals, chances) => (chances > 0 ? parseFloat((goals / chances * 100).toFixed(1)) : null);
+
     const homeSavePct = r.home_shots_faced > 0
       ? parseFloat((homeSaves / r.home_shots_faced * 100).toFixed(1)) : 0;
     const awaySavePct = r.away_shots_faced > 0
@@ -879,6 +903,8 @@ export const getMatchStats = async (req, res) => {
           shots_on_goal: homeHasFor ? homeShotsOnGoal : null,
           shooting_pct: homeHasFor && homeShotsOnGoal > 0 ? homeShootingPct : null,
           pp_goals: r.home_pp_goals,
+          pp_chances: r.home_pp_chances,
+          pp_pct: ppPct(r.home_pp_goals, r.home_pp_chances),
           sh_goals: r.home_sh_goals,
           pim: r.home_pim,
           saves: homeHasAgainst ? homeSaves : null,
@@ -891,6 +917,8 @@ export const getMatchStats = async (req, res) => {
           shots_on_goal: awayHasFor ? awayShotsOnGoal : null,
           shooting_pct: awayHasFor && awayShotsOnGoal > 0 ? awayShootingPct : null,
           pp_goals: r.away_pp_goals,
+          pp_chances: r.away_pp_chances,
+          pp_pct: ppPct(r.away_pp_goals, r.away_pp_chances),
           sh_goals: r.away_sh_goals,
           pim: r.away_pim,
           saves: awayHasAgainst ? awaySaves : null,

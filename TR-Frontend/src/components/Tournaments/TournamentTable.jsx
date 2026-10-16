@@ -13,10 +13,9 @@ export function TournamentTable({ standings, expandedTeams, onToggleTeam }) {
   }
 
   return (
+    // Заголовка «Турнирная таблица» здесь больше нет — его показывает панель вкладки
+    // «Таблицы» (TournamentTables.jsx)
     <div className="flex flex-col gap-2">
-      <div className="text-center text-[14px] font-bold uppercase tracking-[0.1em] text-content-muted">
-        Турнирная таблица
-      </div>
     <div className="bg-surface-level1 rounded-2xl overflow-hidden shadow-md pb-4">
       <div className="grid grid-cols-[36px,1fr,50px,40px] items-center px-2 py-4 bg-surface-base text-[10px] font-semibold uppercase tracking-widest text-content-muted">
         <div className="text-center">#</div>

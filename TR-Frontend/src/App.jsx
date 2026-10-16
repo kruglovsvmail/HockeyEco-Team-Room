@@ -1,4 +1,4 @@
-import React, { Suspense, lazy, useState, useEffect } from 'react';
+import React, { Suspense, lazy, useState, useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom'; // Импортируем Portal для выноса в body
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { useRegisterSW } from 'virtual:pwa-register/react';
@@ -340,11 +340,12 @@ export default function App() {
   }, []);
 
   // Инициализируем менеджер жизненного цикла Service Worker
+  const swRegistrationRef = useRef(null);
   const {
     needRefresh: [needRefresh, setNeedRefresh],
-    updateServiceWorker,
   } = useRegisterSW({
     onRegistered(r) {
+      swRegistrationRef.current = r || null;
       // Каждые 5 минут принудительно опрашиваем сервер на наличие обновлений кода
       if (r) {
         setInterval(() => {
@@ -357,24 +358,44 @@ export default function App() {
   /**
    * Применение обновления по кнопке.
    *
-   * Ждать updateServiceWorker нельзя: он только шлёт SKIP_WAITING ждущему воркеру,
-   * а перезагрузку плагин вешает на событие controlling. Если registration.waiting
-   * к моменту нажатия уже пуст (окно провисело открытым, воркера подобрала другая
-   * вкладка), сообщение уходит в никуда — события нет, и кнопка крутится бесконечно.
-   * Поэтому будим воркера, но перезагружаемся сами.
+   * Ждущему воркеру — SKIP_WAITING, и перезагружаемся только после того, как он взял
+   * управление (controllerchange). Раньше перезагрузка шла сразу, не дожидаясь: страница
+   * успевала загрузиться под старым воркером, видела всё ещё ждущего — и окно мелькало
+   * второй раз. Ждём не дольше 3 секунд: если registration.waiting к моменту нажатия
+   * уже пуст (окно провисело открытым, воркера подобрала другая вкладка), ответа не
+   * будет, и кнопка не должна крутиться бесконечно. Тот же порядок в LMS (AppUpdater.jsx).
    *
-   * Сервис-воркер при этом НЕ снимаем, в отличие от LMS: к его регистрации привязана
-   * push-подписка (usePushSubscription), и unregister тихо убил бы уведомления.
-   * Достаточно выкинуть precache старой сборки — тогда после перезагрузки страница
-   * и ассеты приедут из сети, даже если вкладку ещё держит прежний воркер.
-   * Кэши данных и картинок (api-cache, image-cache) не трогаем: это офлайн-запас
-   * приложения, и обновление кода не повод его сбрасывать.
+   * Сервис-воркер при этом НЕ снимаем, в отличие от запасного пути LMS: к его регистрации
+   * привязана push-подписка (usePushSubscription), и unregister тихо убил бы уведомления.
+   *
+   * Precache выкидываем только в запасном пути, когда новый воркер управление не взял:
+   * тогда после перезагрузки страница и ассеты приедут из сети, даже если вкладку ещё
+   * держит прежний воркер. Если новый взял — не трогаем: кэш у всех версий один
+   * (workbox-precache-…), и чистка стёрла бы офлайн-запас уже новой сборки.
+   * Кэши данных и картинок (api-cache, image-cache) не трогаем в любом случае: это
+   * офлайн-запас приложения, и обновление кода не повод его сбрасывать.
    */
   const applyUpdate = async () => {
     setNeedRefresh(false);
 
     try {
-      updateServiceWorker(true);
+      const registration = swRegistrationRef.current
+        || (('serviceWorker' in navigator) ? await navigator.serviceWorker.getRegistration() : null);
+      const waiting = registration?.waiting;
+      if (waiting && navigator.serviceWorker.controller) {
+        const activated = await new Promise((resolve) => {
+          const timer = setTimeout(() => resolve(false), 3000);
+          navigator.serviceWorker.addEventListener('controllerchange', () => {
+            clearTimeout(timer);
+            resolve(true);
+          }, { once: true });
+          waiting.postMessage({ type: 'SKIP_WAITING' });
+        });
+        if (activated) {
+          window.location.reload();
+          return;
+        }
+      }
 
       if (window.caches) {
         const keys = await caches.keys();

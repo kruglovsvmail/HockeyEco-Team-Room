@@ -3,6 +3,7 @@ import pool from '../config/db.js';
 import { METRIC_DEFS } from '../utils/nominationMetrics.js';
 import { calculateNomination } from '../utils/nominationCalculator.js';
 import { isVirtualPhone } from '../utils/phone.js';
+import { listedReserveGoaliesSql } from '../utils/reserveGoalies.js';
 
 // Публичный адрес бакета, где LMS хранит скрины протоколов (как у сайта ТФХ)
 const PROTOCOL_IMAGE_BASE = 'https://s3.twcstorage.ru/hockeyeco-uploads/';
@@ -735,10 +736,11 @@ class TournamentController {
 
       const { rows } = await pool.query(`
         SELECT d.id, d.name, d.short_name, d.description,
-               -- Мало включить механику в лиге — список ещё должен быть непустым,
-               -- иначе вкладка открывалась бы пустой (так же решает сайт ТФХ)
+               -- Мало включить механику в лиге — в дивизионе должен быть хоть один
+               -- включённый вратарь, иначе вкладка открывалась бы пустой
+               -- (так же решает сайт ТФХ)
                (l.reserve_goalies_enabled
-                AND EXISTS (SELECT 1 FROM division_reserve_goalies drg WHERE drg.division_id = d.id)
+                AND EXISTS (${listedReserveGoaliesSql('d.id')})
                ) AS has_reserve_goalies,
                (SELECT COUNT(*) FROM tournament_teams tt
                  WHERE tt.division_id = d.id AND tt.status = 'approved')::int AS teams_count,
@@ -783,9 +785,16 @@ class TournamentController {
     }
   }
 
-  // Резервные вратари дивизиона: пул, с которым команда договаривается сама, когда её
-  // вратарь не выходит на матч. Тот же список и те же правила, что у сайта ТФХ
+  // Резервные вратари дивизиона: вратари лиги, отмеченные в этом дивизионе, с которыми
+  // команда договаривается сама, когда её вратарь не выходит на матч. Выключенных здесь
+  // нет вовсе; у вратаря без обязательных документов телефон не отдаём — он в списке
+  // с пометкой «не доступен» (utils/reserveGoalies.js).
+  // Список и правила дисквалификации — те же, что у сайта ТФХ
   // (ChampionshipController.getDivisionReserveGoalies) — правите там, правьте и здесь.
+  //
+  // Статистика — другая, чем на сайте: не только выходы резервным в этом дивизионе, а все
+  // матчи вратаря в этой лиге за все сезоны — и за свою команду, и резервным. Командам
+  // важно понять, насколько вратарь надёжен, а выходов резервным у многих ноль-один.
   async getDivisionReserveGoalies(req, res) {
     try {
       const { divisionId } = req.params;
@@ -803,25 +812,46 @@ class TournamentController {
       if (!div.reserve_goalies_enabled) return res.json({ success: true, goalies: [] });
 
       const { rows } = await pool.query(
-        `SELECT
-           drg.player_id, drg.jersey_number, drg.note,
+        `WITH rg AS (${listedReserveGoaliesSql('$1')}),
+         goalie_games AS (
+           -- Матчи в воротах за свою команду. Резервные выходы LMS кладёт не сюда, а в
+           -- отдельную таблицу (см. ниже) — физически, чтобы они не смешивались с личной
+           -- статистикой; здесь мы их складываем сознательно. Только реальный выход на
+           -- лёд и только официальные матчи лиги
+           SELECT pgs.player_id,
+                  pgs.goalie_goals_against AS goals_against,
+                  pgs.goalie_saves         AS saves,
+                  pgs.goalie_shots_against AS shots_against,
+                  pgs.goalie_shutout       AS shutout
+           FROM player_game_statistics pgs
+           WHERE pgs.league_id = $2 AND pgs.is_goalie AND pgs.goalie_seconds > 0
+             AND pgs.game_type = 'official'
+             AND pgs.player_id IN (SELECT player_id FROM rg)
+           UNION ALL
+           -- Выходы резервным вратарём — в любом дивизионе лиги
+           SELECT r.player_id,
+                  r.goalie_goals_against, r.goalie_saves, r.goalie_shots_against, r.goalie_shutout
+           FROM reserve_goalie_game_statistics r
+           WHERE r.league_id = $2 AND r.goalie_seconds > 0
+             AND r.player_id IN (SELECT player_id FROM rg)
+         )
+         SELECT
+           rg.player_id, rg.jersey_number, rg.note, rg.docs_ok,
            u.first_name, u.last_name, u.phone,
-           -- Личный аватар в лиговых разделах не показываем: сначала снимок из заявки
-           -- этой лиги (фото на момент допуска), иначе последнее фото в составе команды
-           COALESCE(photo.snapshot_url, photo.member_url) AS photo_url,
+           -- Личный аватар в лиговых разделах не показываем: сначала фото, загруженное
+           -- лигой для резерва, иначе снимок из заявки этой лиги (фото на момент допуска)
+           COALESCE(rg.photo_url, photo.snapshot_url) AS photo_url,
            COALESCE(st.games_played, 0)   AS games_played,
            COALESCE(st.goals_against, 0)  AS goals_against,
            COALESCE(st.saves, 0)          AS saves,
            COALESCE(st.shots_against, 0)  AS shots_against,
            COALESCE(st.shutouts, 0)       AS shutouts,
-           COALESCE(st.tracks_shots, false) AS tracks_shots,
-           st.teams,
            -- От дисквалификаций списку нужен ровно один факт: закрыт ли человеку выход
            -- резервным вратарём. Ни причина, ни срок наружу не идут
            COALESCE(dq.has_reserve_dq, false) AS dq_has_reserve,
            COALESCE(dq.has_own_dq, false)     AS dq_has_own
-         FROM division_reserve_goalies drg
-         JOIN users u ON u.id = drg.player_id
+         FROM rg
+         JOIN users u ON u.id = rg.player_id
          LEFT JOIN LATERAL (
            SELECT
              (SELECT tr.photo_snapshot_url
@@ -829,40 +859,28 @@ class TournamentController {
                 JOIN tournament_teams tt ON tt.id = tr.tournament_team_id
                 JOIN divisions d3 ON d3.id = tt.division_id
                 JOIN seasons s3 ON s3.id = d3.season_id
-               WHERE tr.player_id = drg.player_id AND s3.league_id = $2
+               WHERE tr.player_id = rg.player_id AND s3.league_id = $2
                  AND tr.photo_snapshot_url IS NOT NULL
-               ORDER BY tr.id DESC LIMIT 1) AS snapshot_url,
-             (SELECT tm3.photo_url
-                FROM team_members tm3
-               WHERE tm3.user_id = drg.player_id AND tm3.photo_url IS NOT NULL
-               ORDER BY tm3.id DESC LIMIT 1) AS member_url
+               ORDER BY tr.id DESC LIMIT 1) AS snapshot_url
          ) photo ON true
          LEFT JOIN LATERAL (
            SELECT
-             COUNT(*)::int                                    AS games_played,
-             COALESCE(SUM(r.goalie_goals_against), 0)::int    AS goals_against,
-             COALESCE(SUM(r.goalie_saves), 0)::int            AS saves,
-             COALESCE(SUM(r.goalie_shots_against), 0)::int    AS shots_against,
-             COUNT(*) FILTER (WHERE r.goalie_shutout)::int    AS shutouts,
-             bool_or(r.shots_is_official)                     AS tracks_shots,
-             (SELECT json_agg(x.team_name ORDER BY x.cnt DESC, x.team_name)
-                FROM (SELECT COALESCE(tt2.snap_short_name, tt2.snap_name, t.short_name, t.name) AS team_name, COUNT(*)::int AS cnt
-                        FROM reserve_goalie_game_statistics r2
-                        JOIN teams t ON t.id = r2.team_id
-                        LEFT JOIN tournament_teams tt2 ON tt2.division_id = r2.division_id AND tt2.team_id = r2.team_id
-                       WHERE r2.division_id = drg.division_id AND r2.player_id = drg.player_id
-                       GROUP BY COALESCE(tt2.snap_short_name, tt2.snap_name, t.short_name, t.name)) x) AS teams
-           FROM reserve_goalie_game_statistics r
-           WHERE r.division_id = drg.division_id AND r.player_id = drg.player_id
+             COUNT(*)::int                                   AS games_played,
+             COALESCE(SUM(gg.goals_against), 0)::int         AS goals_against,
+             COALESCE(SUM(gg.saves), 0)::int                 AS saves,
+             COALESCE(SUM(gg.shots_against), 0)::int         AS shots_against,
+             COUNT(*) FILTER (WHERE gg.shutout)::int         AS shutouts
+           FROM goalie_games gg
+           WHERE gg.player_id = rg.player_id
          ) st ON true
          LEFT JOIN LATERAL (
            SELECT
              bool_or(d2.is_reserve_goalie)     AS has_reserve_dq,
              bool_or(NOT d2.is_reserve_goalie) AS has_own_dq
            FROM disqualifications d2
-           WHERE d2.user_id = drg.player_id AND d2.league_id = $2 AND d2.status = 'active'
+           WHERE d2.user_id = rg.player_id AND d2.league_id = $2 AND d2.status = 'active'
          ) dq ON true
-         WHERE drg.division_id = $1
+         WHERE rg.league_id = $2
          ORDER BY u.last_name, u.first_name`,
         [divisionId, div.league_id]
       );
@@ -873,8 +891,10 @@ class TournamentController {
         lastName: r.last_name,
         photoUrl: r.photo_url,
         // Служебный номер виртуальной карточки — логин, а не телефон: звонить по нему
-        // бессмысленно, поэтому не отдаём
-        phone: r.phone && !isVirtualPhone(r.phone) ? r.phone : null,
+        // бессмысленно, поэтому не отдаём. Не отдаём и номер вратаря без обязательных
+        // документов: договориться с ним нельзя, пока лига его не допустит
+        phone: r.docs_ok && r.phone && !isVirtualPhone(r.phone) ? r.phone : null,
+        isUnavailable: !r.docs_ok,
         jerseyNumber: r.jersey_number,
         note: r.note,
         gamesPlayed: r.games_played,
@@ -882,9 +902,6 @@ class TournamentController {
         saves: r.saves,
         shotsAgainst: r.shots_against,
         shutouts: r.shutouts,
-        // Броски, которых лига не ведёт, фронт не показывает вовсе
-        tracksShots: !!r.tracks_shots,
-        teams: r.teams || [],
         // Правило то же, что в шторке состава LMS: наказание, полученное резервным
         // вратарём, закрывает выход всегда; полученное в своей команде — только если
         // лига включила соответствующую настройку
