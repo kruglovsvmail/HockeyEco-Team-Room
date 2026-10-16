@@ -1164,12 +1164,27 @@ class TournamentController {
     try {
       const { leagueId } = req.params;
 
+      // Сама лига — для карточки вверху панели выбора: сохранённый выбор хранит только
+      // название и короткое имя, а там нужны ещё логотип и город, и всегда свежие
+      const leagueRes = await pool.query(
+        `SELECT id, name, short_name, city, logo_url FROM leagues WHERE id = $1`,
+        [leagueId]
+      );
+
       const { rows } = await pool.query(`
         SELECT s.id AS season_id, s.name AS season_name, s.is_active AS season_is_active,
                s.start_date AS season_start,
                d.id AS division_id, d.name AS division_name, d.short_name AS division_short_name,
                d.logo_url AS division_logo, d.is_tournament, d.tournament_type,
-               d.start_date AS division_start, d.end_date AS division_end,
+               -- Даты строкой: голый date драйвер pg сдвигает на день на серверах в другом поясе
+               to_char(d.start_date, 'YYYY-MM-DD') AS division_start,
+               to_char(d.end_date, 'YYYY-MM-DD') AS division_end,
+               -- Для подписи «идёт / завершён» под дивизионом: сколько сыграно и сколько
+               -- ещё впереди. Отменённые не в счёт ни там, ни там
+               (SELECT COUNT(*) FROM games g
+                 WHERE g.division_id = d.id AND g.status IN ('finished', 'finished_no_result'))::int AS games_played,
+               (SELECT COUNT(*) FROM games g
+                 WHERE g.division_id = d.id AND g.status IN ('scheduled', 'live'))::int AS games_left,
                EXISTS (
                  SELECT 1
                  FROM tournament_teams tt
@@ -1224,12 +1239,15 @@ class TournamentController {
             tournamentType: row.tournament_type,
             startDate: row.division_start,
             endDate: row.division_end,
+            teamsCount: row.teams_count,
+            gamesPlayed: row.games_played,
+            gamesLeft: row.games_left,
             isMine: row.is_mine
           });
         }
       }
 
-      return res.json({ success: true, seasons });
+      return res.json({ success: true, league: leagueRes.rows[0] || null, seasons });
     } catch (err) {
       console.error('Ошибка в TournamentController.getLeagueStructure:', err);
       return res.status(500).json({ success: false, error: 'Не удалось загрузить сезоны лиги' });

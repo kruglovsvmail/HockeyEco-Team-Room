@@ -1,11 +1,12 @@
 // TournamentMatches.jsx
-import React, { useState, useMemo, useRef, useLayoutEffect } from 'react';
+import React, { useState, useMemo, useRef, useEffect } from 'react';
 import clsx from 'clsx';
 import dayjs from 'dayjs';
 import utc from 'dayjs/plugin/utc';
 import timezone from 'dayjs/plugin/timezone';
-import { getPlayoffStageDisplayLabel } from '../../utils/helpers';
-import { FadeIn } from '../../ui/FadeIn';
+import { getPlayoffStageDisplayLabel, uiFixed } from '../../utils/helpers';
+import { Icon } from '../../ui/Icon';
+import { TopSheet } from '../../ui/TopSheet';
 import { TournamentCardGame } from './TournamentCardGame';
 
 dayjs.extend(utc);
@@ -24,7 +25,8 @@ const getGameDay = (game) => {
 
 /**
  * Матчи дивизиона по «страницам»: тур регулярки или стадия плей-офф. На экране одна
- * страница, переключаются лентой чипов и свайпом.
+ * страница; соседняя — стрелками и свайпом, любая — из шторки со всеми турами.
+ * Внешний вид и поведение переключателя — как у недель в календаре на главной.
  *
  * Порядок: туры по номеру (матчи без тура — «Без тура» в конце регулярки), затем стадии
  * плей-офф по дате первого матча — у матчей плей-офф series_number это номер серии,
@@ -57,13 +59,14 @@ const buildPages = (games) => {
     [...tours.keys()]
       .sort((a, b) => (a || Infinity) - (b || Infinity))
       .forEach((tour) => {
-        // Подпись по частям: «Тур » видно только у выбранного чипа, в ленте — номер
-        const parts = tour
-          ? [{ text: 'Тур ', onlyActive: true }, { text: String(tour) }]
-          : [{ text: 'Без тура' }];
+        const label = tour ? `Тур ${tour}` : 'Без тура';
         pages.push({
           key: `r|${stage}|${tour}`,
-          parts: severalStages ? [{ text: `${stage} · ` }, ...parts] : parts,
+          // label — в строке над матчами; group и cell — в шторке: группа (этап)
+          // и клетка сетки, где тура хватает одного номера
+          label: severalStages ? `${stage} · ${label}` : label,
+          group: severalStages ? stage : 'Туры',
+          cell: tour ? String(tour) : 'Без тура',
           type: 'regular',
           games: tours.get(tour),
         });
@@ -75,13 +78,11 @@ const buildPages = (games) => {
     .map(([stage, list], order) => ({ stage, list, order, day: firstDay(list) }))
     .sort((a, b) => a.day.localeCompare(b.day) || a.order - b.order)
     .forEach(({ stage, list }) => {
-      // «1/4 финала» в ленте — просто «1/4», полностью только у выбранной
-      const fraction = stage.match(/^\d+\/\d+/);
       pages.push({
         key: `p|${stage}`,
-        parts: fraction
-          ? [{ text: fraction[0] }, { text: stage.slice(fraction[0].length), onlyActive: true }]
-          : [{ text: stage }],
+        label: stage,
+        group: 'Плей-офф',
+        cell: stage,
         type: 'playoff',
         games: list,
       });
@@ -112,47 +113,21 @@ const findCurrent = (pages) => {
 
   // Дальше — запасные варианты, куда открыть ленту. Это уже не «сейчас»: сезон кончился
   // (в том числе когда в последнем туре остались несыгранные матчи с прошедшей датой)
-  // или расписание ещё не составлено, и подпись на чипе только сбивала бы с толку
+  // или расписание ещё не составлено, и подпись «сейчас» только сбивала бы с толку
   for (let idx = pages.length - 1; idx >= 0; idx -= 1) {
     if (pages[idx].games.some(g => g.status === 'finished')) return { index: idx, isNow: false };
   }
   return { index: 0, isNow: false };
 };
 
-// Скрытая часть подписи чипа («Тур », « финала») раскрывается шириной, а не появляется
-// рывком: чип плавно растёт, соседи плавно отъезжают. Ширину берём замером самого
-// текста, а не прикидкой с запасом: с запасом рост кончался раньше анимации, и движение
-// выходило рваным — рывок, потом пауза
-const CHIP_EASE = 'cubic-bezier(0.25,0.8,0.25,1)';
-const CHIP_MS = 250;
-
-function ChipPart({ text, visible }) {
-  const innerRef = useRef(null);
-  const [fullWidth, setFullWidth] = useState(null);
-
-  useLayoutEffect(() => {
-    if (innerRef.current) setFullWidth(innerRef.current.offsetWidth);
-  }, [text]);
-
-  return (
-    <span
-      className="inline-block overflow-hidden align-top"
-      style={{
-        // Пока ширина не замерена (первый кадр) — без анимации, по факту видимости
-        width: fullWidth == null ? (visible ? 'auto' : 0) : (visible ? fullWidth : 0),
-        opacity: visible ? 1 : 0,
-        transition: fullWidth == null ? 'none' : `width ${CHIP_MS}ms ${CHIP_EASE}, opacity ${CHIP_MS}ms ${CHIP_EASE}`,
-      }}
-    >
-      <span ref={innerRef} className="inline-block whitespace-pre">{text}</span>
-    </span>
-  );
-}
-
-// Свайп считается переключением, только если палец ушёл вбок заметно дальше, чем
-// вверх-вниз: иначе обычная прокрутка ленты листала бы туры
-const SWIPE_MIN_PX = 60;
-const SWIPE_RATIO = 1.5;
+// Перелистывание — как у недель в календаре на главной (SchedulePage + CompactWeek):
+// та же длительность и кривая, порог свайпа 40px, жест не ловим у самых краёв экрана
+// (там системный «назад»), направление фиксируем после первых 6px движения
+const SLIDE_MS = 340;
+const SLIDE_EASE = 'cubic-bezier(0.32, 0.72, 0, 1)';
+const SWIPE_THRESHOLD_PX = 40;
+const SWIPE_EDGE_PX = 40;
+const SWIPE_LOCK_PX = 6;
 
 const MatchCard = ({ game, onClick }) => (
   <div onClick={() => onClick(game)} className="cursor-pointer active:opacity-70 transition-opacity">
@@ -160,7 +135,43 @@ const MatchCard = ({ game, onClick }) => (
   </div>
 );
 
-export function TournamentMatches({ games, onGameClick, scrollContainerRef, stickyTop }) {
+// Матчи одной страницы: тур — списком, стадия плей-офф — по сериям (серия из одного
+// матча без заголовка)
+function PageGames({ page, onGameClick }) {
+  if (page.type === 'regular') {
+    return (
+      <div className="flex flex-col gap-3">
+        {page.games.map(game => <MatchCard key={game.id} game={game} onClick={onGameClick} />)}
+      </div>
+    );
+  }
+
+  const series = [...page.games.reduce((map, game) => {
+    const num = game.series_number || 0;
+    if (!map.has(num)) map.set(num, []);
+    map.get(num).push(game);
+    return map;
+  }, new Map()).entries()];
+
+  return (
+    <div className="flex flex-col gap-8">
+      {series.map(([num, list]) => (
+        <div key={num} className="flex flex-col gap-2">
+          {list[0]?.wins_needed !== 1 && (
+            <div className="text-center text-[14px] font-black uppercase tracking-[0.2em] text-content-muted">
+              Серия №{num}
+            </div>
+          )}
+          <div className="flex flex-col gap-3">
+            {list.map(game => <MatchCard key={game.id} game={game} onClick={onGameClick} />)}
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+export function TournamentMatches({ games, onGameClick, scrollContainerRef, headerOffset }) {
   const pages = useMemo(() => buildPages(games), [games]);
   const { index: currentIndex, isNow } = useMemo(() => findCurrent(pages), [pages]);
 
@@ -169,70 +180,91 @@ export function TournamentMatches({ games, onGameClick, scrollContainerRef, stic
   const [selectedKey, setSelectedKey] = useState(null);
   const pickedIndex = pages.findIndex(page => page.key === selectedKey);
   const selectedIndex = pickedIndex >= 0 ? pickedIndex : currentIndex;
-
   const page = pages[selectedIndex];
 
-  const stripRef = useRef(null);
-  const chipRefs = useRef({});
   const anchorRef = useRef(null);
-  const isFirstCenterRef = useRef(true);
+  const [isGridOpen, setIsGridOpen] = useState(false);
 
-  // Лента двигается сама только по необходимости. При открытии текущий тур ставим в
-  // середину без анимации — иначе в конце сезона его бы не было видно. Дальше центрировать
-  // каждый выбор не нужно: лента ехала одновременно с изменением ширины чипов, и всё
-  // дёргалось. Подкручиваем, только если выбранный чип ушёл за край (выбрали свайпом)
-  useLayoutEffect(() => {
-    const strip = stripRef.current;
-    const chip = page && chipRefs.current[page.key];
-    if (!strip || !chip) return;
+  // Лента из трёх слайдов (прошлый, текущий, следующий тур), как у недель календаря:
+  // offsetIndex сдвигает её на слайд, по окончании анимации выбор переезжает на соседний
+  // тур, а лента без анимации возвращается в середину
+  const [offsetIndex, setOffsetIndex] = useState(0);
+  const [isAnimating, setIsAnimating] = useState(false);
+  const animationTimer = useRef(null);
+  useEffect(() => () => clearTimeout(animationTimer.current), []);
 
-    if (isFirstCenterRef.current) {
-      isFirstCenterRef.current = false;
-      strip.scrollLeft = chip.offsetLeft - (strip.clientWidth - chip.offsetWidth) / 2;
-      return;
-    }
-
-    const margin = 24;
-    const chipLeft = chip.offsetLeft;
-    const chipRight = chipLeft + chip.offsetWidth;
-    if (chipLeft - margin < strip.scrollLeft) {
-      strip.scrollTo({ left: chipLeft - margin, behavior: 'smooth' });
-    } else if (chipRight + margin > strip.scrollLeft + strip.clientWidth) {
-      strip.scrollTo({ left: chipRight + margin - strip.clientWidth, behavior: 'smooth' });
-    }
-  }, [page]);
-
-  const selectPage = (index) => {
-    const target = pages[index];
-    if (!target || target.key === page?.key) return;
-    setSelectedKey(target.key);
-
-    // Ушли вниз по длинному туру — новый тур показываем с начала, а не с середины.
-    // Отступ считаем через offsetTop, а не getBoundingClientRect: интерфейс масштабируется
-    // transform'ом, и экранные координаты разошлись бы с scrollTop
+  // Прокрутка, при которой переключатель прилипает под (схлопнутой) шапкой раздела.
+  // Через offsetTop, а не getBoundingClientRect: интерфейс масштабируется transform'ом,
+  // и экранные координаты разошлись бы с scrollTop
+  const getTourStartScrollTop = () => {
     const container = scrollContainerRef?.current;
     const anchor = anchorRef.current;
-    if (!container || !anchor) return;
+    if (!container || !anchor) return null;
     let anchorTop = 0;
     for (let el = anchor; el && el !== container; el = el.offsetParent) anchorTop += el.offsetTop;
-    const stuckScrollTop = anchorTop - (stickyTop || 0);
-    if (container.scrollTop > stuckScrollTop) container.scrollTo({ top: stuckScrollTop });
+    return anchorTop - (headerOffset || 0);
   };
 
-  const touchRef = useRef(null);
+  // Ушли вниз по длинному туру — новый тур показываем с начала, а не с середины
+  const scrollToTourStart = () => {
+    const container = scrollContainerRef?.current;
+    const startScrollTop = getTourStartScrollTop();
+    if (container && startScrollTop != null && container.scrollTop > startScrollTop) {
+      container.scrollTo({ top: startScrollTop });
+    }
+  };
+
+  const slideTo = (direction) => {
+    if (isAnimating) return;
+    const targetIndex = selectedIndex + (direction === 'next' ? 1 : -1);
+    const target = pages[targetIndex];
+    if (!target) return;
+
+    scrollToTourStart();
+    setIsAnimating(true);
+    setOffsetIndex(direction === 'next' ? 1 : -1);
+
+    clearTimeout(animationTimer.current);
+    animationTimer.current = setTimeout(() => {
+      setSelectedKey(target.key);
+      setOffsetIndex(0);
+      setIsAnimating(false);
+    }, SLIDE_MS);
+  };
+
+  // Из сетки — сразу на выбранный тур, без перелистывания через все промежуточные
+  const jumpTo = (index) => {
+    const target = pages[index];
+    if (!target) return;
+    scrollToTourStart();
+    setSelectedKey(target.key);
+  };
+
+  // Свайп по матчам — как в календаре
+  const touch = useRef({ x: null, y: null, locked: false, horizontal: false });
   const handleTouchStart = (e) => {
-    const t = e.touches[0];
-    touchRef.current = { x: t.clientX, y: t.clientY };
+    if (isAnimating) return;
+    const x = e.touches[0].clientX;
+    if (x < SWIPE_EDGE_PX || x > window.innerWidth - SWIPE_EDGE_PX) return;
+    touch.current = { x, y: e.touches[0].clientY, locked: false, horizontal: false };
+  };
+  const handleTouchMove = (e) => {
+    const t = touch.current;
+    if (t.x === null || isAnimating || t.locked) return;
+    const diffX = t.x - e.touches[0].clientX;
+    const diffY = t.y - e.touches[0].clientY;
+    if (Math.abs(diffX) > SWIPE_LOCK_PX || Math.abs(diffY) > SWIPE_LOCK_PX) {
+      t.locked = true;
+      if (Math.abs(diffX) > Math.abs(diffY)) t.horizontal = true;
+      else t.x = null;
+    }
   };
   const handleTouchEnd = (e) => {
-    const start = touchRef.current;
-    touchRef.current = null;
-    if (!start) return;
-    const t = e.changedTouches[0];
-    const dx = t.clientX - start.x;
-    const dy = t.clientY - start.y;
-    if (Math.abs(dx) < SWIPE_MIN_PX || Math.abs(dx) < Math.abs(dy) * SWIPE_RATIO) return;
-    selectPage(selectedIndex + (dx < 0 ? 1 : -1));
+    const t = touch.current;
+    touch.current = { x: null, y: null, locked: false, horizontal: false };
+    if (t.x === null || isAnimating || !t.horizontal) return;
+    const diffX = t.x - e.changedTouches[0].clientX;
+    if (Math.abs(diffX) > SWIPE_THRESHOLD_PX) slideTo(diffX > 0 ? 'next' : 'prev');
   };
 
   if (pages.length === 0) {
@@ -243,95 +275,194 @@ export function TournamentMatches({ games, onGameClick, scrollContainerRef, stic
     );
   }
 
-  // Плей-офф внутри стадии — по сериям, как и раньше; серия из одного матча без заголовка
-  const series = page.type === 'playoff'
-    ? [...page.games.reduce((map, game) => {
-        const num = game.series_number || 0;
-        if (!map.has(num)) map.set(num, []);
-        map.get(num).push(game);
-        return map;
-      }, new Map()).entries()]
-    : null;
+  // Шторка: туры сеткой по группам (этапы регулярки, затем плей-офф)
+  const groups = pages.reduce((list, item, idx) => {
+    const last = list[list.length - 1];
+    if (last && last.name === item.group) last.items.push({ item, idx });
+    else list.push({ name: item.group, isPlayoff: item.type === 'playoff', items: [{ item, idx }] });
+    return list;
+  }, []);
+
+  const hasPrev = selectedIndex > 0;
+  const hasNext = selectedIndex < pages.length - 1;
+  const neighbours = [pages[selectedIndex - 1], page, pages[selectedIndex + 1]];
+
+  const trackStyle = {
+    transform: `translateX(calc(-33.33333% - ${offsetIndex * 33.33333}%))`,
+    transition: isAnimating ? `transform ${SLIDE_MS}ms ${SLIDE_EASE}` : 'none',
+    willChange: 'transform',
+  };
+  // Название едет чуть быстрее ленты — как в календаре
+  const titleTrackStyle = {
+    ...trackStyle,
+    transition: isAnimating ? `transform 250ms ${SLIDE_EASE}` : 'none',
+  };
+
+  const titleOf = (item) => {
+    if (!item) return null;
+    const idx = pages.indexOf(item);
+    return (
+      <>
+        {item.label}
+        {isNow && idx === currentIndex && (
+          <span className="ml-1.5 text-[11px] font-semibold text-brand">сейчас</span>
+        )}
+      </>
+    );
+  };
 
   return (
     <div className="flex flex-col">
       <div ref={anchorRef} />
 
-      {/* ── ЛЕНТА ТУРОВ И СТАДИЙ. Прилипает под шапкой раздела: переключиться можно,
-          не возвращаясь наверх длинного тура ── */}
-      {/* Тень снизу отделяет полосу от карточки матча, которая уезжает под неё */}
+      {/* ── ПЕРЕКЛЮЧАТЕЛЬ ТУРОВ — как переключатель недель в календаре на главной:
+          «таблетка» со стрелками и уезжающим названием и островок с кнопкой сетки.
+          Прилипает под шапкой раздела, а карточки уходят под него, растворяясь, —
+          тот же шлейф цвета фона, что в календаре (from-surface-border). Пока он стоит
+          на месте, шлейф лежит на фоне того же цвета и не виден. Сама обёртка
+          прозрачна для нажатий: прозрачный низ шлейфа не должен перекрывать карточки ── */}
       <div
-        className="sticky z-20 -mx-3 bg-surface-base shadow-[0_8px_12px_-8px_rgba(0,0,0,0.25)]"
-        style={{ top: stickyTop }}
+        className="sticky z-20 -mx-3 px-3 pt-2 pb-5 pointer-events-none bg-gradient-to-b from-surface-border from-55% to-transparent"
+        style={{ top: headerOffset }}
       >
-        <div
-          ref={stripRef}
-          className="relative flex items-center gap-2 overflow-x-auto scrollbar-hide px-3 py-2"
-          style={{ WebkitOverflowScrolling: 'touch' }}
-        >
-          {pages.map((item, idx) => {
-            const isActive = idx === selectedIndex;
-            // «Сейчас» — только у тура, где матч идёт или ещё впереди по расписанию
-            const isCurrent = isNow && idx === currentIndex;
-            return (
-              <button
-                key={item.key}
-                ref={(el) => { chipRefs.current[item.key] = el; }}
-                type="button"
-                onClick={() => selectPage(idx)}
-                // Выбранный — обводкой цвета бренда, а не заливкой: залитые чипы —
-                // это вкладки шапки, и две полосы одинаковых кнопок путались.
-                // Рамка есть у всех (прозрачная), чтобы выбор не менял размер чипа
-                className={clsx(
-                  "relative shrink-0 flex items-center h-8 min-w-[2.5rem] px-3.5 rounded-full border-2 bg-surface-level1 text-[13px] font-bold whitespace-nowrap outline-none transition-colors active:scale-95",
-                  isActive
-                    ? "border-brand text-brand"
-                    : item.isDone
-                      ? "border-transparent text-content-muted"
-                      : "border-transparent text-content-main"
-                )}
-                style={{ transitionDuration: `${CHIP_MS}ms` }}
-              >
-                {/* В ленте коротко — номер тура, полностью только выбранный:
-                    так помещается больше туров и сразу видно, где ты */}
-                {item.parts.map((part, partIdx) => (
-                  part.onlyActive
-                    ? <ChipPart key={partIdx} text={part.text} visible={isActive} />
-                    : <span key={partIdx}>{part.text}</span>
-                ))}
-                {isCurrent && (
-                  <span className="ml-1.5 text-[11px] font-semibold text-brand">сейчас</span>
-                )}
-              </button>
-            );
-          })}
+        <div className="flex items-center gap-2 w-full justify-between select-none pointer-events-auto">
+          <div className="flex flex-1 min-w-0 items-center justify-between bg-surface-level1 shadow-lg rounded-3xl px-2 py-2.5">
+            <button
+              type="button"
+              onClick={() => slideTo('prev')}
+              aria-label="Предыдущий тур"
+              className={clsx(
+                "p-1 text-content-main hover:text-brand transition-[color,opacity] outline-none z-10",
+                !hasPrev && "opacity-25 pointer-events-none"
+              )}
+            >
+              <Icon name="chevron_left" style={{ width: uiFixed(20), height: uiFixed(20) }} />
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setIsGridOpen(true)}
+              className="flex-1 min-w-0 overflow-hidden outline-none"
+              aria-label="Все туры"
+            >
+              <div className="relative overflow-hidden w-full" style={{ height: uiFixed(20) }}>
+                <div className="w-[300%] flex items-start h-full absolute left-0 top-0" style={titleTrackStyle}>
+                  {neighbours.map((item, idx) => (
+                    <div
+                      key={item ? item.key : `empty-${idx}`}
+                      className="w-1/3 shrink-0 text-center font-bold text-content-main truncate"
+                      style={{ fontSize: uiFixed(14) }}
+                    >
+                      {titleOf(item)}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => slideTo('next')}
+              aria-label="Следующий тур"
+              className={clsx(
+                "p-1 text-content-main hover:text-brand transition-[color,opacity] outline-none rotate-180 z-10",
+                !hasNext && "opacity-25 pointer-events-none"
+              )}
+            >
+              <Icon name="chevron_left" style={{ width: uiFixed(20), height: uiFixed(20) }} />
+            </button>
+          </div>
+
+          <div className="flex items-center bg-surface-level1 shadow-lg rounded-3xl px-3 py-2.5 shrink-0">
+            <button
+              type="button"
+              onClick={() => setIsGridOpen(true)}
+              className="p-1 text-content-main hover:text-brand transition-colors outline-none flex items-center justify-center active:scale-95"
+              aria-label="Все туры"
+            >
+              <Icon name="view_grid" className="w-5 h-5" />
+            </button>
+          </div>
         </div>
       </div>
 
-      <div onTouchStart={handleTouchStart} onTouchEnd={handleTouchEnd} className="pt-4 min-h-[50vh]">
-        <FadeIn key={page.key} duration={250}>
-          {page.type === 'regular' ? (
-            <div className="flex flex-col gap-3">
-              {page.games.map(game => <MatchCard key={game.id} game={game} onClick={onGameClick} />)}
+      {/* ── ЛЕНТА ТУРОВ: три слайда, видна средняя. Соседние нужны только на время
+          перелистывания — в покое их прячем по высоте, чтобы длинный соседний тур
+          не добавлял пустой прокрутки под коротким ── */}
+      <div
+        className="-mx-3 overflow-hidden min-h-[50vh]"
+        style={{ touchAction: 'pan-y' }}
+        onTouchStart={handleTouchStart}
+        onTouchMove={handleTouchMove}
+        onTouchEnd={handleTouchEnd}
+      >
+        <div
+          className="w-[300%] flex items-start"
+          style={{ ...trackStyle, pointerEvents: isAnimating ? 'none' : 'auto' }}
+        >
+          {neighbours.map((item, idx) => (
+            <div
+              key={item ? item.key : `empty-${idx}`}
+              className={clsx("w-1/3 shrink-0 px-3", idx !== 1 && !isAnimating && "h-0 overflow-hidden")}
+            >
+              {item && <PageGames page={item} onGameClick={onGameClick} />}
             </div>
-          ) : (
-            <div className="flex flex-col gap-8">
-              {series.map(([num, list]) => (
-                <div key={num} className="flex flex-col gap-2">
-                  {list[0]?.wins_needed !== 1 && (
-                    <div className="text-center text-[14px] font-black uppercase tracking-[0.2em] text-content-muted">
-                      Серия №{num}
-                    </div>
-                  )}
-                  <div className="flex flex-col gap-3">
-                    {list.map(game => <MatchCard key={game.id} game={game} onClick={onGameClick} />)}
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
-        </FadeIn>
+          ))}
+        </div>
       </div>
+
+      {/* ── ВСЕ ТУРЫ СЕТКОЙ. Шторка сверху — как сетка месяца в календаре ── */}
+      <TopSheet isOpen={isGridOpen} onClose={() => setIsGridOpen(false)}>
+        <div className="flex flex-col gap-5 pb-2">
+          {groups.map(group => (
+            <div key={group.name} className="flex flex-col gap-3">
+              <div className="text-center text-[14px] font-black text-content-main uppercase tracking-widest">
+                {group.name}
+              </div>
+              <div className={group.isPlayoff ? "flex flex-col gap-2" : "grid grid-cols-5 gap-2"}>
+                {group.items.map(({ item, idx }) => {
+                  const isActive = idx === selectedIndex;
+                  const isCurrent = isNow && idx === currentIndex;
+                  return (
+                    <button
+                      key={item.key}
+                      type="button"
+                      onClick={() => {
+                        jumpTo(idx);
+                        setIsGridOpen(false);
+                      }}
+                      className={clsx(
+                        "relative flex flex-col items-center justify-center rounded-2xl font-black outline-none transition-colors active:scale-95",
+                        group.isPlayoff
+                          ? "h-[52px] px-4 text-[13px] uppercase tracking-wide"
+                          // «Без тура» в сетке номеров — шириной в две клетки
+                          : item.cell.length > 3
+                            ? "h-14 col-span-2 text-[13px] uppercase tracking-wide"
+                            : "h-14 text-[16px]",
+                        isActive
+                          ? "bg-brand text-white"
+                          : item.isDone
+                            ? "bg-surface-level2 text-content-muted"
+                            : "bg-surface-level2 text-content-main"
+                      )}
+                    >
+                      <span className="leading-none">{item.cell}</span>
+                      {isCurrent && (
+                        <span className={clsx(
+                          "mt-1 text-[10px] font-semibold normal-case tracking-normal leading-none",
+                          isActive ? "text-white/80" : "text-brand"
+                        )}>
+                          сейчас
+                        </span>
+                      )}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          ))}
+        </div>
+      </TopSheet>
     </div>
   );
 }

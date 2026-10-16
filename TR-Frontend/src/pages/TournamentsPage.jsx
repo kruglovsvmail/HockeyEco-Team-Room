@@ -400,14 +400,15 @@ export function TournamentsPage() {
             <FadeIn key={activeTab} duration={300}>
               
               {/* ВКЛАДКА: МАТЧИ — по одному туру / стадии, открывается на текущем.
-                  Лента туров прилипает под схлопнутой шапкой раздела */}
+                  headerOffset — низ схлопнутой шапки: под ним прилипает переключатель
+                  туров, и к этой точке подкручивается лента при смене тура */}
               {activeTab === 'matches' && (
                 isGamesLoading ? <PageLoader /> : (
                   <TournamentMatches
                     games={games}
                     onGameClick={handleGameClick}
                     scrollContainerRef={scrollRef}
-                    stickyTop={TOURNAMENT_CARD_HEIGHT_COLLAPSED + tabsHeight}
+                    headerOffset={TOURNAMENT_CARD_HEIGHT_COLLAPSED + tabsHeight}
                   />
                 )
               )}
