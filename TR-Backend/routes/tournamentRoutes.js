@@ -28,4 +28,15 @@ router.get('/division/:divisionId/stats', tournamentController.getDivisionStats)
 // Получение командной статистики по дивизиону для конкретной команды
 router.get('/division/:divisionId/team-stats', tournamentController.getDivisionTeamStats);
 
+// Номинации дивизиона (правила из конструктора LMS, рейтинг считается на лету).
+// verifyToken — чтобы отдать место того, кто смотрит, если он не попал в топ
+router.get('/division/:divisionId/nominations', verifyToken, tournamentController.getDivisionNominations);
+
+// Вкладка «О дивизионе»: описание, итоговые цифры и признак резервных вратарей
+router.get('/division/:divisionId/overview', verifyToken, tournamentController.getDivisionOverview);
+
+// Резервные вратари дивизиона. В ответе телефоны — по ним команды договариваются
+// о выходе, — поэтому только для вошедших в приложение
+router.get('/division/:divisionId/reserve-goalies', verifyToken, tournamentController.getDivisionReserveGoalies);
+
 export default router;

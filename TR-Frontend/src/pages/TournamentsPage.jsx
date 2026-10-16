@@ -4,20 +4,38 @@ import { useOutletContext } from 'react-router-dom';
 import clsx from 'clsx';
 import { FadeIn } from '../ui/FadeIn';
 import { Icon } from '../ui/Icon';
-import { TournamentPageHeader } from '../components/Tournaments/TournamentPageHeader';
-import { getAuthHeaders, getPlayoffStageDisplayLabel } from '../utils/helpers';
+import { TournamentPageHeader, TOURNAMENT_CARD_HEIGHT, TOURNAMENT_CARD_HEIGHT_COLLAPSED } from '../components/Tournaments/TournamentPageHeader';
+import { getAuthHeaders } from '../utils/helpers';
 import { PageLoader } from '../ui/Loader';
-import { TournamentCardGame } from '../components/Tournaments/TournamentCardGame';
+import { TournamentMatches } from '../components/Tournaments/TournamentMatches';
 import { TournamentTable } from '../components/Tournaments/TournamentTable';
 import { TournamentPlayoff } from '../components/Tournaments/TournamentPlayoff';
 import { TournamentStat } from '../components/Tournaments/TournamentStat';
+import { TournamentNominations } from '../components/Tournaments/TournamentNominations';
+import { TournamentOverview } from '../components/Tournaments/TournamentOverview';
+import { TournamentReserveGoalies } from '../components/Tournaments/TournamentReserveGoalies';
 import { usePageVisit } from '../hooks/usePageVisit';
 
 const TOURNAMENT_TABS = [
-  { value: 'matches', label: 'Матчи' },
-  { value: 'tables', label: 'Таблицы' },
-  { value: 'stats', label: 'Статистика' }
+  { id: 'matches', label: 'Матчи' },
+  { id: 'tables', label: 'Таблицы' },
+  { id: 'stats', label: 'Статистика' }
 ];
+
+// Вкладки по данным дивизиона: номинации — если лига их завела (в карточке топ-7, отсюда
+// и название), резервные вратари — если механика включена и список не пуст
+const NOMINATIONS_TAB = { id: 'nominations', label: 'ТОП-7' };
+const RESERVE_TAB = { id: 'reserve', label: 'Рез. вратари' };
+const OVERVIEW_TAB = { id: 'overview', label: 'О дивизионе' };
+
+// Шапка схлопывается почти сразу, как ленту тронули: между шапкой и лентой зазор всего
+// 16px, и при более позднем пороге лента (а с ней липкая полоса туров) успевала заехать
+// под ещё развёрнутую шапку. Раскрывается у самого верха; зазор между порогами — чтобы
+// на границе она не мигала.
+const COLLAPSE_AT = 10;
+const EXPAND_AT = 2;
+
+const EMPTY_TRACKING = { plusMinus: false, shots: false };
 
 export function TournamentsPage() {
   const { selectedTeam, teams, openRightPanel, openPanel100, registerHeaderMenu } = useOutletContext();
@@ -34,16 +52,52 @@ export function TournamentsPage() {
   const [isTablesLoading, setIsTablesLoading] = useState(false);
   const [expandedTeams, setExpandedTeams] = useState({});
 
-  // Монолитный стэйт хранения ВСЕЙ хоккейной статистики (загружается один раз полностью)
+  // Монолитный стэйт хранения ВСЕЙ хоккейной статистики (загружается один раз полностью).
+  // tracking — что лига ведёт на стадии (+/-, броски): чего не ведёт, того не показываем
   const [statsData, setStatsData] = useState({
-    all: { skaters: [], goalies: [] },
-    regular: { skaters: [], goalies: [] },
-    playoff: { skaters: [], goalies: [] }
+    all: { skaters: [], goalies: [], tracking: EMPTY_TRACKING },
+    regular: { skaters: [], goalies: [], tracking: EMPTY_TRACKING },
+    playoff: { skaters: [], goalies: [], tracking: EMPTY_TRACKING }
   });
   const [isStatsLoading, setIsStatsLoading] = useState(false);
   const [statsStageType, setStatsStageType] = useState('all'); // 'all' / 'regular' / 'playoff'
 
+  const [nominations, setNominations] = useState([]);
+  const [isNominationsLoading, setIsNominationsLoading] = useState(false);
+
+  // «О дивизионе»: описание и итоговые цифры. Заодно приносит признак резервных
+  // вратарей, от которого зависит их вкладка, поэтому грузится сразу с турниром
+  const [overview, setOverview] = useState(null);
+  const [isOverviewLoading, setIsOverviewLoading] = useState(false);
+
+  const [reserveGoalies, setReserveGoalies] = useState([]);
+  const [isReserveLoading, setIsReserveLoading] = useState(false);
+
   const [activeTournament, setActiveTournament] = useState(null);
+
+  // Схлопывание шапки при прокрутке. Шапка лежит поверх ленты, а отступ под неё —
+  // высота развёрнутой карточки плюс полоса вкладок (её меряем, а не угадываем), так что
+  // при схлопывании лента не дёргается, а заезжает под шапку.
+  const tabsRef = useRef(null);
+  const scrollRef = useRef(null);
+  const [isHeaderCollapsed, setIsHeaderCollapsed] = useState(false);
+  const [tabsHeight, setTabsHeight] = useState(68);
+  // Развёрнутая карточка выше, когда название лиги длинное (до трёх строк) — её высоту
+  // сообщает сама шапка
+  const [cardHeight, setCardHeight] = useState(TOURNAMENT_CARD_HEIGHT);
+
+  const handleScroll = useCallback((e) => {
+    const top = e.currentTarget.scrollTop;
+    setIsHeaderCollapsed(prev => (prev ? top > EXPAND_AT : top > COLLAPSE_AT));
+  }, []);
+
+  useEffect(() => {
+    const el = tabsRef.current;
+    if (!el || typeof ResizeObserver === 'undefined') return;
+    const ro = new ResizeObserver(() => setTabsHeight(el.offsetHeight));
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
 
   // Командного цвета в разделе нет: он показывает любую лигу, а не выбранную команду.
   // Акцент — личный цвет из Настроек (или заводской), командную подмену --color-brand
@@ -125,6 +179,86 @@ export function TournamentsPage() {
     setExpandedTeams({});
   }, [activeTournament]);
 
+  // Номинации грузим сразу с турниром, а не по открытию вкладки: от них зависит,
+  // показывать ли саму вкладку. Ответ прошлого турнира, пришедший после смены
+  // выбора, отбрасываем — иначе вкладка показала бы чужие номинации.
+  useEffect(() => {
+    if (!activeTournament?.division_id) {
+      setNominations([]);
+      return;
+    }
+
+    let isStale = false;
+    setIsNominationsLoading(true);
+    fetch(`${import.meta.env.VITE_API_URL}/api/tournaments/division/${activeTournament.division_id}/nominations`, {
+      headers: getAuthHeaders()
+    })
+      .then(res => (res.ok ? res.json() : null))
+      .then(data => { if (!isStale) setNominations(data?.nominations || []); })
+      .catch(err => { if (!isStale) { console.error(err); setNominations([]); } })
+      .finally(() => { if (!isStale) setIsNominationsLoading(false); });
+
+    return () => { isStale = true; };
+  }, [activeTournament]);
+
+  useEffect(() => {
+    if (!activeTournament?.division_id) {
+      setOverview(null);
+      return;
+    }
+
+    let isStale = false;
+    // Список вратарей прошлого турнира не должен мелькнуть до загрузки нового
+    setReserveGoalies([]);
+    setIsOverviewLoading(true);
+    fetch(`${import.meta.env.VITE_API_URL}/api/tournaments/division/${activeTournament.division_id}/overview`, {
+      headers: getAuthHeaders()
+    })
+      .then(res => (res.ok ? res.json() : null))
+      .then(data => { if (!isStale) setOverview(data?.overview || null); })
+      .catch(err => { if (!isStale) { console.error(err); setOverview(null); } })
+      .finally(() => { if (!isStale) setIsOverviewLoading(false); });
+
+    return () => { isStale = true; };
+  }, [activeTournament]);
+
+  const hasReserveGoalies = !!overview?.hasReserveGoalies;
+
+  // Список резервных вратарей — только когда вкладку открыли: в нём телефоны
+  // и статистика выходов, и тянуть его на каждый выбор турнира незачем
+  useEffect(() => {
+    if (!activeTournament?.division_id || activeTab !== 'reserve' || !hasReserveGoalies) return;
+
+    let isStale = false;
+    setIsReserveLoading(true);
+    fetch(`${import.meta.env.VITE_API_URL}/api/tournaments/division/${activeTournament.division_id}/reserve-goalies`, {
+      headers: getAuthHeaders()
+    })
+      .then(res => (res.ok ? res.json() : null))
+      .then(data => { if (!isStale) setReserveGoalies(data?.goalies || []); })
+      .catch(err => { if (!isStale) { console.error(err); setReserveGoalies([]); } })
+      .finally(() => { if (!isStale) setIsReserveLoading(false); });
+
+    return () => { isStale = true; };
+  }, [activeTournament, activeTab, hasReserveGoalies]);
+
+  const tabs = React.useMemo(() => [
+    ...TOURNAMENT_TABS,
+    ...(nominations.length > 0 ? [NOMINATIONS_TAB] : []),
+    ...(hasReserveGoalies ? [RESERVE_TAB] : []),
+    OVERVIEW_TAB
+  ], [nominations.length, hasReserveGoalies]);
+
+  // В новом турнире такой вкладки нет, а открыта была она — возвращаемся к матчам
+  useEffect(() => {
+    if (activeTab === 'nominations' && !isNominationsLoading && nominations.length === 0) {
+      setActiveTab('matches');
+    }
+    if (activeTab === 'reserve' && !isOverviewLoading && !hasReserveGoalies) {
+      setActiveTab('matches');
+    }
+  }, [activeTab, isNominationsLoading, nominations.length, isOverviewLoading, hasReserveGoalies]);
+
   // УМНЫЙ ФОНОВЫЙ ПАКЕТНЫЙ ЗАПРОС: Грузим все три этапа параллельно один раз при активации таба
   useEffect(() => {
     if (!activeTournament?.division_id || activeTab !== 'stats') return;
@@ -148,11 +282,17 @@ export function TournamentsPage() {
           playoffRes.ok ? playoffRes.json() : { skaters: [], goalies: [] }
         ]);
 
+        const toStage = (data) => ({
+          skaters: data.skaters || [],
+          goalies: data.goalies || [],
+          tracking: data.tracking || EMPTY_TRACKING
+        });
+
         // Консолидируем всё в единое клиентское хранилище памяти
         setStatsData({
-          all: { skaters: allData.skaters || [], goalies: allData.goalies || [] },
-          regular: { skaters: regularData.skaters || [], goalies: regularData.goalies || [] },
-          playoff: { skaters: playoffData.skaters || [], goalies: playoffData.goalies || [] }
+          all: toStage(allData),
+          regular: toStage(regularData),
+          playoff: toStage(playoffData)
         });
 
       } catch (err) {
@@ -210,24 +350,6 @@ export function TournamentsPage() {
     }, 'Матч');
   };
 
-  const groupGamesByStageAndSeries = () => {
-    const regular = {};
-    const playoff = {};
-    games.forEach((game) => {
-      const isPlayoff = game.stage_type === 'playoff';
-      const label = getPlayoffStageDisplayLabel(game.stage_label, game.playoff_match_type) || (isPlayoff ? 'Плей-офф' : 'Регулярный чемпионат');
-      const seriesNum = game.series_number || 0;
-      const target = isPlayoff ? playoff : regular;
-      if (!target[label]) target[label] = {};
-      if (!target[label][seriesNum]) target[label][seriesNum] = [];
-      target[label][seriesNum].push(game);
-    });
-    return { regular, playoff };
-  };
-
-  const { regular, playoff } = groupGamesByStageAndSeries();
-  const hasGames = Object.keys(regular).length > 0 || Object.keys(playoff).length > 0;
-
   const sortedBrackets = React.useMemo(() => {
     const bracketsMap = playoffs.reduce((acc, curr) => {
       if (!acc[curr.bracket_id]) {
@@ -242,19 +364,27 @@ export function TournamentsPage() {
   // Выбираем срез данных из памяти на основе активного локального стейта мгновенно
   const currentSkaters = statsData[statsStageType]?.skaters || [];
   const currentGoalies = statsData[statsStageType]?.goalies || [];
+  const currentTracking = statsData[statsStageType]?.tracking || EMPTY_TRACKING;
 
   return (
     <FadeIn className="h-full relative overflow-hidden flex flex-col">
       <TournamentPageHeader
         activeTournament={activeTournament}
         onClick={handleOpenSelector}
-        tabs={TOURNAMENT_TABS}
+        tabs={tabs}
         activeTab={activeTab}
         onTabChange={setActiveTab}
+        collapsed={isHeaderCollapsed}
+        tabsRef={tabsRef}
+        onExpandedHeightChange={setCardHeight}
       />
 
-      <div className="h-full overflow-y-auto scrollbar-hide relative z-10 snap-y snap-proximity">
-        <div className="h-44 shrink-0" />
+      <div
+        ref={scrollRef}
+        onScroll={handleScroll}
+        className="h-full overflow-y-auto scrollbar-hide relative z-10 snap-y snap-proximity"
+      >
+        <div className="shrink-0" style={{ height: cardHeight + tabsHeight + 16 }} />
 
         <div className="w-full px-3 pb-40">
           {!activeTournament ? (
@@ -269,74 +399,16 @@ export function TournamentsPage() {
           ) : (
             <FadeIn key={activeTab} duration={300}>
               
-              {/* ВКЛАДКА: МАТЧИ */}
+              {/* ВКЛАДКА: МАТЧИ — по одному туру / стадии, открывается на текущем.
+                  Лента туров прилипает под схлопнутой шапкой раздела */}
               {activeTab === 'matches' && (
                 isGamesLoading ? <PageLoader /> : (
-                  <div className="flex flex-col gap-8">
-                    {!hasGames ? (
-                      <div className="text-center py-12 text-[14px] font-bold text-content-subtle uppercase tracking-wider">
-                        В данном дивизионе пока нет запланированных матчей
-                      </div>
-                    ) : (
-                      <>
-                        {Object.entries(regular).map(([stageName, tours]) => (
-                          <div key={stageName} className="flex flex-col gap-8">
-                            {Object.keys(regular).length > 1 && (
-                              <div className="text-[14px] font-black uppercase tracking-[0.15em] text-content-main pt-4 pl-6">
-                                {stageName}
-                              </div>
-                            )}
-                            {/* Матчи без тура — в конце, а не «Тур №0» в начале */}
-                            {Object.entries(tours)
-                              .sort(([a], [b]) => (Number(a) || Infinity) - (Number(b) || Infinity))
-                              .map(([tourNum, stageGames]) => (
-                              <div key={tourNum} className="flex flex-col gap-2">
-                                <div className="text-center text-[14px] font-black uppercase tracking-[0.2em] text-content-muted ">
-                                  {Number(tourNum) ? `Тур №${tourNum}` : 'Тур не назначен'}
-                                </div>
-                                <div className="flex flex-col gap-2">
-                                  {stageGames.map((game) => (
-                                    <div key={game.id} onClick={() => handleGameClick(game)} className="cursor-pointer active:opacity-70 transition-opacity">
-                                      <TournamentCardGame game={game} />
-                                    </div>
-                                  ))}
-                                </div>
-                              </div>
-                            ))}
-                          </div>
-                        ))}
-
-                        {Object.entries(playoff).map(([stageName, seriesMatches]) => (
-                          <div key={stageName} className="flex flex-col gap-2">
-                            <div className="text-center text-[14px] font-black uppercase tracking-[0.2em] text-content-muted">
-                              {stageName}
-                            </div>
-                            <div className="flex flex-col gap-8">
-                              {Object.entries(seriesMatches).map(([matchNum, stageGames]) => {
-                                const winsNeeded = stageGames[0]?.wins_needed;
-                                return (
-                                  <div key={matchNum} className="flex flex-col gap-2">
-                                    {winsNeeded !== 1 && (
-                                      <div className="text-center text-[14px] font-black uppercase tracking-[0.2em] text-content-muted">
-                                        Серия №{matchNum}
-                                      </div>
-                                    )}
-                                    <div className="flex flex-col gap-2">
-                                      {stageGames.map((game) => (
-                                        <div key={game.id} onClick={() => handleGameClick(game)} className="cursor-pointer active:opacity-70 transition-opacity">
-                                          <TournamentCardGame game={game} />
-                                        </div>
-                                      ))}
-                                    </div>
-                                  </div>
-                                );
-                              })}
-                            </div>
-                          </div>
-                        ))}
-                      </>
-                    )}
-                  </div>
+                  <TournamentMatches
+                    games={games}
+                    onGameClick={handleGameClick}
+                    scrollContainerRef={scrollRef}
+                    stickyTop={TOURNAMENT_CARD_HEIGHT_COLLAPSED + tabsHeight}
+                  />
                 )
               )}
 
@@ -392,9 +464,43 @@ export function TournamentsPage() {
                     goalies={currentGoalies}
                     stageType={statsStageType}
                     onStageTypeChange={setStatsStageType}
+                    tracking={currentTracking}
                     divisionId={activeTournament?.division_id}
                     openRightPanel={openRightPanel}
                   />
+                )
+              )}
+
+              {/* ВКЛАДКА: ТОП-7 (НОМИНАЦИИ) */}
+              {activeTab === 'nominations' && (
+                isNominationsLoading && nominations.length === 0 ? <PageLoader /> : (
+                  <TournamentNominations
+                    nominations={nominations}
+                    openRightPanel={openRightPanel}
+                  />
+                )
+              )}
+
+              {/* ВКЛАДКА: РЕЗЕРВНЫЕ ВРАТАРИ */}
+              {activeTab === 'reserve' && (
+                isReserveLoading ? <PageLoader /> : (
+                  <TournamentReserveGoalies
+                    goalies={reserveGoalies}
+                    openRightPanel={openRightPanel}
+                  />
+                )
+              )}
+
+              {/* ВКЛАДКА: О ДИВИЗИОНЕ */}
+              {activeTab === 'overview' && (
+                isOverviewLoading && !overview ? <PageLoader /> : (
+                  overview ? (
+                    <TournamentOverview overview={overview} />
+                  ) : (
+                    <div className="text-center py-12 text-[14px] font-bold text-content-subtle uppercase tracking-wider">
+                      Не удалось загрузить сведения о дивизионе
+                    </div>
+                  )
                 )
               )}
             </FadeIn>

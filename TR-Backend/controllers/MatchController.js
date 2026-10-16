@@ -862,9 +862,18 @@ export const getMatchStats = async (req, res) => {
     const homeHasAgainst = trackShots && homeHasShotsData;
     const awayHasAgainst = trackShots && awayHasShotsData;
 
+    // Что показывать вообще: колонки и строки, которых лига не ведёт, фронт убирает
+    // целиком, а не забивает прочерками. Вне лиги броски ведёт сама команда — если их
+    // не внесла ни одна сторона, показывать тоже нечего.
+    const tracking = {
+      plusMinus: trackPM,
+      shots: trackShots && (!isLeagueless || homeHasShotsData || awayHasShotsData),
+    };
+
     res.json({
       success: true,
       stats: {
+        tracking,
         home: {
           // Проценты при нулевом знаменателе не определены — «—», а не 0%.
           shots_on_goal: homeHasFor ? homeShotsOnGoal : null,

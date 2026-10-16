@@ -8,15 +8,19 @@ import clsx from 'clsx';
 // ═══════════════════════════════════════════════════════════════════════
 // КОНФИГУРАЦИЯ ПАРАМЕТРОВ КОМАНДНОЙ СТАТИСТИКИ
 // ═══════════════════════════════════════════════════════════════════════
+// needsShots — строка есть, только если лига ведёт броски по воротам
 const STAT_ROWS = [
-  { key: 'shots_on_goal', label: 'Броски в створ' },
-  { key: 'shooting_pct', label: '% реализации', isPercentage: true },
+  { key: 'shots_on_goal', label: 'Броски в створ', needsShots: true },
+  { key: 'shooting_pct', label: '% реализации', isPercentage: true, needsShots: true },
   { key: 'pp_goals',      label: 'Голы в большинстве' },
   { key: 'sh_goals',      label: 'Голы в меньшинстве' },
   { key: 'pim',           label: 'Штрафное время' },
-  { key: 'saves',         label: 'Отр. броски' },
-  { key: 'save_pct',      label: '% отр. бросков', isPercentage: true },
+  { key: 'saves',         label: 'Отр. броски', needsShots: true },
+  { key: 'save_pct',      label: '% отр. бросков', isPercentage: true, needsShots: true },
 ];
+
+// Вратарские колонки, которых нет без учёта бросков
+const GOALIE_SHOT_KEYS = ['shots_against', 'saves', 'save_percent'];
 
 // ═══════════════════════════════════════════════════════════════════════
 // СТРОКА СРАВНЕНИЯ ОДНОГО КОМАНДНОГО ПАРАМЕТРА
@@ -191,7 +195,7 @@ const PlayerCell = ({ player, idx, onClick }) => (
 // ═══════════════════════════════════════════════════════════════════════
 // АККОРДЕОН ИГРОКОВ ОДНОЙ КОМАНДЫ
 // ═══════════════════════════════════════════════════════════════════════
-const PlayerAccordion = ({ teamName, teamLogo, goalies, skaters, rosterSubmitted, hasTeamColor, activeBrandColor, openRightPanel }) => {
+const PlayerAccordion = ({ teamName, teamLogo, goalies, skaters, rosterSubmitted, hasTeamColor, activeBrandColor, openRightPanel, showPlusMinus, showShots }) => {
   const [isExpanded, setIsExpanded] = useState(false);
 
   const handlePlayerClick = (player) => {
@@ -204,28 +208,38 @@ const PlayerAccordion = ({ teamName, teamLogo, goalies, skaters, rosterSubmitted
   const handleSkaterSort = (key) => {
     setSkaterSort(prev => ({ key, order: prev.key === key ? (prev.order === 'desc' ? 'asc' : 'desc') : 'desc' }));
   };
+  // Сортировка по скрытой колонке (лига её не ведёт) теряет смысл — тогда по очкам
+  const effectiveSkaterSort = !showPlusMinus && skaterSort.key === 'plus_minus'
+    ? { key: 'points', order: 'desc' }
+    : skaterSort;
   const sortedSkaters = useMemo(() => {
     if (!skaters?.length) return [];
     return [...skaters].sort((a, b) => {
-      const valA = Number(a[skaterSort.key]) || 0;
-      const valB = Number(b[skaterSort.key]) || 0;
-      return skaterSort.order === 'desc' ? valB - valA : valA - valB;
+      const valA = Number(a[effectiveSkaterSort.key]) || 0;
+      const valB = Number(b[effectiveSkaterSort.key]) || 0;
+      return effectiveSkaterSort.order === 'desc' ? valB - valA : valA - valB;
     });
-  }, [skaters, skaterSort]);
+  }, [skaters, effectiveSkaterSort.key, effectiveSkaterSort.order]);
 
   // Сортировка вратарей
   const [goalieSort, setGoalieSort] = useState({ key: 'save_percent', order: 'desc' });
   const handleGoalieSort = (key) => {
     setGoalieSort(prev => ({ key, order: prev.key === key ? (prev.order === 'desc' ? 'asc' : 'desc') : 'desc' }));
   };
+  // Без бросков %ОБ нет — вратарей оставляем в порядке сервера (по броскам, у всех ноль)
+  // и стрелку сортировки не показываем ни у одной колонки
+  const effectiveGoalieSort = !showShots && GOALIE_SHOT_KEYS.includes(goalieSort.key)
+    ? { key: null, order: 'desc' }
+    : goalieSort;
   const sortedGoalies = useMemo(() => {
     if (!goalies?.length) return [];
+    if (!effectiveGoalieSort.key) return goalies;
     return [...goalies].sort((a, b) => {
-      const valA = Number(a[goalieSort.key]) || 0;
-      const valB = Number(b[goalieSort.key]) || 0;
-      return goalieSort.order === 'desc' ? valB - valA : valA - valB;
+      const valA = Number(a[effectiveGoalieSort.key]) || 0;
+      const valB = Number(b[effectiveGoalieSort.key]) || 0;
+      return effectiveGoalieSort.order === 'desc' ? valB - valA : valA - valB;
     });
-  }, [goalies, goalieSort]);
+  }, [goalies, effectiveGoalieSort.key, effectiveGoalieSort.order]);
 
   const handleTouchIsolation = (e) => { e.stopPropagation(); };
 
@@ -264,15 +278,19 @@ const PlayerAccordion = ({ teamName, teamLogo, goalies, skaters, rosterSubmitted
             ))}
           </div>
           <ScrollFade onTouchStart={handleTouchIsolation} onTouchMove={handleTouchIsolation}>
-            {/* Бр/ОБ/%ОБ показываем всегда: если лига броски не ведёт — прочерк,
-                чтобы таблица не меняла форму от дивизиона к дивизиону */}
+            {/* БР/ОБ/%ОБ — только если лига ведёт броски по воротам. Если ведёт, но
+                ячейку не заполнили, в ней прочерк: это «нет данных», а не ноль */}
             <div className="h-[38px] flex items-center bg-surface-level1 text-[10px] font-normal uppercase tracking-wider text-content-muted text-center select-none border-b border-surface-border min-w-[280px]">
-              <div onClick={() => handleGoalieSort('assists')} className="w-10 shrink-0 cursor-pointer active:opacity-60">П<SortIndicator sortState={goalieSort} columnKey="assists" /></div>
-              <div onClick={() => handleGoalieSort('goals_against')} className="w-10 shrink-0 cursor-pointer active:opacity-60">ПШ<SortIndicator sortState={goalieSort} columnKey="goals_against" /></div>
-              <div onClick={() => handleGoalieSort('penalty_minutes')} className="w-10 shrink-0 cursor-pointer active:opacity-60">ШТР<SortIndicator sortState={goalieSort} columnKey="penalty_minutes" /></div>
-              <div onClick={() => handleGoalieSort('shots_against')} className="w-10 shrink-0 cursor-pointer active:opacity-60">БР<SortIndicator sortState={goalieSort} columnKey="shots_against" /></div>
-              <div onClick={() => handleGoalieSort('saves')} className="w-10 shrink-0 cursor-pointer active:opacity-60">ОБ<SortIndicator sortState={goalieSort} columnKey="saves" /></div>
-              <div onClick={() => handleGoalieSort('save_percent')} className="w-14 shrink-0 cursor-pointer active:opacity-60 text-brand" style={hasTeamColor ? { color: activeBrandColor } : {}}>%ОБ<SortIndicator sortState={goalieSort} columnKey="save_percent" /></div>
+              <div onClick={() => handleGoalieSort('assists')} className="w-10 shrink-0 cursor-pointer active:opacity-60">П<SortIndicator sortState={effectiveGoalieSort} columnKey="assists" /></div>
+              <div onClick={() => handleGoalieSort('goals_against')} className="w-10 shrink-0 cursor-pointer active:opacity-60">ПШ<SortIndicator sortState={effectiveGoalieSort} columnKey="goals_against" /></div>
+              <div onClick={() => handleGoalieSort('penalty_minutes')} className="w-10 shrink-0 cursor-pointer active:opacity-60">ШТР<SortIndicator sortState={effectiveGoalieSort} columnKey="penalty_minutes" /></div>
+              {showShots && (
+                <>
+                  <div onClick={() => handleGoalieSort('shots_against')} className="w-10 shrink-0 cursor-pointer active:opacity-60">БР<SortIndicator sortState={effectiveGoalieSort} columnKey="shots_against" /></div>
+                  <div onClick={() => handleGoalieSort('saves')} className="w-10 shrink-0 cursor-pointer active:opacity-60">ОБ<SortIndicator sortState={effectiveGoalieSort} columnKey="saves" /></div>
+                  <div onClick={() => handleGoalieSort('save_percent')} className="w-14 shrink-0 cursor-pointer active:opacity-60 text-brand" style={hasTeamColor ? { color: activeBrandColor } : {}}>%ОБ<SortIndicator sortState={effectiveGoalieSort} columnKey="save_percent" /></div>
+                </>
+              )}
             </div>
             {sortedGoalies.map((row) => {
               // Скрытие статистики (размытием): дивизион требует оплату взноса,
@@ -283,9 +301,13 @@ const PlayerAccordion = ({ teamName, teamLogo, goalies, skaters, rosterSubmitted
                 <div className={clsx("w-10 shrink-0", shouldBlur && "blur-sm select-none")}>{row.assists}</div>
                 <div className={clsx("w-10 shrink-0", shouldBlur && "blur-sm select-none")}>{row.goals_against}</div>
                 <div className={clsx("w-10 shrink-0", shouldBlur && "blur-sm select-none")}>{row.penalty_minutes}</div>
-                <div className={clsx("w-10 shrink-0", shouldBlur && "blur-sm select-none")}>{row.shots_against == null ? '—' : row.shots_against}</div>
-                <div className={clsx("w-10 shrink-0", shouldBlur && "blur-sm select-none")}>{row.saves == null ? '—' : row.saves}</div>
-                <div className={clsx("w-14 shrink-0 text-brand font-black text-[14px] font-mono", shouldBlur && "blur-sm select-none")} style={hasTeamColor ? { color: activeBrandColor } : {}}>{row.save_percent == null ? '—' : `${row.save_percent}%`}</div>
+                {showShots && (
+                  <>
+                    <div className={clsx("w-10 shrink-0", shouldBlur && "blur-sm select-none")}>{row.shots_against == null ? '—' : row.shots_against}</div>
+                    <div className={clsx("w-10 shrink-0", shouldBlur && "blur-sm select-none")}>{row.saves == null ? '—' : row.saves}</div>
+                    <div className={clsx("w-14 shrink-0 text-brand font-black text-[14px] font-mono", shouldBlur && "blur-sm select-none")} style={hasTeamColor ? { color: activeBrandColor } : {}}>{row.save_percent == null ? '—' : `${row.save_percent}%`}</div>
+                  </>
+                )}
               </div>
               );
             })}
@@ -310,11 +332,14 @@ const PlayerAccordion = ({ teamName, teamLogo, goalies, skaters, rosterSubmitted
           </div>
           <ScrollFade onTouchStart={handleTouchIsolation} onTouchMove={handleTouchIsolation}>
             <div className="h-[38px] flex items-center bg-surface-level1 text-[10px] font-normal uppercase tracking-wider text-content-muted text-center select-none border-b border-surface-border min-w-[200px]">
-              <div onClick={() => handleSkaterSort('goals')} className="w-10 shrink-0 cursor-pointer active:opacity-60">Г<SortIndicator sortState={skaterSort} columnKey="goals" /></div>
-              <div onClick={() => handleSkaterSort('assists')} className="w-10 shrink-0 cursor-pointer active:opacity-60">П<SortIndicator sortState={skaterSort} columnKey="assists" /></div>
-              <div onClick={() => handleSkaterSort('points')} className="w-11 shrink-0 cursor-pointer active:opacity-60 text-brand" style={hasTeamColor ? { color: activeBrandColor } : {}}>О<SortIndicator sortState={skaterSort} columnKey="points" /></div>
-              <div onClick={() => handleSkaterSort('plus_minus')} className="w-11 shrink-0 cursor-pointer active:opacity-60">+/-<SortIndicator sortState={skaterSort} columnKey="plus_minus" /></div>
-              <div onClick={() => handleSkaterSort('penalty_minutes')} className="w-12 shrink-0 cursor-pointer active:opacity-60">Штр<SortIndicator sortState={skaterSort} columnKey="penalty_minutes" /></div>
+              <div onClick={() => handleSkaterSort('goals')} className="w-10 shrink-0 cursor-pointer active:opacity-60">Г<SortIndicator sortState={effectiveSkaterSort} columnKey="goals" /></div>
+              <div onClick={() => handleSkaterSort('assists')} className="w-10 shrink-0 cursor-pointer active:opacity-60">П<SortIndicator sortState={effectiveSkaterSort} columnKey="assists" /></div>
+              <div onClick={() => handleSkaterSort('points')} className="w-11 shrink-0 cursor-pointer active:opacity-60 text-brand" style={hasTeamColor ? { color: activeBrandColor } : {}}>О<SortIndicator sortState={effectiveSkaterSort} columnKey="points" /></div>
+              {/* +/- — только если лига его ведёт */}
+              {showPlusMinus && (
+                <div onClick={() => handleSkaterSort('plus_minus')} className="w-11 shrink-0 cursor-pointer active:opacity-60">+/-<SortIndicator sortState={effectiveSkaterSort} columnKey="plus_minus" /></div>
+              )}
+              <div onClick={() => handleSkaterSort('penalty_minutes')} className="w-12 shrink-0 cursor-pointer active:opacity-60">Штр<SortIndicator sortState={effectiveSkaterSort} columnKey="penalty_minutes" /></div>
             </div>
             {sortedSkaters.map((row) => {
               const shouldBlur = !!row.hide_stats_unpaid && !row.is_fee_paid;
@@ -323,9 +348,11 @@ const PlayerAccordion = ({ teamName, teamLogo, goalies, skaters, rosterSubmitted
                 <div className={clsx("w-10 shrink-0", shouldBlur && "blur-sm select-none")}>{row.goals}</div>
                 <div className={clsx("w-10 shrink-0", shouldBlur && "blur-sm select-none")}>{row.assists}</div>
                 <div className={clsx("w-11 shrink-0 text-brand font-black text-[14px]", shouldBlur && "blur-sm select-none")} style={hasTeamColor ? { color: activeBrandColor } : {}}>{row.points}</div>
-                <div className={clsx("w-11 shrink-0", row.plus_minus == null ? "text-content-muted" : (row.plus_minus || 0) > 0 ? "text-emerald-500" : (row.plus_minus || 0) < 0 ? "text-red-500" : "text-content-muted", shouldBlur && "blur-sm select-none")}>
-                  {row.plus_minus == null ? '—' : (row.plus_minus || 0) > 0 ? `+${row.plus_minus}` : row.plus_minus || 0}
-                </div>
+                {showPlusMinus && (
+                  <div className={clsx("w-11 shrink-0", row.plus_minus == null ? "text-content-muted" : (row.plus_minus || 0) > 0 ? "text-emerald-500" : (row.plus_minus || 0) < 0 ? "text-red-500" : "text-content-muted", shouldBlur && "blur-sm select-none")}>
+                    {row.plus_minus == null ? '—' : (row.plus_minus || 0) > 0 ? `+${row.plus_minus}` : row.plus_minus || 0}
+                  </div>
+                )}
                 <div className={clsx("w-12 shrink-0", shouldBlur && "blur-sm select-none")}>{row.penalty_minutes}</div>
               </div>
               );
@@ -415,6 +442,11 @@ export const MatchStats = ({ event, openRightPanel }) => {
   const homeStats = stats?.home;
   const awayStats = stats?.away;
 
+  // Что лига ведёт в этом матче. Нет признака (старый бэкенд) — показываем всё, как раньше
+  const showPlusMinus = stats?.tracking?.plusMinus !== false;
+  const showShots = stats?.tracking?.shots !== false;
+  const statRows = STAT_ROWS.filter(row => showShots || !row.needsShots);
+
   return (
     <FadeIn className="flex flex-col gap-3">
 
@@ -426,7 +458,7 @@ export const MatchStats = ({ event, openRightPanel }) => {
           onToggle={() => setIsTeamStatsExpanded(p => !p)}
         >
           <div className="px-4 py-1">
-            {STAT_ROWS.map((row, idx) => (
+            {statRows.map((row, idx) => (
               <StatRow
                 key={row.key}
                 label={row.label}
@@ -435,7 +467,7 @@ export const MatchStats = ({ event, openRightPanel }) => {
                 isPercentage={row.isPercentage}
                 homeColor={homeBarColor}
                 awayColor={awayBarColor}
-                isLast={idx === STAT_ROWS.length - 1}
+                isLast={idx === statRows.length - 1}
               />
             ))}
           </div>
@@ -452,6 +484,8 @@ export const MatchStats = ({ event, openRightPanel }) => {
         hasTeamColor={hasTeamColor}
         activeBrandColor={activeBrandColor}
         openRightPanel={openRightPanel}
+        showPlusMinus={showPlusMinus}
+        showShots={showShots}
       />
 
       {/* ── Блок 3: Аккордеон гостевой команды (всегда) ──── */}
@@ -464,6 +498,8 @@ export const MatchStats = ({ event, openRightPanel }) => {
         hasTeamColor={hasTeamColor}
         activeBrandColor={activeBrandColor}
         openRightPanel={openRightPanel}
+        showPlusMinus={showPlusMinus}
+        showShots={showShots}
       />
 
     </FadeIn>

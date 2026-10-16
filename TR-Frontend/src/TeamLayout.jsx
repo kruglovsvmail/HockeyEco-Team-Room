@@ -1062,7 +1062,7 @@ function TeamLayoutContent() {
           {rightPanel.isOpen && (
             <>
               <div className="flex items-center justify-between shadow-md p-4 h-[60px] shrink-0 z-[90]">
-                <button onClick={backRightPanel} className="p-1.5 ml-1 bg-white/10 rounded-xl text-content-muted hover:text-brand transition-colors outline-none cursor-pointer active:scale-95 flex items-center">
+                <button onClick={backRightPanel} className="p-1.5 ml-1 bg-[var(--color-header-button)] rounded-xl text-content-muted hover:text-brand transition-colors outline-none cursor-pointer active:scale-95 flex items-center">
                   <Icon name="chevron_left" className="w-6 h-6 text-content-main" />
                 </button>
                 <h3 className="font-bold text-content-main uppercase tracking-wider text-right truncate pl-4" style={{ fontSize: uiFixed(14) }}>
@@ -1288,7 +1288,7 @@ function TeamLayoutContent() {
         <div className="flex items-center justify-between shadow-md px-4 h-[60px] shrink-0 z-[90] border-b border-surface-border">
           <button
             onClick={closePanel100}
-            className="p-1.5 bg-white/10 rounded-xl text-content-muted hover:text-brand transition-colors outline-none cursor-pointer active:scale-95 flex items-center"
+            className="p-1.5 bg-[var(--color-header-button)] rounded-xl text-content-muted hover:text-brand transition-colors outline-none cursor-pointer active:scale-95 flex items-center"
           >
             <Icon name="chevron_left" className="w-6 h-6 text-content-main" />
           </button>

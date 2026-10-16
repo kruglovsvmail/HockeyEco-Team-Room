@@ -9,6 +9,17 @@ export const getPortalRoot = () => {
 // итоговый видимый размер оставался равен исходному px независимо от выбранного масштаба.
 export const uiFixed = (px) => `calc(${px}px / var(--ui-scale, 1))`;
 
+// Склонение слова по числу: pluralRu(3, 'игра', 'игры', 'игр') → 'игры'.
+// one — для 1, 21, 31…; few — для 2–4, 22–24…; many — для 0, 5–20, 25…
+export const pluralRu = (n, one, few, many) => {
+  const abs = Math.abs(Number(n) || 0);
+  const mod10 = abs % 10;
+  const mod100 = abs % 100;
+  if (mod10 === 1 && mod100 !== 11) return one;
+  if (mod10 >= 2 && mod10 <= 4 && (mod100 < 12 || mod100 > 14)) return few;
+  return many;
+};
+
 // Сенсорное ли устройство. Проверяем именно способ ввода, а не размер окна и не userAgent:
 // на телефоне уместно системное окно «Поделиться», на ПК с мышью — копирование в буфер
 // (Chrome под Windows тоже умеет navigator.share, но открывает громоздкую панель Windows).
@@ -295,32 +306,56 @@ export const getContrastTextColor = (hexColor) => {
  * любую ссылку в любое из полей video_yt_url/video_vk_url — поле само по себе
  * не гарантирует платформу), чтобы показать реальное название вместо родового
  * «Трансляция N».
+ *
+ * Домен сверяем целиком или как поддомен (m.youtube.com, live.vkvideo.ru), а не
+ * подстрокой: иначе «notvk.com» тоже стал бы VK. Порядок важен — VK Play раньше VK.
  */
+const STREAM_PLATFORMS = [
+  { label: 'YouTube', domains: ['youtube.com', 'youtu.be'] },
+  { label: 'VK Play', domains: ['vkplay.live', 'vkplay.ru'] },
+  { label: 'VK Видео', domains: ['vk.com', 'vk.ru', 'vkvideo.ru'] },
+  { label: 'RuTube', domains: ['rutube.ru'] },
+  { label: 'Twitch', domains: ['twitch.tv'] },
+  { label: 'Telegram', domains: ['t.me', 'telegram.me', 'telegram.org'] },
+  { label: 'Одноклассники', domains: ['ok.ru'] },
+  { label: 'Дзен', domains: ['dzen.ru', 'zen.yandex.ru'] },
+  { label: 'Kick', domains: ['kick.com'] },
+];
+
+// Ссылку могут вписать без протокола («vk.com/video…») — тогда браузер счёл бы её
+// адресом внутри приложения. Достраиваем https://, чтобы открывалась площадка.
+// С пробелами внутри это уже не ссылка, а текст — такую не показываем вовсе.
+export const normalizeExternalUrl = (url) => {
+  const value = String(url || '').trim();
+  if (!value || /\s/.test(value)) return null;
+  return /^[a-z][a-z\d+.-]*:\/\//i.test(value) ? value : `https://${value}`;
+};
+
 export const getStreamPlatformLabel = (url) => {
   if (!url) return null;
   let host = '';
   try {
-    host = new URL(url).hostname.toLowerCase();
+    host = new URL(normalizeExternalUrl(url)).hostname.toLowerCase().replace(/^www\./, '');
   } catch {
     return 'Трансляция';
   }
-  if (host.includes('youtube.com') || host.includes('youtu.be')) return 'YouTube';
-  if (host.includes('vk.com') || host.includes('vkvideo.ru') || host.includes('vk.ru')) return 'VK Видео';
-  if (host.includes('rutube.ru')) return 'RuTube';
-  return 'Трансляция';
+  const platform = STREAM_PLATFORMS.find(p => p.domains.some(d => host === d || host.endsWith(`.${d}`)));
+  return platform ? platform.label : 'Трансляция';
 };
 
 /**
  * Раунд плей-офф (event.stage_label, например "Финал") может физически содержать
  * несколько разных пар (playoff_matchups) — за 1-е место и за 3-е место и т.д.
  * games.playoff_match_type хранит это (NULL — обычная/главная пара, используем
- * stage_label как есть; "place_3"/"place_5"/... — переопределяем текст на "Матч за
+ * stage_label как есть; "place_3"/"place_5"/... — переопределяем текст на "За
  * N-е место"), заполняется в LMS (GameCard.jsx) при назначении игры на раунд.
  */
+// Без слова «Матч»: «За 3-е место» — так короче, и в заголовках, где рядом и так
+// стоит «матч», не выходит «матч … Матч за 3-е место»
 export const getPlayoffStageDisplayLabel = (stageLabel, playoffMatchType) => {
   if (!playoffMatchType) return stageLabel;
   const n = playoffMatchType.replace('place_', '');
-  return `Матч за ${n}-е место`;
+  return `За ${n}-е место`;
 };
 
 // =============================================================================

@@ -164,7 +164,7 @@ export function Header({
         {onBack ? (
           <button
             onClick={onBack}
-            className="p-2 bg-white/10 rounded-xl text-content-main hover:text-brand transition-colors outline-none z-10 cursor-pointer active:scale-95"
+            className="p-2 bg-[var(--color-header-button)] rounded-xl text-content-main hover:text-brand transition-colors outline-none z-10 cursor-pointer active:scale-95"
             aria-label="Назад"
           >
             <ChevronLeft size={20} />
@@ -172,7 +172,7 @@ export function Header({
         ) : (
           <button
             onClick={onToggleSidebar}
-            className="p-2 bg-white/10 rounded-xl text-content-main hover:text-brand transition-colors outline-none z-10"
+            className="p-2 bg-[var(--color-header-button)] rounded-xl text-content-main hover:text-brand transition-colors outline-none z-10"
             aria-label="Menu"
           >
             {isSidebarOpen ? <X size={20} /> : <Menu size={20} />}
@@ -194,7 +194,7 @@ export function Header({
           {showShareButton && (
             <button
               onClick={onShareClick}
-              className="p-2.5 bg-white/10 rounded-xl text-content-main hover:text-brand transition-colors outline-none cursor-pointer active:scale-95 flex items-center justify-center"
+              className="p-2.5 bg-[var(--color-header-button)] rounded-xl text-content-main hover:text-brand transition-colors outline-none cursor-pointer active:scale-95 flex items-center justify-center"
               aria-label="Поделиться ссылкой"
             >
               <Icon name="share" className="w-4 h-4" />
@@ -204,7 +204,7 @@ export function Header({
           {showEditButton && (
             <button
               onClick={onEditClick}
-              className="p-2.5 bg-white/10 rounded-xl text-content-main hover:text-brand transition-colors outline-none cursor-pointer active:scale-95 flex items-center justify-center"
+              className="p-2.5 bg-[var(--color-header-button)] rounded-xl text-content-main hover:text-brand transition-colors outline-none cursor-pointer active:scale-95 flex items-center justify-center"
               aria-label="Редактировать"
             >
               <Icon name="edit" className="w-4 h-4" />
@@ -214,7 +214,7 @@ export function Header({
           {showMenuButton && (
             <button
               onClick={onMenuClick}
-              className="p-2.5 bg-white/10 rounded-xl text-content-main hover:text-brand transition-colors outline-none cursor-pointer active:scale-95 flex items-center justify-center"
+              className="p-2.5 bg-[var(--color-header-button)] rounded-xl text-content-main hover:text-brand transition-colors outline-none cursor-pointer active:scale-95 flex items-center justify-center"
               aria-label={menuLabel}
             >
               <Icon name={menuIcon} className="w-4 h-4" />
